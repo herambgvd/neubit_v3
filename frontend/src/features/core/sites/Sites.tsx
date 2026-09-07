@@ -17,8 +17,6 @@ import {
   PanelCounts,
   PanelSearch,
   PanelList,
-  PanelFooter,
-  CreateButton,
   IconButton,
   EmptyPane,
 } from "@/components/console";
@@ -106,21 +104,23 @@ export default function SitesConfigPage() {
             icon="heroicons-outline:map-pin"
             title="Sites"
             count={total}
-            countAction={
-              <IconButton
-                icon="heroicons-outline:plus"
-                title="Add a site"
-                onClick={() => setMode("create")}
-                className="!h-5 !w-5 rounded-[6px]"
-              />
-            }
             actions={
-              <PanelCounts
-                items={[
-                  { tone: "good", value: active, label: "active" },
-                  { tone: "idle", value: inactive, label: "inactive" },
-                ]}
-              />
+              <>
+                <PanelCounts
+                  items={[
+                    { tone: "good", value: active, label: "active" },
+                    { tone: "idle", value: inactive, label: "inactive" },
+                  ]}
+                />
+                {/* The ONLY way to start a site now that the footer button is
+                    gone, so it carries a real accessible name rather than
+                    leaving screen readers with a bare "+". */}
+                <IconButton
+                  icon="heroicons-outline:plus"
+                  title="New site"
+                  onClick={() => setMode("create")}
+                />
+              </>
             }
           />
           <PanelSearch value={q} onChange={setQ} placeholder="Search by name or city…" />
@@ -142,9 +142,6 @@ export default function SitesConfigPage() {
             ))}
           </PanelList>
 
-          <PanelFooter>
-            <CreateButton label="SITE" onClick={() => setMode("create")} />
-          </PanelFooter>
         </ConsolePanel>
 
         {/* CENTER — detail */}
@@ -153,7 +150,7 @@ export default function SitesConfigPage() {
             <EmptyPane
               icon="heroicons-outline:map-pin"
               title="No site selected"
-              subtitle="Pick one from the list, or click ＋ NEW SITE to create a site."
+              subtitle="Pick one from the list, or use ＋ New site at the top of it."
             />
           ) : (
             <SiteDetail

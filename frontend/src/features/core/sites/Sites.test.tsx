@@ -115,11 +115,11 @@ describe("deleting a site", () => {
 });
 
 describe("starting a new site", () => {
-  it("opens the form from the plus beside the count, not only from the footer", async () => {
+  it("opens the form from the panel plus — the only way in now the footer button is gone", async () => {
     renderWithProviders(<SitesConfigPage />);
     await screen.findAllByText("Pune HQ");
 
-    await userEvent.click(screen.getByRole("button", { name: /add a site/i }));
+    await userEvent.click(screen.getByRole("button", { name: /new site/i }));
 
     expect(await screen.findByRole("button", { name: /create site/i })).toBeInTheDocument();
   });

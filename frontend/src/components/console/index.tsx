@@ -92,26 +92,19 @@ export interface PanelHeaderProps {
   icon?: string;
   title?: ReactNode;
   count?: ReactNode;
-  /**
-   * Sits immediately after the count, inside the title group — for the one
-   * action that belongs to the thing being counted, like "add another".
-   * `actions` is the far side of the header, where status and tools go.
-   */
-  countAction?: ReactNode;
   actions?: ReactNode;
   /** Same slot as `actions`, for callers that nest instead. */
   children?: ReactNode;
 }
 
 // Panel header: icon + uppercase title + optional count, with room for actions.
-export function PanelHeader({ icon, title, count, countAction, actions, children }: PanelHeaderProps) {
+export function PanelHeader({ icon, title, count, actions, children }: PanelHeaderProps) {
   return (
     <div className="flex items-center justify-between px-4 pb-2 pt-3.5">
       <div className="flex items-center gap-2">
         {icon && <Icon icon={icon} className="text-sm text-nb-blueb" />}
         <span className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">{title}</span>
         {count != null && <span className="font-mono text-[11px] text-nb-faint">{count}</span>}
-        {countAction}
       </div>
       {(actions || children) && <div className="flex items-center gap-1">{actions || children}</div>}
     </div>
