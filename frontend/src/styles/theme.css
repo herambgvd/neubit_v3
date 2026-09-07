@@ -193,3 +193,68 @@
   .nb-ticker-rail { overflow-x: auto !important; }
   .nb-ticker-dup { display: none !important; }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Appearance — typeface and UI scale.
+
+   `app/layout.tsx` loads every face in the catalogue and puts their CSS
+   variables on <body>; the boot script stamps the operator's choice onto <html>
+   as `data-font` / `data-ui-scale`. These rules are the whole switch. Doing it
+   in CSS (not React) is what makes the choice survive first paint.
+
+   Keys here MUST match lib/fonts/catalog.ts. A key present there and missing
+   here silently renders the default face.
+   ──────────────────────────────────────────────────────────────────────────── */
+:root {
+  --font-sans: var(--font-outfit), system-ui, sans-serif;
+  --font-mono-ui: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* The ROOT font size. Almost every size in the console is rem-based, so this
+     one number scales type AND spacing together. 13px is one step below the
+     14px the console shipped with. */
+  --ui-root-size: 13px;
+}
+
+html[data-font="geist"] {
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+}
+html[data-font="inter"] {
+  --font-sans: var(--font-inter-sans), system-ui, sans-serif;
+}
+html[data-font="dmSans"] {
+  --font-sans: var(--font-dm-sans), system-ui, sans-serif;
+}
+html[data-font="publicSans"] {
+  --font-sans: var(--font-public-sans), system-ui, sans-serif;
+}
+
+html[data-ui-scale="xs"] {
+  --ui-root-size: 12px;
+}
+html[data-ui-scale="sm"] {
+  --ui-root-size: 13px;
+}
+html[data-ui-scale="md"] {
+  --ui-root-size: 14px;
+}
+html[data-ui-scale="lg"] {
+  --ui-root-size: 15px;
+}
+html[data-ui-scale="xl"] {
+  --ui-root-size: 16px;
+}
+
+html {
+  font-size: var(--ui-root-size);
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+/* `font-mono` is used across the console for IDs, hashes and metrics. Tailwind's
+   default stack leaves that to whatever monospace the operator's OS has; point
+   it at the bundled face instead. */
+.font-mono {
+  font-family: var(--font-mono-ui);
+}

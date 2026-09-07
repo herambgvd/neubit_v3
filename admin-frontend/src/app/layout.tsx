@@ -4,9 +4,9 @@ import "@/styles/theme.css";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Script from "next/script";
-import { GeistSans } from "geist/font/sans";
 
 import Providers from "@/components/Providers";
+import { outfit } from "@/lib/fonts/registry";
 
 export const metadata: Metadata = {
   title: "Neubit Admin",
@@ -24,17 +24,19 @@ try {
 } catch (e) { document.documentElement.classList.add('dark'); }
 `;
 
-// Root font-size 14px keeps the UI compact (rem-based sizing).
+// Root font-size 13px keeps the UI compact (rem-based sizing scales down with it).
+// Matches the operator console's default; that console lets each user change it,
+// this one has no preferences screen to offer the choice on.
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     // suppressHydrationWarning on <html>: the no-flash script mutates the class
     // before hydration, so the server/client class can differ by design.
-    <html lang="en" style={{ fontSize: "14px" }} suppressHydrationWarning>
+    <html lang="en" style={{ fontSize: "13px" }} suppressHydrationWarning>
       {/* suppressHydrationWarning on <body>: browser extensions (Grammarly etc.)
           inject data-* attributes here before React hydrates, which would
           otherwise trip a hydration mismatch and force a full re-render. */}
       <body
-        className={`${GeistSans.className} antialiased bg-background text-foreground`}
+        className={`${outfit.className} antialiased bg-background text-foreground`}
         suppressHydrationWarning
       >
         {/* beforeInteractive → Next hoists this into the server HTML head, so it

@@ -5,6 +5,7 @@ import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { Card, Toggle } from "@/components/ui/kit";
+import AppearanceCard from "./AppearanceCard";
 import { api, apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -37,7 +38,10 @@ export default function PreferencesTab() {
   const notifyEmail = prefs.notify_email !== false; // default on
   const notifyInapp = prefs.notify_inapp !== false; // default on
 
-  // No Appearance/Theme card — the console is dark-only, so there is nothing to choose.
+  // The console is dark-only, so there is no THEME to choose — but the typeface
+  // and the UI scale are the operator's, and AppearanceCard owns both (it saves
+  // through lib/appearance, not through the mutation above, because the choice
+  // has to apply before first paint).
   return (
     <div className="grid gap-6 lg:grid-cols-2 items-start">
       <Card className="p-6">
@@ -50,6 +54,8 @@ export default function PreferencesTab() {
           <Toggle checked={notifyInapp} onChange={(v) => save.mutate({ notify_inapp: v })} />
         </PrefRow>
       </Card>
+
+      <AppearanceCard />
     </div>
   );
 }

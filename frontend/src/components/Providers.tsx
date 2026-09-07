@@ -10,6 +10,7 @@ import { Toaster } from "sonner";
 // whole console renders with no icons at all and says nothing. See lib/icons.ts.
 import "@/lib/icons";
 
+import { AppearanceProvider } from "@/lib/appearance";
 import { AuthProvider } from "@/lib/auth";
 // Side-effect import: registers the bundled Iconify icon set so nothing is
 // fetched from api.iconify.design at runtime (offline/air-gapped installs).
@@ -34,7 +35,11 @@ export default function Providers({ children }: { children?: ReactNode }) {
     <ThemeProvider>
       <QueryClientProvider client={client}>
         <TitleSync />
-        <AuthProvider>{children}</AuthProvider>
+        {/* Inside AuthProvider: the appearance store adopts the signed-in user's
+            saved choice when this device has none, and saves changes back. */}
+        <AuthProvider>
+          <AppearanceProvider>{children}</AppearanceProvider>
+        </AuthProvider>
         <ThemedToaster />
       </QueryClientProvider>
     </ThemeProvider>
