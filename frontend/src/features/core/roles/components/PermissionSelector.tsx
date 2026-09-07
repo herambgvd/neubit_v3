@@ -32,7 +32,10 @@ export default function PermissionSelector({ groups, selected, loading, readOnly
       ) : !Object.keys(groups).length ? (
         <EmptyState title="No permissions available" />
       ) : (
-        <div className="space-y-4">
+        // Two columns from `md` up: the matrix is a dozen groups, and a single
+        // column made the modal a scroll no matter how wide it got. `items-start`
+        // so a short group does not stretch to its neighbour's height.
+        <div className="grid gap-4 md:grid-cols-2 items-start">
           {Object.entries(groups).map(([category, perms]) => {
             const total = perms.length;
             const chosen = perms.filter((p) => selected.has(p.key)).length;

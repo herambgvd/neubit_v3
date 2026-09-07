@@ -538,9 +538,17 @@ export function Overlay({ onClose, staticBackdrop, wrapper = "items-center justi
 // sections). `wide` is the older boolean and still works. `subtitle` is the one
 // line of context under the title — SiteFormModal hand-rolled its whole shell to
 // get these two things, which is how it ended up with its own header and footer.
-// The step above `xl` exists for forms with two columns of fields (the site form
-// at 3xl wrapped its address rows); `full` is for a modal whose CONTENT is the
-// point rather than the words — a map canvas is unusable at form width.
+// WHICH SIZE. Picked by what the modal HOLDS, not by how important it feels —
+// the defaults drifted before because there was no rule written down:
+//
+//   md    a question or a confirmation, one or two fields   (Delete, Clone, Reveal)
+//   wide  a form: several fields, a select, chips, a toggle (Add/Edit user, Card)
+//   xl    a form with sections
+//   2xl   two columns of fields, or a matrix               (Site form, Role + perms)
+//   full  the CONTENT is the point, not the words          (the map picker)
+//
+// `md` for a real form is the failure to watch for: at 448px a select and a row
+// of chips wrap into a column and the form reads as twice as long as it is.
 const MODAL_WIDTH = {
   md: "max-w-md",
   wide: "max-w-2xl",

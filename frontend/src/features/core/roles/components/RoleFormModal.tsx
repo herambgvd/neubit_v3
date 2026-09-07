@@ -58,7 +58,7 @@ export default function RoleFormModal({
     <Modal
       open={open}
       onClose={onClose}
-      wide
+      size="2xl"
       hideScroll
       staticBackdrop
       title={editing ? (readOnly ? `${editing.name} (system role)` : `Edit role`) : "Create role"}

@@ -16,8 +16,6 @@ import {
   PanelHeader,
   PanelSearch,
   PanelList,
-  PanelFooter,
-  CreateButton,
   IconButton,
   EmptyPane,
 } from "@/components/console";
@@ -266,6 +264,12 @@ export default function UsersPage() {
                 disabled={importUsers.isPending}
               />
             )}
+            {/* The only way to start a user now the footer button is gone, so its
+                title — which IconButton also uses as the aria-label — has to name
+                the action rather than leave a screen reader with a bare "+". */}
+            {canManage && (
+              <IconButton icon="heroicons:plus" title="New user" onClick={() => setOpen(true)} />
+            )}
           </PanelHeader>
           <PanelSearch value={search} onChange={setSearch} placeholder="Search users, email, role…" />
 
@@ -282,13 +286,6 @@ export default function UsersPage() {
             ))}
           </PanelList>
 
-          <PanelFooter>
-            {canManage && <CreateButton label="USER" onClick={() => setOpen(true)} />}
-            <p className="mt-2.5 text-[10.5px] leading-relaxed text-nb-faint">
-              Access is <b className="text-nb-blueb">role-based</b>: users inherit a role&rsquo;s
-              permissions, scoped by site. Every change is audit-signed for IS 19319 evidence.
-            </p>
-          </PanelFooter>
         </ConsolePanel>
 
         {/* CENTER — editor */}
@@ -310,7 +307,7 @@ export default function UsersPage() {
             <EmptyPane
               icon="heroicons-outline:users"
               title="No user selected"
-              subtitle="Pick one from the list, or click ＋ NEW USER to create an account."
+              subtitle="Pick one from the list, or use ＋ New user at the top of it."
             />
           )}
         </ConsolePanel>

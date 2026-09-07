@@ -45,14 +45,6 @@ export default function RolePanel({ role, groups, canManage, onClone }: RolePane
         </Action>
       )}
 
-      <div className="mt-3 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2.5 text-[11px] leading-relaxed text-nb-faint">
-        <b className="text-nb-muted">Least privilege by default:</b> a new role starts empty — you
-        grant up, never claw back. Keep broad roles (Admin, Auditor) few.
-      </div>
-      <p className="mt-2.5 text-[11px] leading-relaxed text-nb-faint">
-        <b className="text-nb-muted">IS 19319 evidence:</b> the permission set exports as an RBAC
-        control sheet — who-can-do-what, signed and versioned for the certification file.
-      </p>
     </div>
   );
 }

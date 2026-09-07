@@ -59,6 +59,7 @@ export default function EditUserModal({
       onClose={onClose}
       hideScroll
       staticBackdrop
+      size="wide"
       title={`Edit ${editing?.email || "user"}`}
       footer={
         <>

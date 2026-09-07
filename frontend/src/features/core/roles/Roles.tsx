@@ -13,10 +13,9 @@ import {
   ConsoleGrid,
   ConsolePanel,
   PanelHeader,
+  IconButton,
   PanelSearch,
   PanelList,
-  PanelFooter,
-  CreateButton,
   EmptyPane,
 } from "@/components/console";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/kit";
@@ -157,7 +156,14 @@ export default function RolesPage() {
       <ConsoleGrid cols="lg:grid-cols-[300px_1fr_320px]">
         {/* LEFT — library */}
         <ConsolePanel>
-          <PanelHeader icon="heroicons-outline:shield-check" title="Roles" count={total} />
+          <PanelHeader
+            icon="heroicons-outline:shield-check"
+            title="Roles"
+            count={total}
+            actions={
+              canManage && <IconButton icon="heroicons:plus" title="New role" onClick={openCreate} />
+            }
+          />
           <PanelSearch value={search} onChange={setSearch} placeholder="Search roles…" />
 
           <PanelList
@@ -172,13 +178,6 @@ export default function RolesPage() {
             ))}
           </PanelList>
 
-          <PanelFooter>
-            {canManage && <CreateButton label="ROLE" onClick={openCreate} />}
-            <p className="mt-2.5 text-[10.5px] leading-relaxed text-nb-faint">
-              A role is a named <b className="text-nb-blueb">bundle of permissions</b>. Users inherit
-              their role&rsquo;s access; every change is audit-signed.
-            </p>
-          </PanelFooter>
         </ConsolePanel>
 
         {/* CENTER — detail */}
@@ -197,7 +196,7 @@ export default function RolesPage() {
             <EmptyPane
               icon="heroicons-outline:shield-check"
               title="No role selected"
-              subtitle="Pick one from the list, or click ＋ NEW ROLE to create a role."
+              subtitle="Pick one from the list, or use ＋ New role at the top of it."
             />
           )}
         </ConsolePanel>

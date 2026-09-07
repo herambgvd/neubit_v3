@@ -63,16 +63,6 @@ export default function UserPosture({ user, canManage, busyAction, onClone, onFo
         </>
       )}
 
-      <div className="mt-3 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2.5 text-[11px] leading-relaxed text-nb-faint">
-        <b className="text-nb-muted">Passwords are never handled here.</b> The user sets and resets
-        their own credential through the identity provider — NeuBit stores no plaintext and issues
-        only reset invitations.
-      </div>
-      <p className="mt-2.5 text-[11px] leading-relaxed text-nb-faint">
-        <b className="text-nb-muted">Fast onboarding:</b> clone a similar user to inherit their role,
-        scope and security in one click — then just change the name and email. New staff productive
-        in seconds.
-      </p>
     </div>
   );
 }

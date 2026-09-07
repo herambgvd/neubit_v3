@@ -39,6 +39,7 @@ export default function AddUserModal({ open, onClose, form, setForm, roleOptions
       onClose={onClose}
       hideScroll
       staticBackdrop
+      size="wide"
       title="Add user"
       footer={
         <>
