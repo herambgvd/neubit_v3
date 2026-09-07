@@ -37,30 +37,19 @@ import type {
   BookmarkListResponse,
   BookmarkPublic,
   BookmarkUpdate,
-  BulkAddBody,
-  BulkAddResponse,
-  BulkOpResult,
   BulkResult,
-  CameraACLEntry,
-  CameraACLListResponse,
   CameraBulkBody,
   CameraCreate,
   CameraGroupCreate,
   CameraGroupListResponse,
   CameraGroupPublic,
   CameraGroupUpdate,
-  CameraHealthHistoryResponse,
-  CameraHealthListResponse,
-  CameraHealthPublic,
   CameraListResponse,
   CameraReorderItem,
   CameraUpdate,
   ChannelsResponse,
   ConfigDict,
   ConfigResult,
-  DashboardSummary,
-  DeviceInfoPublic,
-  DeviceUsersResponse,
   DiscoverBody,
   DiscoverResponse,
   DrawnShape,
@@ -83,7 +72,6 @@ import type {
   FederatedRecordingList,
   FederatedTimeline,
   FederationNodeList,
-  FleetOpPublic,
   HostCredentials,
   LinkageFireListResponse,
   LinkageRuleCreate,
@@ -102,7 +90,6 @@ import type {
   NodeCredentialPublic,
   NodeEnrollResult,
   NodeRaidStatus,
-  NodeStoragePool,
   NodeStoragePoolList,
   NodeStorageUsage,
   NodeTierRuleList,
@@ -115,7 +102,6 @@ import type {
   NvrUpdate,
   OnvifEventsBody,
   OsdBody,
-  PasswordBody,
   PatrolCreate,
   PatrolPublic,
   PatrolUpdate,
@@ -126,19 +112,11 @@ import type {
   PlaybackSessionPublic,
   PresetPublic,
   PrivacyMasksResponse,
-  ProbeResponse,
   PtzBody,
   PtzMoveBody,
   PtzResult,
   RecordedPlaybackPublic,
-  RecordingActiveResponse,
-  RecordingConfigBody,
-  RecordingConfigPublic,
-  RecordingControlResult,
   RecordingDaysResponse,
-  RecordingIntegrityResult,
-  RecordingListResponse,
-  RecordingPublic,
   ReorderResult,
   ReportResponse,
   ReportRunList,
@@ -150,7 +128,6 @@ import type {
   StreamPolicyResult,
   TalkSessionPublic,
   TimelineResponse,
-  UserAddBody,
   VmsEventListResponse,
   VmsCameraPublic,
   VmsEventPublic,
@@ -161,11 +138,8 @@ const CAMERAS = "/vms/cameras";
 const NVRS = "/vms/nvrs";
 const GROUPS = "/vms/camera-groups";
 const PATTERNS = "/vms/patterns";
-const HEALTH = "/vms/cameras/health";
 const EVENTS = "/vms/events";
 const LINKAGE = "/vms/linkage-rules";
-const RECORDINGS = "/vms/recordings";
-const STORAGE = "/vms/storage";
 const EXPORT = "/vms/export";
 const REPORTS = "/vms/reports";
 const REPORT_SCHEDULES = "/vms/report-schedules";
@@ -330,14 +304,6 @@ export const vms = {
     },
   },
 
-  // ── Operations / Health dashboard (G2) — one live rollup ────────────────
-  // GET /vms/dashboard/summary → { cameras, recording, storage, nodes, alarms,
-  //   nvrs, generated_at }. Read-only aggregation over existing camera/recording/
-  //   storage/node/event/nvr data. Gated on vms.camera.read; tenant-scoped. The
-  //   node section degrades to data_plane:"unknown" if the Go nvr is unreachable.
-  dashboard: {
-    summary: () => unwrap(api.get<DashboardSummary>("/vms/dashboard/summary")),
-  },
 
   cameras: {
     // GET /cameras → { items, total, skip, limit }. Filters: status, brand,
@@ -478,20 +444,6 @@ export const vms = {
     },
   },
 
-  // ONVIF discovery / onboarding (unsaved-device flows) ──────────────────
-  discovery: {
-    // POST /cameras/onvif/discover { network?, brand? } → { items, total }.
-    discover: (body: DiscoverBody = {}) => unwrap(api.post<DiscoverResponse>(`${CAMERAS}/onvif/discover`, body)),
-    // POST /cameras/onvif/probe { host, port, username, password, brand? }.
-    probe: (body: HostCredentials) => unwrap(api.post<ProbeResponse>(`${CAMERAS}/onvif/probe`, body)),
-    // POST /cameras/onvif/channels — enumerate an NVR/encoder's channels.
-    channels: (body: HostCredentials) => unwrap(api.post<ChannelsResponse>(`${CAMERAS}/onvif/channels`, body)),
-    // POST /cameras/onvif/bulk-add { host, port, username, password, brand, channels[] }.
-    bulkAdd: (body: BulkAddBody) => unwrap(api.post<BulkAddResponse>(`${CAMERAS}/onvif/bulk-add`, body)),
-    // POST /cameras/onvif/snapshot — grab a JPEG from an unsaved host (returns blob).
-    snapshot: (body: HostCredentials) =>
-      blob(api.post<Blob>(`${CAMERAS}/onvif/snapshot`, body, { responseType: "blob" })),
-  },
 
   nvrs: {
     // GET /nvrs → { items, total, skip, limit }. Filters: status, brand, q.
@@ -589,23 +541,7 @@ export const vms = {
     remove: (id: string) => unwrap(api.delete<void>(`${PATTERNS}/${id}`)),
   },
 
-  acl: {
-    // GET /cameras/{id}/acl → { items, total }.
-    get: (cameraId: string) => unwrap(api.get<CameraACLListResponse>(`${CAMERAS}/${cameraId}/acl`)),
-    // PUT /cameras/{id}/acl { entries: [{ subject_type, subject_id, privileges[] }] }.
-    put: (cameraId: string, entries: CameraACLEntry[]) =>
-      unwrap(api.put<CameraACLListResponse>(`${CAMERAS}/${cameraId}/acl`, { entries })),
-  },
 
-  health: {
-    // GET /cameras/health?camera_id= → { items, total } (latest per camera).
-    latest: (params: QueryParams = {}) => unwrap(api.get<CameraHealthListResponse>(`${HEALTH}${qs(params)}`)),
-    // GET /cameras/{id}/health/history?skip=&limit=&from=&to= → time-series.
-    history: (cameraId: string, params: QueryParams = {}) =>
-      unwrap(api.get<CameraHealthHistoryResponse>(`${CAMERAS}/${cameraId}/health/history${qs(params)}`)),
-    // POST /cameras/{id}/health/refresh → a fresh sample.
-    refresh: (cameraId: string) => unwrap(api.post<CameraHealthPublic>(`${CAMERAS}/${cameraId}/health/refresh`, {})),
-  },
 
   // ── Camera device-events (P5-A) — the normalized event feed ─────────────
   // ONVIF/brand device notifications (motion|tamper|video_loss|io_input|
@@ -667,24 +603,6 @@ export const vms = {
     release: (sessionId: string) => unwrap(api.delete<void>(`/vms/live/${sessionId}`)),
   },
 
-  // ── Recordings (P3-A/B) — browse + integrity/lock ───────────────────────
-  // Recording rows are tracked from MediaMTX segments by the Go `nvr` and
-  // persisted by `vision`. Fields: id/camera_id/profile/path/start_time/
-  // end_time/duration/file_size/trigger_type/locked/checksum/integrity_status/
-  // storage_pool_id. No dedicated download endpoint yet (P4) — surface the path.
-  recordings: {
-    // GET /cameras/{id}/recordings?from=&to=&trigger=&skip=&limit= → { items, total }.
-    list: (cameraId: string, params: QueryParams = {}) =>
-      unwrap(api.get<RecordingListResponse>(`${CAMERAS}/${cameraId}/recordings${qs(params)}`)),
-    // GET /recordings/{id} → a single RecordingPublic.
-    get: (id: string) => unwrap(api.get<RecordingPublic>(`${RECORDINGS}/${id}`)),
-    // POST /recordings/{id}/lock — protect from retention/tiering deletion.
-    lock: (id: string) => unwrap(api.post<RecordingIntegrityResult>(`${RECORDINGS}/${id}/lock`, {})),
-    // POST /recordings/{id}/unlock — release the lock.
-    unlock: (id: string) => unwrap(api.post<RecordingIntegrityResult>(`${RECORDINGS}/${id}/unlock`, {})),
-    // POST /recordings/{id}/verify — recompute the SHA-256 + return integrity_status.
-    verify: (id: string) => unwrap(api.post<RecordingIntegrityResult>(`${RECORDINGS}/${id}/verify`, {})),
-  },
 
   // ── Recorded playback (P4-A) — timeline + a RECORDED PlaybackSession ─────
   // The Go `nvr` builds a seekable playback URL from MediaMTX's playback server
@@ -874,57 +792,6 @@ export const vms = {
       }),
   },
 
-  // ── Device / fleet management (G7) — brand driver maintenance ops ─────────
-  // Per-camera + bulk maintenance over the camera's brand driver. Every op is
-  // BEST-EFFORT — the response carries { ok, supported, detail } so the UI can say
-  // "applied" / "not supported on this brand" / "failed". device-info reads gate on
-  // vms.camera.read; all WRITES (reboot/ntp/password/config-backup/restore) gate on
-  // vms.config.manage. Tenant-scoped; the gateway routes /vms/cameras/* → vision.
-  deviceMgmt: {
-    // GET /vms/cameras/{id}/device-info → { manufacturer?, model?, firmware?,
-    //   serial?, hardware_id?, ... } (brand-dependent; sparse on unsupported brands).
-    info: (id: string, { refresh = false }: RefreshOpt = {}) =>
-      unwrap(api.get<DeviceInfoPublic>(`${CAMERAS}/${id}/device-info${refresh ? "?refresh=true" : ""}`)),
-    // POST /vms/cameras/{id}/reboot → { ok, supported, detail }.
-    reboot: (id: string) => unwrap(api.post<FleetOpPublic>(`${CAMERAS}/${id}/reboot`, {})),
-    // POST /vms/cameras/{id}/ntp { server } → { ok, supported, detail }.
-    ntp: (id: string, server: string) => unwrap(api.post<FleetOpPublic>(`${CAMERAS}/${id}/ntp`, { server })),
-    // POST /vms/cameras/{id}/password { user?, new_password } → { ok, supported, detail }.
-    password: (id: string, { user, new_password }: Partial<PasswordBody> = {}) =>
-      unwrap(api.post<FleetOpPublic>(`${CAMERAS}/${id}/password`, { user, new_password })),
-    // ONVIF device accounts: GET list, POST add, DELETE remove.
-    users: (id: string) => unwrap(api.get<DeviceUsersResponse>(`${CAMERAS}/${id}/users`)),
-    addUser: (id: string, { user, password, level }: UserAddBody) =>
-      unwrap(api.post<FleetOpPublic>(`${CAMERAS}/${id}/users`, { user, password, level })),
-    deleteUser: (id: string, username: string) =>
-      unwrap(api.delete<FleetOpPublic>(`${CAMERAS}/${id}/users/${encodeURIComponent(username)}`)),
-    // POST /vms/cameras/{id}/config-backup → the device config as a binary blob
-    //   (fetched as a blob so the Bearer header is sent, then saved by the caller).
-    configBackup: (id: string) =>
-      blob(api.post<Blob>(`${CAMERAS}/${id}/config-backup`, {}, { responseType: "blob" })),
-    // POST /vms/cameras/{id}/config-restore { blob_b64 } (base64) → { ok, supported, detail }.
-    //   The router's ConfigRestoreBody is `blob_b64` (extra="forbid") — a `{ data }`
-    //   body 422s before the driver is reached.
-    configRestore: (id: string, data: string) =>
-      unwrap(api.post<FleetOpPublic>(`${CAMERAS}/${id}/config-restore`, { blob_b64: data })),
-    // ── Bulk (multi-select) ──────────────────────────────────────────────
-    // POST /vms/cameras/bulk/{reboot|ntp|password} { camera_ids, server?, user?,
-    //   new_password? } → { action, total, succeeded, items:[{ camera_id,
-    //   camera_name, ok, supported, detail }] }.
-    bulk: {
-      reboot: (camera_ids: string[]) => unwrap(api.post<BulkOpResult>(`${CAMERAS}/bulk/reboot`, { camera_ids })),
-      ntp: (camera_ids: string[], server: string) =>
-        unwrap(api.post<BulkOpResult>(`${CAMERAS}/bulk/ntp`, { camera_ids, server })),
-      password: (camera_ids: string[], { user, new_password }: Partial<PasswordBody> = {}) =>
-        unwrap(api.post<BulkOpResult>(`${CAMERAS}/bulk/password`, { camera_ids, user, new_password })),
-      // POST /vms/cameras/bulk/apply-stream-policy { camera_ids } → per-camera
-      //   results (same shape as the other bulk ops: { action, total, succeeded,
-      //   items:[{ camera_id, camera_name, ok, supported, detail }] }). Forces each
-      //   camera's sub-stream to H.264 for browser-direct playback.
-      applyStreamPolicy: (camera_ids: string[]) =>
-        unwrap(api.post<BulkOpResult>(`${CAMERAS}/bulk/apply-stream-policy`, { camera_ids })),
-    },
-  },
 
   // ── NVR footage extraction (P4-B) — search + play an onboarded NVR's own
   // recorded storage (ONVIF Profile G / Hik ISAPI / CP-Plus-Dahua / Lumina).
@@ -950,65 +817,7 @@ export const vms = {
       ),
   },
 
-  // ── Per-camera recording config (P3-A) ──────────────────────────────────
-  // Mode / weekly schedule / retention drive the recording-supervisor. Manual
-  // start/stop toggle recording on the MediaMTX path immediately.
-  recordingConfig: {
-    // PUT /cameras/{id}/recording { mode, schedule, retention_days,
-    //   record_substream, audio_enabled?, storage_pool_id? }.
-    set: (cameraId: string, body: RecordingConfigBody) =>
-      unwrap(api.put<RecordingConfigPublic>(`${CAMERAS}/${cameraId}/recording`, body)),
-    // POST /cameras/{id}/recording/start — begin recording now (manual).
-    start: (cameraId: string) =>
-      unwrap(api.post<RecordingControlResult>(`${CAMERAS}/${cameraId}/recording/start`, {})),
-    // POST /cameras/{id}/recording/stop — stop recording now.
-    stop: (cameraId: string) =>
-      unwrap(api.post<RecordingControlResult>(`${CAMERAS}/${cameraId}/recording/stop`, {})),
-    // GET /recording/active → { available, camera_ids } — which cameras are ACTUALLY
-    // recording right now (live nvr state, not the policy mode). Drives the ● indicator.
-    active: () => unwrap(api.get<RecordingActiveResponse>(`/vms/recording/active`)),
-  },
 
-  // ── Storage (P3-B) — LEGACY VMS-local pools + tiering ───────────────────
-  // Single-ownership: storage is now OWNED by the standalone recorder and read
-  // per-node via `federation.storage.*`. The Storage PAGE reads through federation;
-  // this block points at the now-unmounted /vms/storage/* and only survives for the
-  // camera recording-pool selector (components/CameraConfigForm). Do NOT use it for
-  // new surfaces — it 404s where the vision storage router is unmounted.
-  // Pool: name, pool_type(local|nfs|smb|s3), path, priority, max_size_bytes,
-  //   is_default, is_active, nas_*(server/share/protocol/username/password/
-  //   domain), s3_*(endpoint/bucket/access_key/secret_key/region/use_ssl),
-  //   mount_state, reachable. Credentials are write-only.
-  // No Pydantic model survives for these (storage/schemas.py retired them), so the
-  // pool / rule rows are typed by the recorder's own shapes (NodeStoragePool /
-  // NodeTierRule) — the same rows the federation reads hand back.
-  storage: {
-    pools: {
-      // GET /storage/pools → { items, total } (or bare array).
-      list: (params: QueryParams = {}) => unwrap(api.get<NodeStoragePoolList>(`${STORAGE}/pools${qs(params)}`)),
-      get: (id: string) => unwrap(api.get<NodeStoragePool>(`${STORAGE}/pools/${id}`)),
-      create: (body: ConfigDict) => unwrap(api.post<ConfigResult>(`${STORAGE}/pools`, body)),
-      update: (id: string, body: ConfigDict) => unwrap(api.patch<ConfigResult>(`${STORAGE}/pools/${id}`, body)),
-      remove: (id: string) => unwrap(api.delete<void>(`${STORAGE}/pools/${id}`)),
-      // GET /storage/pools/{id}/usage → { used_bytes, capacity_bytes,
-      //   recording_count, ... }.
-      usage: (id: string) => unwrap(api.get<NodeStorageUsage>(`${STORAGE}/pools/${id}/usage`)),
-    },
-    tierRules: {
-      // GET /storage/tier-rules → { items, total }.
-      list: (params: QueryParams = {}) => unwrap(api.get<NodeTierRuleList>(`${STORAGE}/tier-rules${qs(params)}`)),
-      create: (body: ConfigDict) => unwrap(api.post<ConfigResult>(`${STORAGE}/tier-rules`, body)),
-      update: (id: string, body: ConfigDict) => unwrap(api.patch<ConfigResult>(`${STORAGE}/tier-rules/${id}`, body)),
-      remove: (id: string) => unwrap(api.delete<void>(`${STORAGE}/tier-rules/${id}`)),
-    },
-    // RAID health (software-RAID / mdadm monitoring). status → { available, reason,
-    // arrays:[{device,level,health,working/failed/total_devices,rebuild_percent,...}] }.
-    // The RaidMonitor worker upserts array health every poll + alerts on degrade.
-    raid: {
-      status: () => unwrap(api.get<NodeRaidStatus>(`${STORAGE}/raid/status`)),
-      devices: () => unwrap(api.get<ConfigResult>(`${STORAGE}/raid/devices`)),
-    },
-  },
 };
 
 export default vms;
