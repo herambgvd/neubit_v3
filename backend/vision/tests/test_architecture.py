@@ -158,6 +158,36 @@ def test_the_operator_command_surface_is_still_mounted(app, path):
     )
 
 
+# Recording POLICY belongs to the recorder: mode, weekly schedule, retention, and
+# the reconcile that enforces them every tick. The VMS keeps only the read model —
+# a segment row per finalized file, browsable across recorders, which is the one
+# thing no single recorder can answer.
+FORBIDDEN_RECORDING_CONTROL = [
+    "PUT /vms/cameras/{camera_id}/recording",
+    "POST /vms/cameras/{camera_id}/recording/start",
+    "POST /vms/cameras/{camera_id}/recording/stop",
+]
+
+
+def test_the_vms_does_not_configure_or_drive_recording(app):
+    mounted = _routes(app)
+    back = [r for r in FORBIDDEN_RECORDING_CONTROL if _is_mounted(mounted, r)]
+    assert not back, (
+        "the VMS is setting or driving recording again:\n  " + "\n  ".join(back)
+        + "\nThe recorder reconciles its own recording modes every tick — a second "
+          "scheduler here means two things starting and stopping one recording. "
+          "Manual control goes through /vms/federation/…/recording/{start,stop}."
+    )
+
+
+def test_the_recording_read_model_is_still_browsable(app):
+    """The other half. Without these the estate has no cross-recorder footage index,
+    which is the part of recording the VMS legitimately owns."""
+    mounted = _routes(app)
+    for route in ("GET /vms/cameras/{camera_id}/recordings", "GET /vms/recordings/{rec_id}"):
+        assert _is_mounted(mounted, route), f"{route} is gone"
+
+
 def test_storage_stays_a_read_model(app):
     """The NVR owns storage, retention, tiering and RAID.
 

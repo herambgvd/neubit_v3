@@ -197,17 +197,14 @@ async def test_rehost_failure_does_not_fail_patch(db, monkeypatch):
     svc = CameraService(db, _scope(TENANT_A))
 
     # Make BOTH the recording drive-start AND the old-node stop raise; the real
-    # _rehost_recording must catch both (no network is touched).
+    # _rehost_recording must catch it (no network is touched). There is only the
+    # stop on the OLD node left to blow up — the start on the new one is the
+    # recorder's own reconcile now.
     from app.vms.common.nvr_client import NvrClient
-    from app.vms.recording.service import RecordingService
-
-    async def _boom(self, camera, *, trigger):
-        raise RuntimeError("nvr exploded")
 
     async def _boom_stop(self, *, camera_id, profile):
         raise RuntimeError("stop exploded")
 
-    monkeypatch.setattr(RecordingService, "_drive_start", _boom)
     monkeypatch.setattr(NvrClient, "stop_recording", _boom_stop)
 
     # The PATCH still succeeds and persists media_node_id despite the exploding re-host.

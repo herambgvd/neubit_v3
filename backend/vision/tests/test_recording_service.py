@@ -26,7 +26,6 @@ from app.db import Base
 from app.vms.common.nvr_client import NvrUnavailable
 from app.vms.models import Camera, MediaNode, MediaProfile, Recording
 from app.vms.recording.service import RecordingService, RecordingUpstreamError
-from app.vms.recording.scheduler import window_open
 
 TENANT = uuid.uuid4()
 OTHER_TENANT = uuid.uuid4()
@@ -215,69 +214,6 @@ async def test_persist_segment_null_media_node_when_unassigned(db, camera):
 # ── recording-config PUT drives the nvr ────────────────────────────────────
 
 
-async def test_set_config_continuous_starts_recording(db, camera):
-    stub = _StubNvr()
-    out = await _svc(db, stub).set_config(camera.id, _Body(mode="continuous"), actor=_Actor())
-    assert out.mode == "continuous" and out.recording_now is True
-    # nvr was asked to start recording the main stream.
-    assert stub.started and stub.started[0]["camera_id"] == camera.id
-    assert stub.started[0]["trigger"] == "continuous"
-    # Persisted.
-    await db.refresh(camera)
-    assert camera.recording_mode == "continuous"
-
-
-async def test_set_config_substream_records_sub(db, camera):
-    stub = _StubNvr()
-    await _svc(db, stub).set_config(
-        camera.id, _Body(mode="continuous", record_substream=True), actor=_Actor()
-    )
-    assert stub.started[0]["profile"] == "sub"
-
-
-async def test_set_config_schedule_stops_continuous(db, camera):
-    stub = _StubNvr()
-    out = await _svc(db, stub).set_config(
-        camera.id, _Body(mode="schedule", schedule={"mon": [{"start": "08:00", "end": "18:00"}]}),
-        actor=_Actor(),
-    )
-    assert out.mode == "schedule" and out.recording_now is False
-    # Switching to a non-continuous mode stops any in-flight continuous recording.
-    assert stub.stopped == [(camera.id, "main")]
-
-
-async def test_set_config_continuous_nvr_down_is_502(db, camera):
-    stub = _StubNvr(fail_start=True)
-    with pytest.raises(RecordingUpstreamError) as ei:
-        await _svc(db, stub).set_config(camera.id, _Body(mode="continuous"), actor=_Actor())
-    assert ei.value.status_code == 502
-    # But the policy still persisted (data-plane self-heals via reconcile).
-    await db.refresh(camera)
-    assert camera.recording_mode == "continuous"
-
-
-async def test_set_config_tenant_isolation(db, camera):
-    with pytest.raises(NotFoundError):
-        await _svc(db, _StubNvr(), tenant=OTHER_TENANT).set_config(
-            camera.id, _Body(), actor=_Actor()
-        )
-
-
-# ── manual start / stop ────────────────────────────────────────────────────
-
-
-async def test_manual_start_stop(db, camera):
-    stub = _StubNvr()
-    started = await _svc(db, stub).start(camera.id, actor=_Actor())
-    assert started["recording"] is True and started["trigger_type"] == "manual"
-    stopped = await _svc(db, stub).stop(camera.id, actor=_Actor())
-    assert stopped["recording"] is False
-    assert stub.stopped == [(camera.id, "main")]
-
-
-# ── browse list + filters ──────────────────────────────────────────────────
-
-
 async def test_list_filters_and_scoping(db, camera):
     svc = _svc(db, _StubNvr())
     base = f"/recordings/cameras/{TENANT}/{camera.id}/main/"
@@ -303,79 +239,3 @@ async def test_list_other_tenant_cannot(db, camera):
 
 # ── schedule-window logic (pure) ───────────────────────────────────────────
 
-
-def test_window_open_within_window():
-    # 2026-07-06 is a Monday; 10:00 inside 08:00-18:00.
-    now = datetime(2026, 7, 6, 10, 0, tzinfo=timezone.utc)
-    sched = {"mon": [{"start": "08:00", "end": "18:00"}]}
-    assert window_open(sched, now) is True
-
-
-def test_window_closed_outside_window():
-    now = datetime(2026, 7, 6, 19, 0, tzinfo=timezone.utc)  # Monday 19:00
-    sched = {"mon": [{"start": "08:00", "end": "18:00"}]}
-    assert window_open(sched, now) is False
-
-
-def test_window_empty_schedule_closed():
-    assert window_open({}, datetime(2026, 7, 6, 10, 0, tzinfo=timezone.utc)) is False
-
-
-def test_window_overnight_wraps_midnight():
-    sched = {"mon": [{"start": "22:00", "end": "06:00"}]}
-    # Monday 23:00 → inside the wrapping window's first half.
-    assert window_open(sched, datetime(2026, 7, 6, 23, 0, tzinfo=timezone.utc)) is True
-    # Tuesday 05:00 → inside Monday's window spilling past midnight.
-    assert window_open(sched, datetime(2026, 7, 7, 5, 0, tzinfo=timezone.utc)) is True
-    # Tuesday 07:00 → after the window closed.
-    assert window_open(sched, datetime(2026, 7, 7, 7, 0, tzinfo=timezone.utc)) is False
-
-
-# ── scheduler run_cycle drives the nvr on window transitions ───────────────
-
-
-async def test_scheduler_toggles_on_window_boundary(db, camera, monkeypatch):
-    """A schedule-mode camera: inside the window → start; outside → stop; and only
-    on a TRANSITION (no redundant re-drive while the window stays open)."""
-    from app.vms.recording import scheduler as sched_mod
-
-    # Put the camera into schedule mode with a Monday 08:00-18:00 window.
-    camera.recording_mode = "schedule"
-    camera.recording_schedule = {"mon": [{"start": "08:00", "end": "18:00"}]}
-    await db.commit()
-
-    calls = {"start": [], "stop": []}
-
-    class _SchedStubNvr:
-        def __init__(self, *, bearer=None):
-            pass
-
-        async def start_recording(self, *, camera_id, profile, rtsp_url, trigger="continuous", audio=False, record_dir=None):
-            calls["start"].append((camera_id, trigger))
-            return {}
-
-        async def stop_recording(self, *, camera_id, profile):
-            calls["stop"].append(camera_id)
-            return True
-
-    monkeypatch.setattr(sched_mod, "NvrClient", _SchedStubNvr)
-    monkeypatch.setattr(sched_mod, "mint_service_token", lambda **kw: "svc.jwt")
-
-    # A sessionmaker over the SAME in-memory engine as the `db` fixture.
-    maker = async_sessionmaker(bind=db.bind, class_=AsyncSession, expire_on_commit=False)
-    sch = sched_mod.RecordingScheduler(maker)
-
-    inside = datetime(2026, 7, 6, 10, 0, tzinfo=timezone.utc)   # Monday 10:00
-    outside = datetime(2026, 7, 6, 20, 0, tzinfo=timezone.utc)  # Monday 20:00
-
-    # First cycle inside the window → 1 start, 1 toggle.
-    toggled = await sch.run_cycle(now=inside)
-    assert toggled == 1 and calls["start"] and calls["start"][0][1] == "schedule"
-
-    # Second cycle STILL inside → no transition → no new call.
-    toggled = await sch.run_cycle(now=inside)
-    assert toggled == 0 and len(calls["start"]) == 1
-
-    # Cycle outside the window → 1 stop, 1 toggle.
-    toggled = await sch.run_cycle(now=outside)
-    assert toggled == 1 and calls["stop"] == [camera.id]

@@ -153,14 +153,21 @@ class CameraService:
             raise NotFoundError("media node not found")
 
     async def _rehost_recording(self, camera: Camera, old_node_id: str | None) -> None:
-        """Best-effort re-host after a camera's ``media_node_id`` CHANGED.
+        """Best-effort STOP on the old node after a camera's ``media_node_id`` CHANGED.
 
-        If the camera is actively recording (an immediate mode, enabled), stop the
-        recording on the OLD node and start it on the NEW node so footage keeps flowing
-        to the recorder that now fronts the camera. Wrapped so ANY failure (nvr down,
-        no RTSP derivable, driver error) is logged and swallowed — a re-host failure
-        must NEVER fail the PATCH/bulk that persisted the reassignment. The recording
-        scheduler / reconcile self-heals the data-plane on its next pass.
+        Only the stop, and only the old node. Starting on the NEW node is the
+        recorder's own job: it reconciles continuous and schedule modes every tick and
+        will pick the camera up without being asked. The VMS driving a start as well
+        meant two things racing to begin one recording.
+
+        The stop is NOT redundant, which is why it stays: the old recorder still has a
+        recording target for a camera it no longer fronts, and nothing on that box
+        knows the camera moved. Only the VMS does — it is the thing that assigns
+        cameras to recorders — so this is aggregation-level orchestration, not device
+        control.
+
+        Wrapped so ANY failure (nvr down, node gone) is logged and swallowed: a
+        re-host failure must NEVER fail the PATCH/bulk that persisted the reassignment.
 
         # KNOWN LIMITATION (footage locality): historical recordings written while the
         # camera was on ``old_node_id`` still physically live on THAT node. Playback
@@ -177,38 +184,19 @@ class CameraService:
             return
         try:
             from app.vms.common.nvr_client import NvrClient
-            from app.vms.recording.service import RecordingService
 
-            rec = RecordingService(self.db, self.scope, bearer=self.bearer)
             profile = "sub" if camera.record_substream else "main"
-            # Stop on the OLD node. The camera row now points at the NEW node, so we
-            # resolve the OLD node's base URL directly (fall back to the global client
-            # when it was unassigned / its api_url is gone).
-            try:
-                old_base = None
-                if old_node_id:
-                    old = await self.db.get(MediaNode, old_node_id)
-                    old_base = (getattr(old, "api_url", None) or "").strip() or None
-                old_nvr = NvrClient(bearer=self.bearer, base_url=old_base) if old_base else rec.nvr
-                await old_nvr.stop_recording(camera_id=camera.id, profile=profile)
-            except Exception as exc:  # noqa: BLE001 — stop is best-effort
-                log.info("re-host stop on old node failed for camera %s: %s", camera.id, exc)
-            # Re-assert the recording state on the NEW node. Only CONTINUOUS auto-follows
-            # the camera to its new recorder (the row already carries the new assignment,
-            # so ``_drive_start`` routes to it via ``_nvr_for``). MANUAL is operator-triggered
-            # — auto-starting it on a mere node MOVE would falsely mark an idle camera as
-            # recording (a lit "REC" badge on a manual camera). For manual we instead ensure
-            # the new node is NOT left with an active recording target.
-            if camera.recording_mode == "continuous":
-                await rec._drive_start(camera, trigger="continuous")
-            else:
-                try:
-                    new_nvr = await rec._nvr_for(camera)
-                    await new_nvr.stop_recording(camera_id=camera.id, profile=profile)
-                except Exception as exc:  # noqa: BLE001 — new-node stop is best-effort
-                    log.info("re-host stop on new node failed for camera %s: %s", camera.id, exc)
+            # The camera row now points at the NEW node, so the OLD node's base URL is
+            # resolved directly (falling back to the global client when it was
+            # unassigned or its api_url is gone).
+            old_base = None
+            if old_node_id:
+                old = await self.db.get(MediaNode, old_node_id)
+                old_base = (getattr(old, "api_url", None) or "").strip() or None
+            old_nvr = NvrClient(bearer=self.bearer, base_url=old_base)
+            await old_nvr.stop_recording(camera_id=camera.id, profile=profile)
         except Exception as exc:  # noqa: BLE001 — a re-host failure must not fail the write
-            log.info("re-host recording failed for camera %s: %s", camera.id, exc)
+            log.info("re-host stop on the old node failed for camera %s: %s", camera.id, exc)
 
     # ── probe-on-create (best-effort capability autofill) ────────────────
     async def _autofill_from_device(self, row: Camera) -> None:

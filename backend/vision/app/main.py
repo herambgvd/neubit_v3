@@ -47,7 +47,7 @@ from app.vms.events import EventSupervisor
 from app.vms.health import HealthSampler
 from app.vms.linkage import LinkageConsumer
 from app.vms.media_nodes import NodeHeartbeatMonitor
-from app.vms.recording import RecordingConsumer, RecordingScheduler
+from app.vms.recording import RecordingConsumer
 from app.vms.reports import ReportScheduler
 # NOTE: storage retention/tiering + RAID monitoring are owned by the NVR, not this
 # VMS — their workers (RetentionTieringWorker, RaidMonitor) are intentionally NOT run.
@@ -91,9 +91,6 @@ async def lifespan(app: FastAPI):
     await rec_consumer.start()
     app.state.recording_consumer = rec_consumer
 
-    rec_scheduler = RecordingScheduler(get_sessionmaker())
-    await rec_scheduler.start()
-    app.state.recording_scheduler = rec_scheduler
 
     # Storage/retention/tiering + RAID health are OWNED BY THE NVR (the recorder
     # data-plane that actually writes segments and sits on the disks). This VMS
@@ -164,7 +161,6 @@ async def lifespan(app: FastAPI):
 
     await report_scheduler.stop()
     await event_supervisor.stop()
-    await rec_scheduler.stop()
     await node_heartbeat.stop()
     await sampler.stop()
     await bus.close()

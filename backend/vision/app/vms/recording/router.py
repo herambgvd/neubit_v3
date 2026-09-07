@@ -56,64 +56,25 @@ async def get_recording_service(
     return RecordingService(db, scope, bearer=bearer)
 
 
-# ── config ──────────────────────────────────────────────────────────────
-
-
-@router.get("/recording/active", dependencies=[Depends(require_permission(PERM_VIEW))])
-async def active_recordings(
-    svc: Annotated[RecordingService, Depends(get_recording_service)],
-) -> dict:
-    """Camera ids that are ACTUALLY recording right now (live nvr state) — drives the
-    real per-camera recording indicator. `available=False` means the nvr is unreachable
-    (UI shows 'unknown' rather than a false OFF)."""
-    return await svc.active_recordings()
-
-
-@router.put("/cameras/{camera_id}/recording", response_model=RecordingConfigPublic)
-async def set_recording_config(
-    camera_id: str,
-    body: RecordingConfigBody,
-    svc: Annotated[RecordingService, Depends(get_recording_service)],
-    actor: Principal = Depends(require_permission(PERM_CONTROL)),
-) -> RecordingConfigPublic:
-    return await svc.set_config(camera_id, body, actor=actor)
-
-
-@router.get(
-    "/cameras/{camera_id}/recording",
-    response_model=RecordingConfigPublic,
-    dependencies=[Depends(require_permission(PERM_VIEW))],
-)
-async def get_recording_config(
-    camera_id: str,
-    svc: Annotated[RecordingService, Depends(get_recording_service)],
-) -> RecordingConfigPublic:
-    return await svc.get_config(camera_id)
-
-
-# ── manual start / stop ─────────────────────────────────────────────────
-
-
-@router.post(
-    "/cameras/{camera_id}/recording/start", response_model=RecordingControlResult
-)
-async def start_recording(
-    camera_id: str,
-    svc: Annotated[RecordingService, Depends(get_recording_service)],
-    actor: Principal = Depends(require_permission(PERM_CONTROL)),
-) -> RecordingControlResult:
-    return RecordingControlResult(**await svc.start(camera_id, actor=actor))
-
-
-@router.post(
-    "/cameras/{camera_id}/recording/stop", response_model=RecordingControlResult
-)
-async def stop_recording(
-    camera_id: str,
-    svc: Annotated[RecordingService, Depends(get_recording_service)],
-    actor: Principal = Depends(require_permission(PERM_CONTROL)),
-) -> RecordingControlResult:
-    return RecordingControlResult(**await svc.stop(camera_id, actor=actor))
+# The CONFIG and CONTROL routes are gone from here.
+#
+# Recording mode, schedule and retention are the recorder's policy, and it already
+# reconciles them every tick (nvr internal/recording/plan.go, which knows about
+# schedule windows and drains the segment in progress when one closes). This service
+# had a SECOND scheduler evaluating the same weekly windows and driving the same
+# cameras — two things starting and stopping one recording.
+#
+# Manual start/stop moved to /vms/federation/…/recording/{start,stop}, which asks the
+# recorder that owns the camera. This router's version forwarded the caller's JWT to
+# the node for the same effect: a second path to one operation, and the one that only
+# worked while the node still accepted a shared service token.
+#
+# So did /recording/active — a live read of the node's state, which the node answers
+# for itself.
+#
+# What is left is the READ MODEL, which IS the VMS's job: the recorder emits a segment
+# event per finalized file, the consumer persists a row, and these two reads browse
+# them ACROSS recorders — the one question no single recorder can answer.
 
 
 # ── browse ──────────────────────────────────────────────────────────────

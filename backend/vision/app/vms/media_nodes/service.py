@@ -711,14 +711,13 @@ class NodeHeartbeatMonitor:
             old_node_id = cam.media_node_id
             cam.media_node_id = target.id
             cam.updated_at = _utcnow()
-            # Persist the reassignment FIRST (so a resume failure can't lose it), then
-            # bump the local load so the next camera balances against this placement.
+            # Persist the reassignment, then bump the local load so the next camera
+            # balances against this placement. The new node's recorder picks the
+            # camera up on its own reconcile tick — nothing here drives a start.
             await db.commit()
             load[target.id] = load.get(target.id, 0) + 1
             moved += 1
 
-            # Best-effort: resume recording on the new node for immediate-mode cameras.
-            await self._resume_recording(db, cam)
             # Operator-visible failover event + core audit trail per reassignment.
             await self._emit_failover(cam, dead, target)
 
@@ -767,28 +766,15 @@ class NodeHeartbeatMonitor:
             return None
         return min(usable, key=lambda n: load.get(n.id, 0))
 
-    async def _resume_recording(self, db: AsyncSession, cam: Camera) -> None:
-        """Best-effort resume recording on the camera's NEW node (immediate modes only).
-
-        The camera row already carries the new ``media_node_id``, so ``_drive_start``
-        routes to the new recorder via ``_nvr_for``. Background caller → no request bearer,
-        so we mint a service token scoped to the camera's tenant (like the recording
-        scheduler). Wrapped so ANY nvr failure is logged and swallowed — the reassignment
-        is already persisted; the recording scheduler's continuous self-heal re-asserts the
-        start on a later pass if this resume didn't land."""
-        if not cam.is_enabled or cam.recording_mode not in _FAILOVER_RESUME_MODES:
-            return
-        try:
-            from app.vms.recording.service import RecordingService
-
-            tenant = str(cam.tenant_id) if cam.tenant_id else None
-            token = mint_service_token(tenant_id=tenant)
-            scope = Scope(tenant_id=cam.tenant_id, is_superadmin=True)
-            rec = RecordingService(db, scope, bearer=token)
-            await rec._drive_start(cam, trigger=cam.recording_mode)
-            log.info("failover: resumed recording for camera %s on node %s", cam.id, cam.media_node_id)
-        except Exception as exc:  # noqa: BLE001 — a resume failure must not break the loop
-            log.info("failover: recording resume failed for camera %s: %s", cam.id, exc)
+    # There is no _resume_recording any more.
+    #
+    # After a failover reassigns a camera to a healthy node, that node's own recorder
+    # reconciles the camera's recording mode on its next tick and starts it. This
+    # service used to mint a service token and drive the start itself, which raced the
+    # reconciler to begin one recording and needed a VMS-side credential to do it.
+    #
+    # The reassignment is what the VMS owns and it is already persisted; the recorder
+    # owns what happens next.
 
     async def _emit_failover(self, cam: Camera, dead: MediaNode, target: MediaNode) -> None:
         """Emit the per-reassignment failover event + a core audit entry. Best-effort."""

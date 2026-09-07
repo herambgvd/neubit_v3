@@ -224,17 +224,11 @@ async def test_live_start_unassigned_uses_global_client(db, monkeypatch):
     assert all(i.base_url is None for i in _CapturingNvr.instances)
 
 
-async def test_recording_start_uses_node_base_for_assigned_camera(db, monkeypatch):
-    import app.vms.recording.service as rec_mod
-
-    node = await _mk_node(db)
-    cam = await _mk_camera(db, media_node_id=node.id, name="RecCam")
-    monkeypatch.setattr(rec_mod, "NvrClient", _CapturingNvr)
-
-    svc = rec_mod.RecordingService(db, _scope(), bearer="jwt")
-    await svc.start(cam.id, actor=_Actor(), trigger="manual")
-
-    assert NODE_URL in [i.base_url for i in _CapturingNvr.instances]
+# There is no recording-start routing test any more: the VMS does not start
+# recordings. The recorder that fronts a camera reconciles its own recording mode,
+# so there is no per-camera node base for this service to resolve for a start. The
+# playback routing below is the property that still matters — footage is READ from
+# the node that holds it.
 
 
 async def test_playback_uses_node_base_for_assigned_camera(db, monkeypatch):

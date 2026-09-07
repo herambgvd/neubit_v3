@@ -67,17 +67,17 @@ def sessionmaker(engine):
 def stub_side_effects(monkeypatch):
     """By default, silence the recording resume + capture failover events (no Go-nvr, no
     NATS in unit tests). Returns the captured-events list so tests can assert on it."""
+    # `resumed` stays and stays EMPTY. Failover no longer drives a recording start:
+    # the new node's recorder reconciles the camera's mode on its next tick, and the
+    # VMS driving one as well raced it. Any test that sees this fill up has found the
+    # VMS reaching back into a recorder's job.
     resumed: list[str] = []
     events: list[tuple] = []
-
-    async def _resume(self, db, cam):
-        resumed.append(cam.id)
 
     async def _emit(tenant_id, event, payload, **kwargs):
         events.append((tenant_id, event, payload))
         return "subj"
 
-    monkeypatch.setattr(NodeHeartbeatMonitor, "_resume_recording", _resume)
     # Patch the emit AT the service module (where _failover_node imports it into scope).
     monkeypatch.setattr(node_service, "emit_node_failover", _emit)
     return resumed, events
@@ -129,8 +129,10 @@ async def test_dead_node_reassigns_cameras_to_healthy(db, stub_side_effects):
     await db.refresh(c2)
     assert c1.media_node_id == healthy.id
     assert c2.media_node_id == healthy.id
-    # recording resume attempted for both (immediate/continuous mode).
-    assert set(resumed) == {c1.id, c2.id}
+    # NOTHING was resumed, and that is the assertion. The recorder that now fronts
+    # these cameras starts them on its own reconcile tick; the VMS driving a start as
+    # well raced it.
+    assert resumed == []
     # a "reassigned" event per camera.
     reassigned = [e for e in events if e[1] == "reassigned"]
     assert len(reassigned) == 2
@@ -257,27 +259,24 @@ async def test_shared_null_tenant_node_is_usable_target(db, stub_side_effects):
     assert c1.media_node_id == shared.id  # shared/platform node is usable by any tenant
 
 
-# ── best-effort: a raised resume does not stop the loop / lose the reassignment ─
-async def test_resume_failure_does_not_stop_failover(db, monkeypatch):
+# ── failover reassigns, and does NOT drive the recorder ───────────────────────
+async def test_failover_reassigns_without_driving_a_recording_start(db, monkeypatch):
+    """The reassignment is the VMS's job; starting the recording is the recorder's.
+
+    This used to mint a service token and call the new node's start. The node's own
+    reconciler starts continuous and schedule cameras every tick, so the two raced —
+    and the VMS needed a credential on the data plane to lose that race with.
+    """
     dead = await _mk_node(db, tenant=TENANT_A, name="dead", status="offline",
                           last_heartbeat=_stale())
     healthy = await _mk_node(db, tenant=TENANT_A, name="healthy", status="online")
     c1 = await _mk_camera(db, tenant=TENANT_A, name="c1", node_id=dead.id)
     c2 = await _mk_camera(db, tenant=TENANT_A, name="c2", node_id=dead.id)
 
-    # A resume that blows up must NOT stop the loop nor undo the (already-committed)
-    # reassignment. Use the REAL _resume_recording but make _drive_start raise.
     async def _emit(*a, **k):
         return "subj"
 
     monkeypatch.setattr(node_service, "emit_node_failover", _emit)
-    from app.vms.recording.service import RecordingService
-
-    async def _boom(self, camera, *, trigger):
-        raise RuntimeError("nvr exploded")
-
-    monkeypatch.setattr(RecordingService, "_drive_start", _boom)
-    # Silence the core audit network call.
     from app.vms.common import core_audit
 
     async def _noaudit(**kwargs):
@@ -285,42 +284,41 @@ async def test_resume_failure_does_not_stop_failover(db, monkeypatch):
 
     monkeypatch.setattr(core_audit, "report_video_audit", _noaudit)
 
+    # Nothing may reach the data plane during a failover. NvrClient is patched to
+    # blow up so a re-introduced start is a FAILURE here, not a silent extra call.
+    from app.vms.common import nvr_client as nvr_mod
+
+    def _boom(*a, **k):
+        raise AssertionError("failover must not talk to a recorder's data plane")
+
+    monkeypatch.setattr(nvr_mod, "NvrClient", _boom)
+
     monitor = NodeHeartbeatMonitor.__new__(NodeHeartbeatMonitor)
     moved = await monitor._failover_cycle(db, now=_utcnow())
-    assert moved == 2  # both cameras still moved despite the exploding resume
+    assert moved == 2
     await db.refresh(c1)
     await db.refresh(c2)
     assert c1.media_node_id == healthy.id
     assert c2.media_node_id == healthy.id
 
 
-# ── disabled / non-immediate cameras are reassigned but not resumed ────────────
-async def test_disabled_camera_reassigned_but_resume_skipped(db, monkeypatch):
-    """A disabled (or schedule/motion-mode) camera is still moved off the dead node, but the
-    REAL ``_resume_recording`` skips driving the nvr (it only resumes enabled immediate-mode
-    cameras). We use the real resume + assert _drive_start was never called."""
+async def test_disabled_camera_is_still_reassigned(db, monkeypatch):
+    """A disabled camera moves off a dead node like any other.
+
+    It was moved-but-not-resumed before; now nothing is resumed for any camera, and
+    what matters is that being disabled does not strand it on a recorder that is gone.
+    """
     async def _emit(*a, **k):
         return "subj"
 
     monkeypatch.setattr(node_service, "emit_node_failover", _emit)
-    from app.vms.recording.service import RecordingService
-
-    called: list[str] = []
-
-    async def _spy_start(self, camera, *, trigger):
-        called.append(camera.id)
-        return {}
-
-    monkeypatch.setattr(RecordingService, "_drive_start", _spy_start)
 
     dead = await _mk_node(db, tenant=TENANT_A, name="dead", status="offline",
                           last_heartbeat=_stale())
     healthy = await _mk_node(db, tenant=TENANT_A, name="healthy", status="online")
-    # disabled continuous camera → moved, but the resume is skipped by _resume_recording.
     c1 = await _mk_camera(db, tenant=TENANT_A, name="c1", node_id=dead.id, enabled=False)
 
     monitor = NodeHeartbeatMonitor.__new__(NodeHeartbeatMonitor)
     assert await monitor._failover_cycle(db, now=_utcnow()) == 1
     await db.refresh(c1)
     assert c1.media_node_id == healthy.id
-    assert called == []  # disabled camera → nvr never driven
