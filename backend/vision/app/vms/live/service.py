@@ -163,7 +163,26 @@ class LiveService:
 
     # ── start / renew / release ─────────────────────────────────────────
     async def start_live(self, camera_id: str, profile: str, *, actor):
-        """Load camera → build RTSP → nvr ensure → mint token → persist session."""
+        """Mint a live session for ``camera_id``.
+
+        Two paths, and which one runs is decided by whether this service has a row
+        for the camera at all:
+
+          * A camera the VMS knows: build its RTSP, ask the recorder to ensure the
+            stream, mint our own media token. The original path, unchanged.
+          * A camera it does NOT know: under single ownership that is every camera —
+            the recorders own them, and there are no ``Camera`` rows here. Find the
+            recorder that has it and relay the session IT mints.
+
+        The second path exists so a caller holding only a camera id still works. An
+        alarm popup and a video wall cell are exactly that: an incident carries a
+        camera, a saved wall layout stores a camera, and neither can be made to carry
+        a recorder without re-saving every one of them whenever a camera moves. Both
+        used to 404 here, for every camera in a single-ownership estate.
+        """
+        row = await self.db.get(Camera, camera_id)
+        if row is None:
+            return await self._start_live_federated(camera_id, profile)
         camera = await self._camera(camera_id)
         rtsp_url = await self._rtsp_source_for(camera, profile)
         if not rtsp_url:
@@ -202,6 +221,38 @@ class LiveService:
         await self.db.refresh(row)
 
         return _public(row, token, ready=bool(ensured.get("ready")))
+
+    async def _start_live_federated(self, camera_id: str, profile: str):
+        """Relay the live session the OWNING recorder mints.
+
+        The node mints and authorises its own media token — the VMS does not hold the
+        camera's credentials and could not build a stream URL for it. The payload is
+        relayed as the node issued it, plus which node that was, so a client can tell
+        two recorders' sessions apart.
+
+        No ``PlaybackSession`` row is written. The session belongs to the recorder and
+        expires on its clock; a row here would be a second lifetime for one session,
+        and the one that is wrong is always this one.
+        """
+        from app.vms.common.owning_node import forget, owning_node
+        from app.vms.federation.client import NodeUnavailable, mint_estate_live
+
+        node = await owning_node(self.db, self.scope.tenant_id, camera_id)
+        if node is None:
+            raise NotFoundError("camera not found")
+        try:
+            payload = await mint_estate_live(
+                node.api_url, camera_id, profile=profile, credential=node.credential
+            )
+        except NodeUnavailable as exc:
+            # The recorder we believed owns it does not, or cannot serve it. Drop the
+            # cached placement so the next attempt re-resolves rather than asking the
+            # same wrong box again for a minute.
+            forget(camera_id)
+            raise LiveUpstreamError(str(exc)) from exc
+        if isinstance(payload, dict):
+            payload = {**payload, "node_id": str(node.id), "node_name": node.name}
+        return payload
 
     async def renew(self, session_id: str, *, actor):
         """Re-mint the token (extend TTL) WITHOUT re-ensuring — long views don't drop."""
