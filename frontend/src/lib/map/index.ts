@@ -20,11 +20,35 @@ import { addProtocol, type StyleSpecification } from "maplibre-gl";
 import { layers, namedFlavor } from "@protomaps/basemaps";
 import { PMTiles, Protocol } from "pmtiles";
 
-import { ATTRIBUTION, DEFAULT_TILES_URL, GLYPHS_URL, SOURCE_ID, SPRITE_URL } from "./config";
+import { ATTRIBUTION, DEFAULT_TILES_URL, GLYPHS_URL, SOURCE_ID, SPRITE_URL, isTileAbort } from "./config";
 
-export { DEFAULT_TILES_URL, GLYPHS_URL, SOURCE_ID, SPRITE_URL } from "./config";
+export { DEFAULT_TILES_URL, GLYPHS_URL, SOURCE_ID, SPRITE_URL, isTileAbort } from "./config";
 
 let protocol: Protocol | null = null;
+
+/**
+ * Swallow the cancelled-tile rejections, and NOTHING else.
+ *
+ * Installed with the protocol rather than at module load, so a page with no map
+ * never registers it. `preventDefault` stops the "unhandled" report; the reason
+ * is still logged at debug level, so this suppresses the noise without making the
+ * event invisible if an abort ever turns out to matter.
+ *
+ * Both libraries are already at their latest (maplibre-gl 5.24, pmtiles 4.5), so
+ * there is no version to upgrade to — and maplibre-gl is pinned to v5 anyway
+ * (v6 never produces a source cache with the pmtiles protocol; see below).
+ */
+let abortMuffled = false;
+
+function muffleTileAborts(): void {
+  if (abortMuffled || typeof window === "undefined") return;
+  abortMuffled = true;
+  window.addEventListener("unhandledrejection", (event) => {
+    if (!isTileAbort(event.reason)) return;
+    event.preventDefault();
+    console.debug("[offline-map] tile request cancelled (zoom/pan)");
+  });
+}
 
 // MapLibre resolves `pmtiles://…` tile URLs through this handler, which reads the
 // archive with HTTP range requests — so a 3.7 GB planet file costs only the few
@@ -33,6 +57,7 @@ export function ensurePmtilesProtocol(): Protocol {
   if (!protocol) {
     protocol = new Protocol();
     addProtocol("pmtiles", protocol.tile);
+    muffleTileAborts();
   }
   return protocol;
 }

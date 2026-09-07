@@ -16,3 +16,24 @@ export const SOURCE_ID = "protomaps";
 // ODbL requires attribution wherever OSM-derived tiles are shown.
 export const ATTRIBUTION =
   '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+
+/**
+ * Is this rejection just a cancelled tile?
+ *
+ * Zooming cancels every in-flight tile request — that is how a map is supposed
+ * to behave, not a fault. pmtiles' protocol handler calls
+ * `signal.throwIfAborted()`, which throws a DOMException named "AbortError", and
+ * somewhere between that throw and MapLibre's own abort handling one of them
+ * escapes as an unhandled rejection. In production it is console noise; in dev,
+ * Next's overlay turns it into a blocking modal over the map.
+ *
+ * It lives HERE and not in ./index for the reason this file exists at all: ./index
+ * imports MapLibre GL, which cannot even be loaded in a jsdom test — so a rule
+ * kept beside it would be untestable. It matches ONLY an abort, by name, on a
+ * DOMException or an Error alike (DOMException extends Error in a browser but not
+ * in jsdom, so `instanceof` is the wrong test).
+ */
+export function isTileAbort(reason: unknown): boolean {
+  if (typeof reason !== "object" || reason === null) return false;
+  return (reason as { name?: unknown }).name === "AbortError";
+}
