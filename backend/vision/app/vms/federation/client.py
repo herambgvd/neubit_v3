@@ -16,6 +16,7 @@ import base64
 import binascii
 import json
 import logging
+import os
 import re
 
 import httpx
@@ -101,6 +102,23 @@ class NodePairingRejected(Exception):
     """
 
 
+#: What this VMS calls itself on a recorder it federates.
+#:
+#: The label is written into the RECORDER's own credential list, not just ours —
+#: it is how an operator standing at that recorder knows which VMS holds a key,
+#: and a recorder federated by two of them shows two labels. It used to be the
+#: repository name ("neubit_v3 VMS"), which named a source tree rather than a
+#: deployment, on someone else's screen.
+#:
+#: Settable per deployment, so an estate with two VMSs can tell them apart.
+_DEFAULT_FEDERATION_LABEL = "Neubit VMS"
+
+
+def federation_label() -> str:
+    """The label this VMS presents when enrolling or pairing with a recorder."""
+    return (os.environ.get("VE_FEDERATION_LABEL") or "").strip() or _DEFAULT_FEDERATION_LABEL
+
+
 def _headers(credential: str | None) -> dict:
     """Auth for an estate call. Prefer the node's per-node federation credential
     (Phase-2, scoped) as X-Node-Credential; fall back to the ambient service JWT
@@ -110,7 +128,7 @@ def _headers(credential: str | None) -> dict:
     return {"Authorization": f"Bearer {mint_service_token()}"}
 
 
-async def enroll_node_full(api_url: str, *, label: str = "neubit_v3 VMS") -> dict:
+async def enroll_node_full(api_url: str, *, label: str | None = None) -> dict:
     """Bootstrap a per-node credential: mint the shared-secret superadmin JWT ONCE to
     call the node's enrolment route, and return its FULL 201 payload
     ({credential, id, label, grants, node_id, node_name}). The scoped ``credential`` is
@@ -122,7 +140,7 @@ async def enroll_node_full(api_url: str, *, label: str = "neubit_v3 VMS") -> dic
             r = await c.post(
                 url,
                 headers={"Authorization": f"Bearer {mint_service_token()}"},
-                params={"label": label},
+                params={"label": label or federation_label()},
             )
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
@@ -155,7 +173,7 @@ def _node_error_message(r: httpx.Response, fallback: str) -> str:
     return fallback
 
 
-async def pair_node(api_url: str, code: str, *, label: str = "neubit_v3 VMS") -> dict:
+async def pair_node(api_url: str, code: str, *, label: str | None = None) -> dict:
     """Trade a recorder-minted PAIRING CODE for this VMS's own scoped credential.
 
     The credential-free bootstrap. ``enroll_node_full`` signs its call with the shared
@@ -177,7 +195,7 @@ async def pair_node(api_url: str, code: str, *, label: str = "neubit_v3 VMS") ->
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/federation/pair"
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.post(url, json={"code": code, "label": label})
+            r = await c.post(url, json={"code": code, "label": label or federation_label()})
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code in (400, 401, 403, 429):

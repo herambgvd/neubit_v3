@@ -545,6 +545,11 @@ services:
       # P2-B live streaming: where vision reaches the Go nvr data-plane (internal
       # docker DNS) + the media-token TTL (browser HLS/WHEP token; renewable).
       VE_NVR_URL: ${VE_NVR_URL:-http://nvr:8000}
+      # What this VMS calls itself on a recorder it federates. The label is
+      # written into the RECORDER's own credential list, so an operator standing
+      # at that recorder can tell which VMS holds a key — set it per deployment
+      # when an estate runs more than one.
+      VE_FEDERATION_LABEL: ${VE_FEDERATION_LABEL:-Neubit VMS}
       VE_MEDIA_TOKEN_TTL_SEC: ${VE_MEDIA_TOKEN_TTL_SEC:-300}
       # P3-B storage — where the recording segments are mounted (same volume MediaMTX
       # writes to + nvr scans), the retention/tiering sweep interval, and the global
