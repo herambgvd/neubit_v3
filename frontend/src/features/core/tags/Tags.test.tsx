@@ -132,4 +132,18 @@ describe("the tag form", () => {
     expect(stub.matching("PATCH /tags/*")[0].url).toBe("/tags/t1");
     expect(stub.body("PATCH /tags/*")).toHaveProperty("is_active", true);
   });
+
+  it("puts create in the panel header, next to the count", async () => {
+    // Not at the foot of the list: on a long library it scrolls out of reach,
+    // and a keyboard user meets every row before the control. Same position as
+    // Sites, Users and Templates — the header is where create lives.
+    renderWithProviders(<TagsConfigPage />);
+    await screen.findAllByText("Critical");
+
+    const create = screen.getByRole("button", { name: /new tag/i });
+    const header = create.closest("header");
+    expect(header).not.toBeNull();
+    // The count it sits beside is in that same header.
+    expect(header!.textContent).toMatch(/tags/i);
+  });
 });

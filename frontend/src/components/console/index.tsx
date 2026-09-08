@@ -99,15 +99,18 @@ export interface PanelHeaderProps {
 
 // Panel header: icon + uppercase title + optional count, with room for actions.
 export function PanelHeader({ icon, title, count, actions, children }: PanelHeaderProps) {
+  // <header>, not a div: this is the panel's banner, and the create control that
+  // now lives in it should be reachable as part of the panel's heading rather
+  // than as a loose button somewhere in the pane.
   return (
-    <div className="flex items-center justify-between px-4 pb-2 pt-3.5">
+    <header className="flex items-center justify-between px-4 pb-2 pt-3.5">
       <div className="flex items-center gap-2">
         {icon && <Icon icon={icon} className="text-sm text-nb-blueb" />}
         <span className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">{title}</span>
         {count != null && <span className="font-mono text-[11px] text-nb-faint">{count}</span>}
       </div>
       {(actions || children) && <div className="flex items-center gap-1">{actions || children}</div>}
-    </div>
+    </header>
   );
 }
 

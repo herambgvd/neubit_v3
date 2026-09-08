@@ -15,8 +15,7 @@ import {
   PanelHeader,
   PanelCounts,
   PanelSearch,
-  PanelFooter,
-  CreateButton,
+  IconButton,
   EmptyPane,
 } from "@/components/console";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/kit";
@@ -88,13 +87,27 @@ export default function TagsConfigPage() {
             icon="heroicons-outline:tag"
             title="Tags"
             count={total}
+            // Create lives in the header, beside the count — the same place it
+            // sits on Sites, Users and Templates. At the bottom of the list it
+            // scrolls away on a long library, and the header is where a keyboard
+            // user reaches it without traversing every row.
             actions={
-              <PanelCounts
-                items={[
-                  { tone: "good", value: active, label: "active" },
-                  { tone: "idle", value: inactive, label: "inactive" },
-                ]}
-              />
+              <>
+                <PanelCounts
+                  items={[
+                    { tone: "good", value: active, label: "active" },
+                    { tone: "idle", value: inactive, label: "inactive" },
+                  ]}
+                />
+                <IconButton
+                  icon="heroicons:plus"
+                  title="New tag"
+                  onClick={() => {
+                    setSelectedId(null);
+                    setMode("create");
+                  }}
+                />
+              </>
             }
           />
           <PanelSearch value={q} onChange={setQ} placeholder="Search tags…" />
@@ -113,16 +126,6 @@ export default function TagsConfigPage() {
               }}
             />
           </div>
-
-          <PanelFooter>
-            <CreateButton
-              label="TAG"
-              onClick={() => {
-                setSelectedId(null);
-                setMode("create");
-              }}
-            />
-          </PanelFooter>
         </ConsolePanel>
 
         {/* CENTER — detail */}
@@ -142,7 +145,7 @@ export default function TagsConfigPage() {
             <EmptyPane
               icon="heroicons-outline:tag"
               title="No tag selected"
-              subtitle="Pick one from the list, or click ＋ NEW TAG to create a tag."
+              subtitle="Pick one from the list, or use ＋ above to create a tag."
             />
           ) : (
             <TagDetail
