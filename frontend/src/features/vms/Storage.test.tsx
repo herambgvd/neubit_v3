@@ -113,3 +113,27 @@ describe("which recorder's storage is shown", () => {
     expect(await screen.findByText(/not reachable right now/i)).toBeInTheDocument();
   });
 });
+
+describe("the panel chrome", () => {
+  it("carries the way to Recorders as a header action, not a footer button", async () => {
+    nodesReturn([NORTH]);
+
+    renderWithProviders(<StoragePage />);
+    await screen.findAllByText("north-recorder");
+
+    expect(screen.getByRole("link", { name: /manage recorders/i })).toBeInTheDocument();
+  });
+
+  it("does not explain that the view is read-only", async () => {
+    // Nothing here is editable, so the sentence explained an absence — twice,
+    // once under the list and once over the detail. What an operator cannot do
+    // is already visible from there being nothing to press.
+    nodesReturn([NORTH]);
+
+    renderWithProviders(<StoragePage />);
+    await screen.findAllByText("north-recorder");
+
+    expect(screen.queryAllByText(/read-only view/i)).toHaveLength(0);
+    expect(screen.queryAllByText(/owned and managed by the recorder/i)).toHaveLength(0);
+  });
+});

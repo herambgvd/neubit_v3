@@ -20,7 +20,6 @@ import {
   PanelCounts,
   PanelSearch,
   PanelList,
-  PanelFooter,
   EmptyPane,
   QuietButton,
 } from "@/components/console";
@@ -175,12 +174,25 @@ export default function StoragePage() {
             title="Recorders"
             count={nodes.length}
             actions={
-              <PanelCounts
-                items={[
-                  { tone: "good", value: onlineCount, label: "online" },
-                  { tone: "crit", value: nodes.length - onlineCount, label: "offline" },
-                ]}
-              />
+              <>
+                <PanelCounts
+                  items={[
+                    { tone: "good", value: onlineCount, label: "online" },
+                    { tone: "crit", value: nodes.length - onlineCount, label: "offline" },
+                  ]}
+                />
+                {/* The way to enrolment, in the header where every other panel
+                    action lives — it was a full-width button at the foot of the
+                    list, which scrolls away and reads as a create CTA. */}
+                <Link
+                  href="/devices/recorders"
+                  title="Manage recorders"
+                  aria-label="Manage recorders"
+                  className="grid h-7 w-7 place-items-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+                >
+                  <Icon icon="heroicons-outline:cog-6-tooth" className="text-sm" />
+                </Link>
+              </>
             }
           />
           <PanelSearch value={search} onChange={setSearch} placeholder="Search name, label or URL…" />
@@ -229,15 +241,6 @@ export default function StoragePage() {
             })}
           </PanelList>
 
-          <PanelFooter>
-            <QuietButton as={Link} href="/devices/recorders" icon="heroicons-outline:cog-6-tooth" className="w-full justify-center">
-              Manage recorders
-            </QuietButton>
-            <p className="mt-2.5 flex items-start gap-1.5 text-[10.5px] leading-relaxed text-nb-faint">
-              <Icon icon="heroicons-outline:lock-closed" className="mt-0.5 shrink-0 text-[12px]" />
-              Storage is owned and managed by the recorder. This is a read-only view.
-            </p>
-          </PanelFooter>
         </ConsolePanel>
 
         {/* CENTER — one node's storage */}
@@ -326,12 +329,10 @@ function NodeStorageDetail({ node, nvrs }: { node: FederationNode; nvrs: Upstrea
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        {/* Read-only banner */}
-        <div className="mb-3 flex items-center gap-2 rounded-[10px] border border-nb-blue/30 bg-[rgba(96,165,250,.08)] px-3 py-2 text-[12px] text-nb-soft">
-          <Icon icon="heroicons-outline:lock-closed" className="shrink-0 text-sm text-nb-blueb" />
-          Storage is owned and managed by the recorder. This is a read-only view.
-        </div>
-
+        {/* NO read-only banner. Nothing on this screen is editable, so the
+            sentence explained an absence — and it said it twice, once here and
+            once under the list. What an operator cannot do is visible from the
+            fact that there is nothing to press. */}
         {reachableOffline && (
           <div className="mb-3 flex items-center gap-2 rounded-[10px] border border-nb-crit/40 bg-nb-crit/10 px-3 py-2 text-[12px] text-nb-crit">
             <Icon icon="heroicons:exclamation-triangle" className="shrink-0 text-sm" />
