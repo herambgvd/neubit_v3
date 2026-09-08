@@ -1,7 +1,7 @@
 "use client";
 
-// Communications — one Platform view for everything a person OUTSIDE this console
-// sees or receives from the deployment.
+// Config — one Platform view for how this deployment presents itself and how it
+// reaches people.
 //
 // It was two segments, Branding and Notifications, and they are one subject read
 // twice: the name, colour and logo appear on the login page AND on every email
@@ -25,7 +25,7 @@ function Band({ icon, title, note }: { icon: string; title: string; note: string
   );
 }
 
-export default function CommunicationsPage() {
+export default function ConfigPage() {
   return (
     <div className="space-y-6">
       <section>

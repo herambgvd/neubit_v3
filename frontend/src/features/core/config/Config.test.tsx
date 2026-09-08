@@ -15,7 +15,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { stubApi } from "@/test/apiStub";
 import { renderWithProviders } from "@/test/render";
 
-import CommunicationsPage from "./Communications";
+import ConfigPage from "./Config";
 
 vi.mock("@/lib/auth", () => ({
   useAuth: () => ({ user: { id: "me" }, can: () => true, hasModule: () => true }),
@@ -35,9 +35,9 @@ beforeEach(() => {
   });
 });
 
-describe("the Communications view", () => {
+describe("the Config view", () => {
   it("holds both halves of the job — identity and delivery — on one page", async () => {
-    renderWithProviders(<CommunicationsPage />);
+    renderWithProviders(<ConfigPage />);
 
     expect(await screen.findByText("Identity")).toBeInTheDocument();
     expect(screen.getByText("Delivery")).toBeInTheDocument();
@@ -47,7 +47,7 @@ describe("the Communications view", () => {
   });
 
   it("does not offer the webhook channel, even though the backend still reports it", async () => {
-    renderWithProviders(<CommunicationsPage />);
+    renderWithProviders(<ConfigPage />);
 
     await screen.findByText("Email (SMTP)");
     expect(screen.queryByText(/webhook/i)).not.toBeInTheDocument();
@@ -55,7 +55,7 @@ describe("the Communications view", () => {
   });
 
   it("still offers the channels that do deliver", async () => {
-    renderWithProviders(<CommunicationsPage />);
+    renderWithProviders(<ConfigPage />);
 
     expect(await screen.findByText("Email (SMTP)")).toBeInTheDocument();
     expect(screen.getByText("Push (FCM)")).toBeInTheDocument();

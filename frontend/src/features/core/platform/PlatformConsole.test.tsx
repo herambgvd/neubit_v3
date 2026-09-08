@@ -1,6 +1,6 @@
 /**
  * The Platform console picks its view off `?view=`. Two of those keys —
- * `branding` and `notifications` — became one view, and the FALLBACK is what
+ * `branding` and `notifications` — became one view (`config`), and the FALLBACK is what
  * carries them: a bookmark sent round before the merge still lands on the page
  * holding what it asked for.
  *
@@ -34,7 +34,7 @@ beforeEach(() => {
 });
 
 describe("the Platform console's view keys", () => {
-  it("opens on Communications when no view is asked for", async () => {
+  it("opens on Config when no view is asked for", async () => {
     expect(await open()).toBe(true);
   });
 
