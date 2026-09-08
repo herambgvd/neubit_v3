@@ -146,6 +146,22 @@ describe("revoking a federation credential", () => {
     expect(revoke).not.toHaveBeenCalled();
   });
 
+  it("shows the credential and its dates, but not its grant list", async () => {
+    // Fifteen chips of `vms.camera.read`-style keys is not something an operator
+    // acts on here; when a grant is actually missing the recorder refuses and
+    // Federation reports the refusal.
+    listReturns([EDGE1]);
+
+    renderWithProviders(<RecordersPage />);
+    await screen.findByRole("button", { name: /^revoke$/i });
+
+    expect(screen.getByText("vms-key")).toBeInTheDocument();
+    expect(screen.queryByText("cameras.read")).toBeNull();
+    // And the paragraph explaining what a credential is has gone with it — the
+    // Enrolled badge and the two buttons already say the state and the actions.
+    expect(screen.queryByText(/lets the VMS read this recorder/i)).toBeNull();
+  });
+
   it("revokes the named credential once confirmed", async () => {
     listReturns([EDGE1]);
     const revoke = vi

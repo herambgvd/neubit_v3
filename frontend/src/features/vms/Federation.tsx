@@ -25,9 +25,7 @@ import {
   PanelCounts,
   PanelSearch,
   PanelList,
-  PanelFooter,
   EmptyPane,
-  QuietButton,
 } from "@/components/console";
 import { apiError } from "@/lib/api";
 import type { FederatedCamera } from "@/lib/types";
@@ -128,12 +126,25 @@ export default function FederationPage() {
             title="Federated nodes"
             count={nodes.length}
             actions={
+              <>
               <PanelCounts
                 items={[
                   { tone: "good", value: reachableCount, label: "reachable" },
                   { tone: "crit", value: nodes.length - reachableCount, label: "unreachable" },
                 ]}
               />
+              {/* The way to enrolment, in the header where every other panel
+                  action lives. It was a full-width button and a paragraph at the
+                  foot of the list saying the same thing twice. */}
+              <Link
+                href="/devices/recorders"
+                title="Manage recorders"
+                aria-label="Manage recorders"
+                className="grid h-7 w-7 place-items-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+              >
+                <Icon icon="heroicons-outline:cog-6-tooth" className="text-sm" />
+              </Link>
+              </>
             }
           />
           <PanelSearch value={search} onChange={setSearch} placeholder="Search name, label or URL…" />
@@ -192,16 +203,6 @@ export default function FederationPage() {
             })}
           </PanelList>
 
-          {/* Read-only console: no create CTA — enrollment lives on Recorders. */}
-          <PanelFooter>
-            <QuietButton as={Link} href="/devices/recorders" icon="heroicons-outline:cog-6-tooth" className="w-full justify-center">
-              Manage recorders
-            </QuietButton>
-            <p className="mt-2.5 text-[10.5px] leading-relaxed text-nb-faint">
-              Nodes are enrolled on the <b className="text-nb-blueb">Recorders</b> page. Federation
-              shows only which of them are reachable and what they expose — {onlineCams}/{totalCams} cameras online.
-            </p>
-          </PanelFooter>
         </ConsolePanel>
 
         {/* CENTER — node detail */}

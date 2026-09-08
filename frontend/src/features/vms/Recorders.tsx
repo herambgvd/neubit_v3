@@ -115,8 +115,16 @@ export default function RecordersPage() {
                 <button onClick={invalidate} title="Refresh" className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-[rgba(150,180,245,.22)] text-[#aec2e8] transition hover:border-[#22d3ee] hover:text-[#22d3ee]">
                   <Icon icon="heroicons-outline:arrow-path" className="text-sm" />
                 </button>
-                <button onClick={() => setAddOpen(true)} title="Add recorder" className="inline-flex h-7 items-center gap-1 rounded-[8px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] px-2.5 text-[12px] font-medium text-[#67e8f9] transition hover:border-[#22d3ee] hover:bg-[rgba(34,211,238,.25)]">
-                  <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
+                {/* Icon only, like every other create in the console. A labelled
+                    "+ Add" here and a bare plus on Sites is the same action
+                    wearing two faces. */}
+                <button
+                  onClick={() => setAddOpen(true)}
+                  title="New recorder"
+                  aria-label="New recorder"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] text-[#67e8f9] transition hover:border-[#22d3ee] hover:bg-[rgba(34,211,238,.25)]"
+                >
+                  <Icon icon="heroicons:plus" className="text-sm" />
                 </button>
               </div>
             }
@@ -131,7 +139,7 @@ export default function RecordersPage() {
             ) : nodesQ.isError ? (
               <div className="px-4 py-6 text-center text-xs text-[#f87171]">{apiError(nodesQ.error, "Failed to load recorders")}</div>
             ) : filtered.length === 0 ? (
-              <div className="px-4 py-6 text-center text-xs text-[#9a92c8]">{nodes.length === 0 ? "No recorders yet — click Add." : "No matches."}</div>
+              <div className="px-4 py-6 text-center text-xs text-[#9a92c8]">{nodes.length === 0 ? "No recorders yet — use ＋ above." : "No matches."}</div>
             ) : (
               <div className="space-y-1.5 px-3 py-2">
                 {filtered.map((n) => {
@@ -459,12 +467,9 @@ function FederationTrust({ node }: { node: MediaNodePublic }) {
         </span>
       </div>
 
-      <p className="mb-2 text-[11px] leading-relaxed text-[#7e93bf]">
-        A federation credential lets the VMS read this recorder&apos;s cameras and stream through it. Pair with a
-        code minted on the recorder when it is a separate deployment; enroll only works when the recorder shares
-        this stack&apos;s signing secret. The raw secret is shown once — copy it before closing.
-      </p>
-
+      {/* No explainer paragraph. The Enrolled badge says the state and the two
+          buttons below say the two ways to change it; a paragraph restating both
+          is read once and skipped forever after. */}
       {credsQ.isLoading ? (
         <p className="px-1 py-2 text-xs text-[#9a92c8]"><Icon icon="svg-spinners:180-ring" className="mr-1 inline text-sm text-[#67e8f9]" />Loading…</p>
       ) : credsQ.isError ? (
@@ -526,13 +531,10 @@ function FederationTrust({ node }: { node: MediaNodePublic }) {
                     </button>
                   )}
                 </div>
-                {Array.isArray(c.grants) && c.grants.length > 0 && (
-                  <div className="mt-1.5 flex flex-wrap gap-1 pl-6">
-                    {c.grants.map((g) => (
-                      <span key={g} className="rounded-sm border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1.5 py-0.5 font-mono text-[9.5px] text-[#aec2e8]">{g}</span>
-                    ))}
-                  </div>
-                )}
+                {/* The grant list is not printed. Fifteen chips of
+                    `vms.camera.read`-style permission keys is not something an
+                    operator acts on here — and when a grant is actually MISSING,
+                    the recorder says so and Federation shows the refusal. */}
                 <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 pl-6 font-mono text-[10px] text-[#7e93bf]">
                   <span>issued {c.created_at ? fmtRelative(c.created_at) : "—"}</span>
                   <span>last used {c.last_used_at ? fmtRelative(c.last_used_at) : "never"}</span>

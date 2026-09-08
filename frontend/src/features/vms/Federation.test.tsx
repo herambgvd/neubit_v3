@@ -284,3 +284,18 @@ describe("the estate strip", () => {
     expect(screen.getByTitle(/recording channels in use/i)).toHaveTextContent("16/80");
   });
 });
+
+describe("the panel chrome", () => {
+  it("carries the way to Recorders as a header action, not a footer paragraph", async () => {
+    nodesReturn([NORTH]);
+
+    renderWithProviders(<FederationPage />);
+    await screen.findAllByText("north-recorder");
+
+    expect(screen.getByRole("link", { name: /manage recorders/i })).toBeInTheDocument();
+    // The paragraph under it said what the button already said, plus a camera
+    // count the strip above now carries.
+    expect(screen.queryByText(/nodes are enrolled on the/i)).toBeNull();
+    expect(screen.queryByText(/shows only which of them are reachable/i)).toBeNull();
+  });
+});
