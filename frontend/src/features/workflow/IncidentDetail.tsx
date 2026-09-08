@@ -82,19 +82,40 @@ export default function WorkflowDetailPage() {
     stateName(states.find((s) => stateId(s) === currentStateId)) ||
     titleize(inst?.current_state);
 
-  // Transitions leaving the current state.
+  // WHAT THE SERVER WILL ACTUALLY ACCEPT.
+  //
+  // This used to filter the SOP's transitions by `from_state` alone. A transition
+  // also carries CONDITIONS, evaluated server-side against the instance — so a
+  // conditional one was offered, clicked, and refused with "Transition conditions
+  // are not satisfied". The endpoint that answers this properly has existed all
+  // along (`/instances/{id}/available-transitions`) and nothing called it.
+  const availableQ = useQuery({
+    queryKey: ["wf-instance-transitions", id, inst?.current_state],
+    queryFn: () => wfApi.instances.availableTransitions(id),
+    enabled: !!id && !!inst,
+  });
+
+  // The from_state filter stays as the FALLBACK, not the answer: if that call
+  // fails the pane still offers the structurally-legal moves rather than going
+  // blank, and the server refuses anything it should not have offered.
   const allowed = useMemo(() => {
+    if (availableQ.data) return availableQ.data;
     return transitions.filter((t) => {
       const from = t.from_state_id;
       return from === currentStateId || stateName(states.find((s) => stateId(s) === from)) === currentStateName;
     });
-  }, [transitions, states, currentStateId, currentStateName]);
+  }, [availableQ.data, transitions, states, currentStateId, currentStateName]);
 
   const [transitionModal, setTransitionModal] = useState<TransitionPublic | null>(null); // the chosen transition
   const [reasonAction, setReasonAction] = useState<ReasonAction | null>(null); // { title, verb, run(reason) }
   const [assignOpen, setAssignOpen] = useState(false);
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["wf-instance", id] });
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["wf-instance", id] });
+    // The legal moves change with the state — and with the instance context the
+    // conditions read, so they are re-asked rather than assumed.
+    qc.invalidateQueries({ queryKey: ["wf-instance-transitions", id] });
+  };
 
   const doTransition = useMutation({
     mutationFn: (body: TransitionInstanceRequest) => wfApi.instances.transition(id, body),
