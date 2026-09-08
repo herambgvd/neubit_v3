@@ -26,6 +26,9 @@ class ThreatLevelPublic(BaseModel):
     level: str
     reason: Optional[str] = None
     set_by: Optional[str] = None
+    #: The acting user's display name at the time of the change. None for a
+    #: system write or a token that predates the claim — read `set_by` then.
+    set_by_name: Optional[str] = None
     set_at: datetime
     history: list[dict] = Field(default_factory=list)
 
@@ -33,7 +36,8 @@ class ThreatLevelPublic(BaseModel):
     def from_row(cls, r) -> "ThreatLevelPublic":
         return cls(
             id=r.id, site_id=r.site_id, level=r.level, reason=r.reason,
-            set_by=r.set_by, set_at=r.set_at, history=r.history or [],
+            set_by=r.set_by, set_by_name=getattr(r, "set_by_name", None),
+            set_at=r.set_at, history=r.history or [],
         )
 
 

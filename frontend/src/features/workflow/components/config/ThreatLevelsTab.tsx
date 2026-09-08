@@ -97,7 +97,12 @@ export default function ThreatLevelsTab() {
                 <span className="flex-1 min-w-0">
                   <span className="block text-sm font-medium text-nb-ink">{siteName(r.site_id)}</span>
                   {r.reason && <span className="block text-[11px] text-nb-soft">{r.reason}</span>}
-                  <span className="block text-[11px] text-nb-faint/70">{r.set_by ? `by ${r.set_by} · ` : ""}{r.set_at ? new Date(r.set_at).toLocaleString() : ""}</span>
+                  {/* The NAME, with the id only as a fallback for a row written before it
+                      was stamped. A uuid here is a lookup nobody can do from this screen. */}
+                  <span className="block text-[11px] text-nb-faint/70">
+                    {r.set_by_name || r.set_by ? `by ${r.set_by_name || r.set_by} · ` : ""}
+                    {r.set_at ? new Date(r.set_at).toLocaleString() : ""}
+                  </span>
                 </span>
               </li>
             ))}

@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from kernel.auth import Scope, assert_owned, scoped
 from kernel.errors import ConflictError, ValidationError
 
-from ..core.actor import actor_id as _actor_id
+from ..core.actor import actor_id as _actor_id, actor_name as _actor_name
 from ..core.enums import (
     CLOSED_STATUSES,
     InstancePriority,
@@ -200,6 +200,10 @@ class InstanceService:
         return [t for t in rows if matches_conditions(ctx, t.conditions or [])]
 
     async def transition(self, instance_id: str, body, *, actor, actor_name=None) -> WorkflowInstance:
+        # `actor_name` stayed an unfilled parameter: every caller omitted it, so
+        # every step in every incident's history stamped `executed_by_name: null`
+        # and the timeline printed a uuid. The name is on the Principal now, so
+        # the default is to READ IT rather than to leave the field empty.
         inst = await self._row(instance_id, for_write=True)
         if InstanceStatus(inst.status) in CLOSED_STATUSES:
             raise ConflictError("Cannot mutate a closed instance")
@@ -244,7 +248,8 @@ class InstanceService:
             "transition_id": trans.transition_id, "transition_name": trans.label,
             "from_state_id": from_state.state_id, "from_state_name": from_state.name,
             "to_state_id": to_state.state_id, "to_state_name": to_state.name,
-            "executed_by": _actor_id(actor) or "system", "executed_by_name": actor_name,
+            "executed_by": _actor_id(actor) or "system",
+            "executed_by_name": actor_name or _actor_name(actor),
             "notes": body.notes, "form_data": body.form_data, "form_labels": form_labels,
             "executed_at": now.isoformat(),
         }

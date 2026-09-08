@@ -120,6 +120,14 @@ def create_access_token(
         "limits": dict(limits or {}),
         "license_state": license_state or "active",
         "tenant_status": tenant_status or "active",
+        # WHO, in words. A satellite stamps the acting user onto the rows it
+        # writes (a threat-level change, an SOP step execution) and had only the
+        # uuid to stamp — so those screens printed a uuid at an operator, or
+        # would have had to call core for a name on every write. It is the
+        # holder's OWN name in their OWN token, so it discloses nothing they do
+        # not already have; a rename shows the old name until the next login,
+        # which is what a stamp-at-write-time field means anyway.
+        "name": getattr(user, "full_name", None) or None,
         # Realm isolation: super-admins get the admin audience, everyone else the
         # tenant audience (impersonation mints a tenant-admin → tenant audience).
         "aud": AUD_ADMIN if bool(getattr(user, "is_superadmin", False)) else AUD_TENANT,

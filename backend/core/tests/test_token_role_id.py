@@ -61,3 +61,64 @@ async def test_legacy_token_without_role_id_decodes(db):
     principal = verify_token(legacy)
     assert principal.role_id is None
     assert principal.subjects() == [f"user:{user.id}"]
+
+
+def test_the_access_token_carries_the_users_display_name():
+    """A satellite stamps WHO acted onto the rows it writes and has no users
+    table to look a uuid up in. Without this claim those screens print a uuid at
+    an operator — which is a lookup nobody can perform from the screen it is on.
+
+    It is the holder's OWN name in their OWN token, so it discloses nothing they
+    do not already have.
+    """
+    import uuid
+
+    import jwt as _jwt
+
+    from app.auth.security import create_access_token
+    from app.core.config import get_settings
+
+    class _User:
+        id = uuid.uuid4()
+        tenant_id = None
+        is_superadmin = False
+        role_id = None
+        role = None
+        full_name = "Priya Nair"
+        site_ids: list[str] = []
+
+    claims = _jwt.decode(
+        create_access_token(_User(), sid="s"),
+        get_settings().jwt_secret,
+        algorithms=["HS256"],
+        options={"verify_aud": False},
+    )
+    assert claims["name"] == "Priya Nair"
+
+
+def test_a_user_with_no_name_gets_a_null_claim_not_an_empty_string():
+    # The satellites fall back to the id when the claim is absent; "" would be
+    # stamped as a name and printed as blank.
+    import uuid
+
+    import jwt as _jwt
+
+    from app.auth.security import create_access_token
+    from app.core.config import get_settings
+
+    class _Nameless:
+        id = uuid.uuid4()
+        tenant_id = None
+        is_superadmin = False
+        role_id = None
+        role = None
+        full_name = ""
+        site_ids: list[str] = []
+
+    claims = _jwt.decode(
+        create_access_token(_Nameless(), sid="s"),
+        get_settings().jwt_secret,
+        algorithms=["HS256"],
+        options={"verify_aud": False},
+    )
+    assert claims["name"] is None

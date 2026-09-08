@@ -40,6 +40,10 @@ class ThreatLevel(Base, _TenantTimestamped):
     )
     reason: Mapped[str | None] = mapped_column(String(1024))
     set_by: Mapped[str | None] = mapped_column(String(64))
+    # WHO, in words. Stamped at write time from the token, the way audit rows
+    # snapshot an actor: a uuid on a posture card is a lookup nobody can do from
+    # the screen it appears on.
+    set_by_name: Mapped[str | None] = mapped_column(String(255))
     set_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
     # [{from_level, to_level, reason, set_by, set_at}] — change history.
     history: Mapped[list | None] = mapped_column(JSON)

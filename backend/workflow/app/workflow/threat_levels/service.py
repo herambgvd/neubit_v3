@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from kernel.auth import Scope, scoped
 
-from ..core.actor import actor_id as _actor_id
+from ..core.actor import actor_id as _actor_id, actor_name as _actor_name
 from ..core.primitives import utcnow
 from ..runtime.events import emit
 from .models import ThreatLevel
@@ -40,17 +40,20 @@ class ThreatLevelService:
         if row is None:
             row = ThreatLevel(
                 tenant_id=self.scope.tenant_id, site_id=body.site_id, level=body.level.value,
-                reason=body.reason, set_by=_actor_id(actor), set_at=now, history=[],
+                reason=body.reason, set_by=_actor_id(actor), set_by_name=_actor_name(actor),
+                set_at=now, history=[],
             )
             self.db.add(row)
         else:
             row.level = body.level.value
             row.reason = body.reason
             row.set_by = _actor_id(actor)
+            row.set_by_name = _actor_name(actor)
             row.set_at = now
             row.history = (row.history or []) + [{
                 "from_level": prev, "to_level": body.level.value,
-                "reason": body.reason, "set_by": _actor_id(actor), "set_at": now.isoformat(),
+                "reason": body.reason, "set_by": _actor_id(actor),
+                "set_by_name": _actor_name(actor), "set_at": now.isoformat(),
             }]
             row.updated_at = now
         await self.db.commit()

@@ -58,6 +58,10 @@ class Principal:
     # Opaque core subject id, not uuid-parsed. Lets us resolve role-subject ACL
     # grants statelessly. None for a role-less user or a token predating the claim.
     role_id: str | None = None
+    # The caller's display name, for the rows a satellite stamps with WHO acted.
+    # None for a token that predates the claim, a service principal, or a user
+    # with no name — every consumer falls back to the id.
+    name: str | None = None
     # Tenant entitlements from core; empty for super-admins, who bypass.
     # features is {module_key: bool}, limits is {resource: number}.
     # license_state is "active" | "grace" | "expired"; a missing claim means
@@ -147,6 +151,7 @@ def verify_token(token: str) -> Principal:
         is_superadmin=bool(payload.get("is_superadmin", False)),
         permissions=list(payload.get("permissions") or []),
         role_id=str(role_id) if role_id else None,
+        name=(str(payload["name"]) if payload.get("name") else None),
         features=dict(payload.get("features") or {}),
         limits=dict(payload.get("limits") or {}),
         license_state=str(payload.get("license_state") or "active"),

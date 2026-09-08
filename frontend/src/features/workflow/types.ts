@@ -515,6 +515,9 @@ export interface ThreatLevelPublic {
   level: ThreatLevel;
   reason: string | null;
   set_by: string | null;
+  /** The acting user's display name, stamped at write time. Null for a system
+   *  change or a row written before the name was recorded — show `set_by` then. */
+  set_by_name: string | null;
   set_at: string;
   history: Record<string, unknown>[];
 }
