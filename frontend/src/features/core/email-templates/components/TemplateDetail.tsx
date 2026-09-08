@@ -132,10 +132,20 @@ export default function TemplateDetail({
           {/* Revert only exists when there IS an override — the endpoint 404s
               otherwise, and offering it on a default template would be an action
               that cannot succeed. */}
-          {overridden && (
+          {/* DISABLED, not absent, when there is nothing to undo. The endpoint 404s
+              on a template with no override, so it must not be clickable — but a
+              control that vanishes reads as a missing feature, and an admin looking
+              for "where do I delete this" finds nothing to explain itself. It is
+              shown greyed with the reason on hover. */}
+          {(overridden || isBuiltin) && (
             <QuietButton
               icon={isBuiltin ? "heroicons-outline:arrow-uturn-left" : "heroicons-outline:trash"}
-              disabled={revert.isPending}
+              disabled={revert.isPending || !overridden}
+              title={
+                overridden
+                  ? undefined
+                  : "This template is already the built-in default — there is nothing to revert."
+              }
               onClick={() => revert.mutate()}
             >
               {revert.isPending

@@ -12,6 +12,8 @@ Mount alongside the other routers:
 
 from __future__ import annotations
 
+import re
+
 import uuid
 
 from fastapi import APIRouter, Depends
@@ -108,6 +110,21 @@ class TemplateOut(BaseModel):
 class TemplateUpsertIn(BaseModel):
     subject: str
     html: str
+
+
+#: A template name is a URL path segment and a Jinja lookup key. Anything with a
+#: slash, a space or a dot either changes which route is hit or produces a name
+#: that cannot be addressed again — so the shape is enforced on the way in rather
+#: than discovered when a template turns out to be unreachable.
+_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{1,48}$")
+
+
+def _require_valid_name(name: str) -> None:
+    if not _NAME_RE.match(name or ""):
+        raise ValidationError(
+            "a template name is lower-case letters, digits and underscores "
+            "(2-49 characters), starting with a letter"
+        )
 
 
 def _require_known_channel(channel: str) -> None:
@@ -352,6 +369,7 @@ async def upsert_template(
     user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
 ) -> TemplateOut:
     """Create/update the caller's override for ``name`` (built-in or custom name)."""
+    _require_valid_name(name)
     row = await template_store.upsert_override(
         db, name, data.subject, data.html, user.tenant_id
     )

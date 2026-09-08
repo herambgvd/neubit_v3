@@ -19,6 +19,7 @@ import {
   ConsoleGrid,
   ConsolePanel,
   EmptyPane,
+  IconButton,
   PanelHeader,
   PanelList,
 } from "@/components/console";
@@ -26,6 +27,8 @@ import { apiError } from "@/lib/api";
 import { api } from "@/lib/api";
 import type { TemplateSummaryOut } from "../types";
 import { TEMPLATE_META } from "./constants";
+import { blocksToHtml, newBlock } from "./blocks";
+import NewTemplateModal from "./components/NewTemplateModal";
 import TemplateDetail from "./components/TemplateDetail";
 import TemplateListItem from "./components/TemplateListItem";
 
@@ -43,6 +46,29 @@ export default function EmailTemplatesPage() {
       qc.invalidateQueries({ queryKey: ["messaging-templates"] });
       qc.invalidateQueries({ queryKey: ["messaging-template", name] });
       qc.invalidateQueries({ queryKey: ["messaging-template-preview", name] });
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  const [creating, setCreating] = useState(false);
+
+  // Created as a DESIGN, not as an empty string: a new template opens in the
+  // designer with something in it, rather than on the "not built here" screen
+  // that an empty body would produce.
+  const create = useMutation({
+    mutationFn: ({ name, subject }: { name: string; subject: string }) =>
+      api.put(`/messaging/templates/${name}`, {
+        subject,
+        html: blocksToHtml([
+          { ...newBlock("heading"), text: subject },
+          newBlock("text"),
+        ]),
+      }),
+    onSuccess: (_data, { name }) => {
+      toast.success("Template created");
+      setCreating(false);
+      setSelected(name);
+      qc.invalidateQueries({ queryKey: ["messaging-templates"] });
     },
     onError: (e) => toast.error(apiError(e)),
   });
@@ -68,12 +94,19 @@ export default function EmailTemplatesPage() {
           title="Templates"
           count={items.length}
           actions={
-            overridden > 0 && (
-              <span className="flex items-center gap-1.5 text-[11px] text-nb-soft" title="Customised">
-                <span className="h-1.5 w-1.5 rounded-full bg-nb-teal shadow-[0_0_5px_#22d3ee]" />
-                {overridden} customised
-              </span>
-            )
+            <>
+              {overridden > 0 && (
+                <span className="flex items-center gap-1.5 text-[11px] text-nb-soft" title="Customised">
+                  <span className="h-1.5 w-1.5 rounded-full bg-nb-teal shadow-[0_0_5px_#22d3ee]" />
+                  {overridden}
+                </span>
+              )}
+              <IconButton
+                icon="heroicons:plus"
+                title="New template"
+                onClick={() => setCreating(true)}
+              />
+            </>
           }
         />
         <PanelList
@@ -111,6 +144,14 @@ export default function EmailTemplatesPage() {
           />
         )}
       </ConsolePanel>
+
+      <NewTemplateModal
+        open={creating}
+        onClose={() => setCreating(false)}
+        onCreate={(name, subject) => create.mutate({ name, subject })}
+        taken={items.map((t) => t.name)}
+        creating={create.isPending}
+      />
     </ConsoleGrid>
   );
 }

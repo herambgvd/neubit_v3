@@ -620,17 +620,29 @@ export interface ModalProps {
   staticBackdrop?: boolean;
 }
 
+//: One id is enough: only one Modal is ever mounted at a time (each renders into
+//: the same portal and the backdrop blocks the page behind it).
+const MODAL_TITLE_ID = "nb-modal-title";
+
 export function Modal({ open, onClose, title, subtitle, children, footer, wide, size, hideScroll, staticBackdrop }: ModalProps) {
   if (!open) return null;
   const width = (size && MODAL_WIDTH[size]) || (wide ? MODAL_WIDTH.wide : MODAL_WIDTH.md);
   return (
     <Overlay onClose={onClose} staticBackdrop={staticBackdrop}>
+      {/* `role="dialog"` + `aria-modal`, and LABELLED BY its own heading. Without
+          them assistive tech announces an anonymous group: nothing says a dialog
+          opened, what it is for, or that the page behind it is inert. */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? MODAL_TITLE_ID : undefined}
         className={`relative flex max-h-[85vh] w-full ${width} flex-col rounded-xl bg-[rgba(8,15,34,.93)] border border-nb-line backdrop-blur-md shadow-2xl animate-modal-in`}
       >
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-nb-line px-5 py-4">
           <div className="min-w-0">
-            <h3 className="text-base font-semibold text-nb-ink">{title}</h3>
+            <h3 id={MODAL_TITLE_ID} className="text-base font-semibold text-nb-ink">
+              {title}
+            </h3>
             {subtitle && <p className="mt-0.5 text-xs text-nb-soft">{subtitle}</p>}
           </div>
           <button onClick={onClose} aria-label="Close" className="shrink-0 text-nb-muted hover:text-nb-ink transition">
