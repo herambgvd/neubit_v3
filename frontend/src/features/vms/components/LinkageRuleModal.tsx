@@ -14,6 +14,7 @@ import { Input, Modal, Select, Textarea, Toggle } from "@/components/ui/kit";
 import { asItems } from "@/lib/format";
 import { vms } from "../api";
 import { useEstateCameras } from "../hooks/useEstateCameras";
+import CameraPicker from "./CameraPicker";
 import { EVENT_TYPE_FILTERS } from "../constants";
 import type {
   CameraGroupPublic,
@@ -253,11 +254,21 @@ export default function LinkageRuleModal({ open, rule, onClose, onSave, saving =
               className="!h-9 !py-1.5"
             />
           </Field>
+          {/* BY RECORDER, with one search over both levels. A flat list of camera
+              names is a bag of duplicates on any real estate — "Channel 1" exists
+              on every recorder — with no way to tell which box a name came from. */}
           {form.scopeMode === "camera_ids" && (
-            <PickList
-              items={cameras.map((c) => ({ id: c.id, label: c.name }))}
+            <CameraPicker
+              cameras={cameras}
               selected={form.camera_ids}
               onToggle={(id) => patch({ camera_ids: toggleIn(form.camera_ids, id) })}
+              onToggleMany={(ids, select) =>
+                patch({
+                  camera_ids: select
+                    ? [...form.camera_ids, ...ids.filter((id) => !form.camera_ids.includes(id))]
+                    : form.camera_ids.filter((id) => !ids.includes(id)),
+                })
+              }
               // A recorder that is not answering has no cameras to offer, and
               // that is not the same as an estate with none.
               empty={
