@@ -20,10 +20,29 @@ from ..core.errors import ValidationError
 _env = Environment(autoescape=select_autoescape(["html", "xml"]))
 
 
-# The built-in templates. Placeholders are documented inline next to each.
+#: The placeholders each template is rendered WITH, and the only ones an admin can
+#: put in one. Declared as data, not as the comments they used to be: the editor
+#: offers this list to an operator who cannot be expected to know Jinja, and a
+#: list kept in a comment cannot be served to them or checked against anything.
+#: Optional ones are the values a sender may omit — the template must survive that.
+TEMPLATE_VARIABLES: dict[str, list[str]] = {
+    "alert": ["title", "message", "severity", "when"],
+    "report_ready": ["name", "download_url"],
+    "welcome": ["name", "app_name", "activate_url", "login_url"],
+}
+
+#: Every template additionally gets these from the branded shell.
+COMMON_VARIABLES: list[str] = ["app_name"]
+
+
+def variables_for(name: str) -> list[str]:
+    """The placeholders usable in ``name``. Unknown/custom names get the common set."""
+    declared = TEMPLATE_VARIABLES.get(name, [])
+    return sorted({*declared, *COMMON_VARIABLES})
+
+
 DEFAULT_TEMPLATES: dict[str, dict] = {
     # A generic alert/event notification.
-    #   ctx: title, message, [severity], [when]
     "alert": {
         "subject": "Alert: {{ title }}",
         "html": (
@@ -34,7 +53,6 @@ DEFAULT_TEMPLATES: dict[str, dict] = {
         ),
     },
     # Tells a user an export/report they requested is ready to download.
-    #   ctx: name, [download_url]
     "report_ready": {
         "subject": "Your report is ready: {{ name }}",
         "html": (
@@ -46,7 +64,6 @@ DEFAULT_TEMPLATES: dict[str, dict] = {
         ),
     },
     # Onboarding email for a newly created user.
-    #   ctx: name, [app_name], [activate_url], [login_url]
     "welcome": {
         "subject": "Welcome{% if app_name %} to {{ app_name }}{% endif %}!",
         "html": (

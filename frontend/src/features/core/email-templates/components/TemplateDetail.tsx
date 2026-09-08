@@ -18,19 +18,32 @@ import { TabBar } from "@/components/common";
 import { Input, Spinner, Textarea } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import type { TemplateOut, TemplatePreviewOut } from "../../types";
+import { blocksToHtml, htmlToBlocks, type Block } from "../blocks";
+import BlockEditor from "./BlockEditor";
 import { TEMPLATE_META, titleCase } from "../constants";
 
-type View = "edit" | "preview";
+type View = "design" | "html" | "preview";
 
 const TABS: { key: View; label: string; icon: string }[] = [
-  { key: "edit", label: "Edit", icon: "heroicons-outline:pencil-square" },
+  { key: "design", label: "Design", icon: "heroicons-outline:squares-2x2" },
+  { key: "html", label: "HTML", icon: "heroicons-outline:code-bracket" },
   { key: "preview", label: "Preview", icon: "heroicons-outline:eye" },
 ];
 
-export default function TemplateDetail({ name }: { name: string }) {
+export default function TemplateDetail({
+  name,
+  onGone,
+}: {
+  name: string;
+  /** A custom template has no default to fall back to — the list must reselect. */
+  onGone?: () => void;
+}) {
   const qc = useQueryClient();
-  const [view, setView] = useState<View>("edit");
+  const [view, setView] = useState<View>("design");
   const [form, setForm] = useState({ subject: "", html: "" });
+  // null = this HTML was not produced by the designer, so it cannot be shown as
+  // blocks without inventing a structure for it. See ../blocks.
+  const [blocks, setBlocks] = useState<Block[] | null>(null);
 
   const detail = useQuery({
     queryKey: ["messaging-template", name],
@@ -50,8 +63,16 @@ export default function TemplateDetail({ name }: { name: string }) {
   // switches to another one: without `name` in the deps the form would keep the
   // previous template's body while the header said otherwise.
   useEffect(() => {
-    if (detail.data) setForm({ subject: detail.data.subject || "", html: detail.data.html || "" });
+    if (!detail.data) return;
+    setForm({ subject: detail.data.subject || "", html: detail.data.html || "" });
+    setBlocks(htmlToBlocks(detail.data.html || ""));
   }, [detail.data, name]);
+
+  /** Editing a block rewrites the HTML — the blocks ARE the source, once adopted. */
+  const setBlocksAndHtml = (next: Block[]) => {
+    setBlocks(next);
+    setForm((f) => ({ ...f, html: blocksToHtml(next) }));
+  };
 
   const dirty = useMemo(
     () =>
@@ -78,7 +99,8 @@ export default function TemplateDetail({ name }: { name: string }) {
   const revert = useMutation({
     mutationFn: () => api.delete(`/messaging/templates/${name}`),
     onSuccess: () => {
-      toast.success("Reverted to the built-in default");
+      toast.success(isBuiltin ? "Reverted to the built-in default" : "Template deleted");
+      onGone?.();
       invalidate();
     },
     onError: (e) => toast.error(apiError(e)),
@@ -86,6 +108,8 @@ export default function TemplateDetail({ name }: { name: string }) {
 
   const meta = TEMPLATE_META[name];
   const overridden = !!detail.data?.is_override;
+  const isBuiltin = detail.data?.is_builtin !== false;
+  const variables = detail.data?.variables || [];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -110,11 +134,17 @@ export default function TemplateDetail({ name }: { name: string }) {
               that cannot succeed. */}
           {overridden && (
             <QuietButton
-              icon="heroicons-outline:arrow-uturn-left"
+              icon={isBuiltin ? "heroicons-outline:arrow-uturn-left" : "heroicons-outline:trash"}
               disabled={revert.isPending}
               onClick={() => revert.mutate()}
             >
-              {revert.isPending ? "Reverting…" : "Revert to default"}
+              {revert.isPending
+                ? isBuiltin
+                  ? "Reverting…"
+                  : "Deleting…"
+                : isBuiltin
+                  ? "Revert to default"
+                  : "Delete template"}
             </QuietButton>
           )}
           <ActionButton
@@ -138,7 +168,57 @@ export default function TemplateDetail({ name }: { name: string }) {
           <div className="rounded-[10px] border border-nb-crit/30 bg-nb-crit/10 px-3 py-3 text-sm text-nb-crit">
             {apiError(detail.error, "Couldn't load this template")}
           </div>
-        ) : view === "edit" ? (
+        ) : view === "design" ? (
+          <div className="flex min-h-0 flex-1 flex-col gap-4">
+            <div>
+              <Input
+                label="Subject"
+                value={form.subject}
+                onChange={(e) => setForm({ ...form, subject: e.target.value })}
+              />
+              {variables.length > 0 && (
+                <div className="mt-1 flex flex-wrap items-center gap-1">
+                  <span className="text-[10.5px] text-nb-faint">Insert:</span>
+                  {variables.map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, subject: `${f.subject}{{ ${v} }}` }))}
+                      className="rounded-[6px] border border-nb-line px-1.5 py-0.5 font-mono text-[10.5px] text-nb-soft transition hover:border-nb-blue hover:text-nb-blueb"
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {blocks ? (
+              <BlockEditor blocks={blocks} onChange={setBlocksAndHtml} variables={variables} />
+            ) : (
+              // The honest refusal. This template's HTML was hand-written or is a
+              // built-in default with `{% if %}` branches; approximating it as
+              // blocks would silently drop whatever they cannot represent the
+              // moment it is saved. Starting fresh is an explicit choice.
+              <div className="rounded-[10px] border border-nb-line bg-[rgba(255,255,255,.02)] p-5 text-center">
+                <p className="text-sm text-nb-ink">This template was not built in the designer.</p>
+                <p className="mx-auto mt-1 max-w-md text-[12px] text-nb-faint">
+                  Its HTML has logic the designer cannot represent, so opening it as blocks
+                  would quietly lose part of it. Edit it in the HTML tab, or start a new
+                  design — which replaces the body.
+                </p>
+                <div className="mt-3">
+                  <QuietButton
+                    icon="heroicons-outline:squares-2x2"
+                    onClick={() => setBlocksAndHtml([])}
+                  >
+                    Start a design
+                  </QuietButton>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : view === "html" ? (
           <div className="flex min-h-0 flex-1 flex-col gap-4">
             <Input
               label="Subject"
@@ -152,7 +232,13 @@ export default function TemplateDetail({ name }: { name: string }) {
             <Textarea
               label="HTML body"
               value={form.html}
-              onChange={(e) => setForm({ ...form, html: e.target.value })}
+              onChange={(e) => {
+                setForm({ ...form, html: e.target.value });
+                // Hand-editing detaches it from the designer unless the marker
+                // survives — otherwise the two views would disagree about which
+                // one is the source.
+                setBlocks(htmlToBlocks(e.target.value));
+              }}
               className="font-mono !text-xs min-h-[220px] flex-1"
               wrapperClassName="flex min-h-0 flex-1 flex-col"
             />

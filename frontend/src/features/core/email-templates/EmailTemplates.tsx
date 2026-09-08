@@ -12,7 +12,8 @@
 // code that SENDS these emails (messaging/templates.py). A template nothing sends
 // is not a template — the operations here are read, override, and revert.
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import {
   ConsoleGrid,
@@ -24,11 +25,27 @@ import {
 import { apiError } from "@/lib/api";
 import { api } from "@/lib/api";
 import type { TemplateSummaryOut } from "../types";
+import { TEMPLATE_META } from "./constants";
 import TemplateDetail from "./components/TemplateDetail";
 import TemplateListItem from "./components/TemplateListItem";
 
 export default function EmailTemplatesPage() {
+  const qc = useQueryClient();
   const [selected, setSelected] = useState<string | null>(null);
+
+  // The list's own row action. DELETE removes the caller's override: on a
+  // built-in that is a revert to the shipped default, on a custom name it is a
+  // deletion. One endpoint, two meanings, and the row says which.
+  const remove = useMutation({
+    mutationFn: (name: string) => api.delete(`/messaging/templates/${name}`),
+    onSuccess: (_data, name) => {
+      toast.success(name in TEMPLATE_META ? "Reverted to the built-in default" : "Template deleted");
+      qc.invalidateQueries({ queryKey: ["messaging-templates"] });
+      qc.invalidateQueries({ queryKey: ["messaging-template", name] });
+      qc.invalidateQueries({ queryKey: ["messaging-template-preview", name] });
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
 
   const templates = useQuery({
     queryKey: ["messaging-templates"],
@@ -73,6 +90,8 @@ export default function EmailTemplatesPage() {
               template={t}
               selected={t.name === openName}
               onSelect={() => setSelected(t.name)}
+              onRemove={() => remove.mutate(t.name)}
+              busy={remove.isPending}
             />
           ))}
         </PanelList>
@@ -83,7 +102,7 @@ export default function EmailTemplatesPage() {
           // Keyed on the name so switching templates remounts the pane: the
           // editor holds draft state, and carrying one template's unsaved body
           // into another is the worst thing this screen could do.
-          <TemplateDetail key={openName} name={openName} />
+          <TemplateDetail key={openName} name={openName} onGone={() => setSelected(null)} />
         ) : (
           <EmptyPane
             icon="heroicons-outline:envelope"

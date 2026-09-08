@@ -94,6 +94,15 @@ class TemplateOut(BaseModel):
     subject: str
     html: str
     is_override: bool
+    #: The placeholders this template is rendered with. Served rather than
+    #: hardcoded in the client: an operator who cannot write Jinja is offered this
+    #: list, and a list the frontend invented would drift from what the sender
+    #: actually passes.
+    variables: list[str] = []
+    #: False for a name the product has no sender for. Nothing in this service
+    #: renders a custom name today, so the editor can say so instead of implying
+    #: a template that will never be delivered.
+    is_builtin: bool = True
 
 
 class TemplateUpsertIn(BaseModel):
@@ -255,9 +264,15 @@ async def list_templates(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
 ) -> list[TemplateSummaryOut]:
-    """List the built-in template names, flagging which are overridden."""
+    """Every template an admin can edit: the built-ins, plus any custom override.
+
+    Custom names were INVISIBLE here — the store has always accepted one (see
+    template_store) and this listed only the built-ins, so a custom override could
+    exist and never be seen or removed through the API that created it.
+    """
     out: list[TemplateSummaryOut] = []
-    for name in email_templates.available_template_names():
+    builtins = email_templates.available_template_names()
+    for name in builtins:
         override = await template_store.get_override(db, name, user.tenant_id)
         if override is not None:
             out.append(
@@ -271,6 +286,12 @@ async def list_templates(
                     subject=email_templates.DEFAULT_TEMPLATES[name]["subject"],
                 )
             )
+    custom = (await db.execute(template_store.list_overrides(db, user.tenant_id))).scalars().all()
+    for row in custom:
+        if row.name not in builtins:
+            out.append(
+                TemplateSummaryOut(name=row.name, overridden=True, subject=row.subject)
+            )
     return out
 
 
@@ -282,16 +303,27 @@ async def get_template(
 ) -> TemplateOut:
     """The effective template for ``name`` — the override if set, else the default."""
     override = await template_store.get_override(db, name, user.tenant_id)
+    is_builtin = name in email_templates.DEFAULT_TEMPLATES
     if override is not None:
         return TemplateOut(
-            name=name, subject=override.subject, html=override.html, is_override=True
+            name=name,
+            subject=override.subject,
+            html=override.html,
+            is_override=True,
+            variables=email_templates.variables_for(name),
+            is_builtin=is_builtin,
         )
     default = email_templates.DEFAULT_TEMPLATES.get(name)
     if default is None:
         known = ", ".join(sorted(email_templates.DEFAULT_TEMPLATES))
         raise NotFoundError(f"unknown template '{name}' (known: {known})")
     return TemplateOut(
-        name=name, subject=default["subject"], html=default["html"], is_override=False
+        name=name,
+        subject=default["subject"],
+        html=default["html"],
+        is_override=False,
+        variables=email_templates.variables_for(name),
+        is_builtin=True,
     )
 
 
@@ -324,7 +356,12 @@ async def upsert_template(
         db, name, data.subject, data.html, user.tenant_id
     )
     return TemplateOut(
-        name=row.name, subject=row.subject, html=row.html, is_override=True
+        name=row.name,
+        subject=row.subject,
+        html=row.html,
+        is_override=True,
+        variables=email_templates.variables_for(row.name),
+        is_builtin=row.name in email_templates.DEFAULT_TEMPLATES,
     )
 
 

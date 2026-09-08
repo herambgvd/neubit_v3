@@ -29,11 +29,32 @@ const LIST = [
 ];
 
 const DETAIL: Record<string, unknown> = {
-  welcome: { name: "welcome", subject: "Welcome to Acme", html: "<p>hi</p>", is_override: true },
-  alert: { name: "alert", subject: "Alert fired", html: "<p>alert</p>", is_override: false },
+  welcome: {
+    name: "welcome",
+    subject: "Welcome to Acme",
+    html: "<p>hi</p>",
+    is_override: true,
+    variables: ["app_name", "name"],
+    is_builtin: true,
+  },
+  alert: {
+    name: "alert",
+    subject: "Alert fired",
+    html: "<p>alert</p>",
+    is_override: false,
+    variables: ["app_name", "title"],
+    is_builtin: true,
+  },
 };
 
 let stub: ApiStub;
+
+/** The raw-HTML editor lives behind its own tab now; Design is what opens first. */
+async function openHtmlTab() {
+  await screen.findByDisplayValue("Welcome to Acme");
+  await userEvent.click(screen.getByRole("tab", { name: /^HTML$/i }));
+  return screen.findByDisplayValue("<p>hi</p>");
+}
 
 beforeEach(() => {
   stub = stubApi({
@@ -50,22 +71,21 @@ describe("the templates library", () => {
   it("lists every template and opens the first one", async () => {
     renderWithProviders(<EmailTemplatesPage />);
 
-    expect(await screen.findByRole("button", { name: /Welcome/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Alert/ })).toBeInTheDocument();
-    // The first is open: its body is in the editor.
-    expect(await screen.findByDisplayValue("<p>hi</p>")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Welcome" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Alert" })).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("Welcome to Acme")).toBeInTheDocument();
   });
 
   it("does not carry an unsaved draft into another template", async () => {
     renderWithProviders(<EmailTemplatesPage />);
-    const body = await screen.findByDisplayValue("<p>hi</p>");
+    const body = await openHtmlTab();
 
     await userEvent.clear(body);
-    await userEvent.type(body, "<p>DRAFT</p>");
-    await userEvent.click(screen.getByRole("button", { name: /Alert/ }));
+    await userEvent.type(body, "DRAFT");
+    await userEvent.click(screen.getByRole("button", { name: "Alert" }));
 
-    expect(await screen.findByDisplayValue("<p>alert</p>")).toBeInTheDocument();
-    expect(screen.queryByDisplayValue("<p>DRAFT</p>")).not.toBeInTheDocument();
+    expect(await screen.findByDisplayValue("Alert fired")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("DRAFT")).not.toBeInTheDocument();
   });
 
   it("reports a failed load instead of an empty library", async () => {
@@ -80,32 +100,32 @@ describe("the templates library", () => {
 describe("editing one template", () => {
   it("saves the subject and body to that template's own endpoint", async () => {
     renderWithProviders(<EmailTemplatesPage />);
-    const body = await screen.findByDisplayValue("<p>hi</p>");
+    const body = await openHtmlTab();
 
     await userEvent.clear(body);
-    await userEvent.type(body, "<p>new</p>");
+    await userEvent.type(body, "NEW");
     await userEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
     expect(stub.body("PUT /messaging/templates/welcome")).toEqual({
       subject: "Welcome to Acme",
-      html: "<p>new</p>",
+      html: "NEW",
     });
   });
 
   it("leaves Save disabled until something actually changed", async () => {
     renderWithProviders(<EmailTemplatesPage />);
-    await screen.findByDisplayValue("<p>hi</p>");
+    await screen.findByDisplayValue("Welcome to Acme");
 
     expect(screen.getByRole("button", { name: /save changes/i })).toBeDisabled();
   });
 
   it("offers Revert on an overridden template and not on a default one", async () => {
     renderWithProviders(<EmailTemplatesPage />);
-    await screen.findByDisplayValue("<p>hi</p>");
+    await screen.findByDisplayValue("Welcome to Acme");
     expect(screen.getByRole("button", { name: /revert to default/i })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /Alert/ }));
-    await screen.findByDisplayValue("<p>alert</p>");
+    await userEvent.click(screen.getByRole("button", { name: "Alert" }));
+    await screen.findByDisplayValue("Alert fired");
 
     expect(screen.queryByRole("button", { name: /revert to default/i })).not.toBeInTheDocument();
   });
@@ -114,7 +134,7 @@ describe("editing one template", () => {
 describe("seeing what it looks like", () => {
   it("renders the server's email in a sandboxed frame", async () => {
     renderWithProviders(<EmailTemplatesPage />);
-    await screen.findByDisplayValue("<p>hi</p>");
+    await screen.findByDisplayValue("Welcome to Acme");
 
     await userEvent.click(screen.getByRole("tab", { name: /preview/i }));
 
@@ -126,18 +146,134 @@ describe("seeing what it looks like", () => {
 
   it("does not render the email until the preview is actually opened", async () => {
     renderWithProviders(<EmailTemplatesPage />);
-    await screen.findByDisplayValue("<p>hi</p>");
+    await screen.findByDisplayValue("Welcome to Acme");
 
     expect(stub.matching("GET /messaging/templates/welcome/preview")).toHaveLength(0);
   });
 
   it("says the preview is the SAVED template while there are unsaved edits", async () => {
     renderWithProviders(<EmailTemplatesPage />);
-    const body = await screen.findByDisplayValue("<p>hi</p>");
+    const body = await openHtmlTab();
     await userEvent.type(body, "x");
 
     await userEvent.click(screen.getByRole("tab", { name: /preview/i }));
 
     expect(await screen.findByText(/Save your changes to see them here/i)).toBeInTheDocument();
+  });
+});
+
+
+/**
+ * The visual designer, which exists because an operator cannot be asked to write
+ * Jinja-in-HTML — and which must not pretend it can represent HTML it did not
+ * produce.
+ */
+describe("the visual designer", () => {
+  it("refuses to open foreign HTML as blocks, and says why", async () => {
+    renderWithProviders(<EmailTemplatesPage />);
+
+    // `<p>hi</p>` carries no designer marker.
+    expect(await screen.findByText(/was not built in the designer/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /start a design/i })).toBeInTheDocument();
+  });
+
+  it("opens a template the designer DID produce as its blocks", async () => {
+    const designed = `<!--nb-blocks:${JSON.stringify([
+      { id: "h", type: "heading", text: "Hello", level: 2, align: "left" },
+    ])}--><h2>Hello</h2>`;
+    stub.set({
+      "GET /messaging/templates/welcome": { ...(DETAIL.welcome as object), html: designed },
+    });
+    renderWithProviders(<EmailTemplatesPage />);
+
+    expect(await screen.findByDisplayValue("Hello")).toBeInTheDocument();
+    expect(screen.queryByText(/was not built in the designer/i)).not.toBeInTheDocument();
+  });
+
+  it("writes the HTML from the blocks, so saving sends real markup", async () => {
+    renderWithProviders(<EmailTemplatesPage />);
+    await screen.findByRole("button", { name: /start a design/i });
+
+    await userEvent.click(screen.getByRole("button", { name: /start a design/i }));
+    await userEvent.click(screen.getByRole("button", { name: "Heading" }));
+    await userEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+    const sent = stub.body("PUT /messaging/templates/welcome") as { html: string };
+    expect(sent.html).toContain("<h2");
+    // And the design travels with it, so reopening is exact rather than parsed.
+    expect(sent.html).toContain("nb-blocks:");
+  });
+
+  it("offers the template's real placeholders, not a list it invented", async () => {
+    renderWithProviders(<EmailTemplatesPage />);
+    await screen.findByDisplayValue("Welcome to Acme");
+
+    // welcome is served `["app_name", "name"]`; `title` belongs to alert.
+    expect(screen.getAllByRole("button", { name: "name" }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "title" })).not.toBeInTheDocument();
+  });
+
+  it("lets a block be removed", async () => {
+    const designed = `<!--nb-blocks:${JSON.stringify([
+      { id: "h", type: "heading", text: "Hello", level: 2, align: "left" },
+    ])}--><h2>Hello</h2>`;
+    stub.set({
+      "GET /messaging/templates/welcome": { ...(DETAIL.welcome as object), html: designed },
+    });
+    renderWithProviders(<EmailTemplatesPage />);
+    await screen.findByDisplayValue("Hello");
+
+    await userEvent.click(screen.getByRole("button", { name: /Remove Heading/i }));
+
+    expect(screen.queryByDisplayValue("Hello")).not.toBeInTheDocument();
+  });
+});
+
+describe("removing a template", () => {
+  it("offers no row action on a template with nothing to undo", async () => {
+    renderWithProviders(<EmailTemplatesPage />);
+    await screen.findByRole("button", { name: "Alert" });
+
+    // `welcome` is overridden, `alert` is not — and DELETE 404s on a template
+    // with no override, so a row action there would be one that cannot succeed.
+    expect(screen.getByRole("button", { name: /Revert Welcome to default/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Revert Alert to default/i })).not.toBeInTheDocument();
+  });
+
+  it("removes from the row, not only from the open template", async () => {
+    renderWithProviders(<EmailTemplatesPage />);
+    await screen.findByRole("button", { name: "Welcome" });
+
+    await userEvent.click(screen.getByRole("button", { name: /Revert Welcome to default/i }));
+
+    expect(stub.matching("DELETE /messaging/templates/welcome")).toHaveLength(1);
+  });
+
+
+  it("calls it Revert on a built-in, because there is a default to fall back to", async () => {
+    renderWithProviders(<EmailTemplatesPage />);
+    await screen.findByDisplayValue("Welcome to Acme");
+
+    expect(screen.getByRole("button", { name: /revert to default/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /delete template/i })).not.toBeInTheDocument();
+  });
+
+  it("calls it Delete on a custom one, because nothing remains when it goes", async () => {
+    stub.set({
+      "GET /messaging/templates": [{ name: "custom_note", overridden: true, subject: "Note" }],
+      "GET /messaging/templates/custom_note": {
+        name: "custom_note",
+        subject: "Note",
+        html: "<p>x</p>",
+        is_override: true,
+        variables: ["app_name"],
+        is_builtin: false,
+      },
+    });
+    renderWithProviders(<EmailTemplatesPage />);
+    await screen.findByDisplayValue("Note");
+
+    expect(screen.getByRole("button", { name: /delete template/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /revert to default/i })).not.toBeInTheDocument();
   });
 });

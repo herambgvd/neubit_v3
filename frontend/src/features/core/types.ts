@@ -298,6 +298,10 @@ export interface TemplateOut {
   subject: string;
   html: string;
   is_override: boolean;
+  /** The placeholders this template is rendered with. Served, never guessed here. */
+  variables: string[];
+  /** False for a name nothing in the product sends yet. */
+  is_builtin: boolean;
 }
 
 /** GET /messaging/templates/{name}/preview — rendered with sample data. */

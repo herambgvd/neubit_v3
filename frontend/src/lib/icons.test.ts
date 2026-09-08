@@ -61,11 +61,20 @@ function sourceFiles(dir: string): string[] {
   return out;
 }
 
+/**
+ * Comments and JSDoc out, so PROSE ABOUT a bad icon name is not read as a use of
+ * one. A comment explaining why `heroicons-outline:h1` does not exist failed this
+ * guard, which would teach the next person to stop writing that comment.
+ */
+function code(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
 /** name → the first file that uses it, so a failure says where to look. */
 function collectIcons(): Map<string, string> {
   const found = new Map<string, string>();
   for (const file of sourceFiles(SRC)) {
-    const text = readFileSync(file, "utf8");
+    const text = code(readFileSync(file, "utf8"));
     for (const match of text.matchAll(ICON_LITERAL)) {
       const key = `${match[1]}:${match[2]}`;
       if (!found.has(key)) found.set(key, path.relative(SRC, file));
