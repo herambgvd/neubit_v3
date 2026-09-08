@@ -80,7 +80,7 @@ export default function HealthPage() {
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <HostStrip health={health.data} loading={health.isLoading} />
 
-      <ConsoleGrid cols="lg:grid-cols-[280px_1fr]">
+      <ConsoleGrid>
         {/* LEFT — the estate */}
         <ConsolePanel>
           <PanelHeader

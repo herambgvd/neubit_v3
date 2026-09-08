@@ -88,7 +88,7 @@ export default function EmailTemplatesPage() {
   // No ConsolePage here: PlatformConsole already provides the page frame, the
   // same way Tags does inside it.
   return (
-    <ConsoleGrid cols="lg:grid-cols-[25%_1fr]">
+    <ConsoleGrid>
       <ConsolePanel>
         <PanelHeader
           icon="heroicons-outline:envelope"

@@ -14,10 +14,9 @@ import {
   ConsoleGrid,
   ConsolePanel,
   PanelHeader,
+  IconButton,
   PanelSearch,
   PanelList,
-  PanelFooter,
-  CreateButton,
   EmptyPane,
 } from "@/components/console";
 import { apiError } from "@/lib/api";
@@ -88,7 +87,11 @@ export default function TriggersTab() {
 
   const aside = (
     <ConsolePanel>
-      <PanelHeader icon="heroicons:bolt" title="Triggers" count={triggers.length} />
+      <PanelHeader icon="heroicons:bolt" title="Triggers" count={triggers.length}
+        actions={
+          <IconButton icon="heroicons:plus" title="New trigger" onClick={() => { setMode("create"); setSelectedId(null); }} />
+        }
+      />
       <PanelSearch value={search} onChange={setSearch} placeholder="Search triggers…" />
       <PanelList
         loading={q.isLoading}
@@ -124,15 +127,12 @@ export default function TriggersTab() {
           })}
       </PanelList>
 
-      <PanelFooter>
-        <CreateButton label="TRIGGER" onClick={() => { setMode("create"); setSelectedId(null); }} />
-      </PanelFooter>
     </ConsolePanel>
   );
 
   return (
     <>
-      <ConsoleGrid cols="lg:grid-cols-[300px_1fr]" className="h-full">
+      <ConsoleGrid className="h-full">
         {aside}
         <ConsolePanel>
         {mode === "create" || mode === "edit" ? (
@@ -145,7 +145,7 @@ export default function TriggersTab() {
               onSubmit={(body) => save.mutate({ id: mode === "edit" ? (selected?.trigger_id ?? null) : null, body })}
             />
         ) : !selected ? (
-          <EmptyPane icon="heroicons:bolt" title="No trigger selected" subtitle="Pick one from the list, or click ＋ NEW TRIGGER to create one." />
+          <EmptyPane icon="heroicons:bolt" title="No trigger selected" subtitle="Pick one from the list, or use ＋ above to create a trigger." />
         ) : (
           <TriggerDetail
             trigger={selected}

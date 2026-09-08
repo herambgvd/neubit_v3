@@ -81,7 +81,7 @@ export default function AccessControlPage() {
       <MasterDetail
         fill
         className="min-h-0 flex-1"
-        gridCols="lg:grid-cols-[24rem_1fr]"
+        gridCols="lg:grid-cols-[25%_1fr]"
         aside={
           <ListPanel
             title="Access Control"

@@ -200,8 +200,51 @@ export function parseAssignedDictKeys(file: string, marker: string, varName: str
  * nested dicts, which the snapshot/rollup payloads here are full of: a nested
  * `{"total": …, "used": …}` must not be mistaken for a key of the outer object.
  */
+/**
+ * Drop Python line comments, keeping the text's length and line structure.
+ *
+ * The scanner below tracks quotes and bracket depth, and a comment is prose: an
+ * apostrophe in "the recorder's grants" opens a string it never closes, and a
+ * "(see below)" moves the depth. Blanking comments to spaces keeps every offset
+ * the same, so the returned slices still line up with the file.
+ */
+function stripPyComments(text: string): string {
+  let out = "";
+  let quote: string | null = null;
+  let comment = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!;
+    if (c === "\n") {
+      comment = false;
+      out += c;
+      continue;
+    }
+    if (comment) {
+      out += " ";
+      continue;
+    }
+    if (quote) {
+      if (c === quote && text[i - 1] !== "\\") quote = null;
+      out += c;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      quote = c;
+      out += c;
+      continue;
+    }
+    if (c === "#") {
+      comment = true;
+      out += " ";
+      continue;
+    }
+    out += c;
+  }
+  return out;
+}
+
 export function parseDictKeys(file: string, marker: string, open = "{"): string[] {
-  const text = readFileSync(file, "utf8");
+  const text = stripPyComments(readFileSync(file, "utf8"));
   const from = text.indexOf(marker);
   if (from < 0) throw new Error(`marker ${marker} not found in ${file}`);
   const at = text.indexOf(open, from);

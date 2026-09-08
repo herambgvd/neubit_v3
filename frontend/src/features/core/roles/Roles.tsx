@@ -153,7 +153,7 @@ export default function RolesPage() {
 
   return (
     <ConsolePage>
-      <ConsoleGrid cols="lg:grid-cols-[300px_1fr_320px]">
+      <ConsoleGrid cols="lg:grid-cols-[25%_1fr_320px]">
         {/* LEFT — library */}
         <ConsolePanel>
           <PanelHeader

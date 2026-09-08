@@ -54,11 +54,31 @@ async def list_nodes(
                 "id": str(n.id),
                 "name": n.name,
                 "api_url": n.api_url,
+                # Whether the recorder has a PLAYABLE media base. A node can be
+                # reachable on its API and still stream nothing because these were
+                # never filled in at onboarding, and until now the only way to
+                # find that out was a black tile on the wall. The URLs themselves
+                # stay out: they are the Recorders page business, and this console
+                # does not edit them.
+                "hls_base": n.hls_base,
+                "webrtc_base": n.webrtc_base,
                 "status": n.status,
                 "label": n.label,
                 "capacity_channels": n.capacity_channels,
                 "used_channels": n.used_channels,
                 "last_heartbeat": n.last_heartbeat.isoformat() if n.last_heartbeat else None,
+                # WHETHER there is a per-node credential, never the credential.
+                # Falling back to the ambient service JWT still works, so this is
+                # not an error — but it is the difference between a node whose
+                # access we can revoke on its own and one we cannot.
+                "has_credential": bool(n.credential),
+                # Why that credential is not working, when it is not. A federation
+                # credential freezes the grants it was minted with, so widening the
+                # recorder's grant set leaves an existing credential short — and
+                # the node stays REACHABLE and reports online the whole time. The
+                # column existed for this screen and this screen never read it.
+                "credential_error": n.credential_error,
+                "enrolled_at": n.created_at.isoformat() if n.created_at else None,
             }
             for n in rows
         ],

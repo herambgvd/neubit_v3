@@ -51,7 +51,7 @@ export default function ThreatLevelsTab() {
   }
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 gap-3 lg:grid-cols-[22rem_1fr]">
+    <div className="grid h-full min-h-0 grid-cols-1 gap-3 lg:grid-cols-[25%_1fr]">
       <form onSubmit={submit} className="rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-5 space-y-4 h-fit">
         <h3 className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">Set threat level</h3>
         <Field

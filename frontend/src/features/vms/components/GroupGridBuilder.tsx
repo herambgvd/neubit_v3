@@ -126,7 +126,7 @@ export default function GroupGridBuilder({ layout, cameras = [], cells = [], onC
         </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[240px_1fr]">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[25%_1fr]">
         {/* ── camera picker ──────────────────────────────────────────────── */}
         <div className="flex min-h-0 flex-col rounded-lg border border-card-border">
           <div className="border-b border-card-border p-2">

@@ -10,10 +10,9 @@ import type { CategoryPublic } from "../types";
 import {
   ConsolePanel,
   PanelHeader,
+  IconButton,
   PanelSearch,
   PanelList,
-  PanelFooter,
-  CreateButton,
 } from "@/components/console";
 
 export interface CategoryListProps {
@@ -52,7 +51,11 @@ export default function CategoryList({
 }: CategoryListProps) {
   return (
     <ConsolePanel>
-      <PanelHeader icon="heroicons-outline:squares-2x2" title="Categories" count={total} />
+      <PanelHeader icon="heroicons-outline:squares-2x2" title="Categories" count={total}
+        actions={
+          <IconButton icon="heroicons:plus" title="New category" onClick={onNew} />
+        }
+      />
       <PanelSearch value={search} onChange={onSearch} placeholder="Search categories…" />
 
       <PanelList
@@ -100,9 +103,6 @@ export default function CategoryList({
         })}
       </PanelList>
 
-      <PanelFooter>
-        <CreateButton label="CATEGORY" onClick={onNew} />
-      </PanelFooter>
     </ConsolePanel>
   );
 }

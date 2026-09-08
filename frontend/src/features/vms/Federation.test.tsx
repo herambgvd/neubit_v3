@@ -44,6 +44,11 @@ const camera = (id: string, nodeId: string, status = "online") => ({
 
 beforeEach(() => {
   vi.spyOn(vms.federation, "cameras").mockResolvedValue({ items: [], unreachable: [] } as never);
+  // The per-node reads the detail pane makes. Off by default so a test that is
+  // about something else does not have to describe a recorder's disks.
+  vi.spyOn(vms.federation.storage, "usage").mockRejectedValue(new Error("no storage"));
+  vi.spyOn(vms.federation.storage, "raid").mockRejectedValue(new Error("no raid"));
+  vi.spyOn(vms.federation, "nvrs").mockResolvedValue({ items: [] } as never);
 });
 
 const nodesReturn = (items: FederationNode[]) =>
@@ -145,5 +150,137 @@ describe("which node is shown", () => {
     await userEvent.type(screen.getByPlaceholderText(/search name, label or url/i), "annexe");
 
     expect(await screen.findByRole("heading", { name: /south-recorder/i })).toBeInTheDocument();
+  });
+});
+
+describe("trust", () => {
+  it("says a node is refusing our credential, even though it is online", async () => {
+    // The whole point of the field: the node is REACHABLE and reports online, so
+    // every other signal on this screen says the federation is healthy while part
+    // of its surface is closed.
+    nodesReturn([
+      fedNode("n1", "north-recorder", {
+        has_credential: true,
+        credential_error: "403 from recorder: missing grant storage:read",
+      }),
+    ]);
+
+    renderWithProviders(<FederationPage />);
+
+    expect(await screen.findByText(/credential is being refused/i)).toBeInTheDocument();
+    expect(screen.getByText(/missing grant storage:read/)).toBeInTheDocument();
+    // And it is countable from the estate strip without opening each node.
+    expect(screen.getByTitle(/refusing our federation credential/i)).toHaveTextContent("1");
+  });
+
+  it("distinguishes a node-scoped credential from the shared service token", async () => {
+    nodesReturn([
+      fedNode("n1", "scoped", { has_credential: true }),
+      fedNode("n2", "shared", { has_credential: false }),
+    ]);
+
+    renderWithProviders(<FederationPage />);
+    expect(await screen.findByText(/scoped to this node/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /shared/i }));
+    // Not an error — the ambient token still works. It is the difference between
+    // access we can revoke on its own and access we cannot.
+    expect(await screen.findByText(/shared service token/i)).toBeInTheDocument();
+    expect(screen.queryByText(/credential is being refused/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("endpoints", () => {
+  it("warns when an online node has no media base to stream from", async () => {
+    // It answers its API, so it reports online — and a tile opened on its cameras
+    // has nowhere to go. That used to show up as a black tile and nothing else.
+    nodesReturn([fedNode("n1", "north-recorder", { hls_base: null, webrtc_base: null })]);
+
+    renderWithProviders(<FederationPage />);
+
+    expect(await screen.findByText(/no playable media base/i)).toBeInTheDocument();
+  });
+
+  it("keeps quiet, and lists no URLs, when the node can actually stream", async () => {
+    // The endpoint URLs belong to the Recorders page, which is where they are
+    // edited. Printing them here is four rows nobody acts on.
+    nodesReturn([
+      fedNode("n1", "north-recorder", {
+        hls_base: "http://north:8888",
+        webrtc_base: "http://north:8889",
+      }),
+    ]);
+
+    renderWithProviders(<FederationPage />);
+    await screen.findByRole("heading", { name: /north-recorder/i });
+
+    expect(screen.queryByText(/no playable media base/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("http://north:8888")).not.toBeInTheDocument();
+  });
+});
+
+describe("recorder storage", () => {
+  it("reads the selected node's disks through the node", async () => {
+    nodesReturn([NORTH]);
+    vi.spyOn(vms.federation.storage, "usage").mockResolvedValue({
+      total_bytes: 4_000_000_000_000,
+      used_bytes: 3_600_000_000_000,
+      free_bytes: 400_000_000_000,
+      used_percent: 90,
+    } as never);
+
+    renderWithProviders(<FederationPage />);
+
+    expect(await screen.findByText(/90% used/i)).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: /recorder disk usage/i })).toHaveAttribute(
+      "aria-valuenow",
+      "90",
+    );
+  });
+
+  it("does not ask an unreachable node for its disks", async () => {
+    // Polling storage on a node that is not answering buys a timeout per tick.
+    nodesReturn([NORTH]);
+    const usage = vi.spyOn(vms.federation.storage, "usage");
+    vi.spyOn(vms.federation, "cameras").mockResolvedValue({
+      items: [],
+      unreachable: [{ node_id: "n1", error: "timeout" }],
+    } as never);
+
+    renderWithProviders(<FederationPage />);
+    await screen.findByText(/unavailable while the node is unreachable/i);
+
+    expect(usage).not.toHaveBeenCalled();
+  });
+
+  it("says the node did not answer rather than showing an empty disk", async () => {
+    nodesReturn([NORTH]);
+    vi.spyOn(vms.federation.storage, "usage").mockRejectedValue(new Error("node refused"));
+
+    renderWithProviders(<FederationPage />);
+
+    expect(await screen.findByText(/node refused/i)).toBeInTheDocument();
+    expect(screen.queryByText(/0% used/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("the estate strip", () => {
+  it("adds the estate up so nobody has to open each node", async () => {
+    nodesReturn([
+      fedNode("n1", "north", { used_channels: 12, capacity_channels: 64 }),
+      fedNode("n2", "south", { used_channels: 4, capacity_channels: 16, status: "offline" }),
+    ]);
+    vi.spyOn(vms.federation, "cameras").mockResolvedValue({
+      items: [camera("c1", "n1"), camera("c2", "n1", "offline")],
+      unreachable: [],
+    } as never);
+
+    renderWithProviders(<FederationPage />);
+
+    await waitFor(() =>
+      expect(screen.getByTitle(/online and answering/i)).toHaveTextContent("1/2"),
+    );
+    expect(screen.getByTitle(/that are streaming/i)).toHaveTextContent("1/2");
+    expect(screen.getByTitle(/recording channels in use/i)).toHaveTextContent("16/80");
   });
 });

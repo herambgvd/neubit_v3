@@ -123,7 +123,7 @@ export default function AuditPage() {
       className="flex h-[calc(100%+1.5rem)] min-h-0 flex-col -mx-4 lg:-mx-5 -my-3 px-4 lg:px-5 pt-3 pb-2 text-nb-ink"
       style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
     >
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[280px_1fr]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[25%_1fr]">
         {/* LEFT — filter rail */}
         <div className={col}>
           <div className="flex items-center gap-2 px-4 pb-2 pt-3.5">
@@ -167,7 +167,7 @@ export default function AuditPage() {
 
         {/* MAIN — entries table */}
         <div className={col}>
-          <div className="grid grid-cols-[150px_1fr_150px_1.4fr] items-center gap-3 border-b border-nb-line px-4 py-2.5 font-mono text-[10px] uppercase tracking-[1px] text-nb-faint">
+          <div className="grid grid-cols-[25%_1fr_150px_1.4fr] items-center gap-3 border-b border-nb-line px-4 py-2.5 font-mono text-[10px] uppercase tracking-[1px] text-nb-faint">
             <span>Time</span><span>Actor</span><span>Action</span><span>Activity</span>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
@@ -181,7 +181,7 @@ export default function AuditPage() {
               </div>
             ) : (
               items.map((r, i) => (
-                <div key={r.id ?? i} className="grid grid-cols-[150px_1fr_150px_1.4fr] items-center gap-3 border-b border-nb-line/40 px-4 py-2 text-[12.5px] last:border-b-0 hover:bg-[rgba(96,165,250,.05)]">
+                <div key={r.id ?? i} className="grid grid-cols-[25%_1fr_150px_1.4fr] items-center gap-3 border-b border-nb-line/40 px-4 py-2 text-[12.5px] last:border-b-0 hover:bg-[rgba(96,165,250,.05)]">
                   <span className="font-mono text-[11.5px] text-nb-faint">{formatTs(r.ts)}</span>
                   {/* Name is the operator-facing identity; the email is the tooltip
                       fallback for rows recorded before names were snapshotted. */}

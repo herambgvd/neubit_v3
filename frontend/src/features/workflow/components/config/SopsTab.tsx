@@ -12,10 +12,9 @@ import {
   ConsoleGrid,
   ConsolePanel,
   PanelHeader,
+  IconButton,
   PanelSearch,
   PanelList,
-  PanelFooter,
-  CreateButton,
   EmptyPane,
 } from "@/components/console";
 import { ConfirmDialog } from "@/components/ui/kit";
@@ -67,7 +66,11 @@ export default function SopsTab() {
 
   const aside = (
     <ConsolePanel>
-      <PanelHeader icon="heroicons:rectangle-stack" title="SOPs" count={sops.length} />
+      <PanelHeader icon="heroicons:rectangle-stack" title="SOPs" count={sops.length}
+        actions={
+          <IconButton icon="heroicons:plus" title="New SOP" onClick={() => { setMode("create"); setSelectedId(null); }} />
+        }
+      />
       <PanelSearch value={q} onChange={setQ} placeholder="Search SOPs…" />
       <PanelList
         loading={sopsQ.isLoading}
@@ -101,15 +104,12 @@ export default function SopsTab() {
         })}
       </PanelList>
 
-      <PanelFooter>
-        <CreateButton label="SOP" onClick={() => { setMode("create"); setSelectedId(null); }} />
-      </PanelFooter>
     </ConsolePanel>
   );
 
   return (
     <>
-      <ConsoleGrid cols="lg:grid-cols-[300px_1fr]" className="h-full">
+      <ConsoleGrid className="h-full">
         {aside}
         <ConsolePanel>
         {mode === "create" || mode === "edit" ? (
@@ -124,7 +124,7 @@ export default function SopsTab() {
             }}
           />
         ) : !selected ? (
-          <EmptyPane icon="heroicons:rectangle-stack" title="No SOP selected" subtitle="Pick one from the list, or click ＋ NEW SOP to create one." />
+          <EmptyPane icon="heroicons:rectangle-stack" title="No SOP selected" subtitle="Pick one from the list, or use ＋ above to create a SOP." />
         ) : (
           <SopBuilder
             key={sopId(selected)}

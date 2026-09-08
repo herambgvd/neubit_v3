@@ -27,15 +27,13 @@ import {
   PanelList,
   PanelFooter,
   EmptyPane,
-  InfoCell,
   QuietButton,
 } from "@/components/console";
 import { apiError } from "@/lib/api";
-import { fmtRelative } from "@/lib/format";
 import type { FederatedCamera } from "@/lib/types";
 import { vms } from "./api";
-import type { FederationNode } from "./types";
-import StatusBadge, { StatusDot } from "./components/StatusBadge";
+import StatusBadge from "./components/StatusBadge";
+import FederationNodeDetail from "./components/FederationNodeDetail";
 
 export default function FederationPage() {
   const [search, setSearch] = useState("");
@@ -103,10 +101,26 @@ export default function FederationPage() {
   ).length;
   const totalCams = cameras.length;
   const onlineCams = cameras.filter((c) => c.status === "online").length;
+  // A node in this state is REACHABLE and reports online: nothing else on this
+  // screen would say that half its federated surface is being refused.
+  const refused = nodes.filter((n) => n.credential_error).length;
+  const channelsUsed = nodes.reduce((a, n) => a + (n.used_channels || 0), 0);
+  const channelsCap = nodes.reduce((a, n) => a + (n.capacity_channels || 0), 0);
 
   return (
     <ConsolePage>
-      <ConsoleGrid cols="lg:grid-cols-[300px_1fr]">
+      <EstateStrip
+        nodes={nodes.length}
+        reachable={reachableCount}
+        camerasOnline={onlineCams}
+        cameras={totalCams}
+        channelsUsed={channelsUsed}
+        channelsCap={channelsCap}
+        refused={refused}
+        loading={nodesQ.isLoading}
+      />
+
+      <ConsoleGrid>
         {/* LEFT — enrolled nodes */}
         <ConsolePanel>
           <PanelHeader
@@ -163,6 +177,12 @@ export default function FederationPage() {
                     </span>
                     <StatusBadge status={n.status} />
                   </div>
+                  {n.credential_error && (
+                    <p className="mt-0.5 flex items-center gap-1 pl-3.5 text-[10.5px] text-nb-warn">
+                      <Icon icon="heroicons:key" className="shrink-0 text-[11px]" />
+                      credential refused
+                    </p>
+                  )}
                   {n.label && <p className="mt-0.5 truncate pl-3.5 text-[11px] text-nb-faint">{n.label}</p>}
                   <p className="mt-0.5 pl-3.5 font-mono text-[10.5px] tabular-nums text-nb-faint">
                     {isUnreachable ? "unreachable — cameras hidden" : `${nodeOnline}/${nodeCams.length} camera(s) online`}
@@ -187,7 +207,7 @@ export default function FederationPage() {
         {/* CENTER — node detail */}
         <ConsolePanel>
           {selected ? (
-            <NodeDetail
+            <FederationNodeDetail
               key={selected.id}
               node={selected}
               cameras={camsByNode.get(selected.id) || []}
@@ -207,92 +227,79 @@ export default function FederationPage() {
   );
 }
 
-// Right pane: one enrolled node's reachability + the cameras it federates. Read-only
-// — lifecycle/endpoint edits live on the Recorders page; this is the federation lens.
-interface NodeDetailProps {
-  node: FederationNode;
-  cameras: FederatedCamera[];
-  camsLoading: boolean;
-  unreachable: boolean;
+interface EstateStripProps {
+  nodes: number;
+  reachable: number;
+  cameras: number;
+  camerasOnline: number;
+  channelsUsed: number;
+  channelsCap: number;
+  refused: number;
+  loading?: boolean;
 }
 
-function NodeDetail({ node, cameras, camsLoading, unreachable }: NodeDetailProps) {
-  const cap = node.capacity_channels;
-  const used = node.used_channels ?? cameras.length;
-  const online = cameras.filter((c) => c.status === "online").length;
+/**
+ * The estate in one line: is the federation healthy, and how much of it is in use.
+ *
+ * These four numbers were only obtainable by selecting each node in turn and adding
+ * up — which is not a thing anyone does, so nobody knew. `refused` is the one that
+ * has to be here rather than inside a node: a recorder whose credential is being
+ * refused is REACHABLE and reports online, so the reachable count says everything is
+ * fine while part of the federated surface is closed.
+ */
+function EstateStrip({
+  nodes,
+  reachable,
+  cameras,
+  camerasOnline,
+  channelsUsed,
+  channelsCap,
+  refused,
+  loading,
+}: EstateStripProps) {
+  const cells: { label: string; value: string; tone?: string; title?: string }[] = [
+    {
+      label: "Recorders",
+      value: loading ? "…" : `${reachable}/${nodes}`,
+      tone: nodes > 0 && reachable < nodes ? "text-nb-crit" : "text-nb-ink",
+      title: "Enrolled recorders that are online and answering",
+    },
+    {
+      label: "Federated cameras",
+      value: loading ? "…" : `${camerasOnline}/${cameras}`,
+      tone: cameras > 0 && camerasOnline < cameras ? "text-nb-warn" : "text-nb-ink",
+      title: "Cameras owned by those recorders that are streaming",
+    },
+    {
+      label: "Channels used",
+      value: loading ? "…" : channelsCap ? `${channelsUsed}/${channelsCap}` : `${channelsUsed}`,
+      title: "Recording channels in use across the estate, against the declared capacity",
+    },
+    {
+      label: "Credentials refused",
+      value: loading ? "…" : String(refused),
+      tone: refused > 0 ? "text-nb-warn" : "text-nb-ink",
+      title:
+        "Recorders that are online but refusing our federation credential — a credential freezes the grants it was minted with",
+    },
+  ];
 
   return (
-    <>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-nb-line px-4 py-2.5">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-nb-blue/40 bg-[rgba(96,165,250,.12)] text-nb-blueb">
-            <Icon icon="heroicons-outline:share" className="text-base" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold text-nb-ink">{node.name}</h1>
-            <p className="truncate font-mono text-[11px] text-nb-faint">{node.api_url || "—"}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <StatusBadge status={node.status} />
-          <QuietButton as={Link} href="/devices/recorders" icon="heroicons-outline:cog-6-tooth" className="!py-1.5 !text-xs">
-            Manage
-          </QuietButton>
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        {unreachable && (
-          <div className="mb-3 flex items-center gap-2 rounded-[10px] border border-nb-crit/40 bg-nb-crit/10 px-3 py-2 text-[12px] text-nb-crit">
-            <Icon icon="heroicons:exclamation-triangle" className="shrink-0 text-sm" />
-            This node is not reachable right now — its federated cameras can&apos;t be listed or streamed until it comes back online.
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <InfoCell label="Status" value={node.status || "unknown"} />
-          <InfoCell label="Channels" value={<span>{used}<span className="text-nb-faint"> / {cap != null ? cap : "∞"}</span></span>} />
-          <InfoCell label="Location / label" value={node.label || "—"} />
-          <InfoCell label="Last heartbeat" value={node.last_heartbeat ? fmtRelative(node.last_heartbeat) : "—"} />
-        </div>
-
-        <p className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">Endpoint</p>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <InfoCell label="API URL" value={node.api_url || "—"} mono />
-        </div>
-
-        <div className="mb-2 mt-4 flex items-center justify-between">
-          <p className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">Federated cameras</p>
-          <span className="rounded-full border border-nb-line bg-white/5 px-2 font-mono text-[10px] font-semibold tabular-nums text-nb-soft">
-            {online}/{cameras.length} online
-          </span>
-        </div>
-        {camsLoading ? (
-          <p className="flex items-center gap-1.5 px-1 py-3 text-xs text-nb-faint">
-            <Icon icon="svg-spinners:180-ring" className="text-sm text-nb-blueb" />Loading…
+    <div className="mb-3 grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-4">
+      {cells.map((c) => (
+        <div
+          key={c.label}
+          className="rounded-[10px] border border-nb-line bg-[rgba(8,15,34,.5)] px-3 py-2"
+          title={c.title}
+        >
+          <p className="text-[10px] font-semibold uppercase tracking-[1.2px] text-nb-muted">
+            {c.label}
           </p>
-        ) : cameras.length === 0 ? (
-          <p className="rounded-[10px] border border-dashed border-nb-line px-3 py-4 text-center text-xs text-nb-faint">
-            {unreachable ? "Cameras are unavailable while this node is unreachable." : "This node exposes no federated cameras."}
+          <p className={`mt-0.5 font-mono text-[15px] font-semibold tabular-nums ${c.tone || "text-nb-ink"}`}>
+            {c.value}
           </p>
-        ) : (
-          <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-            {cameras.map((c) => (
-              <li key={c.id} className="flex items-center gap-2 rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] px-3 py-1.5">
-                <StatusDot status={c.status} />
-                <span className="min-w-0 flex-1 truncate text-[13px] text-nb-ink" title={c.name}>{c.name}</span>
-                <span className="shrink-0 font-mono text-[10px] uppercase tracking-[.5px] text-nb-faint">{c.status}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        <p className="mt-3 flex items-center gap-1.5 text-[11px] text-nb-faint">
-          <Icon icon="heroicons:play-circle" className="text-sm text-nb-blueb" />
-          Federated cameras stream through their node — view them live on the
-          <Link href="/streaming" className="text-nb-blueb underline decoration-dotted underline-offset-2 hover:text-nb-ink">Live wall</Link>.
-        </p>
-      </div>
-    </>
+        </div>
+      ))}
+    </div>
   );
 }

@@ -97,7 +97,7 @@ export default function SitesConfigPage() {
 
   return (
     <ConsolePage>
-      <ConsoleGrid cols="lg:grid-cols-[300px_1fr]">
+      <ConsoleGrid>
         {/* LEFT — library */}
         <ConsolePanel>
           <PanelHeader

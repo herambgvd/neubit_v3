@@ -167,7 +167,7 @@ export default function StoragePage() {
 
   return (
     <ConsolePage>
-      <ConsoleGrid cols="lg:grid-cols-[300px_1fr]">
+      <ConsoleGrid>
         {/* LEFT — recorder nodes (storage owners) */}
         <ConsolePanel>
           <PanelHeader

@@ -80,7 +80,7 @@ export default function TagsConfigPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ConsoleGrid cols="lg:grid-cols-[300px_1fr]">
+      <ConsoleGrid>
         {/* LEFT — library */}
         <ConsolePanel>
           <PanelHeader

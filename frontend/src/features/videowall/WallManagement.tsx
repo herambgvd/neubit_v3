@@ -154,7 +154,7 @@ export default function WallManagement() {
       className="flex h-[calc(100%+1.5rem)] min-h-0 flex-col -mx-4 lg:-mx-5 -my-3 px-4 lg:px-5 pt-3 pb-2 text-nb-ink"
       style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
     >
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[300px_1fr]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[25%_1fr]">
         {/* LEFT — walls rail */}
         <div className="flex min-h-0 flex-col overflow-hidden rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)]">
           <div className="flex items-center justify-between px-4 pb-2 pt-3.5">
@@ -163,13 +163,28 @@ export default function WallManagement() {
               <span className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">Walls</span>
               <span className="font-mono text-[11px] text-nb-faint">{walls.length}</span>
             </div>
-            <Link
-              href="/wall"
-              title="Open console"
-              className="inline-flex h-7 items-center gap-1 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2 text-[11px] font-medium text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
-            >
-              <Icon icon="heroicons-outline:play" className="text-sm" /> Console
-            </Link>
+            <div className="flex items-center gap-1">
+              <Link
+                href="/wall"
+                title="Open console"
+                className="inline-flex h-7 items-center gap-1 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2 text-[11px] font-medium text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+              >
+                <Icon icon="heroicons-outline:play" className="text-sm" /> Console
+              </Link>
+              {/* Create lives in the header here too — it was a dashed CTA at the
+                  foot of the rail, the one spelling this console retired. */}
+              {canManage && (
+                <button
+                  type="button"
+                  title="New wall"
+                  aria-label="New wall"
+                  onClick={() => setWallModal({})}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+                >
+                  <Icon icon="heroicons:plus" className="text-sm" />
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="px-3 pb-2">
@@ -232,16 +247,6 @@ export default function WallManagement() {
             )}
           </div>
 
-          {canManage && (
-            <div className="border-t border-nb-line/50 p-3">
-              <button
-                onClick={() => setWallModal({})}
-                className="w-full rounded-[9px] border border-dashed border-[rgba(150,180,245,.42)] py-2.5 text-[12px] tracking-[.7px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
-              >
-                ＋ NEW WALL
-              </button>
-            </div>
-          )}
         </div>
 
         {/* RIGHT — detail */}

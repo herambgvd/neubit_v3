@@ -76,7 +76,7 @@ export default function IngestConfigPage() {
 
   return (
     <ConsolePage>
-      <ConsoleGrid cols="lg:grid-cols-[300px_1fr]">
+      <ConsoleGrid>
         {/* LEFT — category rail */}
         <CategoryList
           categories={filtered}
@@ -102,7 +102,7 @@ export default function IngestConfigPage() {
             <EmptyPane
               icon="heroicons-outline:arrow-down-on-square-stack"
               title="No category selected"
-              subtitle="Pick one from the list, or click ＋ NEW CATEGORY to create one."
+              subtitle="Pick one from the list, or use ＋ above to create a category."
             />
           ) : (
             <CategoryDetail

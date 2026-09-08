@@ -173,7 +173,7 @@ export default function Insights() {
         crumbs={[{ label: "Insights & Correlation" }]}
         desc="Pearson's r between any series that have reported — dimensionless, so the missing units cost it nothing. The coefficient is computed; an interpretation never is: nothing here says one thing drives another."
       />
-      <ConsoleGrid cols="xl:grid-cols-[320px_1fr]">
+      <ConsoleGrid cols="xl:grid-cols-[25%_1fr]">
         {/* ── series picker ───────────────────────────────────────── */}
         <ConsolePanel>
           <PanelHeader

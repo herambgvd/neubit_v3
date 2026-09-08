@@ -74,7 +74,12 @@ export interface ConsoleGridProps extends FrameProps {
 
 // The master/detail grid. `cols` is a STATIC class string — Tailwind's JIT can't
 // read a runtime-built arbitrary value.
-export function ConsoleGrid({ cols = "lg:grid-cols-[300px_1fr]", className = "", children }: ConsoleGridProps) {
+//
+// 25:75 IS THE CONSOLE'S SPLIT. It was 300px on most screens, 280 on one, 320 on
+// three, and a percentage on one more — differences nobody chose, which read as
+// the list jumping width every time you move between screens. A percentage also
+// keeps the ratio on a 4K wall, where a fixed 300px rail becomes a sliver.
+export function ConsoleGrid({ cols = "lg:grid-cols-[25%_1fr]", className = "", children }: ConsoleGridProps) {
   return (
     <div className={`grid min-h-0 flex-1 grid-cols-1 gap-3 ${cols} ${className}`}>{children}</div>
   );
@@ -196,28 +201,13 @@ export function PanelFooter({ children }: { children?: ReactNode }) {
   return <div className="border-t border-nb-line/50 p-3">{children}</div>;
 }
 
-export interface CreateButtonProps {
-  /** The bare noun ("SITE"); the component owns the ＋ and the wording. */
-  label: ReactNode;
-  onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
-  disabled?: boolean;
-  className?: string;
-}
-
-// The dashed "＋ NEW X" create button. `label` is the bare noun ("SITE"); the
-// component owns the ＋ and the wording so no console can drift its copy.
-export function CreateButton({ label, onClick, disabled, className = "" }: CreateButtonProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`w-full rounded-[9px] border border-dashed border-nb-line2 py-2.5 text-[12px] tracking-[.7px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb disabled:opacity-50 ${className}`}
-    >
-      ＋ NEW {label}
-    </button>
-  );
-}
+// CreateButton — REMOVED, not deprecated. The console has ONE create affordance:
+// a plus in the panel header (IconButton, title "New <thing>"). A dashed
+// full-width "＋ NEW SOP" at the foot of a list was a second one: it scrolls out
+// of reach on a long list, a keyboard user meets every row before it, and two
+// spellings of the same action on different screens is the thing that makes a
+// console feel hand-assembled. See styles/scss/modules.test.ts's sibling guard
+// in components/console/create.test.ts.
 
 export interface IconActionProps extends Omit<ComponentPropsWithoutRef<"button">, "title"> {
   icon: string;

@@ -250,7 +250,7 @@ export default function UsersPage() {
 
   return (
     <ConsolePage>
-      <ConsoleGrid cols="lg:grid-cols-[300px_1fr_320px]">
+      <ConsoleGrid cols="lg:grid-cols-[25%_1fr_320px]">
         {/* LEFT — library */}
         <ConsolePanel>
           <PanelHeader icon="heroicons-outline:user" title="Users" count={total}>

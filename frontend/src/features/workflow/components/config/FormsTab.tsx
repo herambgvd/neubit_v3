@@ -14,10 +14,9 @@ import {
   ConsoleGrid,
   ConsolePanel,
   PanelHeader,
+  IconButton,
   PanelSearch,
   PanelList,
-  PanelFooter,
-  CreateButton,
   EmptyPane,
 } from "@/components/console";
 import { apiError } from "@/lib/api";
@@ -65,7 +64,11 @@ export default function FormsTab() {
 
   const aside = (
     <ConsolePanel>
-      <PanelHeader icon="heroicons-outline:clipboard-document-list" title="Forms" count={forms.length} />
+      <PanelHeader icon="heroicons-outline:clipboard-document-list" title="Forms" count={forms.length}
+        actions={
+          <IconButton icon="heroicons:plus" title="New form" onClick={() => { setMode("create"); setSelectedId(null); }} />
+        }
+      />
       <PanelSearch value={search} onChange={setSearch} placeholder="Search forms…" />
       <PanelList
         loading={q.isLoading}
@@ -95,15 +98,12 @@ export default function FormsTab() {
           })}
       </PanelList>
 
-      <PanelFooter>
-        <CreateButton label="FORM" onClick={() => { setMode("create"); setSelectedId(null); }} />
-      </PanelFooter>
     </ConsolePanel>
   );
 
   return (
     <>
-      <ConsoleGrid cols="lg:grid-cols-[300px_1fr]" className="h-full">
+      <ConsoleGrid className="h-full">
         {aside}
         <ConsolePanel>
         {mode === "create" || mode === "edit" ? (
@@ -114,7 +114,7 @@ export default function FormsTab() {
               onSaved={() => { qc.invalidateQueries({ queryKey: ["wf-forms"] }); setMode("view"); }}
             />
         ) : !selected ? (
-          <EmptyPane icon="heroicons-outline:clipboard-document-list" title="No form selected" subtitle="Pick one from the list, or click ＋ NEW FORM to create one." />
+          <EmptyPane icon="heroicons-outline:clipboard-document-list" title="No form selected" subtitle="Pick one from the list, or use ＋ above to create a form." />
         ) : (
           <FormDetail form={selected} onEdit={() => setMode("edit")} onDelete={() => askDelete(selected)} />
         )}

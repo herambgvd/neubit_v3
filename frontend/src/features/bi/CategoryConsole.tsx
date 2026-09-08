@@ -173,7 +173,7 @@ function CategoryConsoleInner({ category }: { category: string }) {
           desc={`Every ${meta.label} device that has reported into the reading store. Values carry no unit — the wire sends none, and none is invented.`}
         />
       )}
-      <ConsoleGrid cols="xl:grid-cols-[320px_1fr]">
+      <ConsoleGrid cols="xl:grid-cols-[25%_1fr]">
         {/* ── devices ─────────────────────────────────────────────── */}
         <ConsolePanel>
           <PanelHeader icon={meta.icon} title={meta.label} count={devicesQ.data?.total ?? ""} />

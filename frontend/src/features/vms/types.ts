@@ -949,11 +949,24 @@ export interface FederationNode {
   id: string;
   name: string;
   api_url?: string | null;
+  /** The media bases the recorder streams from. A node can answer its API and
+   *  still play nothing because neither was filled in at onboarding — which is
+   *  the only thing this console says about them; the URLs are edited on the
+   *  Recorders page. */
+  hls_base?: string | null;
+  webrtc_base?: string | null;
   status: NodeStatus | string;
   label?: string | null;
   capacity_channels: number;
   used_channels: number;
   last_heartbeat?: string | null;
+  /** WHETHER the node issued us a scoped credential — never the credential. */
+  has_credential?: boolean;
+  /** Why that credential is not working, when it is not. A node in this state is
+   *  reachable and reports online; this is the only signal that a screen
+   *  somewhere is returning an error. */
+  credential_error?: string | null;
+  enrolled_at?: string | null;
 }
 
 export type FederationNodeList = ItemList<FederationNode>;

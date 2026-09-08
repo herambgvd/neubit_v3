@@ -103,7 +103,7 @@ export default function CamerasPage() {
       style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
     >
       {/* Two-card master/detail — fills the whole body. */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[24rem_1fr]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[25%_1fr]">
         {/* ── Left: camera list ── */}
         <aside className="flex min-h-0 flex-col rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)]">
           <header className="flex shrink-0 items-center justify-between gap-2 border-b border-nb-line px-3 py-2">

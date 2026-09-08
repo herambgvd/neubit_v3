@@ -26,7 +26,7 @@ export interface MasterDetailProps {
 // `fill` = fill the parent's height and scroll INTERNALLY (no page scroll): the grid
 // takes h-full, the list-aside scrolls its own body, and the detail pane gets its own
 // themed scroll container. Used by the contained device pages (NVR / Access Control).
-export function MasterDetail({ aside, children, gridCols = "lg:grid-cols-[22rem_1fr]", className = "", fill = false }: MasterDetailProps) {
+export function MasterDetail({ aside, children, gridCols = "lg:grid-cols-[25%_1fr]", className = "", fill = false }: MasterDetailProps) {
   return (
     <div
       className={`grid grid-cols-1 gap-3 ${

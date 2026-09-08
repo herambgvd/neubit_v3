@@ -14,10 +14,9 @@ import {
   ConsoleGrid,
   ConsolePanel,
   PanelHeader,
+  IconButton,
   PanelSearch,
   PanelList,
-  PanelFooter,
-  CreateButton,
   EmptyPane,
 } from "@/components/console";
 import { apiError } from "@/lib/api";
@@ -65,7 +64,11 @@ export default function NotificationTemplatesTab() {
 
   const aside = (
     <ConsolePanel>
-      <PanelHeader icon="heroicons-outline:bell-alert" title="Templates" count={templates.length} />
+      <PanelHeader icon="heroicons-outline:bell-alert" title="Templates" count={templates.length}
+        actions={
+          <IconButton icon="heroicons:plus" title="New template" onClick={() => { setMode("create"); setSelectedId(null); }} />
+        }
+      />
       <PanelSearch value={search} onChange={setSearch} placeholder="Search templates…" />
       <PanelList
         loading={q.isLoading}
@@ -95,15 +98,12 @@ export default function NotificationTemplatesTab() {
           })}
       </PanelList>
 
-      <PanelFooter>
-        <CreateButton label="TEMPLATE" onClick={() => { setMode("create"); setSelectedId(null); }} />
-      </PanelFooter>
     </ConsolePanel>
   );
 
   return (
     <>
-      <ConsoleGrid cols="lg:grid-cols-[300px_1fr]" className="h-full">
+      <ConsoleGrid className="h-full">
         {aside}
         <ConsolePanel>
         {mode === "create" || mode === "edit" ? (
@@ -114,7 +114,7 @@ export default function NotificationTemplatesTab() {
               onSaved={() => { qc.invalidateQueries({ queryKey: ["wf-templates"] }); setMode("view"); }}
             />
         ) : !selected ? (
-          <EmptyPane icon="heroicons-outline:bell-alert" title="No template selected" subtitle="Pick one from the list, or click ＋ NEW TEMPLATE to create one." />
+          <EmptyPane icon="heroicons-outline:bell-alert" title="No template selected" subtitle="Pick one from the list, or use ＋ above to create a template." />
         ) : (
           <TemplateDetail template={selected} onEdit={() => setMode("edit")} onDelete={() => askDelete(selected)} />
         )}

@@ -16,10 +16,9 @@ import {
   ConsoleGrid,
   ConsolePanel,
   PanelHeader,
+  IconButton,
   PanelSearch,
   PanelList,
-  PanelFooter,
-  CreateButton,
   EmptyPane,
 } from "@/components/console";
 import { apiError } from "@/lib/api";
@@ -88,7 +87,11 @@ export default function FormatsTab() {
 
   const aside = (
     <ConsolePanel>
-      <PanelHeader icon="heroicons-outline:swatch" title="Alert formats" count={formats.length} />
+      <PanelHeader icon="heroicons-outline:swatch" title="Alert formats" count={formats.length}
+        actions={
+          <IconButton icon="heroicons:plus" title="New format" onClick={() => { setMode("create"); setSelectedId(null); }} />
+        }
+      />
       <PanelSearch value={search} onChange={setSearch} placeholder="Search formats…" />
       <PanelList
         loading={q.isLoading}
@@ -121,15 +124,12 @@ export default function FormatsTab() {
           })}
       </PanelList>
 
-      <PanelFooter>
-        <CreateButton label="FORMAT" onClick={() => { setMode("create"); setSelectedId(null); }} />
-      </PanelFooter>
     </ConsolePanel>
   );
 
   return (
     <>
-      <ConsoleGrid cols="lg:grid-cols-[300px_1fr]" className="h-full">
+      <ConsoleGrid className="h-full">
         {aside}
         <ConsolePanel>
         {mode === "create" || mode === "edit" ? (
@@ -142,7 +142,7 @@ export default function FormatsTab() {
               onSubmit={(body) => save.mutate({ id: mode === "edit" ? (selected?.format_id ?? null) : null, body })}
             />
         ) : !selected ? (
-          <EmptyPane icon="heroicons-outline:swatch" title="No format selected" subtitle="Pick one from the list, or click ＋ NEW FORMAT to create one." />
+          <EmptyPane icon="heroicons-outline:swatch" title="No format selected" subtitle="Pick one from the list, or use ＋ above to create a format." />
         ) : (
           <FormatDetail
             format={selected}
