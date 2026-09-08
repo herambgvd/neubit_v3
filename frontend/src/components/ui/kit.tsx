@@ -247,11 +247,22 @@ export function Checkbox({ label, checked, onChange, disabled, className = "", .
 export interface TextareaProps extends Omit<ComponentPropsWithoutRef<"textarea">, "required"> {
   label?: ReactNode;
   required?: boolean;
+  /** Classes for the wrapping label — how a textarea fills a flex parent. */
+  wrapperClassName?: string;
 }
 
-export function Textarea({ label, required, className = "", ...props }: TextareaProps) {
+export function Textarea({
+  label,
+  required,
+  className = "",
+  wrapperClassName = "block",
+  ...props
+}: TextareaProps) {
   return (
-    <label className="block">
+    // `wrapperClassName` exists so a textarea can FILL a flex parent: the label
+    // element is between the caller's flex column and the field, so without a
+    // handle on it a `flex-1` on the textarea has nothing to stretch inside.
+    <label className={wrapperClassName}>
       {label && <Label required={required}>{label}</Label>}
       <textarea {...props} aria-required={required || undefined} className={`${AREA} ${className}`} />
     </label>

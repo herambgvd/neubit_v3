@@ -60,23 +60,23 @@ beforeEach(() => {
 describe("the Building tab", () => {
   it("is there for a tenant with Building Intelligence", () => {
     renderDetail();
-    expect(screen.getByRole("button", { name: "Building" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Building" })).toBeInTheDocument();
   });
 
   it("is gone without the analytics module", () => {
     entitlement.module = false;
     renderDetail();
 
-    expect(screen.queryByRole("button", { name: "Building" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Building" })).not.toBeInTheDocument();
     // The rest of the site screen is untouched.
-    expect(screen.getByRole("button", { name: "Floors" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Zones" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Floors" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Zones" })).toBeInTheDocument();
   });
 
   it("is gone without bi.read, module or not", () => {
     entitlement.perm = false;
     renderDetail();
-    expect(screen.queryByRole("button", { name: "Building" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Building" })).not.toBeInTheDocument();
   });
 
   it("falls back to Site info when the tab is selected but no longer allowed", () => {

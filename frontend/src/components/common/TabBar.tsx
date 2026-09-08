@@ -30,13 +30,21 @@ export function TabBar<K extends string = string>({ tabs = [], active, onChange,
   // strip has zero vertical overflow, so there is nothing to scroll and the underline
   // paints at its full 2px. Horizontal scrolling still works.
   return (
-    <nav className={`flex items-stretch gap-0.5 overflow-x-auto border-b border-nb-line ${className}`}>
+    // `role="tablist"` + `role="tab"` + `aria-selected`: this strip switches
+    // between views of one thing, and as bare buttons it announced neither that
+    // it was a tab set nor which tab was current.
+    <nav
+      role="tablist"
+      className={`flex items-stretch gap-0.5 overflow-x-auto border-b border-nb-line ${className}`}
+    >
       {tabs.map((t) => {
         const isActive = active === t.key;
         return (
           <button
             key={t.key}
             type="button"
+            role="tab"
+            aria-selected={isActive}
             onClick={() => onChange?.(t.key)}
             className={`inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition ${
               isActive

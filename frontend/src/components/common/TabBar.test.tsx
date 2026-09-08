@@ -24,7 +24,7 @@ describe("TabBar", () => {
     const onChange = vi.fn();
     render(<TabBar tabs={TABS} active="overview" onChange={onChange} />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Events" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Events" }));
 
     expect(onChange).toHaveBeenCalledWith("events");
   });
@@ -33,18 +33,25 @@ describe("TabBar", () => {
     const onChange = vi.fn();
     render(<TabBar tabs={TABS} active="events" onChange={onChange} />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Events" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Events" }));
 
     expect(onChange).toHaveBeenCalledWith("events");
   });
 
   it("renders one control per tab and nothing when there are none", () => {
     const { rerender } = render(<TabBar tabs={TABS} active="overview" onChange={vi.fn()} />);
-    expect(screen.getAllByRole("button")).toHaveLength(3);
+    expect(screen.getAllByRole("tab")).toHaveLength(3);
 
     rerender(<TabBar active={null} onChange={vi.fn()} />);
 
-    expect(screen.queryAllByRole("button")).toHaveLength(0);
+    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+  });
+
+  it("marks the current tab as selected, not just as coloured differently", () => {
+    render(<TabBar tabs={TABS} active="events" onChange={() => {}} />);
+
+    expect(screen.getByRole("tab", { name: "Events" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Storage" })).toHaveAttribute("aria-selected", "false");
   });
 
   it("renders tabs as buttons, so a tab click never submits the form around it", async () => {
@@ -55,7 +62,7 @@ describe("TabBar", () => {
       </form>,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Storage" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Storage" }));
 
     expect(onSubmit).not.toHaveBeenCalled();
   });
