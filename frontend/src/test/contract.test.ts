@@ -681,6 +681,21 @@ function dictKeys(entry: DictEntry): string[] {
   ];
 }
 
+/**
+ * The two loops below GENERATE the suite. An empty map would not fail — it would
+ * produce no tests at all, and a file with nothing in it passes. So the maps are
+ * asserted non-empty before anything is generated from them.
+ */
+describe("the contract suite has something to check", () => {
+  it("was built from a populated mapping", () => {
+    expect(Object.keys(MAPPING).length).toBeGreaterThan(5);
+  });
+
+  it("was built from a populated dictionary set", () => {
+    expect(Object.keys(DICTS).length).toBeGreaterThan(0);
+  });
+});
+
 for (const [key, entry] of Object.entries(MAPPING)) {
   describe(`${key} ↔ ${entry.model}`, () => {
     it("declares no field the model does not have", () => {

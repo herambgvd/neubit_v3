@@ -84,8 +84,11 @@ describe("a coefficient that does not exist", () => {
     ]);
 
     expect(screen.getAllByText("UNDEF").length).toBeGreaterThan(0);
-    expect(screen.queryByText("+0.00")).not.toBeInTheDocument();
-    expect(screen.queryByText("0.00")).not.toBeInTheDocument();
+    // ANY correlation value, not two spellings of zero. The component formats as
+    // `(r >= 0 ? "+" : "") + r.toFixed(2)`, so a bare "0.00" can never render and
+    // asserting its absence could not fail — while a bug that printed "-0.50"
+    // would have passed both of the literals this replaces.
+    expect(screen.queryByText(/^[+-]\d+\.\d{2}$/)).not.toBeInTheDocument();
   });
 
   it("marks the frozen series itself, so the reader knows which side is stuck", () => {

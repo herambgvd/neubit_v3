@@ -36,6 +36,7 @@ function monitor(id: string, position: number): WallMonitor {
 
 describe("a monitor's cell grid", () => {
   it("gives every offered layout a square grid whose area is its cell count", () => {
+    expect(MONITOR_LAYOUTS.length).toBeGreaterThan(0); // an empty list proves nothing
     for (const option of MONITOR_LAYOUTS) {
       const grid = monitorGrid(option.value);
       expect(grid.rows).toBe(grid.cols);

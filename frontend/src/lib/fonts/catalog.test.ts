@@ -17,6 +17,11 @@ const registry = read("./registry.ts");
 const themeCss = read("../../styles/theme.css");
 
 describe("the appearance catalogue agrees with what ships", () => {
+  it("has something to check — a loop over an empty catalogue asserts nothing", () => {
+    expect(FONT_OPTIONS.length).toBeGreaterThan(1);
+    expect(SCALE_OPTIONS.length).toBeGreaterThan(1);
+  });
+
   it("loads and exports a face for every option it offers", () => {
     const vars = registry.slice(registry.indexOf("export const fontVars"));
     for (const option of FONT_OPTIONS) {

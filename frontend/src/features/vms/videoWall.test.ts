@@ -32,6 +32,7 @@ describe("wall → camera-group layout mapping", () => {
   });
 
   it("never maps a wall onto a group too small to hold every one of its tiles", () => {
+    expect(LAYOUTS.length).toBeGreaterThan(0); // an empty list would assert nothing
     for (const wall of LAYOUTS) {
       const group = getGroupLayout(wallLayoutToGroup(wall.key));
       expect(group.capacity).toBeGreaterThanOrEqual(wall.capacity);
@@ -56,7 +57,9 @@ describe("wall → camera-group layout mapping", () => {
 
 describe("layout lookup", () => {
   it("declares a capacity equal to its area for every symmetric grid", () => {
-    for (const l of LAYOUTS.filter((x) => !isSpotlightLayout(x))) {
+    const grids = LAYOUTS.filter((x) => !isSpotlightLayout(x));
+    expect(grids.length).toBeGreaterThan(0); // and a filter that matched nothing
+    for (const l of grids) {
       expect(l.capacity).toBe(l.cols * l.rows);
     }
   });

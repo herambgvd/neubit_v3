@@ -66,6 +66,8 @@ describe("qualityTone", () => {
 
 describe("categoryMeta", () => {
   it("gives every known category a label, an icon and an accent", () => {
+    // A loop over an empty map asserts nothing and passes.
+    expect(Object.keys(CATEGORY_META).length).toBeGreaterThan(0);
     for (const [key, meta] of Object.entries(CATEGORY_META)) {
       expect(meta.key).toBe(key);
       expect(meta.label).toBeTruthy();
