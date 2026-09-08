@@ -352,6 +352,66 @@ async def test_consumer_routes_camera_and_access(maker, camera, db, spy):
     assert await consumer._engine.handle_access_event(_access_env("X")) == 1
 
 
+async def test_a_popup_the_engine_ITSELF_published_is_not_a_trigger(maker, db, camera, spy):
+    """The feedback loop that ran 6,600 fires off ONE motion event.
+
+    The `popup` action re-publishes the originating event's `event_type` and
+    `camera_id` — an operator has to be told what popped — on
+    `tenant.<id>.vms.popup`. That subject is inside this consumer's own
+    `tenant.*.vms.>` subscription, so the popup came back in, matched the same
+    rule, published another popup, and went round again. Cooldown was the only
+    brake, and it defaults to zero.
+
+    The engine's own `handle_camera_event` cannot tell the difference — the
+    payload is identical. Only the consumer can, from the envelope TYPE, which is
+    why this drives `_on_vms` and not the engine.
+    """
+    await _mk_rule(db, actions=[{"type": "popup", "config": {}}])
+
+    class _Bus:
+        async def subscribe(self, pattern, handler, *, durable=None):
+            pass
+
+    consumer = LinkageConsumer(_Bus(), maker)
+
+    popup_env = {
+        "tenant_id": str(TENANT),
+        "type": "vms.popup",
+        "payload": {
+            "camera_id": camera.id,
+            "event_type": "motion",
+            "severity": "alarm",
+            "reason": "motion at gate",
+        },
+    }
+    await consumer._on_vms(popup_env)
+    assert spy == [], "the consumer fed its own popup back into rule matching"
+
+    # And the real thing still fires, or the guard has simply turned linkage off.
+    await consumer._on_vms(_cam_event_env(camera.id))
+    assert [c[0] for c in spy] == ["popup"]
+
+
+async def test_a_wall_state_envelope_is_not_a_trigger(maker, db, camera, spy):
+    """Same family, same subscription: the wall/segment streams share `vms.>`.
+    Anything that is not a camera device event is somebody else's stream."""
+    await _mk_rule(db, actions=[{"type": "popup", "config": {}}])
+
+    class _Bus:
+        async def subscribe(self, pattern, handler, *, durable=None):
+            pass
+
+    consumer = LinkageConsumer(_Bus(), maker)
+    await consumer._on_vms(
+        {
+            "tenant_id": str(TENANT),
+            "type": "vms.wall.w1.state",
+            "payload": {"camera_id": camera.id, "event_type": "motion"},
+        }
+    )
+    assert spy == []
+
+
 # ── the device actions, for real ──────────────────────────────────────────────
 #
 # Everything above runs against the `spy` fixture, which replaces every executor —

@@ -14,11 +14,20 @@ cooldown + the fire-audit make redelivery safe (a re-delivered event within cool
 no-op). No-op when NATS is disabled. Wired in ``app.main`` lifespan alongside the
 recording consumer.
 
-We deliberately DON'T subscribe our OWN ``tenant.*.vms.popup`` / recording-segment
-subjects into rule-matching — a rule triggers on ``event_type`` (a camera device event),
-and popup/segment/status envelopes carry no matching ``event_type``, so they're ignored
-by the engine (``handle_camera_event`` early-returns when there's no ``event_type`` +
-``camera_id``). This keeps the ``vms.>`` wildcard safe without a feedback loop.
+ONLY ``vms.camera.*`` envelopes reach rule matching, and that is a FEEDBACK-LOOP
+GUARD, not tidiness.
+
+This used to rely on "popup/segment envelopes carry no matching ``event_type``, so
+the engine ignores them". That was false. The ``popup`` action re-publishes the
+originating event's ``event_type`` and ``camera_id`` (an operator has to be told
+WHAT popped), so its ``tenant.<id>.vms.popup`` envelope came straight back through
+this same ``tenant.*.vms.>`` subscription, matched the same rule, published another
+popup, and went round again. One motion event with a popup rule and no cooldown
+produced 6,600 fires in seconds — the only brake was the rule's cooldown, which
+defaults to zero.
+
+So the filter is explicit here: an event that did not arrive on the camera
+device-event subject is not a trigger, whatever its payload happens to carry.
 """
 
 from __future__ import annotations
@@ -35,6 +44,10 @@ _VMS_SUBJECT = "tenant.*.vms.>"
 _VMS_DURABLE = "vision-linkage-vms"
 _ACCESS_SUBJECT = "tenant.*.access.>"
 _ACCESS_DURABLE = "vision-linkage-access"
+
+#: Envelope ``type`` prefix of a camera DEVICE event (``vms.camera.<event_type>``,
+#: derived from the subject by the bus). The only family that may trigger a rule.
+_CAMERA_EVENT_PREFIX = "vms.camera."
 
 
 class LinkageConsumer:
@@ -61,7 +74,16 @@ class LinkageConsumer:
         )
 
     async def _on_vms(self, env: dict) -> None:
-        """A camera ``vms.>`` event. Never raises out (the engine is graceful)."""
+        """A camera device event. Never raises out (the engine is graceful).
+
+        The subscription is the whole ``vms.>`` family (one durable, and the wall /
+        popup / segment streams share it), so the TYPE is what decides whether an
+        envelope is a trigger. Anything but ``vms.camera.*`` is somebody else's
+        stream — including this consumer's own popup output.
+        """
+        etype = str(env.get("type") or "")
+        if not etype.startswith(_CAMERA_EVENT_PREFIX):
+            return
         try:
             n = await self._engine.handle_camera_event(env)
             if n:
