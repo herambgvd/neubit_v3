@@ -210,7 +210,7 @@ export default function ConsoleStrip() {
           <div className={segBox}>
             {[
               { v: "config", label: "CONFIG", icon: "heroicons-outline:adjustments-horizontal" },
-              { v: "templates", label: "EMAIL TEMPLATES", icon: "heroicons-outline:envelope" },
+              { v: "templates", label: "TEMPLATES", icon: "heroicons-outline:envelope" },
               { v: "tags", label: "TAGS", icon: "heroicons-outline:tag" },
               { v: "health", label: "HEALTH", icon: "heroicons-outline:heart" },
               { v: "license", label: "LICENSE", icon: "heroicons-outline:check-badge" },

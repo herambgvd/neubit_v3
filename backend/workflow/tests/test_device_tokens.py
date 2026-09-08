@@ -174,3 +174,36 @@ def test_notify_consumer_popup_fans_out_to_push_users():
             await engine.dispose()
 
     _run(go())
+
+
+def test_notify_consumer_carries_the_html_flag_to_the_connector():
+    """A rendered email template arrives as an HTML body, and only the extra
+    metadata tells the SMTP connector to send it as one. Dropped here, the
+    operator receives the markup as text."""
+
+    async def go():
+        engine, sm = await _make_session()
+        try:
+            from app.workflow.notifications.consumer import NotifyConsumer
+
+            consumer = NotifyConsumer.__new__(NotifyConsumer)
+            consumer._sm = sm
+            await consumer.handle_notify_request({
+                "tenant_id": str(TENANT_A), "channel": "email", "target": "ops@x.io",
+                "subject": "S", "body": "<p>B</p>", "html": True,
+            })
+            await consumer.handle_notify_request({
+                "tenant_id": str(TENANT_A), "channel": "email", "target": "ops@x.io",
+                "subject": "S", "body": "plain",
+            })
+            async with sm() as session:
+                rows = (await session.execute(select(Notification))).scalars().all()
+                by_body = {r.body: r for r in rows}
+                assert by_body["<p>B</p>"].extra["html"] is True
+                # A plain request carries no flag at all, not html=False: the
+                # connector's default path must stay the untouched one.
+                assert "html" not in by_body["plain"].extra
+        finally:
+            await engine.dispose()
+
+    _run(go())

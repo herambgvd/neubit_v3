@@ -91,12 +91,19 @@ def require_tenant_active():
     callers bypass, matching ``feature_enabled``.
     """
 
-    from ..auth.deps import _bearer, _resolve_actor
+    from ..auth.deps import _bearer, _resolve_actor, is_service_token
 
     async def _dep(
         db: AsyncSession = Depends(get_db),
         cred=Depends(_bearer),
     ) -> None:
+        # A SERVICE token first: vision mints one whose `sub` has no `users` row,
+        # so `_resolve_actor` 401s it — which silently made every service-to-service
+        # call to a guarded router fail, `require_service_permission` on the route
+        # never even reached. A service principal is a platform caller and takes the
+        # same bypass `scope.is_platform` takes three lines down.
+        if is_service_token(cred):
+            return
         # Resolves a person or a service key, not `get_scope`: `get_scope` refuses
         # api-key tokens, so using it here 401s every key on a guarded router.
         actor = await _resolve_actor(cred, db)

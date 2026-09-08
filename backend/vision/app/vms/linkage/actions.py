@@ -25,6 +25,7 @@ import asyncio
 import logging
 import uuid as _uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from kernel.auth import Scope
@@ -34,10 +35,17 @@ from app.vms.common.node_routing import node_for_camera
 from app.vms.federation import client as fed
 from app.vms.models import Camera
 
+from . import core_templates
+
 log = logging.getLogger("vision.linkage.actions")
 
 # A platform scope for the background executors (they authorize off the camera/event,
 # not a caller — the engine already resolved the tenant from the event envelope).
+
+
+def _now_text() -> str:
+    """The ``when`` a template renders — one format, so every alert reads alike."""
+    return datetime.now(timezone.utc).strftime("%b %-d, %Y · %H:%M UTC")
 
 
 @dataclass
@@ -123,16 +131,52 @@ async def action_notify(ctx: ActionContext, config: dict) -> ActionResult:
     push). ``config`` carries ``{channel, target?, subject?, body?}`` — passed through.
     """
     channel = (config.get("channel") or "email").strip()
+    subject = config.get("subject") or f"VMS: {ctx.title}"
+    body = config.get("body") or ctx.reason or ctx.title
+    html = False
+
+    # A rule may name a core email TEMPLATE instead of composing its own wording.
+    # Rendered here, at publish time, so the downstream consumer and connectors
+    # stay template-unaware; a failed render keeps the plain text above rather
+    # than losing the alert (see core_templates).
+    template = (config.get("template") or "").strip()
+    if template:
+        rendered = await core_templates.render(
+            ctx.tenant_id,
+            template,
+            {
+                "title": ctx.title,
+                "message": ctx.reason or ctx.title,
+                "severity": ctx.severity,
+                "when": _now_text(),
+                "camera_id": ctx.camera_id,
+                "event_type": ctx.event_type,
+                **(config.get("template_context") or {}),
+            },
+        )
+        if rendered is not None:
+            subject, body = rendered
+            html = True
+        else:
+            log.info("template %r could not be rendered; sending plain text", template)
+
     payload = {
         "channel": channel,
         "target": config.get("target"),
-        "subject": config.get("subject") or f"VMS: {ctx.title}",
-        "body": config.get("body") or ctx.reason or ctx.title,
+        "subject": subject,
+        "body": body,
+        # The body is a rendered email document, not a line of text — the SMTP
+        # connector must send it as HTML or the operator reads the markup.
+        "html": html,
         "event_id": ctx.event_id,
         "camera_id": ctx.camera_id,
         "event_type": ctx.event_type,
         "severity": ctx.severity,
-        "config": {k: v for k, v in config.items() if k not in {"channel", "target", "subject", "body"}},
+        "config": {
+            k: v
+            for k, v in config.items()
+            if k not in {"channel", "target", "subject", "body", "template", "template_context"}
+        },
     }
     try:
         subj = await emit_notify_request(ctx.tenant_id, payload)

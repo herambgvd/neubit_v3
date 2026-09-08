@@ -8,12 +8,15 @@
 //
 // Config fields per type (match vision linkage.actions.* config.get keys):
 //   start_recording : pre_buffer_seconds, post_buffer_seconds (optional; camera-derived)
-//   notify          : channel, target, subject, body
+//   notify          : channel, target, template, subject, body
 //   ptz_preset      : preset_token
 //   trigger_output  : relay_token, state, release_after_seconds
 //   popup           : reason
 import type { ReactNode } from "react";
 import { Icon } from "@iconify/react";
+import { useQuery } from "@tanstack/react-query";
+
+import { api } from "@/lib/api";
 
 import { Input, Select } from "@/components/ui/kit";
 import { LINKAGE_ACTION_TYPES } from "../constants";
@@ -91,13 +94,57 @@ export default function LinkageActionsBuilder({ actions = [], onChange }: Linkag
   );
 }
 
+// The email template a notify action renders through core, or "—" for the plain
+// subject/body pair below it. This is what makes an authored template reachable:
+// without a rule able to NAME one, a custom template had no sender.
+//
+// The list needs settings.manage, which a VMS rule editor may not hold — so a
+// failed load degrades to a name field rather than hiding the feature. The name
+// is what travels either way.
+function NotifyTemplateField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const templates = useQuery({
+    queryKey: ["messaging-templates"],
+    queryFn: () => api.get<{ name: string; subject: string }[]>("/messaging/templates").then((r) => r.data),
+    retry: false,
+  });
+  const items = templates.data;
+
+  return (
+    <Cfg label="Email template" span={2}>
+      {items && items.length > 0 ? (
+        <Select
+          ariaLabel="Email template"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          options={[
+            { value: "", label: "None — use the subject and body below" },
+            ...items.map((t) => ({ value: t.name, label: t.name })),
+          ]}
+          className="!h-9 !py-1.5"
+        />
+      ) : (
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="template name (blank = plain subject and body)"
+        />
+      )}
+    </Cfg>
+  );
+}
+
 // A tiny labelled input used inside the config grid.
 function Cfg({ label, children, span = 1 }: { label: ReactNode; children: ReactNode; span?: 1 | 2 }) {
+  // The control lives INSIDE the label, so the two are associated without an id
+  // to thread through: a screen reader announces the field's name, and clicking
+  // the caption focuses it. Sibling <label> text next to an input names nothing.
   return (
-    <div className={span === 2 ? "col-span-2" : ""}>
-      <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted">{label}</label>
+    <label className={`block ${span === 2 ? "col-span-2" : ""}`}>
+      <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted">
+        {label}
+      </span>
       {children}
-    </div>
+    </label>
   );
 }
 
@@ -164,12 +211,20 @@ function ActionConfig({ action, idx, patchConfig }: ActionConfigProps) {
           <Cfg label="Target (address / URL)">
             <Input value={str("target")} onChange={(e) => patchConfig(idx, "target", e.target.value)} placeholder="ops@site / https://…" />
           </Cfg>
-          <Cfg label="Subject">
-            <Input value={str("subject")} onChange={(e) => patchConfig(idx, "subject", e.target.value)} placeholder="VMS: {event}" />
-          </Cfg>
-          <Cfg label="Body">
-            <Input value={str("body")} onChange={(e) => patchConfig(idx, "body", e.target.value)} placeholder="uses the event reason if blank" />
-          </Cfg>
+          <NotifyTemplateField
+            value={str("template")}
+            onChange={(v) => patchConfig(idx, "template", v)}
+          />
+          {!str("template") && (
+            <>
+              <Cfg label="Subject">
+                <Input value={str("subject")} onChange={(e) => patchConfig(idx, "subject", e.target.value)} placeholder="VMS: {event}" />
+              </Cfg>
+              <Cfg label="Body">
+                <Input value={str("body")} onChange={(e) => patchConfig(idx, "body", e.target.value)} placeholder="uses the event reason if blank" />
+              </Cfg>
+            </>
+          )}
         </>
       );
 

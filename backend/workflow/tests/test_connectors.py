@@ -259,3 +259,36 @@ def test_webhook_propagates_a_non_2xx(http):
     state["raise"] = httpx.HTTPStatusError("500", request=None, response=None)
     with pytest.raises(httpx.HTTPStatusError):
         _run(WebhookConnector().send(_ctx(channel_config={"url": "https://h.test/x"})))
+
+
+# ── HTML bodies (rendered email templates) ─────────────────────────────
+# A linkage rule that names a core email template publishes the RENDERED
+# document as the body and sets metadata["html"]. Sent with set_content() that
+# arrives as visible markup, which is what the operator would report as "the
+# email is broken".
+
+
+def test_html_body_is_sent_as_an_html_part_with_a_text_alternative(smtp, monkeypatch):
+    monkeypatch.setenv("VE_SMTP_HOST", "smtp.test")
+    body = "<h2>Gate breach</h2><p>Person in a restricted zone</p>"
+    _run(EmailConnector().send(_ctx(body=body, metadata={"html": True})))
+    msg = smtp[0]["msg"]
+    assert msg.is_multipart()
+    types = [p.get_content_type() for p in msg.walk() if not p.get_content_maintype() == "multipart"]
+    assert types == ["text/plain", "text/html"]
+    html_part = [p for p in msg.walk() if p.get_content_type() == "text/html"][0]
+    assert "<h2>Gate breach</h2>" in html_part.get_content()
+    # The plain part carries the WORDS, not the tags.
+    text = [p for p in msg.walk() if p.get_content_type() == "text/plain"][0].get_content()
+    assert "Gate breach" in text and "Person in a restricted zone" in text
+    assert "<h2>" not in text
+
+
+def test_a_plain_body_stays_a_single_text_part(smtp, monkeypatch):
+    """No metadata flag = the unchanged behaviour. Every existing notification
+    is plain text, and must not start arriving as an HTML document."""
+    monkeypatch.setenv("VE_SMTP_HOST", "smtp.test")
+    _run(EmailConnector().send(_ctx(body="a door was forced")))
+    msg = smtp[0]["msg"]
+    assert not msg.is_multipart()
+    assert msg.get_content_type() == "text/plain"

@@ -300,11 +300,15 @@ describe("creating a template", () => {
     expect(await screen.findByRole("button", { name: "New template" })).toBeInTheDocument();
   });
 
-  it("says plainly that nothing sends a custom template yet", async () => {
+  it("says what will send the template it is about to create", async () => {
+    // A custom template is delivered by whatever NAMES it — a linkage rule's
+    // notify action. Saying so is the difference between designing an email and
+    // designing one that goes nowhere.
     renderWithProviders(<EmailTemplatesPage />);
     await userEvent.click(await screen.findByRole("button", { name: "New template" }));
 
-    expect(screen.getByText(/Nothing sends a custom template yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/linkage rule/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing sends a custom template yet/i)).toBeNull();
   });
 
   it("refuses a name the sender could not address, and one already taken", async () => {

@@ -104,6 +104,9 @@ class NotifyConsumer:
             "camera_id": envelope.get("camera_id"),
             "incident_id": envelope.get("incident_id") or envelope.get("instance_id"),
             "severity": envelope.get("severity"),
+            # The publisher rendered an email template: the body is an HTML
+            # document, and the email connector reads this to send it as one.
+            "html": bool(envelope.get("html")) or None,
             "source_config": envelope.get("config") or {},
         }
         extra = {k: v for k, v in extra.items() if v not in (None, {}) or k == "source_config"}

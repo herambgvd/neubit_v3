@@ -8,9 +8,10 @@
 // edit and a second modal to preview, so comparing what you wrote with what it
 // renders as meant closing one and opening the other.
 //
-// THERE IS NO "NEW TEMPLATE", and that is not an omission. The set is fixed by the
-// code that SENDS these emails (messaging/templates.py). A template nothing sends
-// is not a template — the operations here are read, override, and revert.
+// Built-ins come from the code that sends them (messaging/templates.py) and can
+// only be overridden or reverted. A CUSTOM template is created here and sent by
+// whatever names it: a VMS linkage rule's notify action picks one by name and
+// core renders it at publish time (POST /messaging/templates/{name}/render).
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";

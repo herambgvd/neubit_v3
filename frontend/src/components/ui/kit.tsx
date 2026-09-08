@@ -199,7 +199,14 @@ export function Select({ label, required, error, hint, className = "", ...props 
   return (
     <div className="block">
       {label && <Label required={required}>{label}</Label>}
-      <SelectMenu {...props} className={`!mt-0 ${error ? "!border-nb-crit" : ""} ${className}`} />
+      <SelectMenu
+        // The trigger is a <button>, which a <label> cannot name. Carry a string
+        // label across as the accessible name, or the picker is announced as its
+        // current value with no clue what it sets.
+        ariaLabel={typeof label === "string" ? label : undefined}
+        {...props}
+        className={`!mt-0 ${error ? "!border-nb-crit" : ""} ${className}`}
+      />
       <FieldNote error={error} hint={hint} />
     </div>
   );

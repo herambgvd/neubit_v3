@@ -189,3 +189,34 @@ async def test_enforced_2fa_login_blocks_then_enrolls(app, db):
         r = await c.post(f"{PREFIX}/auth/2fa/enroll/confirm", json={"mfa_token": mfa_token, "code": code})
         assert r.status_code == 200, r.text
         assert r.json()["access_token"]
+
+
+async def test_video_audit_ingest_accepts_a_service_token(app, db):
+    """vision's SERVICE token must reach the ingest route, not 401 before it.
+
+    Its `sub` is a reserved system UUID with no `users` row, and every base router
+    is wrapped in `require_tenant_active`, which resolves an actor. That guard used
+    to 401 the call before `require_service_permission` on the route was ever
+    consulted — so the shipped service-to-service path was closed while the test
+    above passed, because it authenticates a real user.
+    """
+    import time
+
+    import jwt
+
+    from app.core.config import get_settings
+
+    now = int(time.time())
+    token = jwt.encode(
+        {"sub": "00000000-0000-0000-0000-0000000000ec", "type": "access",
+         "tenant_id": None, "is_superadmin": True, "permissions": ["*"],
+         "iat": now, "exp": now + 120},
+        get_settings().jwt_secret, algorithm="HS256",
+    )
+    async with _client(app) as c:
+        r = await c.post(
+            f"{PREFIX}/security/audit/video",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"action": "vms.export", "target_type": "camera", "target_id": "cam-3"},
+        )
+    assert r.status_code == 201, r.text

@@ -190,6 +190,29 @@ def require_permission(*permissions: str):
     return _dep
 
 
+def is_service_token(cred: HTTPAuthorizationCredentials | None) -> bool:
+    """True for a valid SERVICE token — a platform principal with no ``users`` row.
+
+    That is vision's `mint_service_token` shape: a signed access token carrying
+    ``is_superadmin`` (or ``"*"`` in ``permissions``) and a reserved system ``sub``.
+    Minting one needs the platform JWT secret, so the signature is the authority.
+
+    Says nothing about PERMISSIONS — the route's own
+    ``require_service_permission`` still decides. This exists so a guard that
+    resolves an actor (see tenancy/features.require_tenant_active) can let a
+    service call through instead of 401-ing it before the route is reached.
+    """
+    if cred is None:
+        return False
+    try:
+        payload = decode_token(cred.credentials)
+    except jwt.PyJWTError:
+        return False
+    if payload.get("type") != "access" or payload.get("act") is not None:
+        return False
+    return bool(payload.get("is_superadmin")) or "*" in (payload.get("permissions") or [])
+
+
 def require_service_permission(*permissions: str):
     """Like ``require_permission``, but also accepts a service token.
 

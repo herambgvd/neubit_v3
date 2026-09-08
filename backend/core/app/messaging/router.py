@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth.deps import get_current_user, require_permission
+from ..auth.deps import get_current_user, require_permission, require_service_permission
 from ..auth.models import User
 from ..auth.permissions import CorePerm
 from ..core.errors import NotFoundError, ValidationError
@@ -101,9 +101,10 @@ class TemplateOut(BaseModel):
     #: list, and a list the frontend invented would drift from what the sender
     #: actually passes.
     variables: list[str] = []
-    #: False for a name the product has no sender for. Nothing in this service
-    #: renders a custom name today, so the editor can say so instead of implying
-    #: a template that will never be delivered.
+    #: False for a name this service has no built-in sender for. Such a template
+    #: is still delivered — a VMS linkage rule's notify action names it and core
+    #: renders it (POST /templates/{name}/render) — but nothing in core sends it
+    #: on its own, and the editor says which kind the operator is looking at.
     is_builtin: bool = True
 
 
@@ -358,6 +359,50 @@ async def preview_template(
     subject, html = await email_templates.render_preview(
         db, name, app_name=branding.app_name, tenant_id=user.tenant_id
     )
+    return {"subject": subject, "html": html}
+
+
+class TemplateRenderIn(BaseModel):
+    """The values to substitute. Missing keys render empty, as Jinja does."""
+
+    context: dict = {}
+    #: Wrap the body in the branded email shell, as a real send would. Off for a
+    #: caller that supplies its own wrapper.
+    wrap: bool = True
+    #: Whose overrides to use. Honoured ONLY for a service token, which has no
+    #: user row and so no tenant of its own; an operator's own tenant always wins
+    #: over anything they put here, or this becomes a cross-tenant read.
+    tenant_id: uuid.UUID | None = None
+
+
+@router.post("/templates/{name}/render")
+async def render_template(
+    name: str,
+    data: TemplateRenderIn,
+    db: AsyncSession = Depends(get_db),
+    caller: User | None = Depends(require_service_permission(CorePerm.SETTINGS_MANAGE)),
+) -> dict:
+    """Render ``name`` with REAL values → ``{subject, html}``.
+
+    THE SEAM THAT MAKES A CUSTOM TEMPLATE REAL. Rendering lives here because the
+    override chain and the Jinja environment do; before this a template could be
+    written and previewed but nothing outside core could turn one into an email,
+    so a custom name had no possible sender. vision's linkage ``notify`` action is
+    the first caller.
+
+    ``require_service_permission`` for the same reason as ``/security/audit/video``:
+    vision mints a token whose ``sub`` has no ``users`` row, and ``caller`` is None
+    for it. Unlike ``/preview`` the context is the caller's, not the sample set.
+    """
+    from ..branding import service as branding_service
+
+    tenant_id = caller.tenant_id if caller is not None else data.tenant_id
+    branding = await branding_service.resolve(db, tenant_id)
+    ctx = {"app_name": branding.app_name, **(data.context or {})}
+    subject, body = await email_templates.render_with_overrides(
+        db, name, ctx, tenant_id=tenant_id
+    )
+    html = email_templates.wrap_email(branding.app_name, body) if data.wrap else body
     return {"subject": subject, "html": html}
 
 

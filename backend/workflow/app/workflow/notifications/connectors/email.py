@@ -47,7 +47,14 @@ class EmailConnector(Connector):
         msg["From"] = from_addr
         msg["To"] = ctx.recipient
         msg["Subject"] = ctx.subject or "(no subject)"
-        msg.set_content(ctx.body)
+        # A body rendered from a core email template is an HTML document. Sent as
+        # set_content() it arrives as visible markup, so it goes as an HTML part
+        # with a text/plain alternative for clients that refuse HTML.
+        if ctx.metadata.get("html"):
+            msg.set_content(_plain_text(ctx.body))
+            msg.add_alternative(ctx.body, subtype="html")
+        else:
+            msg.set_content(ctx.body)
 
         # Port 465 = implicit TLS (SMTPS); 587/25 = STARTTLS upgrade.
         implicit_tls = port == 465
@@ -62,3 +69,22 @@ class EmailConnector(Connector):
             start_tls=starttls,
         )
         log.info("email delivered to %s (tenant=%s)", ctx.recipient, ctx.tenant_id)
+
+
+def _plain_text(html: str) -> str:
+    """A readable text/plain fallback for an HTML body.
+
+    Not a converter — it strips tags and unescapes the handful of entities the
+    templates produce, so a text-only client gets the words rather than markup.
+    """
+    import html as _html
+    import re
+
+    text = re.sub(r"(?is)<(script|style)\b.*?</\1>", "", html)
+    text = re.sub(r"(?i)<(br|/p|/div|/h[1-6]|/tr)\s*/?>", "\n", text)
+    text = re.sub(r"(?s)<[^>]+>", "", text)
+    text = _html.unescape(text)
+    # Collapse the blank runs the stripped block tags leave behind.
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n\s*\n\s*\n+", "\n\n", text)
+    return text.strip()

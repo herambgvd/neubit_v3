@@ -2,11 +2,10 @@
 
 // Create a custom email template.
 //
-// IT SAYS WHAT IT IS. Nothing in the product sends a custom template today — the
-// three built-ins are named by the code that sends them. So this dialog states
-// that plainly rather than letting an admin build an email that is never
-// delivered and find out later. The rest of the plumbing (list, edit, preview,
-// delete) treats it exactly like a built-in.
+// IT SAYS WHAT IT IS. A custom template is delivered by whatever NAMES it, so
+// the dialog says where that naming happens (a VMS linkage notify action) rather
+// than leaving an admin to design an email and wonder what sends it. The rest of
+// the plumbing (list, edit, preview, delete) treats it exactly like a built-in.
 import { useState } from "react";
 import { Icon } from "@iconify/react";
 
@@ -70,12 +69,13 @@ export default function NewTemplateModal({
       }
     >
       <div className="space-y-4">
-        <div className="flex items-start gap-2 rounded-[10px] border border-nb-warn/30 bg-nb-warn/10 px-3 py-2.5 text-[12px] text-nb-warn">
-          <Icon icon="heroicons:exclamation-triangle" className="mt-0.5 shrink-0 text-sm" />
+        <div className="flex items-start gap-2 rounded-[10px] border border-card-border bg-hover/40 px-3 py-2.5 text-[12px] text-nb-soft">
+          <Icon icon="heroicons:information-circle" className="mt-0.5 shrink-0 text-sm" />
           <span>
-            Nothing sends a custom template yet. The three built-ins are named by the code
-            that sends them — this one is editable and previewable, but it will not be
-            delivered until something references it by name.
+            A custom template is sent by whatever names it. Pick it as the{" "}
+            <strong className="font-medium text-foreground">Email template</strong> of a
+            linkage rule&rsquo;s notify action, and that rule&rsquo;s alerts are delivered
+            with this design.
           </span>
         </div>
 

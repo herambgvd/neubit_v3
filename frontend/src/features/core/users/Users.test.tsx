@@ -215,7 +215,10 @@ describe("the create form", () => {
     await userEvent.type(screen.getByPlaceholderText("Enter full name"), "Grace Hopper");
     await userEvent.type(screen.getByPlaceholderText("Enter email address"), "grace@acme.com");
     await userEvent.type(screen.getByPlaceholderText("Enter a password"), "hunter22");
-    await userEvent.click(screen.getByRole("button", { name: /select a role/i }));
+    // Named "Role" now, not by its placeholder: the picker's trigger is a button
+    // and carries its field label as an aria-label (kit.Select), so a screen
+    // reader announces what it sets rather than the current value.
+    await userEvent.click(screen.getByRole("button", { name: /^role$/i }));
     await userEvent.click(await screen.findByRole("option", { name: "Operator" }));
 
     await userEvent.click(screen.getByRole("button", { name: "Create" }));

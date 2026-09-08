@@ -46,6 +46,11 @@ export interface SelectMenuProps {
   className?: string;
   id?: string;
   name?: string;
+  /** Accessible name for the trigger. A custom picker is a <button>, so a
+   *  wrapping or adjacent <label> names nothing — without this it is announced
+   *  as the selected VALUE and nothing else. `Select` fills it from its own
+   *  `label` when that is a string. */
+  ariaLabel?: string;
 }
 
 /** Where the portalled panel sits — below the trigger, or above it when dropping up. */
@@ -65,6 +70,7 @@ export default function SelectMenu({
   className = "",
   id,
   name,
+  ariaLabel,
 }: SelectMenuProps) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<PanelPosition | null>(null);
@@ -174,6 +180,7 @@ export default function SelectMenu({
         disabled={disabled}
         onClick={toggle}
         onKeyDown={onKeyDown}
+        aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
         className={`${fieldClass} flex items-center justify-between text-left ${
