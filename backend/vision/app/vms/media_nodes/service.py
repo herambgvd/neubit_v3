@@ -476,7 +476,49 @@ class MediaNodeService:
             creds = await list_node_credentials(row.api_url or "")
         except NodeUnavailable as exc:
             raise ConflictError(f"recorder unavailable: {exc}") from exc
-        return [c for c in creds if not c.get("revoked_at")]
+        active = [c for c in creds if not c.get("revoked_at")]
+        return await self._heal_legacy_labels(row.api_url or "", active)
+
+    #: The label this VMS used to enrol under. It named a source tree, and it was
+    #: written into the RECORDER's credential list — the name an operator standing
+    #: at that recorder reads when deciding which key to revoke.
+    _RETIRED_LABELS = frozenset({"neubit_v3 VMS"})
+
+    async def _heal_legacy_labels(self, api_url: str, creds: list[dict]) -> list[dict]:
+        """Rename credentials still carrying OUR OWN retired default label.
+
+        Narrow on purpose: only the exact strings this VMS itself used to send are
+        touched, so a label an operator chose — or another VMS's — is never
+        rewritten. Without it the old name survives on both consoles until someone
+        re-enrols, which revokes a working credential to fix a string.
+
+        Best-effort: a recorder that refuses (an independently deployed one, where
+        this call has no settings.manage) or is unreachable keeps its old label and
+        the list is returned unchanged.
+        """
+        # NodeRefused subclasses NodeUnavailable, so the one except covers both:
+        # a recorder that will not let us rename, and one that is not answering.
+        from app.vms.federation.client import (
+            NodeUnavailable,
+            federation_label,
+            rename_node_credential,
+        )
+
+        want = federation_label()
+        out: list[dict] = []
+        for c in creds:
+            cid = c.get("id")
+            if not cid or c.get("label") not in self._RETIRED_LABELS:
+                out.append(c)
+                continue
+            try:
+                await rename_node_credential(api_url, cid, want)
+            except NodeUnavailable as exc:
+                log.info("could not rename stale credential %s: %s", cid, exc)
+                out.append(c)
+                continue
+            out.append({**c, "label": want})
+        return out
 
     async def enroll_credential(self, node_id: str) -> dict:
         """Enrol a fresh scoped credential on the node, OVERWRITE the stored key with it,

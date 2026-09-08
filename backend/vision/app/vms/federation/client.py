@@ -473,6 +473,30 @@ async def revoke_node_credential(api_url: str, cred_id: str) -> None:
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
 
 
+async def rename_node_credential(api_url: str, cred_id: str, label: str) -> None:
+    """PATCH …/federation/credentials/{cred_id} → change one credential's LABEL.
+
+    Label only: the recorder refuses anything else on this route, so this can
+    never widen a credential. Service-JWT auth (settings.manage-gated), which a
+    federation credential deliberately does not hold — so this works on a
+    co-located recorder and 403s on an independently deployed one, exactly like
+    enrolment. NodeUnavailable (NodeRefused for a 401/403) on non-2xx.
+    """
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/federation/credentials/{cred_id}"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.patch(
+                url,
+                headers={"Authorization": f"Bearer {mint_service_token()}"},
+                json={"label": label},
+            )
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+
+
 # ── operate-THROUGH-node (Phase-3) — the only two mutations the VMS makes on a
 # node-owned camera. Everything else on a federated camera stays read-only; PTZ
 # and snapshot are proxied to the owning NVR, which runs the real device op.
