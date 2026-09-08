@@ -7,12 +7,20 @@
 // LinkageRuleModal. Mirrors the Sites config layout. Lives under Config → Linkage.
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { ConfirmDialog, Spinner } from "@/components/ui/kit";
-import { ConsolePage } from "@/components/console";
-import { MasterDetail, ListPanel } from "@/components/common";
+import { ConfirmDialog } from "@/components/ui/kit";
+import {
+  ConsoleGrid,
+  ConsolePage,
+  ConsolePanel,
+  EmptyPane,
+  IconButton,
+  PanelCounts,
+  PanelHeader,
+  PanelList,
+  PanelSearch,
+} from "@/components/console";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { vms } from "./api";
@@ -85,77 +93,56 @@ export default function LinkageRulesPage() {
     setEditing(null);
   };
 
-  const listActions = (
-    <button
-      onClick={openNew}
-      title="New rule"
-      className="inline-flex h-7 items-center gap-1 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)]"
-    >
-      <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
-    </button>
-  );
-
   return (
     <ConsolePage>
-      <MasterDetail
-        fill
-        className="min-h-0 flex-1"
-        aside={
-          <ListPanel
+      <ConsoleGrid>
+        {/* LEFT — the rules */}
+        <ConsolePanel>
+          <PanelHeader
+            icon="heroicons-outline:bolt"
             title="Linkage"
             count={rules.length}
-            action={listActions}
-            search={search}
-            onSearch={setSearch}
-            searchPlaceholder="Search rules…"
+            actions={
+              <>
+                <PanelCounts
+                  items={[
+                    { tone: "good", value: activeCount, label: "active" },
+                    { tone: "idle", value: rules.length - activeCount, label: "inactive" },
+                  ]}
+                />
+                <IconButton icon="heroicons:plus" title="New rule" onClick={openNew} />
+              </>
+            }
+          />
+          <PanelSearch value={search} onChange={setSearch} placeholder="Search rules…" />
+          <PanelList
+            loading={q.isLoading}
+            // A failed load must never read as "no rules yet" — an estate with no
+            // automation and one whose automation could not be listed are opposite
+            // situations.
+            error={q.isError ? apiError(q.error, "Failed to load rules") : undefined}
+            empty={filtered.length === 0}
+            emptyText={
+              search.trim()
+                ? "No matches — try a different keyword."
+                : "No linkage rules yet. Use ＋ above to create one."
+            }
           >
-            <div className="flex items-center gap-3 px-4 pb-1 pt-1 text-xs">
-              <span className="flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-nb-good shadow-[0_0_5px_#34d399]" />
-                <span className="text-nb-soft">{activeCount} active</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-nb-faint" />
-                <span className="text-nb-soft">{rules.length - activeCount} inactive</span>
-              </span>
-            </div>
+            {filtered.map((r) => (
+              <LinkageRuleListItem
+                key={r.id}
+                rule={r}
+                selected={r.id === effectiveId}
+                onSelect={() => setSelectedId(r.id)}
+              />
+            ))}
+          </PanelList>
+        </ConsolePanel>
 
-            {q.isLoading ? (
-              <div className="px-4 py-8 flex items-center gap-2 text-sm text-nb-soft">
-                <Spinner className="!h-4 !w-4" /> Loading…
-              </div>
-            ) : q.isError ? (
-              <div className="px-4 py-6 text-center text-xs text-nb-crit">
-                {apiError(q.error, "Failed to load rules")}
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="px-4 py-12 text-center">
-                <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(96,165,250,.1)]">
-                  <Icon icon="heroicons-outline:bolt" className="text-lg text-nb-muted" />
-                </div>
-                <div className="text-sm font-medium text-nb-ink">
-                  {search.trim() ? "No matches" : "No linkage rules yet"}
-                </div>
-                <div className="mt-0.5 text-xs text-nb-soft">
-                  {search.trim() ? "Try a different keyword." : "Click Add to create your first rule."}
-                </div>
-              </div>
-            ) : (
-              <ul className="divide-y divide-nb-line/60">
-                {filtered.map((r) => (
-                  <LinkageRuleListItem
-                    key={r.id}
-                    rule={r}
-                    selected={r.id === effectiveId}
-                    onSelect={() => setSelectedId(r.id)}
-                  />
-                ))}
-              </ul>
-            )}
-          </ListPanel>
-        }
-      >
-        <section className="rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden min-h-0 flex flex-col">
+        {/* RIGHT — the selected rule. ConsolePanel FILLS the row: the old hand-rolled
+            section sized to its content, so the empty state was a short box floating
+            in a half-height pane. */}
+        <ConsolePanel>
           {selected ? (
             <LinkageRuleDetail
               key={selected.id}
@@ -169,18 +156,14 @@ export default function LinkageRulesPage() {
               onDelete={() => setConfirm({ rule: selected })}
             />
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-center py-20">
-              <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[rgba(96,165,250,.1)] text-nb-muted">
-                <Icon icon="heroicons-outline:bolt" className="text-xl" />
-              </span>
-              <div className="mt-3 text-sm font-semibold text-nb-ink">No rule selected</div>
-              <div className="text-xs text-nb-soft mt-0.5">
-                Pick one from the list, or click <b>Add</b> to create a new rule.
-              </div>
-            </div>
+            <EmptyPane
+              icon="heroicons-outline:bolt"
+              title="No rule selected"
+              subtitle="Pick one from the list, or use ＋ above to create a rule."
+            />
           )}
-        </section>
-      </MasterDetail>
+        </ConsolePanel>
+      </ConsoleGrid>
 
       <LinkageRuleModal
         open={editing !== undefined}
