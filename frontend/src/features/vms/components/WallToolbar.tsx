@@ -9,6 +9,7 @@ import { Icon } from "@iconify/react";
 import Link from "next/link";
 
 import LayoutPicker from "./LayoutPicker";
+import HostLoadChip from "./HostLoadChip";
 import { getLayout } from "../videoWall";
 
 interface IconBtnProps {
@@ -44,10 +45,13 @@ function IconBtn({ icon, title, onClick, active = false, spinning = false, dange
 /** The wall's view mode — GRID / MAP / SPLIT (see VIEW_MODES). */
 export type WallViewMode = "grid" | "map" | "split";
 
-const VIEW_MODES: { key: WallViewMode; label: string; icon: string }[] = [
-  { key: "grid", label: "GRID", icon: "heroicons-outline:squares-2x2" },
-  { key: "map", label: "MAP", icon: "heroicons-outline:map" },
-  { key: "split", label: "SPLIT", icon: "heroicons-outline:view-columns" },
+// Icons with a title, not words: this row sits above a live wall and every
+// character in it is width a tile does not get. The title carries the wording
+// for a hover and for a screen reader, and `aria-pressed` says which is on.
+const VIEW_MODES: { key: WallViewMode; title: string; icon: string }[] = [
+  { key: "grid", title: "Grid — camera tiles", icon: "heroicons-outline:squares-2x2" },
+  { key: "map", title: "Map — cameras on the floor plan", icon: "heroicons-outline:map" },
+  { key: "split", title: "Split — grid and map side by side", icon: "heroicons-outline:view-columns" },
 ];
 
 // Global stream-quality profiles (mockup top-bar). Maps to the media profile the
@@ -186,15 +190,17 @@ export default function WallToolbar({
             <button
               key={m.key}
               type="button"
+              title={m.title}
+              aria-label={m.title}
+              aria-pressed={viewMode === m.key}
               onClick={() => onViewMode?.(m.key)}
-              className={`inline-flex h-[29px] items-center gap-1.5 px-2.5 text-[11.5px] font-medium tracking-[1.1px] transition ${
+              className={`inline-flex h-[29px] w-[31px] items-center justify-center transition ${
                 viewMode === m.key
                   ? "bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
                   : "text-[#aec2e8] hover:bg-[rgba(150,180,245,.06)] hover:text-[#67e8f9]"
               }`}
             >
               <Icon icon={m.icon} className="text-sm" />
-              {m.label}
             </button>
           ))}
         </div>
@@ -216,12 +222,12 @@ export default function WallToolbar({
           <button
             type="button"
             title="Save the current wall as a reusable group"
+            aria-label="Save the current wall as a reusable group"
             disabled={!canSaveGroup}
             onClick={onSaveGroup}
-            className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-2.5 text-xs font-medium text-[#f2f6ff] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9] disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex h-[33px] w-[33px] items-center justify-center rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] text-[#aec2e8] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9] disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <Icon icon="heroicons-outline:folder-plus" className="text-sm text-[#7e93bf]" />
-            Save group
+            <Icon icon="heroicons-outline:folder-plus" className="text-base" />
           </button>
         )}
 
@@ -243,22 +249,18 @@ export default function WallToolbar({
 
         {/* PLAYBACK — the wall's DVR. It opens the transport dock, and from there
             a click on the timeline puts the recording in the tiles themselves.
-            Named and iconed for what the operator is after (playback) rather than
-            for the mechanism (a playout transport), which is why the old label
-            read as a developer's word for a viewer's feature. */}
-        <button
-          type="button"
+            An icon like every other control in this row: it is a toggle, and the
+            lit state says it is open more directly than a word beside it did.
+            The title carries the wording for a hover and for a screen reader. */}
+        <IconBtn
+          icon="heroicons:play-circle"
           title={playoutOpen ? "Close playback" : "Playback — scrub recordings on the wall"}
+          active={playoutOpen}
           onClick={onTogglePlayout}
-          className={`inline-flex h-[33px] items-center gap-1.5 rounded-[8px] border px-2.5 text-xs font-medium transition ${
-            playoutOpen
-              ? "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
-              : "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.6)] hover:text-[#22d3ee]"
-          }`}
-        >
-          <Icon icon="heroicons:play-circle" className="text-base" />
-          Playback
-        </button>
+        />
+
+        {/* Host load — CPU/RAM of the box decoding these tiles. */}
+        <HostLoadChip />
 
         {/* Alarm count chip (real count; hidden at zero) */}
         {alarmCount > 0 && (
@@ -341,15 +343,16 @@ function TourControl({ tour, onStart, onStop, onInterval }: TourControlProps) {
     <div className="relative inline-flex" ref={ref}>
       <button
         type="button"
+        title={active ? "Stop the tour" : "Start a tour — cycle the wall through pages of cameras"}
+        aria-label={active ? "Stop the tour" : "Start a tour"}
         onClick={active ? onStop : onStart}
-        className={`inline-flex h-8 items-center gap-1.5 rounded-l-[8px] border px-2.5 text-xs font-medium transition ${
+        className={`inline-flex h-8 w-[31px] items-center justify-center rounded-l-[8px] border transition ${
           active
             ? "border-[rgba(251,191,36,.5)] bg-[rgba(251,191,36,.12)] text-[#fbbf24]"
             : "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
         }`}
       >
         <Icon icon={active ? "heroicons-solid:stop" : "heroicons-solid:play"} className="text-sm" />
-        {active ? "Stop" : "Tour"}
       </button>
       <button
         type="button"

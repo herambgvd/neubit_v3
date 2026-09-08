@@ -312,9 +312,9 @@ export default function CameraRail({
         )}
       </div>
 
-      <div className="border-t border-[rgba(150,180,245,.22)] px-3 py-2 font-mono text-[10px] uppercase tracking-[1px] text-[#7e93bf]">
-        Drag a camera or a recorder onto a tile — or double-click to fill the next free tiles.
-      </div>
+      {/* No footer hint. Drag-and-drop and double-click are how every camera
+          rail in this class of product works, and a permanent strip of
+          instructions is read once and then occupies the rail forever. */}
     </aside>
   );
 }
