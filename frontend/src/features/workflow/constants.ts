@@ -51,7 +51,15 @@ export const CAMERA_SOURCES = new Set<string>(["vision"]);
 // segment lives in the global header bar — NOT in the page. So this list is shared:
 // ConsoleStrip renders the segment from it and WorkflowConfig maps `key` to the tab
 // component. `key` is the ?view= value; the FIRST entry is the default view.
-export type WorkflowViewKey = "sops" | "triggers" | "forms" | "formats" | "simulator" | "notifications" | "threat";
+export type WorkflowViewKey =
+  | "sops"
+  | "triggers"
+  | "forms"
+  | "formats"
+  | "simulator"
+  | "notifications"
+  | "channels"
+  | "threat";
 
 export interface WorkflowView {
   key: WorkflowViewKey;
@@ -66,5 +74,9 @@ export const WORKFLOW_VIEWS: WorkflowView[] = [
   { key: "formats", label: "FORMATS", icon: "heroicons-outline:swatch" },
   { key: "simulator", label: "SIMULATOR", icon: "heroicons-outline:beaker" },
   { key: "notifications", label: "NOTIFICATIONS", icon: "heroicons-outline:bell-alert" },
+  // Where a notification GOES. The dispatcher has always read these rows; until
+  // now nothing could write one, so every send fell back to the service's own
+  // SMTP environment or failed with no way to fix it from the console.
+  { key: "channels", label: "CHANNELS", icon: "heroicons-outline:paper-airplane" },
   { key: "threat", label: "THREAT LEVELS", icon: "heroicons-outline:shield-exclamation" },
 ];

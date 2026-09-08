@@ -11,7 +11,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, Modal } from "@/components/ui/kit";
+import { Button, Modal, Select } from "@/components/ui/kit";
 import { fieldClass, areaClass, FieldLabel } from "@/components/common";
 import { api, apiError } from "@/lib/api";
 import type { Page } from "@/lib/types";
@@ -90,6 +90,8 @@ export default function TransitionModal({ sopId, states = [], transition, defaul
   const [notifyType, setNotifyType] = useState<NotifyType>("none");
   const [notifyRoleIds, setNotifyRoleIds] = useState<string[]>([]);
   const [notifyUserIds, setNotifyUserIds] = useState<string[]>([]);
+  // A CORE email template by name — the one an operator can actually design.
+  const [coreTemplate, setCoreTemplate] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const [smsMessage, setSmsMessage] = useState("");
@@ -106,11 +108,21 @@ export default function TransitionModal({ sopId, states = [], transition, defaul
     setNotifyType(nc.type || "none");
     setNotifyRoleIds(nc.role_ids || []);
     setNotifyUserIds(nc.user_ids || []);
+    setCoreTemplate(nc.core_template || "");
     setEmailSubject(nc.email_subject || "");
     setEmailBody(nc.email_body || "");
     setSmsMessage(nc.sms_message || "");
     setNameErr("");
   }, [transition]);
+
+  // The templates core serves. Listing them needs settings.manage, which a SOP
+  // author may not hold — a refused list simply offers none, and the inline
+  // subject/body pair below still works.
+  const coreTemplates = useQuery({
+    queryKey: ["messaging-templates"],
+    queryFn: () => api.get<{ name: string }[]>("/messaging/templates").then((r) => r.data),
+    retry: false,
+  });
 
   const formsQ = useQuery({ queryKey: ["wf-forms"], queryFn: () => wfApi.forms.list({ limit: 100 }) });
   const forms = useMemo<FormPublic[]>(() => (formsQ.data ? asItems(formsQ.data) : []), [formsQ.data]);
@@ -134,8 +146,14 @@ export default function TransitionModal({ sopId, states = [], transition, defaul
     if (notifyRoleIds.length) cfg.role_ids = notifyRoleIds;
     if (notifyUserIds.length) cfg.user_ids = notifyUserIds;
     if (notifyType === "email" || notifyType === "both") {
-      if (emailSubject) cfg.email_subject = emailSubject;
-      if (emailBody) cfg.email_body = emailBody;
+      // A core template replaces the wording entirely, so the inline pair is not
+      // written beside it — two sources for one email, one of which silently
+      // loses, is the confusion this choice exists to remove.
+      if (coreTemplate) cfg.core_template = coreTemplate;
+      else {
+        if (emailSubject) cfg.email_subject = emailSubject;
+        if (emailBody) cfg.email_body = emailBody;
+      }
     }
     if (notifyType === "sms" || notifyType === "both") {
       if (smsMessage) cfg.sms_message = smsMessage;
@@ -281,19 +299,43 @@ export default function TransitionModal({ sopId, states = [], transition, defaul
                   {(notifyType === "email" || notifyType === "both") && (
                     <div className="space-y-3">
                       <div>
-                        <FieldLabel>Email subject</FieldLabel>
-                        <input value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} placeholder="[{priority}] {instance_name}" className={fieldClass} />
+                        <FieldLabel>Email template</FieldLabel>
+                        <Select
+                          ariaLabel="Email template"
+                          value={coreTemplate}
+                          onChange={(e) => setCoreTemplate(e.target.value)}
+                          options={[
+                            { value: "", label: "None — use the subject and body below" },
+                            ...(coreTemplates.data || []).map((t) => ({ value: t.name, label: t.name })),
+                          ]}
+                          className="!h-9 !py-1.5"
+                        />
+                        <p className="mt-1 text-[11px] text-nb-muted">
+                          Designed in Platform → Templates, rendered there, and sent in the
+                          branded shell.
+                        </p>
                       </div>
-                      <div>
-                        <FieldLabel>Email body template</FieldLabel>
-                        <textarea value={emailBody} onChange={(e) => setEmailBody(e.target.value)} rows={4} placeholder="Workflow {instance_name} moved from {from_state} to {to_state}." className={areaClass} />
-                      </div>
-                      <p className="text-[11px] text-nb-muted">
-                        Available placeholders:{" "}
-                        {["{instance_name}", "{from_state}", "{to_state}", "{priority}"].map((p) => (
-                          <code key={p} className="mr-1 rounded-sm bg-[rgba(96,165,250,.1)] px-1">{p}</code>
-                        ))}
-                      </p>
+                      {/* The inline pair only when no template is chosen: two
+                          sources for one email, one of which silently loses, is
+                          what the choice above exists to remove. */}
+                      {!coreTemplate && (
+                        <>
+                          <div>
+                            <FieldLabel>Email subject</FieldLabel>
+                            <input value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} placeholder="[{priority}] {instance_name}" className={fieldClass} />
+                          </div>
+                          <div>
+                            <FieldLabel>Email body template</FieldLabel>
+                            <textarea value={emailBody} onChange={(e) => setEmailBody(e.target.value)} rows={4} placeholder="Workflow {instance_name} moved from {from_state} to {to_state}." className={areaClass} />
+                          </div>
+                          <p className="text-[11px] text-nb-muted">
+                            Available placeholders:{" "}
+                            {["{instance_name}", "{from_state}", "{to_state}", "{priority}"].map((p) => (
+                              <code key={p} className="mr-1 rounded-sm bg-[rgba(96,165,250,.1)] px-1">{p}</code>
+                            ))}
+                          </p>
+                        </>
+                      )}
                     </div>
                   )}
 

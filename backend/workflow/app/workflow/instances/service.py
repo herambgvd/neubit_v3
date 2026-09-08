@@ -17,6 +17,7 @@ from kernel.auth import Scope, assert_owned, scoped
 from kernel.errors import ConflictError, ValidationError
 
 from ..core.actor import actor_id as _actor_id, actor_name as _actor_name
+from ..core import core_templates
 from ..core.enums import (
     CLOSED_STATUSES,
     InstancePriority,
@@ -362,7 +363,21 @@ class InstanceService:
             if template is not None and template.tenant_id not in (None, inst.tenant_id):
                 template = None
 
-        if template is not None:
+        # A CORE email template wins over both: it is the one an operator can
+        # actually design (blocks, variables, the branded shell), and rendering
+        # lives in core because the override chain and the branding do. Falls
+        # back rather than failing — core being unreachable must not swallow the
+        # notification, only its formatting.
+        core_name = (cfg.get("core_template") or "").strip()
+        rendered = None
+        if core_name:
+            rendered = await core_templates.render(inst.tenant_id, core_name, render_ctx)
+            if rendered is None:
+                log.info("core template %r unavailable; using the local wording", core_name)
+
+        if rendered is not None:
+            subject, body_text = rendered
+        elif template is not None:
             subject = render_template(template.subject, render_ctx)
             body_text = render_template(template.body, render_ctx)
         else:
@@ -384,8 +399,14 @@ class InstanceService:
                 tenant_id=inst.tenant_id, channel_type=channel_type, recipient=addr,
                 subject=subject, body=body_text, status="pending",
                 instance_id=inst.instance_id,
-                extra={"transition_id": trans.transition_id,
-                       "template_id": template_id if template is not None else None},
+                extra={
+                    "transition_id": trans.transition_id,
+                    "template_id": template_id if template is not None else None,
+                    "core_template": core_name or None,
+                    # A core template renders an HTML document. The SMTP connector
+                    # reads this to send it as one instead of printing the markup.
+                    "html": True if rendered is not None else None,
+                },
             ))
         await self.db.commit()
 

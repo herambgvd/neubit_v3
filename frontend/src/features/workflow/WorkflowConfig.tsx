@@ -19,6 +19,7 @@ import TriggersTab from "./components/config/TriggersTab";
 import FormatsTab from "./components/config/FormatsTab";
 import FormsTab from "./components/config/FormsTab";
 import NotificationTemplatesTab from "./components/config/NotificationTemplatesTab";
+import ChannelsTab from "./components/config/ChannelsTab";
 import ThreatLevelsTab from "./components/config/ThreatLevelsTab";
 import SimulatorTab from "./components/config/SimulatorTab";
 import { WORKFLOW_VIEWS } from "./constants";
@@ -31,6 +32,7 @@ const VIEWS: Record<WorkflowViewKey, ComponentType> = {
   formats: FormatsTab,
   simulator: SimulatorTab,
   notifications: NotificationTemplatesTab,
+  channels: ChannelsTab,
   threat: ThreatLevelsTab,
 };
 

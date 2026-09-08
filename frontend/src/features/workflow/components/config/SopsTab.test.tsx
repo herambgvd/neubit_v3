@@ -125,19 +125,58 @@ describe("the SOP form", () => {
     expect(stub.matching("POST /workflow/sops")).toHaveLength(0);
   });
 
-  it("refuses escalation rules that are not valid JSON rather than posting them", async () => {
+  it("builds escalation rules instead of asking for JSON", async () => {
+    // They used to be a textarea holding
+    // `[{"after_hours":2,"to_priority":"high","notify_role_ids":[]}]`, where a
+    // stray comma meant "must be valid JSON" — and, before that error existed,
+    // silently meant no escalation at all. The sweep reads these every minute.
     renderWithProviders(<SopsTab />);
     await screen.findAllByText("Fire alarm response");
     await userEvent.click(screen.getByRole("button", { name: /new sop/i }));
 
     await userEvent.type(await screen.findByPlaceholderText("e.g. Fire alarm response"), "Flood");
-    const rules = screen.getByPlaceholderText(/after_hours/);
-    await userEvent.clear(rules);
-    await userEvent.type(rules, "not json");
+    await userEvent.click(screen.getByRole("button", { name: /add escalation/i }));
+
+    const hours = screen.getByLabelText(/hours before rule 1/i);
+    await userEvent.clear(hours);
+    await userEvent.type(hours, "4");
     await userEvent.click(screen.getByRole("button", { name: /create sop/i }));
 
-    expect(await screen.findByText(/must be valid json/i)).toBeInTheDocument();
-    expect(stub.matching("POST /workflow/sops")).toHaveLength(0);
+    await waitFor(() => expect(stub.matching("POST /workflow/sops")).toHaveLength(1));
+    expect(stub.body("POST /workflow/sops")!.escalation_rules).toEqual([
+      { after_hours: 4, to_priority: "high", notify_role_ids: [] },
+    ]);
+  });
+
+  it("sorts the ladder so the sweep reads it in the order it fires", async () => {
+    renderWithProviders(<SopsTab />);
+    await screen.findAllByText("Fire alarm response");
+    await userEvent.click(screen.getByRole("button", { name: /new sop/i }));
+    await userEvent.type(await screen.findByPlaceholderText("e.g. Fire alarm response"), "Flood");
+
+    await userEvent.click(screen.getByRole("button", { name: /add escalation/i }));
+    const first = screen.getByLabelText(/hours before rule 1/i);
+    await userEvent.clear(first);
+    await userEvent.type(first, "8");
+
+    await userEvent.click(screen.getByRole("button", { name: /add escalation/i }));
+    const second = screen.getByLabelText(/hours before rule 2/i);
+    await userEvent.clear(second);
+    await userEvent.type(second, "2");
+
+    await userEvent.click(screen.getByRole("button", { name: /create sop/i }));
+
+    await waitFor(() => expect(stub.matching("POST /workflow/sops")).toHaveLength(1));
+    const sent = stub.body("POST /workflow/sops")!.escalation_rules as { after_hours: number }[];
+    expect(sent.map((r) => r.after_hours)).toEqual([2, 8]);
+  });
+
+  it("says plainly when a SOP has no escalation at all", async () => {
+    renderWithProviders(<SopsTab />);
+    await screen.findAllByText("Fire alarm response");
+    await userEvent.click(screen.getByRole("button", { name: /new sop/i }));
+
+    expect(await screen.findByText(/keeps the priority it was created with/i)).toBeInTheDocument();
   });
 
   it("sends a null SLA rather than an empty string when none was given", async () => {

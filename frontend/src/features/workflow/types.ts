@@ -120,6 +120,9 @@ export interface TransitionNotificationConfig {
   type: "none" | "email" | "sms" | "both";
   role_ids?: string[];
   user_ids?: string[];
+  /** A CORE email template by name (Platform → Templates). It is rendered there
+   *  — designer, variables, branded shell — and wins over the inline strings. */
+  core_template?: string;
   email_subject?: string;
   email_body?: string;
   sms_message?: string;
