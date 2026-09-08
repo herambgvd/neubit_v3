@@ -21,14 +21,17 @@ export default function AppearanceCard() {
   const { font, scale, setFont, setScale } = useAppearance();
 
   return (
-    <Card className="p-6">
+    // A CONTAINER query, not a viewport one: this card is half the pane on My
+    // account and a third of it inside Config's channel grid, and `sm:` measures
+    // the window, so it would put two cramped columns in the narrow one.
+    <Card className="@container p-6">
       <h2 className="text-sm font-semibold text-foreground mb-1">Appearance</h2>
       <p className="text-xs text-muted mb-4">
         Applies to this browser straight away, and follows you to a new one.
       </p>
 
       <div className="text-xs font-medium text-foreground mb-2">Typeface</div>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2 @md:grid-cols-2">
         {FONT_OPTIONS.map((option) => (
           <button
             key={option.key}

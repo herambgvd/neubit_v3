@@ -23,8 +23,12 @@ export default function ConfigPage() {
   return (
     <div className="space-y-4">
       <Branding />
-      <Channels />
-      <AppearanceCard />
+      {/* Appearance sits INSIDE the channel grid, as the cell after the last
+          channel. Below it, it was a full-width card under a row that was itself
+          a third empty — two blocks of dead space stacked. */}
+      <Channels>
+        <AppearanceCard />
+      </Channels>
     </div>
   );
 }
