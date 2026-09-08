@@ -208,6 +208,11 @@ export default function WallToolbar({
 
       {/* Controls */}
       <div className="flex items-center gap-1.5">
+        {/* Host load FIRST in the control row: it is a reading, not a control,
+            and it belongs beside the thing an operator changes because of it —
+            the stream quality. */}
+        <HostLoadChip />
+
         <QualitySelect quality={quality} onQuality={onQuality} />
 
         <div className="mx-0.5 h-6 w-px bg-[rgba(150,180,245,.22)]" />
@@ -258,9 +263,6 @@ export default function WallToolbar({
           active={playoutOpen}
           onClick={onTogglePlayout}
         />
-
-        {/* Host load — CPU/RAM of the box decoding these tiles. */}
-        <HostLoadChip />
 
         {/* Alarm count chip (real count; hidden at zero) */}
         {alarmCount > 0 && (

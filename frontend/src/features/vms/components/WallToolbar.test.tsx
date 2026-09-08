@@ -15,7 +15,7 @@
  * The host-load chip is here for the same reason the row is tight: when a nine-up
  * wall starts dropping frames the first question is whether the box has headroom.
  */
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -149,5 +149,38 @@ describe("host load", () => {
     await screen.findByRole("button", { name: /playback/i });
     expect(screen.queryByTitle(/host load/i)).toBeNull();
     expect(screen.queryByText(/0%/)).toBeNull();
+  });
+
+  it("colours each reading on its own, green through red", async () => {
+    // A host at 30% CPU and 95% RAM is a MEMORY problem. One worst-of colour for
+    // the whole chip would say only "something is wrong", which is the half of
+    // the answer the stuttering wall already gave.
+    stubApi({ "GET /system/resources": { cpu_percent: 30, ram: { percent: 95 } } });
+    renderWithProviders(<WallToolbar {...props()} />);
+
+    const chip = await screen.findByTitle(/host load/i);
+    const cpu = within(chip).getByText("30%");
+    const ram = within(chip).getByText("95%");
+    expect(cpu.className).toContain("34d399"); // green
+    expect(ram.className).toContain("f87171"); // red
+  });
+
+  it("warns in amber between busy and saturated", async () => {
+    stubApi({ "GET /system/resources": { cpu_percent: 80, ram: { percent: 10 } } });
+    renderWithProviders(<WallToolbar {...props()} />);
+
+    const chip = await screen.findByTitle(/host load/i);
+    expect(within(chip).getByText("80%").className).toContain("fbbf24");
+    expect(within(chip).getByText("10%").className).toContain("34d399");
+  });
+
+  it("sits with the stream-quality control, which is what it is read against", async () => {
+    renderWithProviders(<WallToolbar {...props()} />);
+
+    const chip = await screen.findByTitle(/host load/i);
+    const quality = screen.getByTitle(/stream quality/i);
+    // Before it in document order: a loaded host is the reason an operator
+    // reaches for a lighter profile, so the reading comes first.
+    expect(chip.compareDocumentPosition(quality) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

@@ -17,11 +17,27 @@ import { Icon } from "@iconify/react";
 import { api } from "@/lib/api";
 import type { SystemResourcesSnapshot } from "@/lib/types";
 
-/** Blue idle, amber busy, red saturated — the same ramp Health uses. */
-function tone(pct: number): string {
-  if (pct >= 90) return "text-[#f87171] border-[rgba(248,113,113,.45)]";
-  if (pct >= 75) return "text-[#fbbf24] border-[rgba(251,191,36,.45)]";
-  return "text-[#aec2e8] border-[rgba(150,180,245,.22)]";
+/** Green healthy, amber busy, red saturated. */
+const BUSY = 75;
+const SATURATED = 90;
+
+/** The colour ONE reading gets. Per metric, not per chip: a host at 30% CPU and
+ *  95% RAM is a memory problem, and a single worst-of tone would say only that
+ *  something is wrong — which is the half of the answer an operator already has
+ *  from the wall stuttering. */
+export function loadTone(pct: number | null): string {
+  if (pct == null) return "text-[#7e93bf]";
+  if (pct >= SATURATED) return "text-[#f87171]";
+  if (pct >= BUSY) return "text-[#fbbf24]";
+  return "text-[#34d399]";
+}
+
+/** The chip's own border follows the worse of the two, so a saturated host is
+ *  visible without reading either number. */
+function frame(worst: number): string {
+  if (worst >= SATURATED) return "border-[rgba(248,113,113,.45)]";
+  if (worst >= BUSY) return "border-[rgba(251,191,36,.45)]";
+  return "border-[rgba(150,180,245,.22)]";
 }
 
 export default function HostLoadChip() {
@@ -45,13 +61,13 @@ export default function HostLoadChip() {
       title={`Host load — CPU ${cpu ?? "?"}% · RAM ${ram ?? "?"}%${
         data?.cpu_cores ? ` · ${data.cpu_cores} cores` : ""
       }`}
-      className={`inline-flex h-[33px] items-center gap-1.5 rounded-[8px] border bg-[rgba(150,180,245,.04)] px-2 font-mono text-[11px] font-semibold tabular-nums ${tone(worst)}`}
+      className={`inline-flex h-[33px] items-center gap-1.5 rounded-[8px] border bg-[rgba(150,180,245,.04)] px-2 font-mono text-[11px] font-semibold tabular-nums ${frame(worst)}`}
     >
-      <Icon icon="heroicons-outline:cpu-chip" className="text-sm opacity-80" />
-      {cpu ?? "—"}%
-      <span className="opacity-40">·</span>
-      <Icon icon="heroicons-outline:circle-stack" className="text-sm opacity-80" />
-      {ram ?? "—"}%
+      <Icon icon="heroicons-outline:cpu-chip" className="text-sm text-[#7e93bf]" />
+      <span className={loadTone(cpu)}>{cpu ?? "—"}%</span>
+      <span className="text-[#7e93bf] opacity-40">·</span>
+      <Icon icon="heroicons-outline:circle-stack" className="text-sm text-[#7e93bf]" />
+      <span className={loadTone(ram)}>{ram ?? "—"}%</span>
     </span>
   );
 }
