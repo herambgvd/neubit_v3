@@ -157,3 +157,46 @@ describe("whether the rule is actually working", () => {
     expect(screen.getByText(/camera scope/i)).toBeInTheDocument();
   });
 });
+
+describe("the camera scope picker", () => {
+  it("offers the recorder's cameras, not just VMS-owned rows", async () => {
+    // Single ownership — the normal estate — has no VMS camera rows at all, so
+    // this list read `/vms/cameras` and offered NOTHING on a site running three
+    // cameras. The only scope a rule could be given was "any camera".
+    stubAll({
+      "GET /vms/cameras": { items: [], total: 0 },
+      "GET /vms/federation/cameras": {
+        items: [
+          { id: "fed:n1:c1", name: "Channel 1", status: "online", node_id: "n1", node_name: "rec-a" },
+          { id: "fed:n1:c2", name: "Channel 2", status: "online", node_id: "n1", node_name: "rec-a" },
+        ],
+        unreachable: [],
+      },
+    });
+    renderWithProviders(<LinkageRulesPage />);
+    await screen.findAllByText("gate-motion-record");
+
+    await userEvent.click(screen.getByRole("button", { name: /new rule/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /applies to/i }));
+    await userEvent.click(await screen.findByRole("option", { name: /specific cameras/i }));
+
+    expect(await screen.findByText("Channel 1")).toBeInTheDocument();
+    expect(screen.getByText("Channel 2")).toBeInTheDocument();
+    expect(screen.queryByText(/^No cameras$/)).toBeNull();
+  });
+
+  it("says a recorder is not answering rather than that there are no cameras", async () => {
+    stubAll({
+      "GET /vms/cameras": { items: [], total: 0 },
+      "GET /vms/federation/cameras": () => httpError(503, "federation is unreachable"),
+    });
+    renderWithProviders(<LinkageRulesPage />);
+    await screen.findAllByText("gate-motion-record");
+
+    await userEvent.click(screen.getByRole("button", { name: /new rule/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /applies to/i }));
+    await userEvent.click(await screen.findByRole("option", { name: /specific cameras/i }));
+
+    expect(await screen.findByText(/recorder is not answering/i)).toBeInTheDocument();
+  });
+});

@@ -12,11 +12,13 @@
 //   ptz_preset      : preset_token
 //   trigger_output  : relay_token, state, release_after_seconds
 //   popup           : reason
+//   wall_display    : wall_id, monitor_id, cell_index, camera_source, camera_id?, hold_seconds?
 import type { ReactNode } from "react";
 import { Icon } from "@iconify/react";
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "@/lib/api";
+import { videowall } from "@/features/videowall/api";
 
 import { Input, Select } from "@/components/ui/kit";
 import { LINKAGE_ACTION_TYPES } from "../constants";
@@ -37,10 +39,15 @@ export default function LinkageActionsBuilder({ actions = [], onChange }: Linkag
   const patchType = (idx: number, type: string) =>
     set(actions.map((a, i) => (i === idx ? { type, config: {} } : a)));
   const patchConfig = (idx: number, key: string, value: unknown) =>
+    patchConfigs(idx, { [key]: value });
+
+  // SEVERAL keys in ONE update. Two patchConfig calls in one handler both read
+  // the same `actions` prop — this component is controlled — so the second
+  // overwrites the first and the earlier key is silently lost. That is exactly
+  // what "pick a wall" needs (set the wall, clear the monitor).
+  const patchConfigs = (idx: number, patch: Record<string, unknown>) =>
     set(
-      actions.map((a, i) =>
-        i === idx ? { ...a, config: { ...(a.config || {}), [key]: value } } : a,
-      ),
+      actions.map((a, i) => (i === idx ? { ...a, config: { ...(a.config || {}), ...patch } } : a)),
     );
 
   return (
@@ -77,7 +84,7 @@ export default function LinkageActionsBuilder({ actions = [], onChange }: Linkag
             </div>
 
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <ActionConfig action={action} idx={idx} patchConfig={patchConfig} />
+              <ActionConfig action={action} idx={idx} patchConfig={patchConfig} patchConfigs={patchConfigs} />
             </div>
           </div>
         );
@@ -152,9 +159,11 @@ interface ActionConfigProps {
   action: LinkageAction;
   idx: number;
   patchConfig: (idx: number, key: string, value: unknown) => void;
+  /** Several keys in one update — see the note on patchConfigs. */
+  patchConfigs: (idx: number, patch: Record<string, unknown>) => void;
 }
 
-function ActionConfig({ action, idx, patchConfig }: ActionConfigProps) {
+function ActionConfig({ action, idx, patchConfig, patchConfigs }: ActionConfigProps) {
   const c: Record<string, unknown> = action.config || {};
   // Config is a free dict (see the header); these read a key as the input type
   // it binds to, and anything else as "unset".
@@ -271,7 +280,134 @@ function ActionConfig({ action, idx, patchConfig }: ActionConfigProps) {
         </Cfg>
       );
 
+    case "wall_display":
+      return (
+        <WallDisplayFields
+          idx={idx}
+          str={str}
+          numOrStr={numOrStr}
+          num={num}
+          patchConfig={patchConfig}
+          patchConfigs={patchConfigs}
+        />
+      );
+
     default:
       return null;
   }
+}
+
+/**
+ * The spot-monitor action: hold a camera on a wall cell, then put the cell back.
+ *
+ * Wall and monitor are PICKED, not typed: they are uuids, and a rule pointing at
+ * a wall that does not exist fails at fire time — in the audit log, hours later,
+ * on an alarm nobody was watching. The cell index is a number because a monitor's
+ * layout (1/4/9/16) decides the range, and the picked monitor names its own.
+ */
+function WallDisplayFields({
+  idx,
+  str,
+  numOrStr,
+  num,
+  patchConfig,
+  patchConfigs,
+}: {
+  idx: number;
+  str: (k: string) => string;
+  numOrStr: (k: string) => number | string;
+  num: (v: string) => number | undefined;
+  patchConfig: (idx: number, key: string, value: unknown) => void;
+  patchConfigs: (idx: number, patch: Record<string, unknown>) => void;
+}) {
+  const wallId = str("wall_id");
+  const wallsQ = useQuery({
+    queryKey: ["vms-walls", "linkage-action"],
+    queryFn: () => videowall.walls.list({ limit: 100 }),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const monitorsQ = useQuery({
+    queryKey: ["vms-wall-monitors", wallId],
+    queryFn: () => videowall.monitors.list(wallId),
+    enabled: !!wallId,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const walls = wallsQ.data?.items || [];
+  const monitors = monitorsQ.data?.items || [];
+  const monitor = monitors.find((m) => m.id === str("monitor_id"));
+  const cells = monitor?.layout || 0;
+
+  return (
+    <>
+      <Cfg label="Wall">
+        <Select
+          ariaLabel="Wall"
+          value={wallId}
+          // A monitor belongs to ONE wall, so picking a wall clears the monitor —
+          // in ONE update, or the second write would drop the first.
+          onChange={(e) => patchConfigs(idx, { wall_id: e.target.value, monitor_id: "" })}
+          options={[
+            { value: "", label: walls.length ? "Select a wall" : "No walls configured" },
+            ...walls.map((w) => ({ value: w.id, label: w.name })),
+          ]}
+          className="!h-9 !py-1.5"
+        />
+      </Cfg>
+      <Cfg label="Monitor">
+        <Select
+          ariaLabel="Monitor"
+          value={str("monitor_id")}
+          onChange={(e) => patchConfig(idx, "monitor_id", e.target.value)}
+          options={[
+            { value: "", label: wallId ? "Select a monitor" : "Pick a wall first" },
+            ...monitors.map((m) => ({ value: m.id, label: m.name })),
+          ]}
+          className="!h-9 !py-1.5"
+        />
+      </Cfg>
+      <Cfg label={cells ? `Cell (0–${cells - 1})` : "Cell"}>
+        <Input
+          type="number"
+          min={0}
+          max={cells ? cells - 1 : undefined}
+          value={numOrStr("cell_index")}
+          onChange={(e) => patchConfig(idx, "cell_index", num(e.target.value))}
+          placeholder="0"
+        />
+      </Cfg>
+      <Cfg label="Hold (s)">
+        <Input
+          type="number"
+          min={0}
+          value={numOrStr("hold_seconds")}
+          onChange={(e) => patchConfig(idx, "hold_seconds", num(e.target.value))}
+          // The engine's own default, stated rather than silently applied.
+          placeholder="30 — 0 keeps it on the cell"
+        />
+      </Cfg>
+      <Cfg label="Camera" span={2}>
+        <Select
+          ariaLabel="Camera"
+          value={str("camera_source") || "event"}
+          onChange={(e) => patchConfig(idx, "camera_source", e.target.value)}
+          options={[
+            { value: "event", label: "The camera that raised the event" },
+            { value: "explicit", label: "A fixed camera (id below)" },
+          ]}
+          className="!h-9 !py-1.5"
+        />
+      </Cfg>
+      {str("camera_source") === "explicit" && (
+        <Cfg label="Camera id" span={2}>
+          <Input
+            value={str("camera_id")}
+            onChange={(e) => patchConfig(idx, "camera_id", e.target.value)}
+            placeholder="camera id to display"
+          />
+        </Cfg>
+      )}
+    </>
+  );
 }

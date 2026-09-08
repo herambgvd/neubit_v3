@@ -87,3 +87,70 @@ describe("notify template field", () => {
     ]);
   });
 });
+
+describe("the wall-display action", () => {
+  it("is offered at all", async () => {
+    // The engine has executed `wall_display` since VW-C; the picker did not list
+    // it, so the one action that drives the video WALL could not be configured.
+    stubTemplates([]);
+    renderWithProviders(<LinkageActionsBuilder actions={[{ type: "popup", config: {} }]} />);
+
+    // The action-type picker is the console's button + portalled listbox; its
+    // trigger reads the current action.
+    await userEvent.click(await screen.findByRole("button", { name: /operator popup/i }));
+    expect(await screen.findByRole("option", { name: /show on video wall/i })).toBeInTheDocument();
+  });
+
+  it("picks the wall and the monitor rather than asking for uuids", async () => {
+    // A rule pointing at a wall that does not exist fails at FIRE time — in the
+    // audit log, hours later, on an alarm nobody was watching.
+    vi.spyOn(api, "get").mockImplementation((url: string) => {
+      if (url.includes("/walls/") && url.includes("monitors")) {
+        return Promise.resolve({ data: { items: [{ id: "m1", name: "Left screen", layout: 4 }] } }) as never;
+      }
+      if (url.includes("/walls")) {
+        return Promise.resolve({ data: { items: [{ id: "w1", name: "Control room" }] } }) as never;
+      }
+      return Promise.resolve({ data: { items: [] } }) as never;
+    });
+    const onChange = vi.fn();
+    renderWithProviders(
+      <LinkageActionsBuilder actions={[{ type: "wall_display", config: {} }]} onChange={onChange} />,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "Wall" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Control room" }));
+
+    expect(onChange).toHaveBeenLastCalledWith([
+      { type: "wall_display", config: { wall_id: "w1", monitor_id: "" } },
+    ]);
+  });
+
+  it("clears the monitor when the wall changes", async () => {
+    // A monitor belongs to ONE wall; carrying the id over points the action at a
+    // monitor the new wall does not have.
+    vi.spyOn(api, "get").mockImplementation((url: string) => {
+      if (url.includes("monitors")) return Promise.resolve({ data: { items: [] } }) as never;
+      if (url.includes("/walls")) {
+        return Promise.resolve({
+          data: { items: [{ id: "w1", name: "Control room" }, { id: "w2", name: "Lobby wall" }] },
+        }) as never;
+      }
+      return Promise.resolve({ data: { items: [] } }) as never;
+    });
+    const onChange = vi.fn();
+    renderWithProviders(
+      <LinkageActionsBuilder
+        actions={[{ type: "wall_display", config: { wall_id: "w1", monitor_id: "m9" } }]}
+        onChange={onChange}
+      />,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "Wall" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Lobby wall" }));
+
+    const last = onChange.mock.calls.at(-1)![0][0];
+    expect(last.config.wall_id).toBe("w2");
+    expect(last.config.monitor_id).toBe("");
+  });
+});

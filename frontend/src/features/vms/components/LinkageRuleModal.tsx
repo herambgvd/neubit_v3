@@ -13,6 +13,7 @@ import { Icon } from "@iconify/react";
 import { Input, Modal, Select, Textarea, Toggle } from "@/components/ui/kit";
 import { asItems } from "@/lib/format";
 import { vms } from "../api";
+import { useEstateCameras } from "../hooks/useEstateCameras";
 import { EVENT_TYPE_FILTERS } from "../constants";
 import type {
   CameraGroupPublic,
@@ -21,7 +22,6 @@ import type {
   LinkageRuleCreate,
   LinkageRulePublic,
   LinkageSchedule,
-  VmsCameraPublic,
 } from "../types";
 import LinkageActionsBuilder from "./LinkageActionsBuilder";
 import LinkageScheduleEditor from "./LinkageScheduleEditor";
@@ -135,19 +135,19 @@ export default function LinkageRuleModal({ open, rule, onClose, onSave, saving =
     if (open) setForm(toForm(rule));
   }, [open, rule]);
 
-  const camerasQ = useQuery({
-    queryKey: ["vms-cameras", "linkage-scope"],
-    queryFn: () => vms.cameras.list({ limit: 500 }),
-    enabled: open,
-    staleTime: 60_000,
-  });
+  // LOCAL + FEDERATED cameras, the same list the wall and the group builder use.
+  // This read `/vms/cameras` alone, which on a single-ownership estate — the
+  // normal one, where every camera belongs to a recorder — is EMPTY. So "Specific
+  // cameras" offered nothing to pick on an estate running three of them, and the
+  // only scope a rule could be given was "any camera".
+  const estate = useEstateCameras();
   const groupsQ = useQuery({
     queryKey: ["vms-groups", "linkage-scope"],
     queryFn: () => vms.groups.list({ limit: 500 }),
     enabled: open,
     staleTime: 60_000,
   });
-  const cameras = useMemo<VmsCameraPublic[]>(() => (camerasQ.data ? asItems(camerasQ.data) : []), [camerasQ.data]);
+  const cameras = estate.cameras;
   const groups = useMemo<CameraGroupPublic[]>(() => (groupsQ.data ? asItems(groupsQ.data) : []), [groupsQ.data]);
 
   const patch = (p: Partial<LinkageRuleForm>) => setForm((f) => ({ ...f, ...p }));
@@ -220,6 +220,7 @@ export default function LinkageRuleModal({ open, rule, onClose, onSave, saving =
           <div className="grid grid-cols-3 gap-3">
             <Field label="Event type">
               <Select
+                ariaLabel="Event type"
                 value={form.trigger_event_type}
                 onChange={(e) => patch({ trigger_event_type: e.target.value })}
                 options={TRIGGER_TYPE_OPTIONS}
@@ -228,6 +229,7 @@ export default function LinkageRuleModal({ open, rule, onClose, onSave, saving =
             </Field>
             <Field label="Minimum severity">
               <Select
+                ariaLabel="Minimum severity"
                 value={form.min_severity}
                 onChange={(e) => patch({ min_severity: e.target.value })}
                 options={SEVERITY_MIN_OPTIONS}
@@ -241,15 +243,29 @@ export default function LinkageRuleModal({ open, rule, onClose, onSave, saving =
         {/* Camera scope */}
         <Section title="Camera scope">
           <Field label="Applies to">
-            <Select value={form.scopeMode} onChange={(e) => patch({ scopeMode: e.target.value })} options={SCOPE_MODES} className="!h-9 !py-1.5" />
+            {/* The picker's trigger is a <button>, which the caption above cannot
+                name — carry the label across explicitly. */}
+            <Select
+              ariaLabel="Applies to"
+              value={form.scopeMode}
+              onChange={(e) => patch({ scopeMode: e.target.value })}
+              options={SCOPE_MODES}
+              className="!h-9 !py-1.5"
+            />
           </Field>
           {form.scopeMode === "camera_ids" && (
             <PickList
               items={cameras.map((c) => ({ id: c.id, label: c.name }))}
               selected={form.camera_ids}
               onToggle={(id) => patch({ camera_ids: toggleIn(form.camera_ids, id) })}
-              empty="No cameras"
-              loading={camerasQ.isLoading}
+              // A recorder that is not answering has no cameras to offer, and
+              // that is not the same as an estate with none.
+              empty={
+                estate.fedQ.isError
+                  ? "Cameras could not be listed — a recorder is not answering."
+                  : "No cameras"
+              }
+              loading={estate.isLoading}
             />
           )}
           {form.scopeMode === "group_ids" && (

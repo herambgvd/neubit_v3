@@ -211,4 +211,8 @@ export const LINKAGE_ACTION_TYPES = [
   { value: "ptz_preset", label: "PTZ preset", icon: "heroicons:viewfinder-circle", hint: "Move a PTZ camera to a preset" },
   { value: "trigger_output", label: "Trigger output", icon: "heroicons-outline:arrows-right-left", hint: "Pulse a camera relay / digital output" },
   { value: "popup", label: "Operator popup", icon: "heroicons:window", hint: "Pop the camera live for the operator" },
+  // Spot monitor. The engine has executed this since VW-C; the picker did not
+  // offer it, so the one action that drives the video WALL — the screen this
+  // product exists for — could not be configured from the console.
+  { value: "wall_display", label: "Show on video wall", icon: "heroicons:tv", hint: "Hold the camera on a wall cell, then revert it" },
 ];
