@@ -15,6 +15,7 @@ import { AuthProvider } from "@/lib/auth";
 // Side-effect import: registers the bundled Iconify icon set so nothing is
 // fetched from api.iconify.design at runtime (offline/air-gapped installs).
 import "@/lib/icons";
+import BrandTheme from "@/components/shell/BrandTheme";
 import { ThemeProvider } from "@/components/theme";
 import TitleSync from "@/components/TitleSync";
 
@@ -38,6 +39,9 @@ export default function Providers({ children }: { children?: ReactNode }) {
         {/* Inside AuthProvider: the appearance store adopts the signed-in user's
             saved choice when this device has none, and saves changes back. */}
         <AuthProvider>
+          {/* Inside AuthProvider: /branding needs the session, and the colours
+              only matter once there is a console to paint. */}
+          <BrandTheme />
           <AppearanceProvider>{children}</AppearanceProvider>
         </AuthProvider>
         <ThemedToaster />
