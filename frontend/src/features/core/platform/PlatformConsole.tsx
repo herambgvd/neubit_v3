@@ -1,24 +1,26 @@
 "use client";
 
 // Platform console — clubs the platform-administration surfaces into one console
-// frame: Notifications (delivery channels), Branding (white-label), System Health
-// (monitoring) and License (entitlements). The view is chosen by ?view= and the
-// header carries the Platform modtab + a 4-way segment (see Header).
+// frame: Communications (white-label identity + delivery channels), Email
+// Templates, Tags, System Health (monitoring) and License (entitlements). The view
+// is chosen by ?view= and the header carries the Platform modtab + the segment
+// (see ConsoleStrip).
 import type { ComponentType } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { ConsolePage, ConsoleScroll } from "@/components/console";
-import Channels from "@/features/core/notifications/Channels";
-import Branding from "@/features/core/branding/Branding";
+import Communications from "@/features/core/communications/Communications";
 import EmailTemplates from "@/features/core/email-templates/EmailTemplates";
 import Tags from "@/features/core/tags/Tags";
 import Health from "@/features/core/system-health/Health";
 import License from "@/features/core/license/License";
 
-// Partial: an unknown `?view=` reads as undefined and falls back to Channels.
+// Partial: an unknown `?view=` reads as undefined and falls back to Communications.
+// That fallback is what carries the OLD `?view=branding` and `?view=notifications`
+// links, which the merge retired — no alias entries needed, and adding them would
+// be dead code that reads as if it were doing the work.
 const VIEWS: Partial<Record<string, ComponentType>> = {
-  notifications: Channels,
-  branding: Branding,
+  communications: Communications,
   templates: EmailTemplates,
   tags: Tags,
   health: Health,
@@ -27,7 +29,7 @@ const VIEWS: Partial<Record<string, ComponentType>> = {
 
 export default function PlatformConsole() {
   const v = useSearchParams().get("view");
-  const View = (v ? VIEWS[v] : undefined) || Channels;
+  const View = (v ? VIEWS[v] : undefined) || Communications;
   return (
     <ConsolePage>
       <ConsoleScroll>

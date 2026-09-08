@@ -209,14 +209,18 @@ export default function ConsoleStrip() {
           </div>
           <div className={segBox}>
             {[
-              { v: "notifications", label: "NOTIFICATIONS", icon: "heroicons-outline:bell-alert" },
-              { v: "branding", label: "BRANDING", icon: "heroicons-outline:swatch" },
+              { v: "communications", label: "COMMUNICATIONS", icon: "heroicons-outline:paper-airplane" },
               { v: "templates", label: "EMAIL TEMPLATES", icon: "heroicons-outline:envelope" },
               { v: "tags", label: "TAGS", icon: "heroicons-outline:tag" },
               { v: "health", label: "HEALTH", icon: "heroicons-outline:heart" },
               { v: "license", label: "LICENSE", icon: "heroicons-outline:check-badge" },
             ].map((s) => {
-              const on = (view || "notifications") === s.v;
+              // The default view, and the two keys it replaced — an old link
+              // must not leave the segment bar with nothing lit.
+              const on =
+                s.v === "communications"
+                  ? !view || ["communications", "notifications", "branding"].includes(view)
+                  : view === s.v;
               return (
                 <Link key={s.v} href={`/platform?view=${s.v}`} className={seg(on)}>
                   <Icon icon={s.icon} className="text-[14px]" /> {s.label}

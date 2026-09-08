@@ -1,2 +1,2 @@
 import { redirect } from "next/navigation";
-export default function R() { redirect("/platform?view=notifications"); }
+export default function R() { redirect("/platform?view=communications"); }

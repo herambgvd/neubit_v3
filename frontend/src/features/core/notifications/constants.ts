@@ -1,4 +1,9 @@
 // Config fields per channel — the shape the backend expects under `config`.
+//
+// CHANNEL_META is also the LIST: a channel the backend reports but this file does
+// not name is not offered (see Channels.tsx). That is how the webhook channel was
+// retired without a backend migration — core still carries the transport, nothing
+// in the product ever calls it, so the console stopped offering to configure it.
 
 /** One editable key of a channel's `config` dict. */
 export interface ChannelField {
@@ -19,14 +24,9 @@ export const CHANNEL_FIELDS: Record<string, ChannelField[]> = {
     { key: "use_tls", label: "Use TLS", type: "bool" },
   ],
   push: [{ key: "server_key", label: "FCM server key", type: "password" }],
-  webhook: [
-    { key: "url", label: "Endpoint URL", placeholder: "https://hooks.example.com/neubit" },
-    { key: "secret", label: "Signing secret", type: "password" },
-  ],
 };
 
 export const CHANNEL_META: Record<string, { title: string; icon: string }> = {
   email: { title: "Email (SMTP)", icon: "heroicons-outline:envelope" },
   push: { title: "Push (FCM)", icon: "heroicons-outline:device-phone-mobile" },
-  webhook: { title: "Webhook", icon: "heroicons-outline:bolt" },
 };
