@@ -79,28 +79,32 @@ describe("the Config view", () => {
 });
 
 /**
- * Appearance goes IN the channel grid, not under it. Two channels in a
- * three-column row left a dead third, and the card below it was a second block of
- * empty space stacked on the first.
+ * Appearance flows WITH the delivery cards, not under them.
+ *
+ * A grid was the first attempt and it left the void it was meant to fix: every
+ * cell in a grid row is as tall as the tallest, so the two short channel cards
+ * had a band of dead space beneath them and the page ended unevenly. A column
+ * flow lets the browser balance three cards of very different heights.
  */
 describe("where the Appearance card sits", () => {
-  it("is a cell of the same grid as the delivery channels", async () => {
+  const flow = (container: HTMLElement) => container.querySelector(".lg\\:columns-2");
+
+  it("is one of the cards in the same flow as the delivery channels", async () => {
     const { container } = renderWithProviders(<ConfigPage />);
     await screen.findByText("Email (SMTP)");
 
-    const grid = container.querySelector(".xl\\:grid-cols-3");
-    expect(grid, "the channel grid").not.toBeNull();
-    // email + push + appearance, in one row of three.
-    expect(grid!.children).toHaveLength(3);
-    expect(within(grid as HTMLElement).getByText("Typeface")).toBeInTheDocument();
+    const el = flow(container);
+    expect(el, "the delivery/appearance flow").not.toBeNull();
+    // email + push + appearance, balanced across the columns by the browser.
+    expect(el!.children).toHaveLength(3);
+    expect(within(el as HTMLElement).getByText("Typeface")).toBeInTheDocument();
   });
 
-  it("lets each card keep its own height instead of stretching to the tallest", async () => {
+  it("keeps each card whole across the column break", async () => {
     const { container } = renderWithProviders(<ConfigPage />);
     await screen.findByText("Email (SMTP)");
 
-    // Without `items-start` the two short channel cards stretch to the height of
-    // the appearance card beside them, which is half again as tall.
-    expect(container.querySelector(".xl\\:grid-cols-3")).toHaveClass("items-start");
+    // Without this the browser will split a card mid-field at the boundary.
+    expect(flow(container)).toHaveClass("[&>*]:break-inside-avoid");
   });
 });
