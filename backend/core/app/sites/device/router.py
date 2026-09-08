@@ -9,6 +9,7 @@ neubit_v2 frontend contract exactly:
   * ``DELETE /device-placements/{device_id}``
   * ``GET    /device-placements/by-floor/{floor_id}``
   * ``GET    /device-placements/by-zone/{zone_id}``
+  * ``GET    /device-placements/index``  (estate-wide, for the map)
 """
 
 from __future__ import annotations
@@ -65,6 +66,23 @@ async def list_by_floor(
 ) -> DeviceListResponse:
     items = await svc.list_by_floor(floor_id, device_type=device_type)
     return DeviceListResponse(items=items, count=len(items))
+
+
+@router.get(
+    "/index",
+    dependencies=[Depends(require_permission("devices.read"))],
+)
+async def estate_index(
+    svc: Annotated[DevicePlacementService, Depends(_service)],
+    limit: int = Query(5000, ge=1, le=20000),
+) -> dict:
+    """Flat placement index for the whole tenant — what the estate map joins on.
+
+    Declared BEFORE `/{device_id}`, or "index" is read as a device id and this
+    route is never reached.
+    """
+    items = await svc.estate_index(limit=limit)
+    return {"items": items, "count": len(items)}
 
 
 @router.get(

@@ -11,6 +11,7 @@ import { Icon } from "@iconify/react";
 import { THREAT_PIN, type SiteWithCoords } from "../constants";
 import { Loading } from "./MapChrome";
 import { PIN_H, PIN_SCALE, PIN_SCALE_SELECTED, PIN_TIP_Y, PIN_W, pinSvg } from "./pin";
+import type { SiteOps } from "../estateRollup";
 import SiteCard from "./SiteCard";
 
 const CONTAINER_STYLE = { width: "100%", height: "100%" };
@@ -63,11 +64,15 @@ export interface MapViewProps {
   zoom: number;
   sites: SiteWithCoords[];
   selected: SiteWithCoords | null;
+  /** Per-site operational rollup, shown in the card. This canvas does not
+   *  cluster — that is MapLibre's; Google's own clusterer is a second dependency
+   *  for a path most installs never take. */
+  ops?: Map<string, SiteOps>;
   onSelect: (site: SiteWithCoords) => void;
   onClose: () => void;
 }
 
-export default function MapView({ apiKey, center, zoom, sites, selected, onSelect, onClose }: MapViewProps) {
+export default function MapView({ apiKey, center, zoom, sites, selected, ops, onSelect, onClose }: MapViewProps) {
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: apiKey,
     id: "neubit-google-map",
@@ -167,7 +172,7 @@ export default function MapView({ apiKey, center, zoom, sites, selected, onSelec
             // Position sits on the pin's tip, so lift the card clear of the pin head.
             options={{ pixelOffset: new window.google.maps.Size(0, -PIN_TIP_Y * PIN_SCALE_SELECTED) }}
           >
-            <SiteCard site={selected} onClose={onClose} />
+            <SiteCard site={selected} ops={ops?.get(selected.site_id)} onClose={onClose} />
           </InfoWindow>
         )}
       </GoogleMap>

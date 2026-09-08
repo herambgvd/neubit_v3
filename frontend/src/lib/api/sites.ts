@@ -15,6 +15,7 @@ import type {
   CreateFloorRequest,
   CreateSiteRequest,
   CreateZoneRequest,
+  DevicePlacementIndexResponse,
   DevicePlacementListResponse,
   DevicePlacementPublic,
   EmissionFactorIn,
@@ -151,6 +152,11 @@ export const sites = {
     remove: (deviceId: string) => unwrap(api.delete<void>(`${DEVICE_PLACEMENTS}/${deviceId}`)),
     listByFloor: (floorId: string, params: QueryParams = {}) =>
       unwrap(api.get<DevicePlacementListResponse>(`${DEVICE_PLACEMENTS}/by-floor/${floorId}${qs(params)}`)),
+    /** The estate-wide index the map joins on — every placement, four columns.
+     *  by-floor would be one request per floor, and the caller does not know the
+     *  floors until it has fetched them. */
+    index: (params: QueryParams = {}) =>
+      unwrap(api.get<DevicePlacementIndexResponse>(`${DEVICE_PLACEMENTS}/index${qs(params)}`)),
     listByZone: (zoneId: string) =>
       unwrap(api.get<DevicePlacementListResponse>(`${DEVICE_PLACEMENTS}/by-zone/${zoneId}`)),
   },

@@ -9,13 +9,17 @@ import { Icon } from "@iconify/react";
 
 import type { SitePublic } from "@/lib/types";
 import { THREAT_PIN } from "../constants";
+import type { SiteOps } from "../estateRollup";
 
 export interface SiteCardProps {
   site: SitePublic;
+  /** The site's live rollup. Absent while the feeds load — the card then shows
+   *  what it knows rather than zeros, which would read as "nothing here". */
+  ops?: SiteOps;
   onClose?: () => void;
 }
 
-export default function SiteCard({ site, onClose }: SiteCardProps) {
+export default function SiteCard({ site, ops, onClose }: SiteCardProps) {
   const tone = THREAT_PIN[site.threat_level] || THREAT_PIN.normal;
   return (
     <div className="relative min-w-[240px] max-w-[280px] space-y-2 rounded-lg border border-slate-200 bg-white p-2 text-slate-800">
@@ -48,7 +52,30 @@ export default function SiteCard({ site, onClose }: SiteCardProps) {
           </div>
         )}
       </div>
+      {ops && (
+        <div className="grid grid-cols-3 gap-1 text-center">
+          {[
+            { label: "Cameras", value: ops.cameras, tone: "text-slate-800" },
+            { label: "Offline", value: ops.offline, tone: ops.offline ? "text-amber-600" : "text-slate-400" },
+            { label: "Alarms", value: ops.alarms, tone: ops.alarms ? "text-red-600" : "text-slate-400" },
+          ].map((s) => (
+            <div key={s.label} className="rounded-md border border-slate-200 py-1">
+              <div className={`text-sm font-semibold ${s.tone}`}>{s.value}</div>
+              <div className="text-[9.5px] uppercase tracking-wide text-slate-500">{s.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="flex flex-wrap gap-1">
+        {/* The drill-down the map existed without: an outdoor pin and the indoor
+            floor plan were two maps with no way from one to the other. */}
+        <a
+          href={`/streaming?view=map&site=${encodeURIComponent(site.site_id)}`}
+          className="inline-flex items-center gap-1 rounded-sm border border-slate-300 px-2 py-1 text-[10px] font-medium text-slate-700 hover:bg-slate-100"
+        >
+          Floor plan
+          <Icon icon="heroicons-outline:map" className="text-[10px]" />
+        </a>
         <a
           href="/sites"
           target="_blank"

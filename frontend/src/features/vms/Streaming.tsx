@@ -184,6 +184,12 @@ export default function Streaming() {
 
   // View mode (grid | map | split) + global stream quality + DVR playout bar.
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    // ?view= wins over the remembered mode: the estate map links here to show a
+    // site's floor plan, and landing on the grid instead is a dead link.
+    if (typeof window !== "undefined") {
+      const asked = new URLSearchParams(window.location.search).get("view");
+      if (isViewMode(asked)) return asked;
+    }
     const v = readLS(LS_VIEW, "grid");
     return isViewMode(v) ? v : "grid";
   });

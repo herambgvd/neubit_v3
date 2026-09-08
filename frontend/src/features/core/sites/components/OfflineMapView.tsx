@@ -1,17 +1,29 @@
 "use client";
 
-// The OFFLINE sites map — MapLibre GL over a self-hosted PMTiles planet basemap.
-// Feature-for-feature the same surface as the Google canvas next door (threat
-// coloured pins, auto-fit bounds, a SiteCard popup), but every byte comes from
-// our own origin, so it works on an air-gapped install.
+// The OFFLINE estate map — MapLibre GL over a self-hosted PMTiles planet basemap.
+// Every byte comes from our own origin, so it works on an air-gapped install.
 //
-// Markers are managed imperatively: they are static SVG, they can number in the
-// hundreds, and MapLibre wants real DOM nodes. The popup goes the other way —
-// SiteCard stays a React component, portalled into the node MapLibre owns.
+// It is an OPERATIONS surface, not a picture of where the buildings are. A pin
+// carries what would make someone click it — unacknowledged alarms, cameras that
+// have gone dark — and the estate is CLUSTERED, because the old one drew one DOM
+// marker per site and a national estate arrived as a solid mat of overlapping
+// teardrops through which nothing could be read or clicked.
+//
+// Clustering is MapLibre's own (a `cluster: true` GeoJSON source), but the
+// markers stay real DOM: the pin art is a shared SVG both map providers use, and
+// a symbol layer could not render it. So the source does the spatial work and
+// `querySourceFeatures` says which bubbles and pins to keep on screen.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 // maplibre-gl v6 dropped its default export — named imports only.
-import { LngLatBounds, Map as MapLibreMap, Marker, NavigationControl, Popup } from "maplibre-gl";
+import {
+  LngLatBounds,
+  Map as MapLibreMap,
+  Marker,
+  NavigationControl,
+  Popup,
+  ScaleControl,
+} from "maplibre-gl";
 import { Icon } from "@iconify/react";
 
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -19,66 +31,22 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { Spinner } from "@/components/ui/kit";
 import { DEFAULT_TILES_URL, offlineStyle, probeTiles } from "@/lib/map";
 import { THREAT_PIN, type SiteWithCoords } from "../constants";
-import { PIN_H, PIN_SCALE, PIN_SCALE_SELECTED, PIN_TIP_Y, PIN_W, pinSvg } from "./pin";
+import { EMPTY_OPS, SEVERITY_RANK, opsSeverity, type SiteOps } from "../estateRollup";
+import { clusterElement, paintCluster, paintPin, pinElement } from "./clusterMarkers";
+import { PIN_SCALE_SELECTED, PIN_TIP_Y } from "./pin";
 import SiteCard from "./SiteCard";
 
-const LABEL_MAX = 26;
 const SINGLE_SITE_ZOOM = 14;
+const SRC = "estate-sites";
+/** A layer must exist for the source to produce tiles `querySourceFeatures` can
+ *  read. It draws nothing — the markers are DOM. */
+const HIT_LAYER = "estate-sites-hit";
 
 /** A site's position as MapLibre wants it: [lng, lat]. */
-const lngLat = (site: SiteWithCoords): [number, number] => [site.coordinates.longitude, site.coordinates.latitude];
-
-// One marker's DOM: the pin art, plus the site name pinned below it. The label is
-// absolutely positioned so it never grows the element box — MapLibre anchors on
-// that box, and a taller box would lift the pin tip off its coordinate.
-function markerElement(site: SiteWithCoords): HTMLDivElement {
-  const label = site.name.length > LABEL_MAX ? `${site.name.slice(0, LABEL_MAX - 1)}…` : site.name;
-
-  const el = document.createElement("div");
-  el.className = "site-pin";
-  // NO `position` here. MapLibre's own `.maplibregl-marker` class supplies
-  // `position: absolute`, and an inline `position: relative` beats it — the
-  // markers then stack in normal document flow, each pushed down by the previous
-  // one's height, so every pin sat a constant ~47px below the last regardless of
-  // zoom. Absolute still establishes the containing block the label needs.
-  el.style.cssText = "cursor:pointer";
-
-  const art = document.createElement("div");
-  art.className = "site-pin-art";
-  el.appendChild(art);
-
-  const caption = document.createElement("span");
-  caption.className = "site-marker-label";
-  caption.textContent = label;
-  el.appendChild(caption);
-  return el;
-}
-
-// Re-draw an existing marker at the selected/unselected size, in place. Selection
-// changes on every click, and tearing down and rebuilding all the markers for it
-// made the whole pin layer blink.
-function paintMarker(marker: Marker, site: SiteWithCoords, isSelected: boolean) {
-  const tone = THREAT_PIN[site.threat_level] || THREAT_PIN.normal;
-  const scale = isSelected ? PIN_SCALE_SELECTED : PIN_SCALE;
-  const el = marker.getElement();
-
-  el.title = `${site.name} · ${tone.label}`;
-  el.style.width = `${PIN_W * scale}px`;
-  el.style.height = `${PIN_H * scale}px`;
-  el.style.zIndex = isSelected ? "2" : "1";
-
-  // Both nodes are built by markerElement above, so they are always present.
-  const art = el.querySelector(".site-pin-art") as HTMLDivElement;
-  art.innerHTML = pinSvg(tone.color, isSelected);
-  const svg = art.firstElementChild as SVGElement;
-  svg.setAttribute("width", `${PIN_W * scale}`);
-  svg.setAttribute("height", `${PIN_H * scale}`);
-  svg.style.display = "block";
-
-  // The artwork has 8px of shadow below the tip; push the element down by that
-  // much so the tip — not the box bottom — lands on the coordinate.
-  marker.setOffset([0, (PIN_H - PIN_TIP_Y) * scale]);
-}
+const lngLat = (site: SiteWithCoords): [number, number] => [
+  site.coordinates.longitude,
+  site.coordinates.latitude,
+];
 
 function OfflineDisabled({ reason }: { reason?: string }) {
   return (
@@ -99,9 +67,8 @@ function OfflineDisabled({ reason }: { reason?: string }) {
 }
 
 // MapLibre's chrome is built for a light page; these pull it into the console's
-// dark palette and strip the parts SiteCard already provides (its own close
-// button, its own padding and background). Rendered by this component rather than
-// the page, so the CSS ships with the canvas that needs it.
+// dark palette and strip the parts SiteCard already provides. Rendered by this
+// component rather than the page, so the CSS ships with the canvas that needs it.
 function OfflineMapStyleFix() {
   return (
     <style jsx global>{`
@@ -137,6 +104,27 @@ function OfflineMapStyleFix() {
           0 1px 4px rgba(15, 23, 42, 0.95);
         pointer-events: none;
       }
+      .sites-map-root .site-pin-badge {
+        position: absolute;
+        top: -2px;
+        right: -6px;
+        min-width: 17px;
+        height: 17px;
+        padding: 0 4px;
+        border-radius: 9999px;
+        border: 1.5px solid rgba(4, 18, 43, 0.9);
+        color: #04122b;
+        font-size: 10.5px;
+        font-weight: 700;
+        line-height: 14px;
+        text-align: center;
+        pointer-events: none;
+      }
+      .sites-map-root .maplibregl-ctrl-scale {
+        background: rgba(6, 11, 26, 0.7);
+        border-color: rgba(150, 180, 245, 0.35);
+        color: #cbd5e1;
+      }
       .sites-map-root .maplibregl-ctrl-attrib,
       .sites-map-root .maplibregl-ctrl-attrib a {
         background: rgba(6, 11, 26, 0.7);
@@ -156,6 +144,10 @@ export interface OfflineMapViewProps {
   zoom: number;
   sites: SiteWithCoords[];
   selected: SiteWithCoords | null;
+  /** Per-site operational rollup; absent while the feeds load. */
+  ops?: Map<string, SiteOps>;
+  /** Draw the site name under each pin. */
+  showLabels?: boolean;
   onSelect?: (site: SiteWithCoords) => void;
   onClose?: () => void;
 }
@@ -166,6 +158,8 @@ export default function OfflineMapView({
   zoom,
   sites,
   selected,
+  ops,
+  showLabels = true,
   onSelect,
   onClose,
 }: OfflineMapViewProps) {
@@ -173,6 +167,7 @@ export default function OfflineMapView({
   const mapRef = useRef<MapLibreMap | null>(null);
   const markersRef = useRef(new Map<string, Marker>());
   const popupRef = useRef<Popup | null>(null);
+  const readoutRef = useRef<HTMLDivElement | null>(null);
 
   const [status, setStatus] = useState<MapStatus>({ state: "probing" });
 
@@ -183,17 +178,48 @@ export default function OfflineMapView({
     [],
   );
 
-  // Latest callbacks, without making them dependencies of effects that must not
-  // re-run: the map is built once per tiles URL, markers once per `sites` change.
+  const siteById = useMemo(() => new Map(sites.map((s) => [s.site_id, s])), [sites]);
+
+  // The source's data. Rebuilt when the sites or their rollup change — the
+  // cluster aggregation happens inside MapLibre off THESE properties, so a badge
+  // that is not in here cannot appear on a cluster bubble.
+  const featureCollection = useMemo(
+    () => ({
+      type: "FeatureCollection" as const,
+      features: sites.map((s) => {
+        const o = ops?.get(s.site_id) || EMPTY_OPS;
+        return {
+          type: "Feature" as const,
+          geometry: { type: "Point" as const, coordinates: lngLat(s) },
+          properties: {
+            site_id: s.site_id,
+            sev: SEVERITY_RANK[opsSeverity(o)],
+            alarms: o.alarms,
+            offline: o.offline,
+          },
+        };
+      }),
+    }),
+    [sites, ops],
+  );
+
+  // Latest values, without making them dependencies of effects that must not
+  // re-run: the map is built once per tiles URL.
   const onSelectRef = useRef(onSelect);
   const onCloseRef = useRef(onClose);
   const selectedRef = useRef(selected);
-  // Refreshed after each commit rather than during render — a render that React
+  const siteByIdRef = useRef(siteById);
+  const opsRef = useRef(ops);
+  const showLabelsRef = useRef(showLabels);
+  // Refreshed after each commit rather than during render — a render React
   // discards must not hand its callbacks to the live map listeners.
   useEffect(() => {
     onSelectRef.current = onSelect;
     onCloseRef.current = onClose;
     selectedRef.current = selected;
+    siteByIdRef.current = siteById;
+    opsRef.current = ops;
+    showLabelsRef.current = showLabels;
   });
 
   // ── map lifecycle ────────────────────────────────────────────────────────
@@ -202,16 +228,13 @@ export default function OfflineMapView({
     let map: MapLibreMap | undefined;
 
     // Back to square one whenever this re-runs. Without it a tiles-URL change
-    // leaves `status` at its previous value: from "ready" the marker and auto-fit
-    // effects (keyed on status.state) never re-run, so the rebuilt map comes up
-    // with no pins; from "missing" the container div isn't even rendered and
-    // MapLibre throws on a null container.
+    // leaves `status` at its previous value: from "ready" the marker effects
+    // (keyed on status.state) never re-run, so the rebuilt map comes up with no
+    // pins; from "missing" the container isn't rendered and MapLibre throws.
     setStatus({ state: "probing" });
 
-    // The marker Map, captured at SETUP. It is created once and only mutated, so
-    // reading markersRef.current in the cleanup would be equivalent — but the rule
-    // cannot know that, and a local says plainly which Map the cleanup empties: the
-    // one this run of the effect filled.
+    // The marker Map, captured at SETUP — a local says plainly which Map the
+    // cleanup empties: the one this run of the effect filled.
     const markers = markersRef.current;
 
     (async () => {
@@ -230,12 +253,26 @@ export default function OfflineMapView({
         attributionControl: { compact: true },
       });
       map.addControl(new NavigationControl({ showCompass: false }), "top-right");
+      // A scale bar, because this is a map people measure distances on by eye:
+      // without one, "are those two sites close" has no answer at all.
+      map.addControl(new ScaleControl({ maxWidth: 110, unit: "metric" }), "bottom-left");
       // Without an 'error' listener MapLibre swallows tile/style failures into a
       // console message that is easy to miss — and a blank canvas looks identical
       // to a slow one. Surface them.
       map.on("error", (e) => console.warn("[offline-map]", e?.error?.message || e));
-      // Clicking bare map closes the card, matching the Google canvas.
+      // Clicking bare map closes the card.
       map.on("click", () => onCloseRef.current?.());
+      // The pointer's coordinates, written straight into the DOM: at 60 pointer
+      // events a second, a React state update per move would re-render the whole
+      // canvas subtree for a number in a corner.
+      map.on("mousemove", (e) => {
+        if (readoutRef.current) {
+          readoutRef.current.textContent = `${e.lngLat.lat.toFixed(5)}, ${e.lngLat.lng.toFixed(5)}`;
+        }
+      });
+      map.on("mouseout", () => {
+        if (readoutRef.current) readoutRef.current.textContent = "";
+      });
       map.on("load", () => !cancelled && setStatus({ state: "ready" }));
       mapRef.current = map;
     })();
@@ -250,39 +287,166 @@ export default function OfflineMapView({
       mapRef.current = null;
     };
     // Rebuilding the map on a centre/zoom change would fight the user's panning;
-    // those are initial-view inputs only, exactly as the Google canvas treats them.
+    // those are initial-view inputs only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tilesUrl]);
 
-  // ── markers ──────────────────────────────────────────────────────────────
-  // Rebuilt only when the site list itself changes. Selection is a repaint, below.
+  // ── the clustered source + the marker sync it drives ─────────────────────
   useEffect(() => {
     const map = mapRef.current;
     if (!map || status.state !== "ready") return;
 
-    markersRef.current.forEach((m) => m.remove());
-    markersRef.current.clear();
+    const markers = markersRef.current;
 
-    for (const site of sites) {
-      const el = markerElement(site);
-      el.addEventListener("click", (e) => {
-        e.stopPropagation(); // else the map's own click handler closes the card we just opened
-        onSelectRef.current?.(site);
+    // `clusterProperties` is what makes a bubble able to say "3 alarms in here"
+    // without the client re-reading every site it folded in: MapLibre aggregates
+    // these while it builds the cluster tree.
+    const source = map.getSource(SRC);
+    if (source && "setData" in source) {
+      (source as { setData: (d: unknown) => void }).setData(featureCollection);
+    } else {
+      map.addSource(SRC, {
+        type: "geojson",
+        data: featureCollection,
+        cluster: true,
+        clusterRadius: 48,
+        // Past this zoom the estate is spread far enough that folding sites
+        // together hides more than it saves.
+        clusterMaxZoom: 13,
+        clusterProperties: {
+          sev: ["max", ["get", "sev"]],
+          alarms: ["+", ["get", "alarms"]],
+          offline: ["+", ["get", "offline"]],
+        },
       });
-      const marker = new Marker({ element: el, anchor: "bottom" }).setLngLat(lngLat(site)).addTo(map);
-      paintMarker(marker, site, selectedRef.current?.site_id === site.site_id);
-      markersRef.current.set(site.site_id, marker);
+      map.addLayer({
+        id: HIT_LAYER,
+        type: "circle",
+        source: SRC,
+        paint: { "circle-radius": 1, "circle-opacity": 0 },
+      });
     }
-  }, [sites, status.state]);
 
-  // ── selection repaint ────────────────────────────────────────────────────
+    function syncMarkers() {
+      const m = mapRef.current;
+      if (!m || !m.getLayer(HIT_LAYER)) return;
+      const features = m.querySourceFeatures(SRC);
+      const live = new Set<string>();
+
+      for (const f of features) {
+        const props = (f.properties || {}) as Record<string, number | string>;
+        const coords = (f.geometry as { coordinates: [number, number] }).coordinates;
+        const isCluster = props.cluster_id !== undefined;
+        const key = isCluster ? `c:${props.cluster_id}` : `s:${props.site_id}`;
+        // querySourceFeatures returns the SAME feature once per tile it touches.
+        if (live.has(key)) continue;
+        live.add(key);
+
+        let marker = markers.get(key);
+        if (isCluster) {
+          const info = {
+            count: Number(props.point_count) || 0,
+            severity: Number(props.sev) || 0,
+            alarms: Number(props.alarms) || 0,
+            offline: Number(props.offline) || 0,
+          };
+          if (!marker) {
+            const el = clusterElement(info);
+            el.addEventListener("click", (ev) => {
+              ev.stopPropagation();
+              const src = m.getSource(SRC) as unknown as {
+                getClusterExpansionZoom: (id: number) => Promise<number>;
+              };
+              // Zoom to where this cluster breaks apart — a click that only
+              // nudged the zoom would leave the same bubble under the cursor.
+              Promise.resolve(src.getClusterExpansionZoom(Number(props.cluster_id)))
+                .then((z) => m.easeTo({ center: coords, zoom: z }))
+                .catch(() => m.easeTo({ center: coords, zoom: m.getZoom() + 2 }));
+            });
+            marker = new Marker({ element: el }).setLngLat(coords).addTo(m);
+            markers.set(key, marker);
+          } else {
+            paintCluster(marker.getElement() as HTMLDivElement, info);
+            marker.setLngLat(coords);
+          }
+          continue;
+        }
+
+        const site = siteByIdRef.current.get(String(props.site_id));
+        if (!site) continue;
+        if (!marker) {
+          const el = pinElement();
+          el.addEventListener("click", (ev) => {
+            // else the map's own click handler closes the card we just opened
+            ev.stopPropagation();
+            const s = siteByIdRef.current.get(String(props.site_id));
+            if (s) onSelectRef.current?.(s);
+          });
+          marker = new Marker({ element: el, anchor: "bottom" }).setLngLat(coords).addTo(m);
+          markers.set(key, marker);
+        }
+        const o = opsRef.current?.get(site.site_id) || EMPTY_OPS;
+        const tone = THREAT_PIN[site.threat_level] || THREAT_PIN.normal;
+        const offset = paintPin(marker.getElement(), {
+          name: site.name,
+          color: tone.color,
+          label: tone.label,
+          selected: selectedRef.current?.site_id === site.site_id,
+          alarms: o.alarms,
+          offline: o.offline,
+          showLabel: showLabelsRef.current,
+        });
+        marker.setOffset(offset);
+        marker.setLngLat(coords);
+      }
+
+      // Anything the source no longer renders — panned off, or folded into a
+      // cluster by a zoom out — goes away. Leaving them costs a DOM node per
+      // site ever seen, and they would float at stale positions.
+      for (const [key, marker] of markers) {
+        if (!live.has(key)) {
+          marker.remove();
+          markers.delete(key);
+        }
+      }
+    }
+
+    // `idle` rather than `move`: the cluster tree is rebuilt asynchronously, and
+    // querying mid-animation returns the previous zoom's clusters.
+    map.on("idle", syncMarkers);
+    map.on("sourcedata", syncMarkers);
+    syncMarkers();
+
+    return () => {
+      map.off("idle", syncMarkers);
+      map.off("sourcedata", syncMarkers);
+    };
+  }, [featureCollection, status.state]);
+
+  // ── selection / label repaint ────────────────────────────────────────────
+  // Selection and the label toggle change no geometry, so they repaint the
+  // markers that already exist instead of rebuilding the layer.
   useEffect(() => {
     if (status.state !== "ready") return;
-    for (const site of sites) {
-      const marker = markersRef.current.get(site.site_id);
-      if (marker) paintMarker(marker, site, selected?.site_id === site.site_id);
+    for (const [key, marker] of markersRef.current) {
+      if (!key.startsWith("s:")) continue;
+      const site = siteById.get(key.slice(2));
+      if (!site) continue;
+      const o = ops?.get(site.site_id) || EMPTY_OPS;
+      const tone = THREAT_PIN[site.threat_level] || THREAT_PIN.normal;
+      marker.setOffset(
+        paintPin(marker.getElement(), {
+          name: site.name,
+          color: tone.color,
+          label: tone.label,
+          selected: selected?.site_id === site.site_id,
+          alarms: o.alarms,
+          offline: o.offline,
+          showLabel: showLabels,
+        }),
+      );
     }
-  }, [selected, sites, status.state]);
+  }, [selected, siteById, ops, showLabels, status.state]);
 
   // ── auto-fit ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -329,12 +493,21 @@ export default function OfflineMapView({
     <>
       <OfflineMapStyleFix />
       <div ref={containerRef} className="h-full w-full" />
+      <div
+        ref={readoutRef}
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-2 right-2 rounded-md border border-nb-line bg-[rgba(6,11,26,.75)] px-2 py-1 font-mono text-[10.5px] text-nb-soft"
+      />
       {status.state === "probing" && (
         <div className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-nb-muted">
           <Spinner className="!h-4 !w-4" /> Loading map…
         </div>
       )}
-      {selected && popupNode && createPortal(<SiteCard site={selected} onClose={onClose} />, popupNode)}
+      {selected && popupNode &&
+        createPortal(
+          <SiteCard site={selected} ops={ops?.get(selected.site_id)} onClose={onClose} />,
+          popupNode,
+        )}
     </>
   );
 }

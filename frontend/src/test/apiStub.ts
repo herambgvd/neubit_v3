@@ -21,6 +21,10 @@ export interface Recorded {
   url: string;
   body: Record<string, unknown> | undefined;
   params: Record<string, unknown> | undefined;
+  /** The query string as SENT. Some api modules build the query into the URL
+   *  (`qs(params)`) rather than handing axios a params object, so `params` is
+   *  undefined for them and this is the only place the values appear. */
+  search: URLSearchParams;
 }
 
 /** A handler returns the response body, or throws (use `httpError`) to fail. */
@@ -99,6 +103,7 @@ export function stubApi(routes: Routes): ApiStub {
       url: path,
       body: parseBody(config.data),
       params: config.params as Record<string, unknown> | undefined,
+      search: new URLSearchParams((config.url || "").split("?")[1] || ""),
     };
     calls.push(req);
 

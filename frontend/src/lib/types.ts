@@ -388,6 +388,21 @@ export interface DevicePlacementListResponse {
   count: number;
 }
 
+/** One row of GET /device-placements/index — the estate map's join table.
+ *  Four columns on purpose: the map joins on the device id and counts by type,
+ *  and a placement's floor-plan coordinates mean nothing on a geographic map. */
+export interface DevicePlacementIndexRow {
+  device_id: string;
+  device_type: string;
+  site_id: string;
+  floor_id: string;
+}
+
+export interface DevicePlacementIndexResponse {
+  items: DevicePlacementIndexRow[];
+  count: number;
+}
+
 /* --- tags (backend/core/app/tags/schemas.py) ------------------------------- */
 
 export interface TagPublic {

@@ -33,7 +33,13 @@ interface CameraPin {
 }
 
 export default function MapView({ cameras = [], onPick }: MapViewProps) {
-  const [siteId, setSiteId] = useState<string | null>(null);
+  // ?site=<id> — where the estate map's "Floor plan" link lands. Read once, from
+  // window.location rather than useSearchParams, to stay out of the Suspense rule
+  // the rest of this screen already sidesteps (see Streaming's deep link).
+  const [siteId, setSiteId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("site");
+  });
   const [floorId, setFloorId] = useState<string | null>(null);
 
   // Live status by device id (wall cameras carry the SAME id device placements key on).

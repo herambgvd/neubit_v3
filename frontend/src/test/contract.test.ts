@@ -494,6 +494,16 @@ const DICTS: Record<string, DictEntry> = {
     marker: "async def get_health(",
     open: 'return {"status"',
   },
+  "lib/types.ts:DevicePlacementIndexRow": {
+    file: "backend/core/app/sites/device/service.py",
+    marker: "async def estate_index(",
+    open: "return [",
+  },
+  "lib/types.ts:DevicePlacementIndexResponse": {
+    file: "backend/core/app/sites/device/router.py",
+    marker: "async def estate_index(",
+    open: 'return {"items"',
+  },
   "features/core/types.ts:ServiceOut": {
     file: "backend/core/app/system/router.py",
     marker: "def _service_row(",

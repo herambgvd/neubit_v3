@@ -196,6 +196,39 @@ class DevicePlacementService:
         rows = (await self.db.execute(stmt)).scalars().all()
         return [DevicePlacementPublic.from_row(r) for r in rows]
 
+    async def estate_index(self, *, limit: int = 5000) -> list[dict]:
+        """Every placement in the tenant as {device_id, device_type, site_id}.
+
+        The map needs to answer "how many cameras are at this site, and which
+        ones" for EVERY site at once. The by-floor/by-zone routes cannot: a
+        campus with forty floors is forty round trips, and the caller does not
+        know the floors until it has fetched them.
+
+        Deliberately four columns, not the full placement: the map joins on the
+        device id and counts by type, and the floor-plan coordinates that make up
+        most of a placement row mean nothing on a geographic map.
+        """
+        stmt = scoped(
+            select(
+                DevicePlacement.device_id,
+                DevicePlacement.device_type,
+                DevicePlacement.site_id,
+                DevicePlacement.floor_id,
+            ),
+            DevicePlacement,
+            self.scope,
+        ).order_by(DevicePlacement.created_at.desc()).limit(limit)
+        rows = (await self.db.execute(stmt)).all()
+        return [
+            {
+                "device_id": r.device_id,
+                "device_type": r.device_type,
+                "site_id": r.site_id,
+                "floor_id": r.floor_id,
+            }
+            for r in rows
+        ]
+
     async def list_by_zone(self, zone_id: str) -> list[DevicePlacementPublic]:
         stmt = scoped(
             select(DevicePlacement).where(DevicePlacement.zone_id == zone_id),
