@@ -177,7 +177,7 @@ export default function ConsoleStrip() {
           <div className={segBox}>
             {[
               { v: "patterns", label: "PATTERNS", icon: "heroicons-outline:squares-2x2" },
-              { v: "groups", label: "CAMERA GROUPS", icon: "heroicons-outline:video-camera" },
+              { v: "groups", label: "GROUPS", icon: "heroicons-outline:video-camera" },
             ].map((s) => {
               // "patterns" is the default view and owns the bare /config/patterns URL,
               // the same deal Platform's "notifications" and Workflow's first view have.

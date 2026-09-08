@@ -1,6 +1,6 @@
 "use client";
 
-// GroupGridBuilder — the camera-to-grid authoring surface for a Camera Group.
+// GroupGridBuilder — the camera-to-grid authoring surface for a GROUP.
 // LEFT: a filterable list of the camera estate. RIGHT: a live preview grid sized
 // to the chosen `layout` (backend enum). Click a camera to drop it into the next
 // empty cell (or pull it back out); drag a camera onto a cell to place/swap; the

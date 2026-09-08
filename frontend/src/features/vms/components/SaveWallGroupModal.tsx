@@ -2,7 +2,7 @@
 
 // SaveWallGroupModal — one-click "save the current video wall as a reusable Camera
 // Group" straight from the streaming wall, so operators don't have to rebuild the
-// same arrangement in Config → Patterns → Camera Groups (fewer clicks, less
+// same arrangement in Config → Patterns → Groups (fewer clicks, less
 // confusion). Captures the wall's cameras (ordered) + layout (mapped to a group
 // layout) and POSTs a CameraGroup. That group is then available in the inline
 // "New pattern" flow to build a rotation without leaving the wall.
@@ -60,7 +60,7 @@ export default function SaveWallGroupModal({ open, layoutKey, cameraIds = [], on
     <Modal
       open={open}
       onClose={onClose}
-      title="Save wall as camera group"
+      title="Save wall as a group"
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={save.isPending}>

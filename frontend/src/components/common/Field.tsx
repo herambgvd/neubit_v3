@@ -9,6 +9,7 @@
 //   <Field label="Notes" as="textarea" rows={3} value={notes} onChange={...} />
 //   <Field label="Priority" as="select" value={p} onChange={...} options={[{value,label}]} />
 
+import { useId } from "react";
 import type { ChangeEvent, ComponentPropsWithoutRef, ReactNode } from "react";
 
 import SelectMenu, { type SelectChangeEvent, type SelectOption } from "./SelectMenu";
@@ -23,11 +24,16 @@ export interface FieldLabelProps {
   children?: ReactNode;
   required?: boolean;
   className?: string;
+  /** The control this names. Without it the label names nothing at all. */
+  htmlFor?: string;
 }
 
-export function FieldLabel({ children, required, className = "" }: FieldLabelProps) {
+export function FieldLabel({ children, required, className = "", htmlFor }: FieldLabelProps) {
   return (
-    <label className={`font-mono text-xs font-medium uppercase tracking-wide text-nb-muted ${className}`}>
+    <label
+      htmlFor={htmlFor}
+      className={`font-mono text-xs font-medium uppercase tracking-wide text-nb-muted ${className}`}
+    >
       {children}
       {required && <span className="ml-1 text-nb-crit">*</span>}
     </label>
@@ -70,6 +76,12 @@ export function Field({
   containerClassName = "",
   ...control
 }: FieldProps) {
+  // The label was a sibling <label> with no `htmlFor`, so it named NOTHING: a
+  // screen reader announced "edit text, blank" on every form built from this
+  // component, and clicking the caption focused nothing. An id is generated when
+  // the caller has not supplied one.
+  const autoId = useId();
+  const controlId = (control.id as string | undefined) || autoId;
   const errCls = error ? "!border-nb-crit" : "";
   // Keep controlled inputs controlled. For a value-controlled input/textarea, force
   // a defined value ("") whenever the caller's value is null/undefined — even a
@@ -86,9 +98,13 @@ export function Field({
   const { value, onChange, ...rest } = control;
   return (
     <div className={containerClassName}>
-      {label && <FieldLabel required={required}>{label}</FieldLabel>}
+      {label && (
+        <FieldLabel required={required} htmlFor={as === "select" ? undefined : controlId}>
+          {label}
+        </FieldLabel>
+      )}
       {as === "textarea" ? (
-        <textarea {...rest} value={value ?? undefined} onChange={onChange} className={`${areaClass} ${errCls} ${className}`} />
+        <textarea {...rest} id={controlId} value={value ?? undefined} onChange={onChange} className={`${areaClass} ${errCls} ${className}`} />
       ) : as === "select" ? (
         <SelectMenu
           options={options}
@@ -96,12 +112,15 @@ export function Field({
           onChange={onChange}
           disabled={rest.disabled}
           placeholder={rest.placeholder}
-          id={rest.id}
+          id={controlId}
           name={rest.name}
+          // A <label htmlFor> cannot name a <button>, which is what the picker's
+          // trigger is — carry a string label across as the accessible name.
+          ariaLabel={typeof label === "string" ? label : undefined}
           className={`${errCls} ${className}`}
         />
       ) : (
-        <input {...rest} value={value ?? undefined} onChange={onChange} className={`${fieldClass} ${errCls} ${className}`} />
+        <input {...rest} id={controlId} value={value ?? undefined} onChange={onChange} className={`${fieldClass} ${errCls} ${className}`} />
       )}
       {error ? (
         <p className="mt-1 text-xs text-nb-crit">{error}</p>

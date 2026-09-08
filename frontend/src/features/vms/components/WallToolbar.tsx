@@ -99,7 +99,7 @@ export interface WallToolbarProps {
   patternControl?: ReactNode;
   /** <SavedLayoutsMenu/> element (localStorage static layouts). */
   savedControl?: ReactNode;
-  /** Capture the current wall as a server Camera Group (inline). */
+  /** Capture the current wall as a server GROUP (inline). */
   onSaveGroup?: () => void;
   /** Gate: at least one camera on the wall. */
   canSaveGroup?: boolean;
@@ -131,7 +131,7 @@ export default function WallToolbar({
   onTourInterval,
   patternControl, // <PatternPickerMenu/> element (server-persisted rotations)
   savedControl, // <SavedLayoutsMenu/> element (localStorage static layouts)
-  onSaveGroup, // capture the current wall as a server Camera Group (inline)
+  onSaveGroup, // capture the current wall as a server GROUP (inline)
   canSaveGroup, // gate: at least one camera on the wall
   allMuted,
   onToggleMuteAll,
@@ -215,7 +215,7 @@ export default function WallToolbar({
         {onSaveGroup && gridMode && (
           <button
             type="button"
-            title="Save the current wall as a reusable camera group"
+            title="Save the current wall as a reusable group"
             disabled={!canSaveGroup}
             onClick={onSaveGroup}
             className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-2.5 text-xs font-medium text-[#f2f6ff] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9] disabled:cursor-not-allowed disabled:opacity-40"

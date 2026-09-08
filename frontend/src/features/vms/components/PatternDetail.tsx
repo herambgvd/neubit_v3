@@ -1,6 +1,6 @@
 "use client";
 
-// PatternDetail — the right-hand detail for a selected Pattern or Camera Group.
+// PatternDetail — the right-hand detail for a selected Pattern or Group.
 // Patterns show the groups in rotation + dwell + an "Open in streaming" action
 // (→ /streaming?pattern_id=<id>&autoplay=1). Groups show their grid layout + a
 // live preview of the camera-to-cell placement (the same grid the wall renders).
@@ -90,7 +90,7 @@ export default function PatternDetail({ item, isPattern, groupById, cameraById, 
         </DetailField>
 
         {isPattern ? (
-          <DetailField label="Camera groups in rotation">
+          <DetailField label="Groups in rotation">
             {(pattern?.camera_group_ids || []).length === 0 ? (
               <span className="text-xs italic text-nb-faint">No groups assigned.</span>
             ) : (

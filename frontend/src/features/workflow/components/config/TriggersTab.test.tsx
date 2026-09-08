@@ -157,7 +157,7 @@ describe("the trigger form", () => {
     await userEvent.click(screen.getByRole("button", { name: /new trigger/i }));
 
     await userEvent.type(await screen.findByPlaceholderText("e.g. Fire alarm → Fire SOP"), "Flood");
-    await userEvent.click(screen.getByRole("button", { name: /select a sop/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^target sop$/i }));
     await userEvent.click(await screen.findByRole("option", { name: "Fire alarm response" }));
     await userEvent.click(screen.getByRole("button", { name: /create trigger/i }));
 
@@ -172,7 +172,7 @@ describe("the trigger form", () => {
 
     await userEvent.type(await screen.findByPlaceholderText("e.g. Fire alarm → Fire SOP"), "Flood");
     await userEvent.type(screen.getByPlaceholderText("e.g. fire.alarm or *"), "flood.detected");
-    await userEvent.click(screen.getByRole("button", { name: /select a sop/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^target sop$/i }));
     await userEvent.click(await screen.findByRole("option", { name: "Fire alarm response" }));
     await userEvent.click(screen.getByRole("button", { name: /create trigger/i }));
 
@@ -201,7 +201,7 @@ describe("the trigger form", () => {
 
     await userEvent.type(await screen.findByPlaceholderText("e.g. Fire alarm → Fire SOP"), "Flood");
     await userEvent.type(screen.getByPlaceholderText("e.g. fire.alarm or *"), "flood.detected");
-    await userEvent.click(screen.getByRole("button", { name: /select a sop/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^target sop$/i }));
     await userEvent.click(await screen.findByRole("option", { name: "Fire alarm response" }));
 
     await userEvent.click(screen.getByRole("button", { name: /add condition/i }));

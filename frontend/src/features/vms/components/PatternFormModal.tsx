@@ -145,13 +145,13 @@ export default function PatternFormModal({ open, pattern, groups = [], onClose, 
         <div>
           <div className="flex items-center justify-between pb-1.5">
             <span className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">
-              Camera groups in rotation
+              Groups in rotation
             </span>
             <span className="font-mono text-[11px] text-nb-faint">{groupIds.length} selected</span>
           </div>
           {groups.length === 0 ? (
             <div className="rounded-lg border border-dashed border-nb-line px-3 py-6 text-center text-xs text-nb-faint">
-              No camera groups yet — create one from the Camera Groups tab first.
+              No groups yet — create one from the Groups tab first.
             </div>
           ) : (
             <ul className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-nb-line p-1.5">

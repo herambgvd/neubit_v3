@@ -1,6 +1,6 @@
 "use client";
 
-// CameraGroupFormModal — create/edit a Camera Group: name, description, grid
+// CameraGroupFormModal — create/edit a GROUP: name, description, grid
 // layout, active toggle, and the camera-to-grid builder. Wider than the shared
 // Modal (the builder needs room), so it's a portal-based sheet reusing the v3
 // dark tokens. On save it POSTs/PATCHes { name, description, camera_ids, layout,
@@ -75,7 +75,7 @@ export default function CameraGroupFormModal({ open, group, cameras = [], onClos
     mutationFn: (body: CameraGroupCreate) =>
       group ? vms.groups.update(group.id, body) : vms.groups.create(body),
     onSuccess: (saved) => {
-      toast.success(`Camera group ${isEdit ? "updated" : "created"}`);
+      toast.success(`Group ${isEdit ? "updated" : "created"}`);
       qc.invalidateQueries({ queryKey: ["vms-camera-groups"] });
       qc.invalidateQueries({ queryKey: ["vms-groups"] });
       onSaved?.(saved);
@@ -118,7 +118,7 @@ export default function CameraGroupFormModal({ open, group, cameras = [], onClos
       >
         <div className="flex items-center justify-between border-b border-card-border px-5 py-4">
           <h3 className="text-base font-semibold text-foreground">
-            {isEdit ? "Edit camera group" : "New camera group"}
+            {isEdit ? "Edit group" : "New group"}
           </h3>
           <button
             type="button"

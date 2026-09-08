@@ -1,7 +1,7 @@
 "use client";
 
 // PatternPickerMenu — the wall-toolbar dropdown that lists server-persisted
-// Patterns (named rotating sequences of camera groups). Selecting one starts
+// Patterns (named rotating sequences of groups). Selecting one starts
 // rotation on the wall. Sits next to the localStorage "Saved" layouts menu; the
 // two are complementary — Saved = a single static grid, Patterns = a rotation.
 import { useEffect, useRef, useState } from "react";

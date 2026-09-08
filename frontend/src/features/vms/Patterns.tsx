@@ -1,22 +1,36 @@
 "use client";
 
-// VMS → Config → Patterns. A minimal-chrome console like every other Configurations
-// surface: ConsolePage frame + MasterDetail, with the Patterns | Camera Groups
-// segment in the GLOBAL top bar (ConsoleStrip) rather than a tab bar of its own —
-// which is what made this page read as a different product from Video Wall next door.
-//   • Patterns    = named rotating sequences of camera GROUPS (dwell seconds).
-//   • Camera Groups = a set of cameras arranged in a grid layout (the unit a
-//     pattern rotates through).
+// VMS → Config → Patterns. Two lists behind one segment in the GLOBAL top bar:
+//   • Patterns = named rotating sequences of GROUPS (dwell seconds).
+//   • Groups   = a set of cameras arranged in a grid layout — the unit a pattern
+//     rotates through, and what the wall paints when one is applied.
+//
+// "Camera Groups" was the old name. Everything in this console is cameras; the
+// word bought nothing and made the segment the widest thing in the top bar.
+//
+// It is built from the shared console primitives (ConsoleGrid / ConsolePanel /
+// PanelHeader / PanelList) rather than its own MasterDetail + ListPanel pair, so
+// the rail width, the header plus, the counts and the three list states are the
+// same here as on Sites, Tags and Federation — this page used to be the odd one
+// with a labelled "Add" button and a hand-rolled empty state.
 // The detail's "Open in streaming" launches the wall in pattern-rotation mode.
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/kit";
-import { ConsolePage } from "@/components/console";
-import { MasterDetail, ListPanel, EmptyDetail } from "@/components/common";
+import {
+  ConsoleGrid,
+  ConsolePage,
+  ConsolePanel,
+  EmptyPane,
+  IconButton,
+  PanelCounts,
+  PanelHeader,
+  PanelList,
+  PanelSearch,
+} from "@/components/console";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { vms } from "./api";
@@ -111,7 +125,7 @@ export default function Patterns() {
   const remove = useMutation({
     mutationFn: (id: string) => (isPatternTab ? vms.patterns.remove(id) : vms.groups.remove(id)),
     onSuccess: (_d, id) => {
-      toast.success(`${isPatternTab ? "Pattern" : "Camera group"} deleted`);
+      toast.success(`${isPatternTab ? "Pattern" : "Group"} deleted`);
       if (effectiveId === id) setSelectedId(null);
       invalidateActive();
     },
@@ -120,7 +134,7 @@ export default function Patterns() {
 
   const askDelete = (item: PatternItem) =>
     setConfirm({
-      title: `Delete ${isPatternTab ? "pattern" : "camera group"}`,
+      title: `Delete ${isPatternTab ? "pattern" : "group"}`,
       message: `This will remove “${item.name}”. This action cannot be undone.`,
       confirmLabel: "Delete",
       onConfirm: () => {
@@ -146,96 +160,64 @@ export default function Patterns() {
 
   return (
     <ConsolePage>
-      <MasterDetail
-        fill
-        className="min-h-0 flex-1"
-        gridCols="lg:grid-cols-[25%_1fr]"
-        aside={
-          <ListPanel
-            title={isPatternTab ? "Patterns" : "Camera Groups"}
+      <ConsoleGrid>
+        {/* LEFT — the list for whichever tab is showing */}
+        <ConsolePanel>
+          <PanelHeader
+            icon={isPatternTab ? "heroicons-outline:squares-2x2" : "heroicons-outline:video-camera"}
+            title={isPatternTab ? "Patterns" : "Groups"}
             count={items.length}
-            search={search}
-            onSearch={setSearch}
-            searchPlaceholder={isPatternTab ? "Search patterns…" : "Search groups…"}
-            action={
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={invalidateActive}
-                  title="Refresh"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
-                >
-                  <Icon icon="heroicons-outline:arrow-path" className="text-sm" />
-                </button>
-                <button
+            actions={
+              <>
+                <PanelCounts
+                  items={[
+                    { tone: "good", value: activeCount, label: "active" },
+                    { tone: "idle", value: items.length - activeCount, label: "inactive" },
+                  ]}
+                />
+                <IconButton
+                  icon="heroicons:plus"
+                  title={isPatternTab ? "New pattern" : "New group"}
                   onClick={openCreate}
-                  title={isPatternTab ? "New pattern" : "New camera group"}
-                  className="inline-flex h-7 items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 text-[12.5px] tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)]"
-                >
-                  <Icon icon="heroicons-mini:plus" className="text-sm" /> Add
-                </button>
-              </div>
+                />
+              </>
+            }
+          />
+          <PanelSearch
+            value={search}
+            onChange={setSearch}
+            placeholder={isPatternTab ? "Search patterns…" : "Search groups…"}
+          />
+          <PanelList
+            loading={listLoading}
+            // A failed load must never read as "none created yet".
+            error={listError ? apiError(listError, "Failed to load") : undefined}
+            empty={filtered.length === 0}
+            emptyText={
+              search.trim()
+                ? "No matches — try a different keyword."
+                : isPatternTab
+                  ? "No patterns yet. Use ＋ above to create one."
+                  : "No groups yet. Use ＋ above to create one."
             }
           >
-            <div className="flex items-center gap-3 px-4 pb-1 pt-1 text-xs">
-              <span className="flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-nb-good shadow-[0_0_5px_#34d399]" />
-                <span className="text-nb-muted">{activeCount} active</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-nb-faint" />
-                <span className="text-nb-muted">{items.length - activeCount} inactive</span>
-              </span>
-            </div>
+            {filtered.map((i) => (
+              <PatternListRow
+                key={i.id}
+                item={i}
+                isPattern={isPatternTab}
+                isSelected={effectiveId === i.id}
+                onSelect={(d) => setSelectedId(d.id)}
+                onToggleActive={(d) => toggleActive.mutate({ id: d.id, is_active: d.is_active === false })}
+                onEdit={openEdit}
+                onDelete={askDelete}
+              />
+            ))}
+          </PanelList>
+        </ConsolePanel>
 
-            {listLoading ? (
-              <div className="px-4 py-6 text-center text-xs text-nb-muted">
-                <Icon icon="svg-spinners:180-ring" className="mx-auto mb-1 text-base" />
-                Loading…
-              </div>
-            ) : listError ? (
-              <div className="px-4 py-6 text-center text-xs text-nb-crit">{apiError(listError, "Failed to load")}</div>
-            ) : filtered.length === 0 ? (
-              <div className="px-4 py-12 text-center">
-                <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(96,165,250,.1)]">
-                  <Icon
-                    icon={isPatternTab ? "heroicons:squares-2x2" : "heroicons-outline:video-camera"}
-                    className="text-lg text-nb-muted"
-                  />
-                </div>
-                <div className="text-sm font-medium text-nb-ink">
-                  {search.trim()
-                    ? "No matches"
-                    : isPatternTab
-                      ? "No patterns yet"
-                      : "No camera groups yet"}
-                </div>
-                <div className="mt-0.5 text-xs text-nb-muted">
-                  {search.trim()
-                    ? "Try a different keyword."
-                    : isPatternTab
-                      ? "Click Add to create your first pattern."
-                      : "Click Add to create your first camera group."}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-0.5 px-2 py-2">
-                {filtered.map((i) => (
-                  <PatternListRow
-                    key={i.id}
-                    item={i}
-                    isPattern={isPatternTab}
-                    isSelected={effectiveId === i.id}
-                    onSelect={(d) => setSelectedId(d.id)}
-                    onToggleActive={(d) => toggleActive.mutate({ id: d.id, is_active: d.is_active === false })}
-                    onEdit={openEdit}
-                    onDelete={askDelete}
-                  />
-                ))}
-              </div>
-            )}
-          </ListPanel>
-        }
-      >
+        {/* RIGHT — the selected pattern or group */}
+        <ConsolePanel>
         {selected ? (
           <PatternDetail
             key={selected.id}
@@ -248,13 +230,14 @@ export default function Patterns() {
             onToggleActive={(d) => toggleActive.mutate({ id: d.id, is_active: d.is_active === false })}
           />
         ) : (
-          <EmptyDetail
-            icon={isPatternTab ? "heroicons:squares-2x2" : "heroicons-outline:video-camera"}
-            title={isPatternTab ? "Select a pattern" : "Select a camera group"}
-            subtitle="Choose one from the list, or create a new one."
+          <EmptyPane
+            icon={isPatternTab ? "heroicons-outline:squares-2x2" : "heroicons-outline:video-camera"}
+            title={isPatternTab ? "No pattern selected" : "No group selected"}
+            subtitle="Pick one from the list, or use ＋ above to create one."
           />
         )}
-      </MasterDetail>
+        </ConsolePanel>
+      </ConsoleGrid>
 
       {/* Editor modals — pattern vs camera-group builder */}
       {isPatternTab ? (

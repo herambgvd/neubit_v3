@@ -257,7 +257,7 @@ export default function LinkageRuleModal({ open, rule, onClose, onSave, saving =
               items={groups.map((g) => ({ id: g.id, label: g.name }))}
               selected={form.group_ids}
               onToggle={(id) => patch({ group_ids: toggleIn(form.group_ids, id) })}
-              empty="No camera groups"
+              empty="No groups"
               loading={groupsQ.isLoading}
             />
           )}
