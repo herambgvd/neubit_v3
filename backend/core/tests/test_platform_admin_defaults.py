@@ -155,14 +155,18 @@ async def test_platform_branding_is_the_theme_a_tenant_falls_back_to(app, world)
     async with _client(app) as c:
         patched = await c.patch(
             f"{PLATFORM}/branding", headers=_auth(world["sa"]),
-            json={"app_name": "Neubit Platform", "primary_color": "#101010"},
+            json={"app_name": "Neubit Platform"},
         )
         as_tenant = await c.get(f"{PREFIX}/branding", headers=_auth(world["a"]))
 
     assert patched.status_code == 200, patched.text
     assert patched.json()["app_name"] == "Neubit Platform"
-    assert patched.json()["primary_color"] == "#101010"
     assert as_tenant.json()["app_name"] == "Neubit Platform"
+    # The brand colours this used to assert are gone from the API: they were read
+    # by nothing but the swatch beside their own pickers. Identity is the name,
+    # the logo and the favicon.
+    assert "primary_color" not in as_tenant.json()
+    assert "favicon_url" in as_tenant.json()
 
 
 async def test_a_tenants_branding_is_its_own_and_the_default_survives_it(app, world):

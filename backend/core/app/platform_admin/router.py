@@ -82,10 +82,10 @@ async def update_platform_branding(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_superadmin),
 ) -> BrandingOut:
-    """Update the platform-default branding (name / colours / header flag).
+    """Update the platform-default branding (the app name).
 
-    Logo upload uses POST /branding/logo, which for a super-admin (tenant_id None)
-    targets the platform-default row.
+    Logo and favicon uploads use POST /branding/logo and /branding/favicon, which
+    for a super-admin (tenant_id None) target the platform-default row.
     """
     branding = await branding_service.update(db, data, tenant_id=None)
     await audit_record(

@@ -33,7 +33,7 @@ async def _row_for(db: AsyncSession, tenant_id: uuid.UUID | None) -> Branding | 
 async def get_or_create_default(db: AsyncSession) -> Branding:
     """The single platform-default branding row, created if absent.
 
-    Column defaults (app_name, colours) apply on insert, so a fresh deployment gets
+    Column defaults (app_name) apply on insert, so a fresh deployment gets
     sensible branding out of the box.
     """
     row = await _row_for(db, None)
@@ -85,6 +85,17 @@ async def set_logo(
     return row
 
 
+async def set_favicon(
+    db: AsyncSession, favicon_key: str, tenant_id: uuid.UUID | None = None
+) -> Branding:
+    """Point the caller's scope branding row at a newly uploaded favicon."""
+    row = await _get_or_create_for_scope(db, tenant_id)
+    row.favicon_key = favicon_key
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
 async def _get_or_create_for_scope(
     db: AsyncSession, tenant_id: uuid.UUID | None
 ) -> Branding:
@@ -104,6 +115,7 @@ async def _get_or_create_for_scope(
         tenant_id=tenant_id,
         app_name=default.app_name,
         logo_key=default.logo_key,
+        favicon_key=default.favicon_key,
         primary_color=default.primary_color,
         accent_color=default.accent_color,
         name_in_header=default.name_in_header,

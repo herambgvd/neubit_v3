@@ -309,7 +309,8 @@ export interface TemplatePreviewOut {
 /* --- branding (backend/core/app/branding/schemas.py) ----------------------- */
 
 /** `UpdateBrandingIn` as the Branding form holds it — every field present. */
-export type BrandingForm = Pick<BrandingOut, "app_name" | "primary_color" | "accent_color" | "name_in_header">;
+/** The only editable branding field. Logo and favicon are uploads, not form state. */
+export type BrandingForm = Pick<BrandingOut, "app_name">;
 
 /* --- licensing (backend/core/app/licensing/router.py) ---------------------- */
 

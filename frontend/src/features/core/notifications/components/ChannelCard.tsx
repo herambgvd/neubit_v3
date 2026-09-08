@@ -15,6 +15,8 @@ import { CHANNEL_FIELDS, CHANNEL_META } from "../constants";
 export function ChannelCard({ channel }: { channel: ChannelOut }) {
   const qc = useQueryClient();
   const fields = CHANNEL_FIELDS[channel.channel] || [];
+  const textFields = fields.filter((f) => f.type !== "bool");
+  const boolFields = fields.filter((f) => f.type === "bool");
   const meta = CHANNEL_META[channel.channel] || { title: channel.channel, icon: "heroicons-outline:cog-6-tooth" };
 
   const [enabled, setEnabled] = useState(channel.enabled);
@@ -73,26 +75,35 @@ export function ChannelCard({ channel }: { channel: ChannelOut }) {
         <Toggle checked={enabled} onChange={setEnabled} label={`Enable ${meta.title}`} />
       </div>
 
+      {/* Values first, then switches. A bool used to sit INSIDE this grid, so
+          "Use TLS" was a full-height bordered box the size of a text input with a
+          label and a toggle rattling around in it — and it aligned with nothing,
+          because an Input carries its label above the box and that one carried it
+          inside. Switches are their own compact row underneath now. */}
       <div className="grid gap-3 sm:grid-cols-2">
-        {fields.map((f) =>
-          f.type === "bool" ? (
-            <div key={f.key} className="flex items-center justify-between rounded-[10px] border border-nb-line px-3 py-2.5">
-              <span className="text-sm font-medium text-nb-muted">{f.label}</span>
-              <Toggle checked={!!config[f.key]} onChange={(v) => setField(f.key, v)} label={f.label} />
-            </div>
-          ) : (
-            <Input
-              key={f.key}
-              label={f.label}
-              type={f.type || "text"}
-              // Text fields hold strings on the wire (a masked secret is "***").
-              value={String(config[f.key] ?? "")}
-              placeholder={f.placeholder}
-              onChange={(e) => setField(f.key, e.target.value)}
-            />
-          ),
-        )}
+        {textFields.map((f) => (
+          <Input
+            key={f.key}
+            label={f.label}
+            type={f.type || "text"}
+            // Text fields hold strings on the wire (a masked secret is "***").
+            value={String(config[f.key] ?? "")}
+            placeholder={f.placeholder}
+            onChange={(e) => setField(f.key, e.target.value)}
+          />
+        ))}
       </div>
+
+      {boolFields.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1">
+          {boolFields.map((f) => (
+            <label key={f.key} className="flex cursor-pointer items-center gap-1.5">
+              <Toggle checked={!!config[f.key]} onChange={(v) => setField(f.key, v)} label={f.label} />
+              <span className="text-sm text-nb-muted">{f.label}</span>
+            </label>
+          ))}
+        </div>
+      )}
 
       <div className="mt-4 flex items-center gap-2">
         <ActionButton icon="heroicons-outline:check" disabled={save.isPending} onClick={() => save.mutate()}>

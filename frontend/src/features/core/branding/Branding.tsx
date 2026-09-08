@@ -1,8 +1,8 @@
 "use client";
 
-// Branding — white-label the app name, colors and logo. Thin orchestrator: owns
-// the branding query, form state (hydrated from the server), and the save +
-// logo-upload mutations; wires the BrandingEditor + BrandingPreview columns.
+// Branding — white-label the app name, the logo and the favicon. Thin
+// orchestrator: owns the branding query, the app-name form state, and the save +
+// two upload mutations; wires the BrandingEditor + BrandingPreview columns.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -14,7 +14,7 @@ import type { BrandingForm } from "../types";
 import BrandingEditor from "./components/BrandingEditor";
 import BrandingPreview from "./components/BrandingPreview";
 
-const DEFAULTS: BrandingForm = { app_name: "", primary_color: "#4f46e5", accent_color: "#22d3ee", name_in_header: false };
+const DEFAULTS: BrandingForm = { app_name: "" };
 
 export default function BrandingPage() {
   const qc = useQueryClient();
@@ -28,12 +28,7 @@ export default function BrandingPage() {
   // Hydrate the form whenever the server data lands / refreshes.
   useEffect(() => {
     if (branding.data) {
-      setForm({
-        app_name: branding.data.app_name || "",
-        primary_color: branding.data.primary_color || DEFAULTS.primary_color,
-        accent_color: branding.data.accent_color || DEFAULTS.accent_color,
-        name_in_header: !!branding.data.name_in_header,
-      });
+      setForm({ app_name: branding.data.app_name || "" });
     }
   }, [branding.data]);
 
@@ -61,7 +56,24 @@ export default function BrandingPage() {
     onError: (e) => toast.error(apiError(e)),
   });
 
+  const uploadFavicon = useMutation({
+    mutationFn: (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return api.post("/branding/favicon", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+    },
+    onSuccess: () => {
+      toast.success("Favicon updated");
+      // The tab icon is applied by TitleSync off this same query.
+      qc.invalidateQueries({ queryKey: ["branding"] });
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
   const logoUrl = branding.data?.logo_url;
+  const faviconUrl = branding.data?.favicon_url;
 
   if (branding.isLoading) return <LoadingBlock />;
 
@@ -82,10 +94,13 @@ export default function BrandingPage() {
           form={form}
           setForm={setForm}
           logoUrl={logoUrl}
+          faviconUrl={faviconUrl}
           onUploadLogo={(file) => uploadLogo.mutate(file)}
-          uploading={uploadLogo.isPending}
+          onUploadFavicon={(file) => uploadFavicon.mutate(file)}
+          uploadingLogo={uploadLogo.isPending}
+          uploadingFavicon={uploadFavicon.isPending}
         />
-        <BrandingPreview form={form} logoUrl={logoUrl} />
+        <BrandingPreview form={form} logoUrl={logoUrl} faviconUrl={faviconUrl} />
       </div>
     </div>
   );

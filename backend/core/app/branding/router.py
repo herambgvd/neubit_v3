@@ -1,7 +1,7 @@
 """Branding API — read the white-label config (PUBLIC) + manage it (permissioned).
 
 The GET is deliberately PUBLIC (no auth): the login page and every unauthenticated
-screen must be able to theme themselves (name, logo, colours) before a user has a
+screen must be able to theme themselves (name, logo, favicon) before a user has a
 token. The mutating endpoints require BRANDING_MANAGE.
 """
 
@@ -41,14 +41,14 @@ async def _to_out(branding: Branding) -> BrandingOut:
     The DB holds a storage key; the client needs a fetchable URL, resolved here at
     response time (local URL or presigned S3, per config). No logo → logo_url None.
     """
-    logo_url = await get_storage().url(branding.logo_key) if branding.logo_key else None
+    storage = get_storage()
+    logo_url = await storage.url(branding.logo_key) if branding.logo_key else None
+    favicon_url = await storage.url(branding.favicon_key) if branding.favicon_key else None
     return BrandingOut(
         id=branding.id,
         app_name=branding.app_name,
         logo_url=logo_url,
-        primary_color=branding.primary_color,
-        accent_color=branding.accent_color,
-        name_in_header=branding.name_in_header,
+        favicon_url=favicon_url,
     )
 
 
@@ -73,7 +73,7 @@ async def update_branding(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_permission(CorePerm.BRANDING_MANAGE)),
 ) -> BrandingOut:
-    """Update name / colours (partial). Logo is uploaded via POST /logo.
+    """Update the app name. The logo and favicon are uploads (POST /logo, /favicon).
 
     A tenant-admin edits their own tenant's branding; a super-admin edits the default.
     """
@@ -101,6 +101,30 @@ async def upload_logo(
     key = f"branding/logo_{uuid.uuid4().hex}{ext}"
     await get_storage().put(key, data, ctype)
     branding = await service.set_logo(db, key, actor.tenant_id)
+    return await _to_out(branding)
+
+
+@router.post("/favicon", response_model=BrandingOut)
+async def upload_favicon(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_permission(CorePerm.BRANDING_MANAGE)),
+) -> BrandingOut:
+    """Accept a favicon image, store it, and point the caller's branding at it.
+
+    A SEPARATE image from the logo, not a resize of it: the favicon is read at 16px
+    in a browser tab, where a wordmark that works in a header is a grey smudge.
+
+    Same handling as the logo — `read_capped` so the cap stops the read rather than
+    reporting on it afterwards, and the extension taken from the VALIDATED content
+    type rather than the uploaded filename, so the served URL cannot be made to end
+    in .html. See core/uploads.py.
+    """
+    data = await read_capped(file, field="Favicon")
+    ctype, ext = validate_image(data, file.content_type, field="Favicon")
+    key = f"branding/favicon_{uuid.uuid4().hex}{ext}"
+    await get_storage().put(key, data, ctype)
+    branding = await service.set_favicon(db, key, actor.tenant_id)
     return await _to_out(branding)
 
 

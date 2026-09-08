@@ -589,9 +589,8 @@ export interface BrandingOut {
   id: string;
   app_name: string;
   logo_url: string | null;
-  primary_color: string;
-  accent_color: string;
-  name_in_header: boolean;
+  /** The browser-tab icon. A separate image from the logo — it is read at 16px. */
+  favicon_url: string | null;
 }
 
 /** GET /settings/public — `SettingsService.public_values()`, the safe subset
