@@ -8,7 +8,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { ActionButton } from "@/components/console";
-import { Card, ConfirmDialog, EmptyState, Spinner, Table, type ConfirmState } from "@/components/ui/kit";
+import DataTable from "@/components/common/DataTable";
+import { Card, ConfirmDialog, EmptyState, Spinner, type ConfirmState } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
 import type { Page } from "@/lib/types";
 import type { ApiKeyCreatedOut, ApiKeyOut, RoleOut } from "../types";
@@ -86,7 +87,7 @@ export default function ApiKeysPage() {
       <div className="mb-3 flex items-center justify-end">
         <ActionButton icon="heroicons-outline:plus" onClick={() => setOpen(true)}>Create key</ActionButton>
       </div>
-      <Card className="p-2">
+      <Card className="border-0 bg-transparent p-0">
         {keys.isLoading ? (
           <div className="flex justify-center py-16">
             <Spinner />
@@ -100,10 +101,14 @@ export default function ApiKeysPage() {
           </div>
         ) : (
           <>
-            <Table
+            <DataTable
               columns={columns}
-              rows={keys.data?.items}
-              empty={
+              data={keys.data?.items ?? []}
+              getRowId={(k) => k.id}
+              // Soonest expiry first: on a key audit that is the row that breaks
+              // something next, and it is the reason this screen wanted sorting.
+              initialSorting={[{ id: "expires_at", desc: true }]}
+              emptyState={
                 <EmptyState
                   icon="heroicons-outline:key"
                   title="No API keys yet"

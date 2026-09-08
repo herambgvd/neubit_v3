@@ -22,7 +22,6 @@ import {
   Modal,
   PasswordInput,
   Select,
-  Table,
   Textarea,
 } from "./kit";
 
@@ -403,57 +402,6 @@ describe("Select", () => {
   });
 });
 
-describe("Table", () => {
-  interface Row {
-    id: string;
-    name: string;
-    count: number;
-  }
-  const columns = [
-    { key: "name", label: "Name" },
-    { key: "count", label: "Count", align: "right" as const },
-  ];
-  const rows: Row[] = [
-    { id: "a", name: "Lobby", count: 2 },
-    { id: "b", name: "Dock", count: 7 },
-  ];
-
-  it("renders exactly one row per record, plus the header", () => {
-    render(<Table columns={columns} rows={rows} />);
-
-    // 2 records + 1 header row.
-    expect(screen.getAllByRole("row")).toHaveLength(3);
-    expect(screen.getByText("Lobby")).toBeInTheDocument();
-    expect(screen.getByText("Dock")).toBeInTheDocument();
-  });
-
-  it("reads a cell by its column key when the column has no renderer", () => {
-    render(<Table columns={columns} rows={rows} />);
-    expect(screen.getByText("7")).toBeInTheDocument();
-  });
-
-  it("prefers the column's renderer over the raw field", () => {
-    render(
-      <Table
-        columns={[{ key: "count", label: "Count", render: (r: Row) => `${r.count} cams` }]}
-        rows={rows}
-      />,
-    );
-
-    expect(screen.getByText("2 cams")).toBeInTheDocument();
-    expect(screen.queryByText("2")).toBeNull();
-  });
-
-  it("renders the caller's own empty node, so `no results` and `load failed` can differ", () => {
-    render(<Table columns={columns} rows={[]} empty={<p>Could not reach the recorder</p>} />);
-
-    expect(screen.getByText("Could not reach the recorder")).toBeInTheDocument();
-    expect(screen.queryByRole("table")).toBeNull();
-    expect(screen.queryByText("Nothing here yet")).toBeNull();
-  });
-
-  it("treats a null row list as empty rather than crashing on it", () => {
-    render(<Table columns={columns} rows={null} />);
-    expect(screen.getByText("Nothing here yet")).toBeInTheDocument();
-  });
-});
+// Table's tests live in ../common/DataTable.test.tsx. The kit's own simple Table
+// is gone — API Keys was its only caller and moved to the shared DataTable, so
+// the console has one table rather than two that could drift apart.

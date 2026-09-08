@@ -1,14 +1,20 @@
 "use client";
 
-// Reusable data table built on @tanstack/react-table (v8). Matches the shared
-// kit Table aesthetic — sharp uppercase header band, hover rows, right-aligned
-// numeric columns (tabular-nums) via column meta `align:"right"`. Adds sorting
-// (click a sortable header → asc/desc with a caret) and optional row selection —
-// the STATE only. This component renders no checkbox column of its own: a caller
-// that wants one declares it (see CameraTable's `id: "select"` column) and turns
-// the state on with `enableRowSelection`.
+// THE console's table, built on @tanstack/react-table (v8).
 //
-// Generic on purpose so other VMS tables can adopt it. Props:
+// There used to be two. This one was orphaned when the VMS cleanup removed its
+// only caller, while API Keys used a second, simpler `Table` in the kit — so
+// neither was canonical and their rows, headers and hover states were free to
+// drift apart for no reason anyone had chosen. The simple one is gone; this is
+// the one, and a new table adopts it rather than hand-rolling a third.
+//
+// Sharp uppercase header band, hover rows, right-aligned numeric columns
+// (tabular-nums) via column meta `align:"right"`. Sorting (click a sortable
+// header → asc/desc with a caret) and optional row selection — the STATE only.
+// It renders no checkbox column of its own: a caller that wants one declares it
+// and turns the state on with `enableRowSelection`.
+//
+// Props:
 //   columns              — TanStack column defs (use meta.align:"right" for numeric)
 //   data                 — array of rows
 //   getRowId             — (row) => string; stable id for selection/keys
