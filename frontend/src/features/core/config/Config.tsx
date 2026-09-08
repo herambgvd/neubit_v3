@@ -1,6 +1,6 @@
 "use client";
 
-// Config — one Platform view for how this deployment presents itself and how it
+// Config — the Platform view for how this deployment presents itself and how it
 // reaches people.
 //
 // It was two segments, Branding and Notifications, and they are one subject read
@@ -8,43 +8,23 @@
 // that leaves here, and the delivery channels are what carries those emails. An
 // admin white-labelling a deployment was switching tabs to finish one job.
 //
-// Two bands, in the order the work happens: what it is CALLED, then how it REACHES
-// people.
-import { Icon } from "@iconify/react";
-
+// APPEARANCE IS HERE TOO, AND IT IS NOT PLATFORM-WIDE. The typeface and text size
+// are a PER-USER preference — they change the console of whoever is signed in,
+// not the tenant's. It sits here because an admin dressing a deployment reaches
+// for it in the same sitting, and it stays in My account → Preferences as well,
+// because an operator without `settings.manage` cannot open this page at all and
+// still has to be able to set their own. Same component in both places, so the
+// two cannot drift.
+import AppearanceCard from "@/features/core/account/components/AppearanceCard";
 import Branding from "@/features/core/branding/Branding";
 import Channels from "@/features/core/notifications/Channels";
 
-function Band({ icon, title, note }: { icon: string; title: string; note: string }) {
-  return (
-    <div className="mb-2 flex items-center gap-2">
-      <Icon icon={icon} className="text-sm text-nb-blueb" />
-      <h2 className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">{title}</h2>
-      <span className="text-[11px] text-nb-faint">{note}</span>
-    </div>
-  );
-}
-
 export default function ConfigPage() {
   return (
-    <div className="space-y-6">
-      <section>
-        <Band
-          icon="heroicons-outline:swatch"
-          title="Identity"
-          note="the name, colour and logo this deployment signs itself with"
-        />
-        <Branding />
-      </section>
-
-      <section>
-        <Band
-          icon="heroicons-outline:paper-airplane"
-          title="Delivery"
-          note="how messages leave the platform"
-        />
-        <Channels />
-      </section>
+    <div className="space-y-4">
+      <Branding />
+      <Channels />
+      <AppearanceCard />
     </div>
   );
 }

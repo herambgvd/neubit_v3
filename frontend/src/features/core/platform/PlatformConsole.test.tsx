@@ -55,9 +55,10 @@ describe("the Platform console's view keys", () => {
 
   async function open() {
     renderWithProviders(<PlatformConsole />);
-    // Both bands of the merged view, which no other Platform view renders.
-    await screen.findByText("Identity");
-    await screen.findByText("Delivery");
+    // Two cards no other Platform view renders: a delivery channel and the
+    // appearance picker.
+    await screen.findByText("Email (SMTP)");
+    await screen.findByText("Typeface");
     return true;
   }
 });
