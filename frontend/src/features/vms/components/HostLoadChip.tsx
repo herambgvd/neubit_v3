@@ -17,9 +17,13 @@ import { Icon } from "@iconify/react";
 import { api } from "@/lib/api";
 import type { SystemResourcesSnapshot } from "@/lib/types";
 
-/** Green healthy, amber busy, red saturated. */
-const BUSY = 75;
-const SATURATED = 90;
+/** Green healthy, amber busy, red saturated.
+ *
+ *  The bands are set for a machine DECODING VIDEO, not for a server at rest:
+ *  half a host is the point where adding tiles starts costing frames, so amber
+ *  begins there rather than at the three-quarters a general dashboard would use. */
+const BUSY = 50;
+const SATURATED = 85;
 
 /** The colour ONE reading gets. Per metric, not per chip: a host at 30% CPU and
  *  95% RAM is a memory problem, and a single worst-of tone would say only that

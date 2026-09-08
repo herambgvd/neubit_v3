@@ -165,13 +165,24 @@ describe("host load", () => {
     expect(ram.className).toContain("f87171"); // red
   });
 
-  it("warns in amber between busy and saturated", async () => {
-    stubApi({ "GET /system/resources": { cpu_percent: 80, ram: { percent: 10 } } });
+  it("turns amber at half the host, and red past 85%", async () => {
+    // The bands are for a machine DECODING VIDEO: half a host is where adding
+    // tiles starts costing frames, so amber begins there and not at the
+    // three-quarters a general dashboard would use.
+    stubApi({ "GET /system/resources": { cpu_percent: 50, ram: { percent: 49 } } });
     renderWithProviders(<WallToolbar {...props()} />);
 
-    const chip = await screen.findByTitle(/host load/i);
-    expect(within(chip).getByText("80%").className).toContain("fbbf24");
-    expect(within(chip).getByText("10%").className).toContain("34d399");
+    let chip = await screen.findByTitle(/host load/i);
+    expect(within(chip).getByText("50%").className).toContain("fbbf24");
+    expect(within(chip).getByText("49%").className).toContain("34d399");
+
+    cleanup();
+    stubApi({ "GET /system/resources": { cpu_percent: 85, ram: { percent: 84 } } });
+    renderWithProviders(<WallToolbar {...props()} />);
+
+    chip = await screen.findByTitle(/host load/i);
+    expect(within(chip).getByText("85%").className).toContain("f87171");
+    expect(within(chip).getByText("84%").className).toContain("fbbf24");
   });
 
   it("sits with the stream-quality control, which is what it is read against", async () => {
