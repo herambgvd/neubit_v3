@@ -38,6 +38,22 @@ const EDGE2 = node("r2", "edge-two", { label: "warehouse" });
 beforeEach(() => {
   vi.spyOn(vms.cameras, "list").mockResolvedValue({ items: [], total: 0 } as never);
   vi.spyOn(vms.mediaNodes, "credentials").mockResolvedValue({ items: [] } as never);
+  // The recorder OWNS its cameras, so this — not the local camera list — is
+  // where the detail pane's camera list comes from.
+  vi.spyOn(vms.federation, "cameras").mockResolvedValue({
+    items: [],
+    total: 0,
+    nodes: 0,
+    unreachable: [],
+  } as never);
+});
+
+const fedCam = (id: string, nodeId: string, status = "online") => ({
+  id,
+  name: `channel ${id}`,
+  status,
+  node_id: nodeId,
+  node_name: nodeId,
 });
 
 function listReturns(items: MediaNodePublic[]) {
@@ -262,5 +278,80 @@ describe("a recorder that is online but refusing our credential", () => {
 
     expect(screen.queryByText(/credential needs re-enrolling/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/refusing our credential/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("the cameras a recorder runs", () => {
+  it("lists the recorder's OWN cameras, not just the rows the VMS pinned to it", async () => {
+    // A single-ownership estate — the normal one — has no VMS-owned camera rows
+    // at all. This pane filtered on exactly those, so a recorder running three
+    // cameras read "0 / 32, no cameras pinned yet" while Federation, one click
+    // away, listed all three. Same box, two numbers, and this one was wrong.
+    listReturns([EDGE1]);
+    vi.spyOn(vms.federation, "cameras").mockResolvedValue({
+      items: [fedCam("c1", "r1"), fedCam("c2", "r1", "offline"), fedCam("c9", "r2")],
+      unreachable: [],
+    } as never);
+
+    renderWithProviders(<RecordersPage />);
+
+    expect(await screen.findByText("channel c1")).toBeInTheDocument();
+    expect(screen.getByText("channel c2")).toBeInTheDocument();
+    // Another recorder's camera does not appear under this one.
+    expect(screen.queryByText("channel c9")).toBeNull();
+    expect(screen.queryByText(/runs no cameras yet/i)).toBeNull();
+  });
+
+  it("counts capacity from what the recorder actually runs", async () => {
+    // The capacity meter read 0/32 beside a Federation page saying 3/32.
+    listReturns([EDGE1]);
+    vi.spyOn(vms.federation, "cameras").mockResolvedValue({
+      items: [fedCam("c1", "r1"), fedCam("c2", "r1")],
+      unreachable: [],
+    } as never);
+
+    renderWithProviders(<RecordersPage />);
+    await screen.findByText("channel c1");
+
+    // The capacity cell, not the list badge that also reads "2".
+    const capacity = screen.getByText(/^Capacity$/i).closest("div")!;
+    expect(capacity.textContent).toContain("2");
+    expect(capacity.textContent).toContain("/ 32");
+  });
+
+  it("says an unreachable recorder cannot be listed, rather than that it runs none", async () => {
+    listReturns([EDGE1]);
+    vi.spyOn(vms.federation, "cameras").mockResolvedValue({
+      items: [],
+      unreachable: [{ node_id: "r1", name: "edge-one", error: "timeout" }],
+    } as never);
+
+    renderWithProviders(<RecordersPage />);
+
+    expect(await screen.findByText(/not answering, so its cameras cannot be listed/i)).toBeInTheDocument();
+    expect(screen.queryByText(/runs no cameras yet/i)).toBeNull();
+  });
+
+  it("still shows a locally pinned camera, for estates that predate single ownership", async () => {
+    listReturns([EDGE1]);
+    vi.spyOn(vms.cameras, "list").mockResolvedValue({
+      items: [{ id: "local-1", name: "lobby-cam", status: "online", media_node_id: "r1" }],
+      total: 1,
+    } as never);
+
+    renderWithProviders(<RecordersPage />);
+
+    expect(await screen.findByText("lobby-cam")).toBeInTheDocument();
+  });
+
+  it("does not print the recorder's endpoint URLs", async () => {
+    // They are set in Edit and read nowhere else here.
+    listReturns([EDGE1]);
+
+    renderWithProviders(<RecordersPage />);
+    await screen.findAllByText("edge-one");
+
+    expect(screen.queryByText(/hls base/i)).toBeNull();
+    expect(screen.queryByText(/rtsp base/i)).toBeNull();
   });
 });

@@ -252,20 +252,54 @@ interface RecorderDetailProps {
 function RecorderDetail({ node, onEdit, onDrain, onDelete }: RecorderDetailProps) {
   const cap = node.capacity_channels;
 
-  // Cameras pinned to THIS recorder (client-side filter — the list API has no
-  // media_node_id filter). Refetches so a fresh assignment shows up.
+  // THE RECORDER OWNS ITS CAMERAS. This pane used to list only VMS-owned rows
+  // pinned to the node (`media_node_id`), and on a single-ownership estate — the
+  // normal one, where the VMS onboards nothing — there are none. So a recorder
+  // running three cameras read "0 / 128, no cameras pinned to this recorder yet"
+  // here while Federation, one click away, listed all three. Same box, two
+  // numbers, and this one was wrong.
+  //
+  // The recorder's own cameras come from the federation aggregate, which is the
+  // node's answer about itself. Local pinned rows are still merged in: a
+  // deployment that predates single ownership has them, and they are cameras the
+  // VMS believes record here.
+  const fedQ = useQuery({
+    // The SAME key the Federation console uses, so the two screens share one
+    // copy and cannot disagree about what a recorder is running.
+    queryKey: ["vms-federation-cameras"],
+    queryFn: () => vms.federation.cameras(),
+    staleTime: 15_000,
+  });
   const camsQ = useQuery({
     queryKey: ["vms-cameras", "for-recorder-detail"],
     queryFn: () => vms.cameras.list({ limit: 500 }),
     staleTime: 15_000,
   });
-  const assigned = useMemo(
-    () => asItems(camsQ.data).filter((c) => c.media_node_id === node.id),
-    [camsQ.data, node.id],
-  );
-  // The true channel load is what we can actually count locally; fall back to the
-  // server's reported used_channels when cameras are still loading.
-  const used = camsQ.isSuccess ? assigned.length : node.used_channels ?? 0;
+
+  const cameras = useMemo(() => {
+    const owned = (fedQ.data?.items || [])
+      .filter((c) => c.node_id === node.id)
+      .map((c) => ({ id: c.id, name: c.name, status: String(c.status || "unknown"), channel: null as number | null }));
+    const seen = new Set(owned.map((c) => c.id));
+    const local = asItems(camsQ.data)
+      .filter((c) => c.media_node_id === node.id && !seen.has(c.id))
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        status: String(c.status || "unknown"),
+        channel: c.nvr_channel_number ?? null,
+      }));
+    return [...owned, ...local];
+  }, [fedQ.data, camsQ.data, node.id]);
+
+  // The recorder is unreachable when the aggregate says so — its cameras cannot
+  // be listed then, and an empty list must not read as "this recorder runs none".
+  const nodeUnreachable = (fedQ.data?.unreachable || []).some((u) => u.node_id === node.id);
+  const camsLoading = fedQ.isLoading || camsQ.isLoading;
+
+  // Count what we can actually see; fall back to the heartbeat's own figure while
+  // the lists load or when the node is not answering.
+  const used = !camsLoading && !nodeUnreachable ? cameras.length : node.used_channels ?? 0;
   const full = cap != null && used >= cap;
 
   return (
@@ -332,34 +366,35 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }: RecorderDetailProps
           <InfoCell label="Last heartbeat" value={node.last_heartbeat ? fmtRelative(node.last_heartbeat) : "—"} />
         </div>
 
-        {/* Endpoints */}
-        <p className="mb-2 mt-4 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">Endpoints</p>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <InfoCell label="API URL" value={node.api_url || "—"} mono />
-          <InfoCell label="HLS base" value={node.hls_base || "—"} mono />
-          <InfoCell label="WebRTC base" value={node.webrtc_base || "—"} mono />
-          <InfoCell label="RTSP base" value={node.rtsp_base || "—"} mono />
-        </div>
+        {/* NO endpoint list. They are set in Edit and read nowhere else here —
+            four rows of internal URLs on a detail pane is reference material, not
+            something an operator acts on. The API URL is already under the name. */}
 
-        {/* Assigned cameras — what this recorder actually records */}
+        {/* Cameras — what this recorder actually runs, as the recorder reports it */}
         <div className="mb-2 mt-4 flex items-center justify-between">
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">Assigned cameras</p>
-          <span className="rounded-full border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1.5 font-mono text-[10px] font-semibold tabular-nums text-[#aec2e8]">{assigned.length}</span>
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">Cameras</p>
+          <span className="rounded-full border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1.5 font-mono text-[10px] font-semibold tabular-nums text-[#aec2e8]">{cameras.length}</span>
         </div>
-        {camsQ.isLoading ? (
+        {camsLoading ? (
           <p className="px-1 py-3 text-xs text-[#9a92c8]"><Icon icon="svg-spinners:180-ring" className="mr-1 inline text-sm text-[#67e8f9]" />Loading…</p>
-        ) : assigned.length === 0 ? (
+        ) : nodeUnreachable ? (
+          // An empty list here would say the recorder runs nothing, which is a
+          // different claim from "it is not answering right now".
+          <p className="rounded-[10px] border border-dashed border-[rgba(251,191,36,.35)] px-3 py-4 text-center text-xs text-[#fbbf24]">
+            This recorder is not answering, so its cameras cannot be listed.
+          </p>
+        ) : cameras.length === 0 ? (
           <p className="rounded-[10px] border border-dashed border-[rgba(160,150,245,.28)] px-3 py-4 text-center text-xs text-[#9a92c8]">
-            No cameras pinned to this recorder yet. On the Cameras page, open a camera → Recording → Recorder and select “{node.name}”.
+            This recorder runs no cameras yet. Cameras are onboarded on the recorder itself.
           </p>
         ) : (
           <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-            {assigned.map((c) => (
+            {cameras.map((c) => (
               <li key={c.id} className="flex items-center gap-2 rounded-[10px] border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)] px-3 py-1.5">
                 <StatusDot status={c.status} />
-                {c.nvr_channel_number != null && (
+                {c.channel != null && (
                   <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded-sm border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1 font-mono text-[10px] font-semibold tabular-nums text-[#aec2e8]">
-                    {c.nvr_channel_number}
+                    {c.channel}
                   </span>
                 )}
                 <span className="min-w-0 flex-1 truncate text-[13px] text-[#f2f6ff]" title={c.name}>{c.name}</span>
@@ -370,7 +405,8 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }: RecorderDetailProps
         )}
 
         <p className="mt-3 text-[11px] text-[#7e93bf]">
-          Cameras pinned to this recorder record to its local storage. Drain before deleting, then reassign its cameras to another recorder.
+          These cameras record to this recorder&apos;s own storage. Drain it before deleting, so its
+          footage and channels are dealt with first.
         </p>
 
         {/* Federation trust — the credentials that let the VMS read + stream THROUGH
