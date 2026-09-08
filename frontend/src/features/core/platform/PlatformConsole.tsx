@@ -24,7 +24,9 @@ import License from "@/features/core/license/License";
  * Tags stopped two-thirds down the page with the rest of it empty. The frame is
  * chosen per view now instead of applied to all of them.
  */
-const SCROLLS = new Set(["config", "health", "license"]);
+// Health joined the master/detail side: it is an estate list plus a live log
+// tail, and a log pane that scrolls the PAGE instead of itself is unreadable.
+const SCROLLS = new Set(["config", "license"]);
 
 // Partial: an unknown `?view=` reads as undefined and falls back to Config.
 // That fallback is what carries the OLD `?view=branding` and `?view=notifications`

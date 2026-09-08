@@ -107,3 +107,25 @@ async def test_health_stays_up_when_the_daemon_is_down(client, docker_client):
 async def test_health_does_not_disclose_the_project(client):
     """It is unauthenticated; it used to echo COMPOSE_PROJECT."""
     assert "project" not in (await client.get("/health")).json()
+
+
+async def test_since_asks_the_daemon_for_only_the_new_lines(client, containers):
+    """A live viewer polls every few seconds. Without `since` each poll re-reads
+    the whole tail, so the cost of following a busy service grows with the tail
+    size rather than with what was actually written."""
+    r = await client.get(
+        "/containers/neubit-v3-core-1/logs?tail=200&since=1750000000", headers=auth()
+    )
+    assert r.status_code == 200
+    assert r.json()["lines"] == ["line three"]
+    core = next(c for c in containers if c.name == "neubit-v3-core-1")
+    assert core.log_calls[-1]["since"] == 1750000000
+
+
+async def test_no_since_reads_the_whole_tail(client, containers):
+    """Zero is "no lower bound" — the daemon must not be handed since=0, which it
+    reads as the epoch and, for some versions, as a filter that returns nothing."""
+    r = await client.get("/containers/neubit-v3-core-1/logs?tail=50", headers=auth())
+    assert r.status_code == 200
+    core = next(c for c in containers if c.name == "neubit-v3-core-1")
+    assert core.log_calls[-1]["since"] is None

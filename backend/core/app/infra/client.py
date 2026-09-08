@@ -67,8 +67,10 @@ class OpsAgentClient:
     async def list_containers(self):
         return await self._request("GET", "/containers")
 
-    async def logs(self, name: str, tail: int = 200):
-        return await self._request("GET", f"/containers/{name}/logs", params={"tail": tail})
+    async def logs(self, name: str, tail: int = 200, since: int = 0):
+        return await self._request(
+            "GET", f"/containers/{name}/logs", params={"tail": tail, "since": since}
+        )
 
     async def restart(self, name: str):
         return await self._request("POST", f"/containers/{name}/restart")

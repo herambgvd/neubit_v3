@@ -494,6 +494,16 @@ const DICTS: Record<string, DictEntry> = {
     marker: "async def get_health(",
     open: 'return {"status"',
   },
+  "features/core/types.ts:ServiceOut": {
+    file: "backend/core/app/system/router.py",
+    marker: "def _service_row(",
+    open: "return {",
+  },
+  "features/core/types.ts:ServiceLogsOut": {
+    file: "backend/core/app/system/router.py",
+    marker: "async def service_logs(",
+    open: 'or {"lines"',
+  },
   "features/vms/types.ts:FederationNode": {
     file: "backend/vision/app/vms/federation/estate.py",
     marker: "async def list_nodes(",

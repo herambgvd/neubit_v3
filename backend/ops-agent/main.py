@@ -300,13 +300,19 @@ class LogsOut(BaseModel):
 
 
 @app.get("/containers/{name}/logs", dependencies=[Depends(require_token)])
-def container_logs(name: str = Path(...), tail: int = 200) -> LogsOut:
-    """Tail the last `tail` log lines of a project container (raw, newest-last)."""
+def container_logs(name: str = Path(...), tail: int = 200, since: int = 0) -> LogsOut:
+    """Tail the last `tail` log lines of a project container (raw, newest-last).
+
+    ``since`` is a unix timestamp: only lines written after it are returned. A
+    live viewer polls with the timestamp of the last line it holds, so a follow
+    costs the NEW lines instead of re-fetching the whole tail every few seconds.
+    Zero means "no lower bound" and behaves exactly as before.
+    """
     tail = max(1, min(int(tail), 5000))  # clamp — don't let a caller pull GBs
     client = get_docker()
     container = _get_project_container(client, name)
     try:
-        raw = container.logs(tail=tail, timestamps=True)
+        raw = container.logs(tail=tail, timestamps=True, since=int(since) or None)
     except APIError as exc:
         raise HTTPException(status_code=502, detail=f"docker error: {exc}") from exc
     text = raw.decode("utf-8", errors="replace")

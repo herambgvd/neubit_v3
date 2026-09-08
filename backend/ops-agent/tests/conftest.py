@@ -32,11 +32,15 @@ class FakeContainer:
         self.execs: list[list[str]] = []
         self.archives: list[bytes] = []
         self.exec_result = (0, (b"done", b""))
+        self.log_calls = []
 
     def stats(self, stream=False):
         return {}
 
-    def logs(self, tail=200, timestamps=True):
+    def logs(self, tail=200, timestamps=True, since=None):
+        self.log_calls.append({"tail": tail, "since": since})
+        if since:
+            return b"line three\n"
         return b"line one\nline two\n"
 
     def restart(self):

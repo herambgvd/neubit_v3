@@ -82,6 +82,10 @@ class CorePerm:
     BRANDING_MANAGE = "branding.manage"
     SETTINGS_MANAGE = "settings.manage"
     SYSTEM_READ = "system.read"
+    # Reading a service's log stream is a SEPARATE grant from seeing that it is
+    # up: logs carry request paths, identifiers and whatever a stack trace picked
+    # up, so "can watch the estate" must not imply "can read everything it says".
+    SYSTEM_LOGS = "system.logs"
     REPORT_READ = "report.read"
     REPORT_EXPORT = "report.export"
     # --- Sites domain (site → floor → zone hierarchy) ----------------------
@@ -212,6 +216,7 @@ PERMISSIONS.register(
     Permission(CorePerm.BRANDING_MANAGE, "Edit branding / white-label", "Branding"),
     Permission(CorePerm.SETTINGS_MANAGE, "Edit integration settings", "Settings"),
     Permission(CorePerm.SYSTEM_READ, "View system resources", "System"),
+    Permission(CorePerm.SYSTEM_LOGS, "Read service logs", "System"),
     Permission(CorePerm.REPORT_READ, "View reports", "Reports"),
     Permission(CorePerm.REPORT_EXPORT, "Export reports", "Reports"),
     # --- Sites domain ------------------------------------------------------

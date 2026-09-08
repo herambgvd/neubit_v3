@@ -332,6 +332,28 @@ export interface LicenseStatus {
 
 /* --- system (backend/core/app/core/health.py) ------------------------------ */
 
+/** One row of GET /system/services — a deployed service and its live state. */
+export interface ServiceOut {
+  /** Compose service name ("core", "vision"). */
+  name: string;
+  /** Container name — what the logs endpoint is addressed by. */
+  container: string;
+  /** running | exited | restarting | paused | created | dead. */
+  state: string;
+  /** healthy | unhealthy | starting, or null when it declares no healthcheck. */
+  health: string | null;
+  running: boolean;
+  created_at: string | null;
+  cpu_pct: number | null;
+  mem_used_mb: number | null;
+  mem_limit_mb: number | null;
+}
+
+/** GET /system/services/{container}/logs — newest last, docker timestamps. */
+export interface ServiceLogsOut {
+  lines: string[];
+}
+
 /** GET /system/health — `{ status, checks: { <dep>: "ok" | "error: …" } }`. */
 export interface SystemHealthOut {
   status: string;

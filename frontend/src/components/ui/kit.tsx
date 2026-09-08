@@ -140,11 +140,24 @@ export interface FieldChrome {
   required?: boolean;
 }
 
-export interface InputProps extends FieldChrome, Omit<ComponentPropsWithoutRef<"input">, "required"> {}
+export interface InputProps extends FieldChrome, Omit<ComponentPropsWithoutRef<"input">, "required"> {
+  /** Classes for the wrapping label — how an input fills a flex parent. */
+  wrapperClassName?: string;
+}
 
-export function Input({ label, hint, error, required, className = "", ...props }: InputProps) {
+export function Input({
+  label,
+  hint,
+  error,
+  required,
+  className = "",
+  wrapperClassName = "block",
+  ...props
+}: InputProps) {
   return (
-    <label className="block">
+    // `wrapperClassName`, like Textarea's: the label element sits between a flex
+    // parent and the field, so without a handle on it an input cannot stretch.
+    <label className={wrapperClassName}>
       {label && <Label required={required}>{label}</Label>}
       <input
         {...props}
