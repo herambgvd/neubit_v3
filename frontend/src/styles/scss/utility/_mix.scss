@@ -1,235 +1,243 @@
-.social-link {
-  @apply h-8 w-8 flex flex-col items-center justify-center border-black-500 dark:border-slate-700 border rounded-full text-slate-900 dark:text-slate-300 leading-[1] hover:bg-slate-900 dark:hover:bg-slate-700 hover:text-white transition duration-150;
-}
+// Sass MODULE (@use), not an @import target: `@import` is deprecated and
+// removed in Dart Sass 3. A module's CSS is emitted where the module is
+// first used — at the top level — so the cascade layer this belonged to has
+// to be declared HERE rather than around the import in app.scss.
+@use "../icon-assets" as *;
 
-.legend-ring {
-  .apexcharts-legend-series:nth-child(1) .apexcharts-legend-marker {
-    @apply ring-4  ring-primary-500 ring-primary-500/30 rtl:ml-4;
+@layer components {
+  .social-link {
+    @apply h-8 w-8 flex flex-col items-center justify-center border-black-500 dark:border-slate-700 border rounded-full text-slate-900 dark:text-slate-300 leading-[1] hover:bg-slate-900 dark:hover:bg-slate-700 hover:text-white transition duration-150;
   }
-  .apexcharts-legend-series:nth-child(2) .apexcharts-legend-marker {
-    @apply ring-4  ring-info-500 ring-info-500/30 rtl:ml-4;
-  }
-  .apexcharts-legend-series:nth-child(3) .apexcharts-legend-marker {
-    @apply ring-4  ring-warning-500 ring-warning-500/30 rtl:ml-4;
-  }
-}
-.legend-ring2 {
-  .apexcharts-legend-series:nth-child(1) .apexcharts-legend-marker {
-    @apply ring-4  ring-info-500 ring-info-500/30 rtl:ml-4;
-  }
-  .apexcharts-legend-series:nth-child(2) .apexcharts-legend-marker {
-    @apply ring-4  ring-warning-500 ring-warning-500/30 rtl:ml-4;
-  }
-}
 
-.legend-ring3 {
-  .apexcharts-legend-series:nth-child(1) .apexcharts-legend-marker {
-    @apply ring-4  ring-success-500 ring-success-500/30 rtl:ml-4;
+  .legend-ring {
+    .apexcharts-legend-series:nth-child(1) .apexcharts-legend-marker {
+      @apply ring-4  ring-primary-500 ring-primary-500/30 rtl:ml-4;
+    }
+    .apexcharts-legend-series:nth-child(2) .apexcharts-legend-marker {
+      @apply ring-4  ring-info-500 ring-info-500/30 rtl:ml-4;
+    }
+    .apexcharts-legend-series:nth-child(3) .apexcharts-legend-marker {
+      @apply ring-4  ring-warning-500 ring-warning-500/30 rtl:ml-4;
+    }
   }
-  .apexcharts-legend-series:nth-child(2) .apexcharts-legend-marker {
-    @apply ring-4  ring-warning-500 ring-warning-500/30 rtl:ml-4;
+  .legend-ring2 {
+    .apexcharts-legend-series:nth-child(1) .apexcharts-legend-marker {
+      @apply ring-4  ring-info-500 ring-info-500/30 rtl:ml-4;
+    }
+    .apexcharts-legend-series:nth-child(2) .apexcharts-legend-marker {
+      @apply ring-4  ring-warning-500 ring-warning-500/30 rtl:ml-4;
+    }
   }
-  .apexcharts-legend-series:nth-child(3) .apexcharts-legend-marker {
-    @apply ring-4  ring-secondary-500 ring-secondary-500/30 rtl:ml-4;
-  }
-}
 
-.legend-ring4 {
-  .apexcharts-legend-series:nth-child(1) .apexcharts-legend-marker {
-    @apply ring-4  ring-primary-500 ring-primary-500/30 rtl:ml-4;
+  .legend-ring3 {
+    .apexcharts-legend-series:nth-child(1) .apexcharts-legend-marker {
+      @apply ring-4  ring-success-500 ring-success-500/30 rtl:ml-4;
+    }
+    .apexcharts-legend-series:nth-child(2) .apexcharts-legend-marker {
+      @apply ring-4  ring-warning-500 ring-warning-500/30 rtl:ml-4;
+    }
+    .apexcharts-legend-series:nth-child(3) .apexcharts-legend-marker {
+      @apply ring-4  ring-secondary-500 ring-secondary-500/30 rtl:ml-4;
+    }
   }
-  .apexcharts-legend-series:nth-child(2) .apexcharts-legend-marker {
-    @apply ring-4  ring-warning-500 ring-warning-500/30 rtl:ml-4;
+
+  .legend-ring4 {
+    .apexcharts-legend-series:nth-child(1) .apexcharts-legend-marker {
+      @apply ring-4  ring-primary-500 ring-primary-500/30 rtl:ml-4;
+    }
+    .apexcharts-legend-series:nth-child(2) .apexcharts-legend-marker {
+      @apply ring-4  ring-warning-500 ring-warning-500/30 rtl:ml-4;
+    }
   }
-}
-[dir="rtl"] .charts .apexcharts-legend-marker {
-  margin-left: 10px !important;
-}
+  [dir="rtl"] .charts .apexcharts-legend-marker {
+    margin-left: 10px !important;
+  }
 
-// app todo css
-.app_height {
-  height: calc(var(--vh, 1vh) * 100 - 12.1rem);
-}
+  // app todo css
+  .app_height {
+    height: calc(var(--vh, 1vh) * 100 - 12.1rem);
+  }
 
-// email
-.email-icon {
-  @apply h-8 w-8 bg-slate-100 dark:bg-slate-900 dark:text-slate-200 text-slate-600 flex flex-col justify-center items-center text-base rounded-full cursor-pointer;
-}
+  // email
+  .email-icon {
+    @apply h-8 w-8 bg-slate-100 dark:bg-slate-900 dark:text-slate-200 text-slate-600 flex flex-col justify-center items-center text-base rounded-full cursor-pointer;
+  }
 
-// chat height
-.chat-height {
-  height: calc(var(--vh, 1vh) * 100 - 12.1rem);
-}
-@media (max-width: 768px) {
+  // chat height
   .chat-height {
-    height: calc(var(--vh, 1vh) * 100 - 10.5rem);
+    height: calc(var(--vh, 1vh) * 100 - 12.1rem);
   }
-}
-.contact-height {
-  height: calc(100% - 138px);
-}
-.msg-height {
-  height: calc(100% - 0px);
-}
-.parent-height {
-  height: calc(100% - 200px);
-}
-.msg-action-btn {
-  @apply md:h-8 md:w-8 h-6 w-6 cursor-pointer bg-slate-100 dark:bg-slate-900 dark:text-slate-400 text-slate-900 flex flex-col justify-center items-center md:text-xl text-sm rounded-full;
-}
-
-.info-500-list {
-  @apply text-xs text-slate-600;
-  li {
-    @apply flex space-x-2;
-    span:nth-child(1) {
-      @apply font-medium flex-none text-right;
-    }
-    span:nth-child(2) {
-      @apply flex-1 text-right;
+  @media (max-width: 768px) {
+    .chat-height {
+      height: calc(var(--vh, 1vh) * 100 - 10.5rem);
     }
   }
-}
-// rich editor
-.dashcode-app {
-  .ql-editor {
-    min-height: 120px;
+  .contact-height {
+    height: calc(100% - 138px);
   }
-  .ql-toolbar.ql-snow {
-    @apply border-none p-0 mb-2;
+  .msg-height {
+    height: calc(100% - 0px);
   }
-  .ql-container.ql-snow {
-    @apply bg-[#FBFBFB] dark:bg-slate-900 border-none text-base;
+  .parent-height {
+    height: calc(100% - 200px);
   }
-  .ql-editor {
-    @apply border-slate-200 dark:border-slate-700 border rounded-sm text-base;
+  .msg-action-btn {
+    @apply md:h-8 md:w-8 h-6 w-6 cursor-pointer bg-slate-100 dark:bg-slate-900 dark:text-slate-400 text-slate-900 flex flex-col justify-center items-center md:text-xl text-sm rounded-full;
   }
-}
-.dark {
-  .ql-snow .ql-stroke {
-    @apply stroke-slate-300;
-  }
-  .ql-toolbar.ql-snow .ql-picker.ql-expanded .ql-picker-label {
-    @apply bg-slate-700;
-  }
-  .ql-snow.ql-toolbar button:hover,
-  .ql-snow .ql-toolbar button:hover,
-  .ql-snow.ql-toolbar button:focus,
-  .ql-snow .ql-toolbar button:focus,
-  .ql-snow.ql-toolbar .ql-picker-label:hover,
-  .ql-snow .ql-toolbar .ql-picker-label:hover,
-  .ql-snow.ql-toolbar .ql-picker-item:hover,
-  .ql-snow .ql-toolbar .ql-picker-item:hover {
-    @apply bg-slate-700;
-  }
-  .ql-picker-label {
-    @apply text-slate-300;
-  }
-  .ql-snow .ql-picker.ql-expanded .ql-picker-label {
-    @apply bg-slate-300 border-slate-700;
-  }
-}
 
-// label
-.date-label {
-  @apply text-xs text-slate-400 dark:text-slate-400 mb-1;
-}
-.date-text {
-  @apply text-xs text-slate-600 dark:text-slate-300 font-medium;
-}
-
-// icons pages
-
-.icon-lists {
-  li {
-    margin-right: 12px;
-    margin-bottom: 12px;
-  }
-}
-
-// date range picker
-.date-range-custom {
-  @apply relative w-[140px];
-  .input-class {
-    @apply opacity-0 cursor-pointer;
-  }
-  .container-class {
-    @apply w-full h-[44px] bg-white dark:bg-slate-800 before:px-3  before:text-sm before:text-slate-900 rounded-sm cursor-pointer;
-    &:before {
-      content: "Weekly";
-      position: absolute;
-      top: 50%;
-      transform: translateY(-50%) translateX(-50%);
-      left: calc(50% + 10px);
-    }
-    &:after {
-      content: $icon-calendar;
-      height: 20px;
-      position: absolute;
-      top: 50%;
-      transform: translateY(-50%) translateX(-50%);
-      left: calc(50% - 30px);
-    }
-
-    > button {
-      @apply hidden;
-    }
-  }
-}
-
-.date-range-custom2 {
-  @apply relative w-[160px];
-  .input-class {
-    @apply opacity-0 cursor-pointer;
-  }
-  .container-class {
-    @apply w-full h-[44px] bg-white dark:bg-slate-800 before:px-3  before:text-sm before:text-slate-900 rounded-sm cursor-pointer;
-    &:before {
-      content: "Select date";
-      position: absolute;
-      top: 50%;
-      transform: translateY(-50%);
-      left: 0;
-      padding-left: 30px;
-      width: 100%;
-      text-align: center;
-    }
-    &:after {
-      content: $icon-filter;
-      height: 20px;
-      position: absolute;
-      top: 50%;
-      transform: translateY(-50%) translateX(-50%);
-      left: calc(50% - 43px);
-    }
-
-    > button {
-      @apply hidden;
-    }
-  }
-}
-
-.dark {
-  .date-range-custom,
-  .date-range-custom2 {
-    .container-class {
-      &::before,
-      &::after {
-        @apply text-slate-300;
+  .info-500-list {
+    @apply text-xs text-slate-600;
+    li {
+      @apply flex space-x-2;
+      span:nth-child(1) {
+        @apply font-medium flex-none text-right;
+      }
+      span:nth-child(2) {
+        @apply flex-1 text-right;
       }
     }
   }
+  // rich editor
+  .dashcode-app {
+    .ql-editor {
+      min-height: 120px;
+    }
+    .ql-toolbar.ql-snow {
+      @apply border-none p-0 mb-2;
+    }
+    .ql-container.ql-snow {
+      @apply bg-[#FBFBFB] dark:bg-slate-900 border-none text-base;
+    }
+    .ql-editor {
+      @apply border-slate-200 dark:border-slate-700 border rounded-sm text-base;
+    }
+  }
+  .dark {
+    .ql-snow .ql-stroke {
+      @apply stroke-slate-300;
+    }
+    .ql-toolbar.ql-snow .ql-picker.ql-expanded .ql-picker-label {
+      @apply bg-slate-700;
+    }
+    .ql-snow.ql-toolbar button:hover,
+    .ql-snow .ql-toolbar button:hover,
+    .ql-snow.ql-toolbar button:focus,
+    .ql-snow .ql-toolbar button:focus,
+    .ql-snow.ql-toolbar .ql-picker-label:hover,
+    .ql-snow .ql-toolbar .ql-picker-label:hover,
+    .ql-snow.ql-toolbar .ql-picker-item:hover,
+    .ql-snow .ql-toolbar .ql-picker-item:hover {
+      @apply bg-slate-700;
+    }
+    .ql-picker-label {
+      @apply text-slate-300;
+    }
+    .ql-snow .ql-picker.ql-expanded .ql-picker-label {
+      @apply bg-slate-300 border-slate-700;
+    }
+  }
+
+  // label
+  .date-label {
+    @apply text-xs text-slate-400 dark:text-slate-400 mb-1;
+  }
+  .date-text {
+    @apply text-xs text-slate-600 dark:text-slate-300 font-medium;
+  }
+
+  // icons pages
+
+  .icon-lists {
+    li {
+      margin-right: 12px;
+      margin-bottom: 12px;
+    }
+  }
+
+  // date range picker
   .date-range-custom {
+    @apply relative w-[140px];
+    .input-class {
+      @apply opacity-0 cursor-pointer;
+    }
     .container-class {
+      @apply w-full h-[44px] bg-white dark:bg-slate-800 before:px-3  before:text-sm before:text-slate-900 rounded-sm cursor-pointer;
+      &:before {
+        content: "Weekly";
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%) translateX(-50%);
+        left: calc(50% + 10px);
+      }
       &:after {
-        content: $icon-calendar-white;
+        content: $icon-calendar;
+        height: 20px;
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%) translateX(-50%);
+        left: calc(50% - 30px);
+      }
+
+      > button {
+        @apply hidden;
       }
     }
   }
+
   .date-range-custom2 {
+    @apply relative w-[160px];
+    .input-class {
+      @apply opacity-0 cursor-pointer;
+    }
     .container-class {
+      @apply w-full h-[44px] bg-white dark:bg-slate-800 before:px-3  before:text-sm before:text-slate-900 rounded-sm cursor-pointer;
+      &:before {
+        content: "Select date";
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        left: 0;
+        padding-left: 30px;
+        width: 100%;
+        text-align: center;
+      }
       &:after {
-        content: $icon-filter-white;
+        content: $icon-filter;
+        height: 20px;
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%) translateX(-50%);
+        left: calc(50% - 43px);
+      }
+
+      > button {
+        @apply hidden;
+      }
+    }
+  }
+
+  .dark {
+    .date-range-custom,
+    .date-range-custom2 {
+      .container-class {
+        &::before,
+        &::after {
+          @apply text-slate-300;
+        }
+      }
+    }
+    .date-range-custom {
+      .container-class {
+        &:after {
+          content: $icon-calendar-white;
+        }
+      }
+    }
+    .date-range-custom2 {
+      .container-class {
+        &:after {
+          content: $icon-filter-white;
+        }
       }
     }
   }

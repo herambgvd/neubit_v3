@@ -1,0 +1,11 @@
+// Tailwind v4 entry, in a module of its own.
+//
+// Dart Sass leaves a `.css` @import alone (it is a plain CSS import, not a
+// Sass partial), so it reaches PostCSS intact and @tailwindcss/postcss inlines
+// it — keeping the whole app on one stylesheet with the layer order v3 produced.
+//
+// It lives HERE rather than in app.scss because `@use` rules must come before
+// every other rule, and a CSS @import is a rule: with the partials loaded as
+// modules, the only way to keep this first in the OUTPUT is to make it the
+// first module app.scss loads.
+@import "../tailwind.css";

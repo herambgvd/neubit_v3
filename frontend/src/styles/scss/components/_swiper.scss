@@ -1,21 +1,29 @@
-.main-caro {
-  .swiper-button-next:after,
-  .swiper-button-prev:after {
-    font-family: unset !important;
-    @apply rtl:rotate-180;
-  }
-  .swiper-button-next:after {
-    content: $icon-chevron-right-white;
-  }
-  .swiper-button-prev:after {
-    content: $icon-chevron-left-white;
-  }
-  .swiper-pagination-bullet {
-    height: 2px;
-    width: 24px;
-    @apply rounded-[1px] bg-white/70;
-    &.swiper-pagination-bullet-active {
-      @apply bg-white;
+// Sass MODULE (@use), not an @import target: `@import` is deprecated and
+// removed in Dart Sass 3. A module's CSS is emitted where the module is
+// first used — at the top level — so the cascade layer this belonged to has
+// to be declared HERE rather than around the import in app.scss.
+@use "../icon-assets" as *;
+
+@layer components {
+  .main-caro {
+    .swiper-button-next:after,
+    .swiper-button-prev:after {
+      font-family: unset !important;
+      @apply rtl:rotate-180;
+    }
+    .swiper-button-next:after {
+      content: $icon-chevron-right-white;
+    }
+    .swiper-button-prev:after {
+      content: $icon-chevron-left-white;
+    }
+    .swiper-pagination-bullet {
+      height: 2px;
+      width: 24px;
+      @apply rounded-[1px] bg-white/70;
+      &.swiper-pagination-bullet-active {
+        @apply bg-white;
+      }
     }
   }
 }

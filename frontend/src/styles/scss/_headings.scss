@@ -1,0 +1,13 @@
+// Neutralize dashcode's oversized default heading sizes (h1=text-6xl, etc.).
+// Headings inherit by default; our components set explicit text-* utilities
+// (which live in @layer utilities and still win) where a size is wanted.
+//
+// LOADED LAST on purpose: it is in the same cascade layer as the partials, so
+// it only wins by coming after them.
+@layer components {
+  h1, h2, h3, h4, h5, h6 {
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+  }
+}

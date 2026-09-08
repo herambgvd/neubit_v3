@@ -1,24 +1,30 @@
-.settings-enter {
-  opacity: 0;
-  transform: scale(0.9);
-}
-.settings-enter-active {
-  opacity: 1;
-  transform: translateX(0);
-  transition: opacity 300ms, transform 300ms;
-}
-.settings-exit {
-  opacity: 1;
-}
-.settings-exit-active {
-  opacity: 0;
-  transform: scale(0.9);
-  transition: opacity 300ms, transform 300ms;
-}
-.page-content {
-  @apply md:pt-6 md:pb-[37px] md:px-6 pt-[15px] px-[15px] pb-24;
-}
+// Sass MODULE (@use), not an @import target: `@import` is deprecated and
+// removed in Dart Sass 3. A module's CSS is emitted where the module is
+// first used — at the top level — so the cascade layer this belonged to has
+// to be declared HERE rather than around the import in app.scss.
+@layer components {
+  .settings-enter {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  .settings-enter-active {
+    opacity: 1;
+    transform: translateX(0);
+    transition: opacity 300ms, transform 300ms;
+  }
+  .settings-exit {
+    opacity: 1;
+  }
+  .settings-exit-active {
+    opacity: 0;
+    transform: scale(0.9);
+    transition: opacity 300ms, transform 300ms;
+  }
+  .page-content {
+    @apply md:pt-6 md:pb-[37px] md:px-6 pt-[15px] px-[15px] pb-24;
+  }
 
-.page-min-height {
-  min-height: calc(var(--vh, 1vh) * 100 - 132px);
+  .page-min-height {
+    min-height: calc(var(--vh, 1vh) * 100 - 132px);
+  }
 }

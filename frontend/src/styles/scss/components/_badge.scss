@@ -1,6 +1,12 @@
-.badge {
-  @apply py-1 px-2 text-xs  capitalize font-semibold rounded-[.358rem] whitespace-nowrap  align-baseline inline-flex;
-  &.pill {
-    @apply rounded-[999px];
+// Sass MODULE (@use), not an @import target: `@import` is deprecated and
+// removed in Dart Sass 3. A module's CSS is emitted where the module is
+// first used — at the top level — so the cascade layer this belonged to has
+// to be declared HERE rather than around the import in app.scss.
+@layer components {
+  .badge {
+    @apply py-1 px-2 text-xs  capitalize font-semibold rounded-[.358rem] whitespace-nowrap  align-baseline inline-flex;
+    &.pill {
+      @apply rounded-[999px];
+    }
   }
 }

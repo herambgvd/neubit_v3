@@ -1,9 +1,15 @@
-.breadcrumbs {
-  @apply flex text-sm space-x-2 items-center;
-  li {
-    @apply relative flex items-center space-x-2 capitalize font-normal rtl:space-x-reverse;
-    .breadcrumbs-icon {
-      @apply text-lg text-secondary-500 dark:text-slate-500;
+// Sass MODULE (@use), not an @import target: `@import` is deprecated and
+// removed in Dart Sass 3. A module's CSS is emitted where the module is
+// first used — at the top level — so the cascade layer this belonged to has
+// to be declared HERE rather than around the import in app.scss.
+@layer components {
+  .breadcrumbs {
+    @apply flex text-sm space-x-2 items-center;
+    li {
+      @apply relative flex items-center space-x-2 capitalize font-normal rtl:space-x-reverse;
+      .breadcrumbs-icon {
+        @apply text-lg text-secondary-500 dark:text-slate-500;
+      }
     }
   }
 }

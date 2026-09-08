@@ -1,14 +1,20 @@
-@media print {
-  .invocie-btn {
-    display: none;
-  }
-  .sidebar-wrapper,
-  .dashcode-app-header,
-  .site-footer,
-  .shadow-deep {
-    @apply hidden;
-  }
-  .content-wrapper {
-    @apply w-full ml-0;
+// Sass MODULE (@use), not an @import target: `@import` is deprecated and
+// removed in Dart Sass 3. A module's CSS is emitted where the module is
+// first used — at the top level — so the cascade layer this belonged to has
+// to be declared HERE rather than around the import in app.scss.
+@layer components {
+  @media print {
+    .invocie-btn {
+      display: none;
+    }
+    .sidebar-wrapper,
+    .dashcode-app-header,
+    .site-footer,
+    .shadow-deep {
+      @apply hidden;
+    }
+    .content-wrapper {
+      @apply w-full ml-0;
+    }
   }
 }
