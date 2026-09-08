@@ -87,8 +87,12 @@ export default function BrandingEditor({
   uploadingLogo,
   uploadingFavicon,
 }: BrandingEditorProps) {
+  // A FRAGMENT, not a wrapping column. The three cards are direct children of the
+  // page's column flow, so the browser can balance them against the preview
+  // instead of stacking them in a fixed two-thirds column with the preview
+  // stranded beside a lot of nothing.
   return (
-    <div className="space-y-3 lg:col-span-2">
+    <>
       <SectionCard className="space-y-4">
         <SectionHead icon="heroicons-outline:identification" title="Identity" />
         <Input
@@ -131,6 +135,6 @@ export default function BrandingEditor({
           onPick={onUploadFavicon}
         />
       </SectionCard>
-    </div>
+    </>
   );
 }

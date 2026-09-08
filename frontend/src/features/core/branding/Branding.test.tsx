@@ -76,6 +76,33 @@ describe("the branding editor", () => {
     expect(images.some((i) => i.getAttribute("src") === "/files/favicon.png")).toBe(true);
   });
 
+  /**
+   * All four cards in ONE balanced flow. As a grid, the editor's three cards sat
+   * in a fixed two-thirds column with the preview stranded beside a lot of
+   * nothing — and shrinking the preview, which is what it needed, would only have
+   * made that worse.
+   */
+  it("puts the editor cards and the preview in one balanced flow", async () => {
+    renderWithProviders(<BrandingPage />);
+    await screen.findByDisplayValue("Acme");
+
+    const flow = screen.getByText("Identity").closest(".lg\\:columns-2");
+    expect(flow, "the branding flow").not.toBeNull();
+    // Identity, Logo, Favicon, Live preview — the preview is a card among them,
+    // not a column of its own.
+    expect(flow!.children).toHaveLength(4);
+    expect(flow!.contains(screen.getByText("Live preview"))).toBe(true);
+  });
+
+  it("keeps each card whole across the column break", async () => {
+    renderWithProviders(<BrandingPage />);
+    await screen.findByDisplayValue("Acme");
+
+    expect(screen.getByText("Identity").closest(".lg\\:columns-2")).toHaveClass(
+      "[&>*]:break-inside-avoid",
+    );
+  });
+
   it("falls back to the app name when there is no logo, and says so", async () => {
     stub.set({
       "GET /branding": { id: "b1", app_name: "Acme", logo_url: null, favicon_url: null },

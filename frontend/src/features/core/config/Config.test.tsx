@@ -87,13 +87,17 @@ describe("the Config view", () => {
  * flow lets the browser balance three cards of very different heights.
  */
 describe("where the Appearance card sits", () => {
-  const flow = (container: HTMLElement) => container.querySelector(".lg\\:columns-2");
+  // The page has TWO of these flows now — branding's and the delivery one — so
+  // this anchors on a card that is only ever in the second. Selecting the first
+  // match broke the moment branding became a flow too, which is the right kind of
+  // break: the test was addressing the layout by position rather than by content.
+  const flow = () => screen.getByText("Email (SMTP)").closest(".lg\\:columns-2");
 
   it("is one of the cards in the same flow as the delivery channels", async () => {
-    const { container } = renderWithProviders(<ConfigPage />);
+    renderWithProviders(<ConfigPage />);
     await screen.findByText("Email (SMTP)");
 
-    const el = flow(container);
+    const el = flow();
     expect(el, "the delivery/appearance flow").not.toBeNull();
     // email + push + appearance, balanced across the columns by the browser.
     expect(el!.children).toHaveLength(3);
@@ -101,10 +105,10 @@ describe("where the Appearance card sits", () => {
   });
 
   it("keeps each card whole across the column break", async () => {
-    const { container } = renderWithProviders(<ConfigPage />);
+    renderWithProviders(<ConfigPage />);
     await screen.findByText("Email (SMTP)");
 
     // Without this the browser will split a card mid-field at the boundary.
-    expect(flow(container)).toHaveClass("[&>*]:break-inside-avoid");
+    expect(flow()).toHaveClass("[&>*]:break-inside-avoid");
   });
 });

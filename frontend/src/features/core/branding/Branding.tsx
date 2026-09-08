@@ -89,7 +89,11 @@ export default function BrandingPage() {
         </ActionButton>
       </ViewActions>
 
-      <div className="grid gap-3 lg:grid-cols-3">
+      {/* A column flow, matching the delivery cards below on the same page. Four
+          cards of unequal height — Identity is one input, Logo and Favicon are
+          equal, the preview is small — so a grid row would be as tall as its
+          tallest cell and leave a band of nothing under the short ones. */}
+      <div className="columns-1 gap-3 lg:columns-2 [&>*]:mb-3 [&>*]:break-inside-avoid">
         <BrandingEditor
           form={form}
           setForm={setForm}
