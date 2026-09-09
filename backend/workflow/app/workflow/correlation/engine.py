@@ -82,6 +82,28 @@ def _sessionmaker() -> async_sessionmaker[AsyncSession]:
 # ── Alert-code extraction + shared matching (used by live engine AND simulate) ──
 
 
+def event_identity(envelope: dict[str, Any]) -> str | None:
+    """What the event IS, for anything an operator reads or dedupes on.
+
+    ``kernel.events`` derives ``envelope["type"]`` from the subject, so every
+    ingest publication is ``ingest.event.received`` whatever it describes. The
+    payload's ``event_type`` is the semantic name — what an ingest event RULE
+    emits and what an operator types into a trigger — so it wins when present.
+
+    ``handle_event`` still guards the feedback loop on the TRANSPORT type: our
+    own subject is ours whatever a payload claims to be. This is only for the
+    name, the stamped ``event_type`` and the dedup key, where the transport type
+    makes every ingest incident look identical and makes unrelated ingest events
+    suppress each other for a whole dedup window.
+    """
+    payload = envelope.get("payload") if isinstance(envelope.get("payload"), dict) else {}
+    semantic = payload.get("event_type") if isinstance(payload, dict) else None
+    if semantic is not None and str(semantic).strip():
+        return str(semantic).strip()
+    transport = envelope.get("type") or envelope.get("event_type")
+    return str(transport) if transport else None
+
+
 def extract_alert_code(envelope: dict[str, Any]) -> str | None:
     """Pull an alert code out of an event envelope.
 
@@ -168,7 +190,7 @@ async def build_incident_from_sop(
         current_state=initial.state_id, current_state_name=initial.name,
         status=status,
         trigger_data=envelope, event_id=envelope.get("event_id"),
-        event_type=envelope.get("type") or envelope.get("event_type"),
+        event_type=event_identity(envelope),
         sla_hours=sop.sla_hours, sla_deadline=sla_deadline, state_entered_at=now,
         timeline=[], extra=source,
     )
@@ -293,6 +315,7 @@ class CorrelationEngine:
                         trigger.trigger_id, sop.sop_id)
             return False
 
+        identity = event_identity(envelope) or "event"
         dedup_key = self._resolve_dedup_key(trigger, envelope)
         window = max(1, int((trigger.dedup or {}).get("window_seconds", 3600)))
         if not await self._claim(session, trigger.trigger_id, dedup_key, window,
@@ -312,13 +335,13 @@ class CorrelationEngine:
         instance = WorkflowInstance(
             tenant_id=trigger.tenant_id,
             sop_id=sop.sop_id, sop_name=sop.name, sop_version=sop.version,
-            name=f"{sop.name}: {envelope.get('type')}",
+            name=f"{sop.name}: {identity}",
             description=trigger.description, priority=priority, site_id=site_id,
             current_state=initial.state_id, current_state_name=initial.name,
             status=InstanceStatus.ACTIVE.value,
             assigned_to=assign_users[0] if assign_users else None,
             trigger_data=envelope, event_id=envelope.get("event_id"),
-            event_type=envelope.get("type"),
+            event_type=identity,
             sla_hours=sop.sla_hours, sla_deadline=sla_deadline, state_entered_at=now,
             timeline=[], extra={"source": "correlation", "trigger_id": trigger.trigger_id},
         )
@@ -335,14 +358,14 @@ class CorrelationEngine:
             "tenant_id": tid, "instance_id": instance.instance_id, "sop_id": sop.sop_id,
             "sop_name": sop.name, "trigger_id": trigger.trigger_id,
             "trigger_event_id": envelope.get("event_id"), "priority": priority,
-            "matched_event_type": envelope.get("type"), "site_id": site_id,
+            "matched_event_type": identity, "site_id": site_id,
         })
         await self.bus.publish(subject(tid, "workflow", "trigger.fired"), {
             "tenant_id": tid, "trigger_id": trigger.trigger_id, "trigger_name": trigger.name,
             "instance_id": instance.instance_id, "matched_event_id": envelope.get("event_id"),
         })
         log.info("incident created instance_id=%s trigger_id=%s event_type=%s",
-                 instance.instance_id, trigger.trigger_id, envelope.get("type"))
+                 instance.instance_id, trigger.trigger_id, identity)
         return True
 
     async def _fire_alert_format(
@@ -430,7 +453,7 @@ class CorrelationEngine:
             return f"event:{envelope.get('event_id')}"
         if strategy == "per_field" and dedup.get("key_field"):
             return f"field:{dedup['key_field']}={walk(envelope, dedup['key_field'])}"
-        return f"type:{envelope.get('type')}:site:{envelope.get('site_id')}"
+        return f"type:{event_identity(envelope)}:site:{envelope.get('site_id')}"
 
     @staticmethod
     async def _claim(session: AsyncSession, trigger_id: str, dedup_key: str,
