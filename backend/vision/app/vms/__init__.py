@@ -34,6 +34,7 @@ from app.vms.media_nodes.router import router as media_node_router
 from app.vms.events.router import router as event_router
 from app.vms.federation.router import router as federation_router
 from app.vms.patterns.router import router as pattern_router
+from app.vms.pulse.router import router as pulse_router
 from app.vms.playback.router import router as playback_router
 from app.vms.recording.router import router as recording_router
 from app.vms.reports.router import router as reports_router
@@ -74,6 +75,11 @@ from app.vms.videowall.router import router as videowall_router
 # P6-B operational-reporting control plane (uptime/coverage/storage/event reports + the
 # ReportScheduler that fires recurring reports via the notify path).
 routers = [
+    # Pulse — the estate's operational health, fanned out from each recorder's own
+    # System-Monitor board (/vms/pulse/*). Mounts first: its literal prefix is
+    # distinct from every camera path, and it is the surface an operator opens
+    # when something is already wrong.
+    pulse_router,
     # Operations / Health dashboard (G2) — /vms/dashboard/summary. Read-only aggregation
     # over existing health/recording/storage/event/nvr data + best-effort nvr /status for
     # node/failover. Distinct literal prefix (no collision with the camera catch-all).

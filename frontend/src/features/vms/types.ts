@@ -1614,3 +1614,129 @@ export interface ReportViewData {
   source_note?: string | null;
   [k: string]: unknown;
 }
+
+// ── Pulse — the estate's operational health ─────────────────────────────────
+//
+// Mirrors vision's `app/vms/pulse/rollup.py`. The optionals and nulls here are
+// the point of the surface, not laziness about typing:
+//
+//   * `used_percent: number | null` — null is a volume whose usage could not be
+//     read (an S3 pool, a path that does not statfs). It is not 0% and not 100%.
+//   * `recording_gap_free: boolean | null` — null means nothing is recording, so
+//     there is nothing to be gap-free about. Rendering null as "OK" is a clean
+//     bill of health for footage nobody is writing.
+//   * `sensors_reported: false` — the box reported no usable hardware sample and
+//     `system` is zeros. A reader that ignores this prints "0% CPU, 0°C".
+
+export interface PulseVolume {
+  name: string | null;
+  path: string | null;
+  pool_type: string | null;
+  is_default: boolean;
+  /** null = the node could not measure it; see `usage_error`. */
+  used_percent: number | null;
+  usage: Record<string, unknown> | null;
+  usage_error: string | null;
+}
+
+export interface PulseNodeCameras {
+  total: number;
+  online: number;
+  recording_active: number;
+  /** null = nothing is recording on this recorder. */
+  recording_gap_free: boolean | null;
+}
+
+export interface PulseNode {
+  node_id: string;
+  node_name: string;
+  reachable: boolean;
+  generated_at: string | null;
+  verdict: { level: string | null; headline: string | null; detail: string | null };
+  engine: Record<string, unknown>;
+  system: Record<string, unknown>;
+  sensors_reported: boolean;
+  retention_default_days: number | null;
+  cameras: PulseNodeCameras;
+  volumes: PulseVolume[];
+}
+
+export interface PulseOfflineCamera {
+  camera_id: string;
+  name: string | null;
+  node_id: string;
+  node_name: string;
+  status: string | null;
+  last_seen_at: string | null;
+  last_error: string | null;
+}
+
+export interface PulseAttentionItem {
+  severity: "critical" | "warning" | "info";
+  kind: string;
+  item: string;
+  where: string | null;
+  detail: string | null;
+  camera_id?: string;
+  node_id?: string;
+}
+
+export interface PulseOverview {
+  generated_at: string;
+  /** True when a recorder did not answer — the totals below are then NOT the
+   *  whole estate, and the console must say so. */
+  partial: boolean;
+  totals: {
+    recorders: number;
+    recorders_answered: number;
+    cameras_total: number;
+    cameras_online: number;
+    cameras_recording: number;
+    recording_gap_free: boolean | null;
+  };
+  storage: {
+    worst_used_percent: number | null;
+    volumes_measured: number;
+    volumes_total: number;
+    retention_days_min: number | null;
+  };
+  nodes: PulseNode[];
+  unreachable: { node_id: string; name: string; error: string }[];
+  offline_cameras: PulseOfflineCamera[];
+  attention: PulseAttentionItem[];
+}
+
+/** One recorder's whole System-Monitor board, relayed unreshaped — so this is
+ *  deliberately loose: a field the recorder adds is a field an operator needs
+ *  before this type has heard of it. */
+export interface NodeSysmon extends Record<string, unknown> {
+  node_id: string;
+  node_name: string;
+  verdict?: { level?: string; headline?: string; detail?: string };
+  cameras?: { total?: number; online?: number; items?: Record<string, unknown>[] };
+  volumes?: PulseVolume[];
+}
+
+export interface IsolationStage {
+  key: string;
+  label: string;
+  /** ok | bad | warn | unmeasured — `measured: false` is a stage the recorder
+   *  does not instrument, never a passing one. */
+  state: string;
+  measured: boolean;
+  evidence: { text: string; tone: string }[];
+}
+
+export interface IsolationTrace extends Record<string, unknown> {
+  node_id: string;
+  node_name: string;
+  verdict: {
+    level: string;
+    attribution: string;
+    summary: string;
+    nvr_cleared: boolean;
+    confirmed?: string[];
+    not_instrumented?: string[];
+  };
+  stages?: IsolationStage[];
+}

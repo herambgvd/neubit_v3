@@ -400,6 +400,58 @@ async def list_node_tier_rules(api_url: str, *, credential: str | None = None) -
     return r.json() or {}
 
 
+async def get_node_sysmon(api_url: str, *, credential: str | None = None) -> dict:
+    """GET {api_url}/api/v1/nvr/estate/sysmon → the node's whole System-Monitor board.
+
+    One call per recorder gives the verdict, engine liveness, hardware sample,
+    volumes with real usage, RAID, retention default and every camera row with its
+    link quality. Pulse fans this out across the estate rather than asking each
+    recorder five questions.
+
+    Gated node-side on ``camera.read``, which a federation credential already
+    carries (nvr estate/core/perms.go → federationGrants), so no re-enrolment is
+    needed to read it.
+
+    The node marks what it cannot measure as ``unmeasured`` rather than inventing
+    a value; nothing here is allowed to smooth that over.
+    """
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/sysmon"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.get(url, headers=_headers(credential))
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    return r.json() or {}
+
+
+async def isolate_node_camera(
+    api_url: str, camera_id: str, *, profile: str | None = None, credential: str | None = None
+) -> dict:
+    """GET {api_url}/api/v1/nvr/estate/sysmon/isolate?camera_id= → one camera's fault trace.
+
+    The payoff of the whole surface: the recorder walks camera → network → ingest
+    → decode → storage → display with the evidence it actually measured and says
+    where the fault sits, including when the recorder itself is cleared. Same
+    ``camera.read`` gate as the board.
+    """
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/sysmon/isolate"
+    params = {"camera_id": camera_id}
+    if profile:
+        params["profile"] = profile
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
+            r = await c.get(url, params=params, headers=_headers(credential))
+    except httpx.HTTPError as e:
+        raise NodeUnavailable(str(e)) from e
+    if r.status_code // 100 != 2:
+        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    return r.json() or {}
+
+
 async def list_nvrs_node(api_url: str, *, credential: str | None = None) -> dict:
     """GET {api_url}/api/v1/nvr/estate/nvrs → the third-party NVR/DVR appliances this
     recorder has onboarded, { items, total }.

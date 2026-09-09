@@ -80,7 +80,16 @@ export const LAUNCHER_MODES: LauncherMode[] = [
         tiles: [
           { icon: "heroicons:play-circle", label: "Live", href: "/streaming", tone: "teal", perm: "vms.live.view", module: "vms" },
           { icon: "heroicons:backward", label: "Playback", href: "/playback", tone: "teal", perm: "vms.playback.view", module: "vms" },
-          { icon: "heroicons:heart", label: "Pulse", href: "/system-health", tone: "teal", perm: "system.read" },
+          // PULSE IS THE ESTATE, NOT THE PLATFORM. This pointed at
+          // /system-health — which redirects to the platform's container list —
+          // so a surveillance operator clicking it got Docker services and their
+          // logs: an admin surface, already reachable under Configurations →
+          // Platform → Health, answering a question nobody on a wall is asking.
+          // It now opens what the recorders report about the estate: cameras
+          // down and where, whether footage is being written, storage headroom,
+          // and the per-camera fault trace. Gated on `vms.camera.read` — the key
+          // the recorders' own sysmon boards ride on — not `system.read`.
+          { icon: "heroicons:heart", label: "Pulse", href: "/pulse", tone: "teal", perm: "vms.camera.read", module: "vms" },
         ],
       },
       {

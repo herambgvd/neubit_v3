@@ -571,6 +571,23 @@ const LOCAL: Record<string, string> = {
 
 /** Wire shapes with no machine-readable source in THIS repo. */
 const PASSTHROUGH: Record<string, string> = {
+  // ── Pulse ──────────────────────────────────────────────────────────────────
+  // The estate roll-up is assembled in `app/vms/pulse/rollup.py` from each
+  // recorder's own board — dicts built by a function, not Pydantic models, so
+  // there is no class here to compare against. The rules that matter about these
+  // shapes are the nulls (an unmeasured volume, a recorder that is not
+  // recording), and those are guarded on both sides by name:
+  // `tests/test_pulse_rollup.py` and `features/vms/pulse/format.test.ts`.
+  "features/vms/types.ts:PulseOverview": "assembled by pulse/rollup.overview() — a dict, not a model",
+  "features/vms/types.ts:PulseNode": "assembled by pulse/rollup.node_view() from the recorder's own board",
+  "features/vms/types.ts:PulseNodeCameras": "the cameras block of pulse/rollup.node_view()",
+  "features/vms/types.ts:PulseVolume": "one volume of pulse/rollup.node_view(), from the recorder's volumeView",
+  "features/vms/types.ts:PulseOfflineCamera": "built by pulse/rollup.offline_cameras() from the recorder's camera rows",
+  "features/vms/types.ts:PulseAttentionItem": "built by pulse/rollup.attention_items()",
+  "features/vms/types.ts:NodeSysmon": "the recorder's own System-Monitor board, relayed unreshaped",
+  "features/vms/types.ts:IsolationTrace": "the recorder's own fault trace, relayed unreshaped",
+  "features/vms/types.ts:IsolationStage": "one stage of the recorder's fault trace",
+
   "lib/types.ts:FederatedCamera": "the remote recorder's own camera dict, tagged and forwarded verbatim",
   "features/access/types.ts:AccessCard": "the controller's card DTO with seven keys renamed; the rest pass through",
   "features/core/types.ts:SettingCatalogItem": "one CATALOG entry in settings/catalog.py — entries carry different optional keys per setting, so there is no single literal to compare",

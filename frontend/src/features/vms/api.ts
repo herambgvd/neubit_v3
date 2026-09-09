@@ -33,6 +33,9 @@ import type { AxiosResponse } from "axios";
 import { api } from "@/lib/api";
 import type { FederatedCameraList, QueryParams } from "@/lib/types";
 import type {
+  IsolationTrace,
+  NodeSysmon,
+  PulseOverview,
   BookmarkCreate,
   BookmarkListResponse,
   BookmarkPublic,
@@ -119,6 +122,7 @@ const LINKAGE = "/vms/linkage-rules";
 const REPORTS = "/vms/reports";
 const REPORT_SCHEDULES = "/vms/report-schedules";
 const BOOKMARKS = "/vms/bookmarks";
+const PULSE = "/vms/pulse";
 const EVIDENCE = "/vms/evidence";
 
 const unwrap = <T>(p: Promise<AxiosResponse<T>>): Promise<T> => p.then((r) => r.data);
@@ -157,6 +161,26 @@ interface FederatedRecordingsOpt extends WindowOpt {
 }
 
 export const vms = {
+  // ── Pulse — the estate's operational health ──────────────────────────────
+  // Served by vision's `app/vms/pulse`, which fans out to each recorder's own
+  // System-Monitor board. The overview NEVER computes a figure across a recorder
+  // that did not answer: `partial` says whether any did not, and `unreachable`
+  // names them, so the console can say "3 of 4 recorders answered" above its
+  // totals rather than presenting a partial estate as the whole one.
+  pulse: {
+    overview: () => unwrap(api.get<PulseOverview>(`${PULSE}/overview`)),
+    // One recorder's whole board, relayed exactly as the recorder reports it.
+    nodeSysmon: (nodeId: string) => unwrap(api.get<NodeSysmon>(`${PULSE}/nodes/${nodeId}/sysmon`)),
+    // The per-camera fault trace: camera → network → ingest → decode → storage →
+    // display, with the recorder's own evidence and verdict.
+    isolate: (nodeId: string, cameraId: string, profile?: string | null) =>
+      unwrap(
+        api.get<IsolationTrace>(
+          `${PULSE}/nodes/${nodeId}/cameras/${cameraId}/isolate${qs({ profile })}`,
+        ),
+      ),
+  },
+
   // ── Federation — node-authoritative cameras across recorder nodes ────────
   // The VMS pulls each registered recorder's own cameras up + streams them THROUGH
   // the node (the node owns them). GET cameras aggregates all online nodes; live
