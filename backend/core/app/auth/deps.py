@@ -245,19 +245,39 @@ def require_service_permission(*permissions: str):
                 raise ForbiddenError(f"missing permission(s): {', '.join(missing)}")
             return None
         claims = payload.get("permissions") or []
-        if payload.get("is_superadmin") or "*" in claims:
+        privileged = bool(payload.get("is_superadmin")) or "*" in claims
+        # LOOK THE USER UP FIRST, even for a privileged token.
+        #
+        # This used to `return None` on `is_superadmin` / `*` without touching the
+        # DB — the same None a service token yields. Every real deployment's
+        # Administrator role holds `*`, so on the routes that read `caller` the
+        # account that actually uses them arrived as "no caller" and was treated
+        # as the PLATFORM: `POST /messaging/templates/{name}/render` resolved the
+        # platform tenant instead of theirs, which made a custom template 422
+        # "unknown template" after it had stored, listed and previewed fine, and
+        # made an override of a BUILT-IN render the code default with no error at
+        # all. A service principal (no `users` row) still resolves to None below,
+        # which is what those routes' fallbacks are for.
+        try:
+            user = await db.get(User, uuid.UUID(str(payload.get("sub"))))
+        except (ValueError, TypeError):
+            user = None  # a service `sub` that is not a uuid
+        if user is not None and user.is_active:
+            # A privileged claim still authorises; the live role is checked only
+            # when it is not, so a superadmin without an explicit grant is not
+            # locked out of a route their own token already carries.
+            if not privileged:
+                missing = [p for p in permissions if not user.role.grants(p)]
+                if missing:
+                    raise ForbiddenError(f"missing permission(s): {', '.join(missing)}")
+            return user
+        if privileged:
             return None
-        user = await db.get(User, uuid.UUID(payload["sub"]))
-        if user is None or not user.is_active:
-            # Fall back to the claims themselves for a service principal that has
-            # been granted the key explicitly rather than as a superadmin.
-            if all(p in claims for p in permissions):
-                return None
-            raise UnauthorizedError("user not found or inactive")
-        missing = [p for p in permissions if not user.role.grants(p)]
-        if missing:
-            raise ForbiddenError(f"missing permission(s): {', '.join(missing)}")
-        return user
+        # Fall back to the claims themselves for a service principal that has
+        # been granted the key explicitly rather than as a superadmin.
+        if all(p in claims for p in permissions):
+            return None
+        raise UnauthorizedError("user not found or inactive")
 
     return _dep
 

@@ -167,3 +167,74 @@ async def test_unknown_template_is_refused_not_empty(app, db):
     # 422: the app maps ValidationError there. Any 4xx keeps the caller from
     # sending an empty email — vision falls back to its plain text on >=400.
     assert r.status_code == 422
+
+
+# ── the wildcard admin ────────────────────────────────────────────────────────
+#
+# `require_service_permission` short-circuited on `is_superadmin` or a `*` claim
+# and returned None — the same value it returns for a service token. Every real
+# deployment's Administrator role holds `*`, so for the account that actually
+# writes templates the route saw NO caller: it resolved the PLATFORM tenant
+# instead of theirs.
+#
+# What that did, in the two shapes it takes:
+#   • a CUSTOM name (the whole point of the feature) rendered 422 "unknown
+#     template", after storing, listing and previewing perfectly;
+#   • an override OF A BUILT-IN rendered the code default with no error at all —
+#     the customisation silently ignored, which is the worse of the two because
+#     the send succeeds and looks right.
+
+
+async def test_a_wildcard_admin_renders_their_own_custom_template(app, db):
+    acme = await _tenant(db, "render-wild")
+    await template_store.upsert_override(
+        db, "gate_breach_wild", "Gate: {{ title }}", "<p>{{ message }}</p>", tenant_id=acme.id
+    )
+    role = await make_role(db, "WildAdmin", ["*"])
+    user = await make_user(db, "admin@wild.io", role)
+    user.tenant_id = acme.id
+    await db.commit()
+
+    async with _client(app) as c:
+        r = await c.post(
+            f"{PREFIX}/messaging/templates/gate_breach_wild/render",
+            headers=_auth(user),
+            json={"context": {"title": "Forced", "message": "Door forced"}},
+        )
+    assert r.status_code == 200, r.text
+    assert r.json()["subject"] == "Gate: Forced"
+
+
+async def test_a_wildcard_admins_override_of_a_builtin_is_the_one_that_renders(app, db):
+    # No 422 here to catch it: the built-in exists, so a lost tenant means the
+    # WRONG email goes out rather than none.
+    acme = await _tenant(db, "render-wild2")
+    await template_store.upsert_override(
+        db, "alert", "ACME {{ title }}", "<p>acme</p>", tenant_id=acme.id
+    )
+    role = await make_role(db, "WildAdmin2", ["*"])
+    user = await make_user(db, "admin@wild2.io", role)
+    user.tenant_id = acme.id
+    await db.commit()
+
+    async with _client(app) as c:
+        r = await c.post(
+            f"{PREFIX}/messaging/templates/alert/render",
+            headers=_auth(user),
+            json={"context": {"title": "x"}},
+        )
+    assert r.status_code == 200, r.text
+    assert r.json()["subject"] == "ACME x"
+
+
+async def test_a_superadmin_token_with_no_user_row_still_authorises(app, db):
+    # The service path must keep working: no `users` row, `*` in the claims.
+    await template_store.upsert_override(db, "svc_only", "S", "<p>hi</p>")
+    async with _client(app) as c:
+        r = await c.post(
+            f"{PREFIX}/messaging/templates/svc_only/render",
+            headers=_service_auth(),
+            json={"context": {}, "wrap": False},
+        )
+    assert r.status_code == 200, r.text
+    assert r.json()["html"] == "<p>hi</p>"
