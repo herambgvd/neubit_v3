@@ -192,8 +192,8 @@ export const bi = {
   //
   // `ratingSites()` reads `site_facts` — this store's read-model of core's
   // `sites`, fed by the site-facts event mirror. A null area is NOT RECORDED and
-  // the screen renders it as "cannot rate", with a link to Configurations →
-  // Sites, never as a default.
+  // the screen renders it as "cannot rate", pointing at its own BUILDING tab
+  // (where the area is typed), never as a default.
   //
   // `rating()` takes the METERS as an argument. There is no stored fact saying
   // which register measures a site's whole supply; picking one by tag would be

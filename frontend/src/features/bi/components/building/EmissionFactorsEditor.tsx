@@ -17,7 +17,7 @@ import { useEffect, useState } from "react";
 import { Icon } from "@iconify/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { FInput } from "./FormControls";
+import { FInput } from "@/features/core/sites/components/FormControls";
 import { ActionButton, RowAction } from "@/components/console";
 import { apiError } from "@/lib/api";
 import sitesApi from "@/lib/api/sites";

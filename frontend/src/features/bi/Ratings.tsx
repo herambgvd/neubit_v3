@@ -31,7 +31,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
-import Link from "next/link";
 
 import {
   ConsolePage,
@@ -50,7 +49,9 @@ import { apiError } from "@/lib/api";
 import { fmtRelative } from "@/lib/format";
 
 import UnitsPanel from "./components/UnitsPanel";
+import BuildingFactsPanel from "./components/building/BuildingFactsPanel";
 import { bi } from "./api";
+import sitesApi from "@/lib/api/sites";
 
 const RANGES = [
   { value: 30, label: "30D" },
@@ -61,6 +62,11 @@ const RANGES = [
 const TABS = [
   { value: "rating", label: "RATING" },
   { value: "units", label: "UNITS" },
+  // The EPI's own denominator, recorded where it is used. It was a "Building"
+  // tab on the Sites console — beside the address, in a console that reads none
+  // of these numbers, while THIS screen showed them read-only and linked back
+  // there. One fact, one surface, and this is the surface that consumes it.
+  { value: "building", label: "BUILDING" },
 ];
 
 const num = (v: any, digits = 1) =>
@@ -111,6 +117,16 @@ export default function Ratings() {
     setMeters([]);
   }, [effectiveSiteId]);
 
+  // The full site row, for the BUILDING tab. The rating list carries the three
+  // headline numbers but not the emission factors or the tariff slabs, and the
+  // form writes back to `sites` — so it needs the record it is editing, not a
+  // projection of it. Fetched only when that tab is open.
+  const siteRowQ = useQuery({
+    queryKey: ["site", effectiveSiteId],
+    queryFn: () => sitesApi.get(effectiveSiteId as string),
+    enabled: !!effectiveSiteId && tab === "building",
+  });
+
   const ratingQ = useQuery<any>({
     queryKey: ["bi-rating", effectiveSiteId, days, meters.join(",")],
     queryFn: () => bi.rating({ site_id: effectiveSiteId, point_id: meters, days }),
@@ -122,7 +138,7 @@ export default function Ratings() {
     <ConsolePage>
       <EstateHeader
         crumbs={[{ label: "Ratings" }]}
-        desc="EPI = annualised kWh / gross floor area — computed only where every input exists. The inputs are supplied here (units, by an operator) and under Configurations → Sites (area, tariff); nothing is defaulted, and a missing input renders its reason instead of a number."
+        desc="EPI = annualised kWh / gross floor area — computed only where every input exists. Both inputs are supplied here: what each point measures on UNITS, and the area, tariff and occupancy on BUILDING. Nothing is defaulted, and a missing input renders its reason instead of a number."
       />
       <ConsoleGrid cols="xl:grid-cols-[25%_1fr]">
         {/* ── sites ───────────────────────────────────────────────── */}
@@ -168,11 +184,7 @@ export default function Ratings() {
           <PanelFooter>
             <p className="text-[10.5px] leading-relaxed text-nb-faint">
               A site is listed because core told this store about it. Its area, tariff and occupancy
-              are recorded in{" "}
-              <Link href="/sites" className="text-nb-blueb underline">
-                Configurations → Sites
-              </Link>{" "}
-              — nothing here infers them.
+              are recorded on the BUILDING tab — nothing here infers them.
             </p>
           </PanelFooter>
         </ConsolePanel>
@@ -205,6 +217,20 @@ export default function Ratings() {
               {tab === "units" ? (
                 <div className="px-5 py-4">
                   <UnitsPanel />
+                </div>
+              ) : tab === "building" ? (
+                <div className="px-5 py-4">
+                  {siteRowQ.isLoading ? (
+                    <LoadingBlock label="Loading site…" />
+                  ) : siteRowQ.error ? (
+                    // A failed read must not render an empty form: saving it
+                    // would write blanks over numbers that are actually there.
+                    <p className="text-[12px] text-nb-crit">
+                      {apiError(siteRowQ.error, "Couldn't load this site's record")}
+                    </p>
+                  ) : siteRowQ.data ? (
+                    <BuildingFactsPanel site={siteRowQ.data} />
+                  ) : null}
                 </div>
               ) : (
                 <div className="space-y-3 px-5 py-4">
@@ -372,13 +398,17 @@ export default function Ratings() {
                             ))}
                           </ul>
                           {site.gross_floor_area_sqm == null && (
-                            <Link
-                              href="/sites"
+                            // Was a link to Configurations → Sites. The form is
+                            // on this screen now, so the fix is one click from
+                            // the sentence that says what is missing.
+                            <button
+                              type="button"
+                              onClick={() => setTab("building")}
                               className="mt-3 inline-flex items-center gap-1.5 rounded-[7px] border border-[rgba(96,165,250,.45)] bg-[rgba(96,165,250,.12)] px-2.5 py-1 text-[11.5px] text-nb-blueb transition hover:bg-[rgba(96,165,250,.2)]"
                             >
                               <Icon icon="heroicons:arrow-right-circle" className="text-[14px]" />
-                              Record the area in Configurations → Sites
-                            </Link>
+                              Record the area on the BUILDING tab
+                            </button>
                           )}
                           <p className="mt-3 text-[10.5px] leading-relaxed text-nb-faint">
                             No partial score is shown, and no figure is substituted for a missing

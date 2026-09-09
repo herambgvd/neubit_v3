@@ -30,7 +30,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Icon } from "@iconify/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { FInput } from "./FormControls";
+import { FInput } from "@/features/core/sites/components/FormControls";
 import { ActionButton } from "@/components/console";
 import { apiError } from "@/lib/api";
 import sitesApi from "@/lib/api/sites";

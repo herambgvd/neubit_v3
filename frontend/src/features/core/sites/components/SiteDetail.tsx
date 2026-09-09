@@ -2,16 +2,13 @@
 
 // Right-pane detail for a selected site: header (name, code, type/status/threat
 // pills, threat-level select + close/edit/delete actions), a shared TabBar, and
-// the active tab body (info / building / floors / zones).
-import { useMemo } from "react";
+// the active tab body (info / floors / zones).
 import { Icon } from "@iconify/react";
 import { IconButton, PaneAction, PaneDeleteAction } from "@/components/console";
-import { useAuth } from "@/lib/auth";
 import { TabBar } from "@/components/common";
 import type { SitePublic, ThreatLevel } from "@/lib/types";
 import { THREAT_PILL, THREAT_LEVELS, capitalize } from "../constants";
 import SiteInfoPanel from "./SiteInfoPanel";
-import BuildingFactsPanel from "./BuildingFactsPanel";
 import FloorsPanel from "./FloorsPanel";
 import ZonesPanel from "./ZonesPanel";
 import SelectMenu from "@/components/common/SelectMenu";
@@ -20,16 +17,11 @@ const TABS: { key: SiteDetailTab; label: string; icon: string }[] = [
   // `information-circle`, not a second building glyph: Site info is the address
   // and contact card, and it sat next to Building wearing the same icon.
   { key: "info", label: "Site info", icon: "heroicons:information-circle" },
-  // The physical/commercial facts about the building — area, tariff, occupancy.
-  // They live beside the address rather than on a Building Intelligence screen
-  // for the same reason device placement lives on the floor plan (pipeline
-  // contract §18): one place per fact.
-  { key: "building", label: "Building", icon: "heroicons:building-office-2" },
   { key: "floors", label: "Floors", icon: "heroicons:square-3-stack-3d" },
   { key: "zones", label: "Zones", icon: "heroicons-outline:square-2-stack" },
 ];
 
-export type SiteDetailTab = "info" | "building" | "floors" | "zones";
+export type SiteDetailTab = "info" | "floors" | "zones";
 
 export interface SiteDetailProps {
   site: SitePublic;
@@ -42,29 +34,26 @@ export interface SiteDetailProps {
 }
 
 export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, onDelete, onChangeThreat }: SiteDetailProps) {
-  const { can, hasModule } = useAuth();
-
   /**
-   * BUILDING FACTS ARE A BUILDING-INTELLIGENCE SURFACE, not a site-management one.
+   * BUILDING FACTS ARE NOT HERE ANY MORE.
    *
-   * Area, tariff, occupancy and the emission factors exist to feed BI — nothing
-   * in Sites, Floors, Zones or the VMS reads them. A tenant without that module
-   * was being asked to fill in a form whose only consumer they do not have, and
-   * the answer is the same gate every BI surface already uses (see
-   * config/launcher.ts): the `analytics` module plus `bi.read`.
+   * Area, tariff, occupancy and the emission factors used to be a "Building" tab
+   * on this pane. They are Building Intelligence inputs — the EPI's denominator
+   * and the cost of a kWh — and nothing in Sites, Floors, Zones or the VMS reads
+   * one of them. An operator configuring a site was being asked, halfway through
+   * the address and the floor plan, for a tariff whose only consumer is a screen
+   * in another console; and the console that DID consume them showed them
+   * read-only with a link back here. Two surfaces, one fact, and the reader had
+   * to know which was which.
    *
-   * `hasModule` is permissive while entitlements load, so the tab does not flash
-   * out from under someone mid-render.
+   * They now live where they are used and read: Building Intelligence → Ratings
+   * → BUILDING. Recording one still needs `sites.update`, because `sites` is
+   * still where the fact is STORED — what moved is the form, not the ownership.
    */
-  const showBuilding = hasModule("analytics") && can("bi.read");
-  const tabs = useMemo(
-    () => TABS.filter((t) => t.key !== "building" || showBuilding),
-    [showBuilding],
-  );
-  // A tab can be selected and THEN become unavailable — an entitlement arriving
-  // late, or a remembered tab from a tenant that had the module. Fall back rather
-  // than render a body for a tab that is no longer in the bar.
-  const activeTab = tab === "building" && !showBuilding ? "info" : tab;
+
+  // A remembered "building" tab from before that move would render no body at
+  // all; fall back to the first one rather than an empty pane.
+  const activeTab = TABS.some((t) => t.key === tab) ? tab : "info";
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -116,13 +105,11 @@ export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, on
         </div>
       </header>
 
-      <TabBar tabs={tabs} active={activeTab} onChange={onTabChange} className="px-2" />
+      <TabBar tabs={TABS} active={activeTab} onChange={onTabChange} className="px-2" />
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         {activeTab === "info" ? (
           <SiteInfoPanel site={site} />
-        ) : activeTab === "building" ? (
-          <BuildingFactsPanel site={site} />
         ) : activeTab === "floors" ? (
           <FloorsPanel site={site} />
         ) : (
