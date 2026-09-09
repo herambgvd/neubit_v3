@@ -77,6 +77,18 @@ export const LAUNCHER_MODES: LauncherMode[] = [
         accent: "#67e8f9",
         tiles: [
           { icon: "heroicons:bell-alert", label: "Alarms", href: "/events", tone: "hot", perm: "neubit.read" },
+          { icon: "heroicons:chart-bar-square", label: "Video Analytics", soon: true },
+        ],
+      },
+      {
+        // Its OWN row, below Act, rather than a third tile wedged between Alarms
+        // and Video Analytics — those two are what an operator reaches for while
+        // something is happening, and a dashboard is not. Inserting it there also
+        // moved Video Analytics along, which is how a launcher an operator knows
+        // by position stops being one.
+        title: "Review",
+        accent: "#67e8f9",
+        tiles: [
           // The surveillance-category dashboards. Same viewer as Building
           // Intelligence's tile, pinned to `vms` — which is what stops one strip
           // holding every console's dashboards in registration order.
@@ -87,7 +99,6 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           // the backend's, and naming a different one here would show a tile that
           // 403s.
           { icon: "heroicons:squares-2x2", label: "Dashboards", href: "/surveillance/dashboards", tone: "teal", perm: "dashforge.read", module: "analytics" },
-          { icon: "heroicons:chart-bar-square", label: "Video Analytics", soon: true },
         ],
       },
     ],
