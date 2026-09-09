@@ -32,7 +32,7 @@ export interface EstateOps {
 }
 
 export function useEstateOps(): EstateOps {
-  const [placementsQ, camerasQ, eventsQ] = useQueries({
+  const [placementsQ, camerasQ, fedCamsQ, eventsQ] = useQueries({
     queries: [
       {
         queryKey: ["estate-placements"],
@@ -47,6 +47,15 @@ export function useEstateOps(): EstateOps {
         refetchInterval: 20_000,
       },
       {
+        // THE OTHER HALF OF THE ESTATE. A placement's status is looked up in this
+        // list; with only the VMS-owned rows, a placed RECORDER-OWNED camera —
+        // which is every camera on a single-ownership estate — matched nothing, so
+        // the map's "offline" badge could never leave zero however many were down.
+        queryKey: ["vms-wall-federation-cameras"],
+        queryFn: () => vms.federation.cameras(),
+        refetchInterval: 30_000,
+      },
+      {
         queryKey: ["estate-open-events"],
         queryFn: () => vms.events.list({ acknowledged: false, limit: EVENT_LIMIT }),
         refetchInterval: 20_000,
@@ -54,19 +63,33 @@ export function useEstateOps(): EstateOps {
     ],
   });
 
+  // Both halves, indexed under EVERY id a placement might have stored: the
+  // node-side id the recorder knows, and the composite `fed:<node>:<camera>` the
+  // wall persists. Which one a placement holds depends on where it was made.
+  const estateCameras = useMemo<EstateCamera[]>(() => {
+    const local = (camerasQ.data?.items || []) as EstateCamera[];
+    const fed = (fedCamsQ.data?.items || []) as { id: string; node_id: string; status?: string }[];
+    const out: EstateCamera[] = [...local];
+    for (const c of fed) {
+      out.push({ ...c, id: c.id } as EstateCamera);
+      out.push({ ...c, id: `fed:${c.node_id}:${c.id}` } as EstateCamera);
+    }
+    return out;
+  }, [camerasQ.data, fedCamsQ.data]);
+
   const bySite = useMemo(
     () =>
       rollupBySite({
         placements: (placementsQ.data?.items || []) as DevicePlacementIndexRow[],
-        cameras: (camerasQ.data?.items || []) as EstateCamera[],
+        cameras: estateCameras,
         events: (eventsQ.data?.items || []) as VmsEventPublic[],
       }),
-    [placementsQ.data, camerasQ.data, eventsQ.data],
+    [placementsQ.data, estateCameras, eventsQ.data],
   );
 
   const failed = [
     placementsQ.isError ? "placements" : null,
-    camerasQ.isError ? "cameras" : null,
+    camerasQ.isError || fedCamsQ.isError ? "cameras" : null,
     eventsQ.isError ? "events" : null,
   ].filter(Boolean) as string[];
 

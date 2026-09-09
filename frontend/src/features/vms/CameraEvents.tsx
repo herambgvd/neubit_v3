@@ -20,10 +20,11 @@ import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { workflow as wfApi } from "@/features/workflow/api";
 import { vms } from "./api";
+import { useEstateCameras } from "./hooks/useEstateCameras";
 import { EVENT_TYPE_FILTERS, SEVERITY_FILTERS } from "./constants";
 import { normalizeVmsEvent, eventKey, type NormalizedVmsEvent } from "./eventLib";
 import { useVmsEventStream } from "./hooks/useVmsEventStream";
-import type { VmsCameraPublic, VmsEventPublic } from "./types";
+import type { EstateCamera, VmsEventPublic } from "./types";
 import CameraEventRow from "./components/CameraEventRow";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -37,18 +38,29 @@ export default function CameraEventsPage() {
   const [day, setDay] = useState("");
   const [live, setLive] = useState(true);
 
-  // Camera roster (filter dropdown + name lookup).
-  const camerasQ = useQuery({
-    queryKey: ["vms-cameras", "events-picker"],
-    queryFn: () => vms.cameras.list({ limit: 500 }),
-    staleTime: 60_000,
-  });
-  const cameras = useMemo<VmsCameraPublic[]>(() => (camerasQ.data ? asItems(camerasQ.data) : []), [camerasQ.data]);
-  const cameraById = useMemo(
-    () => Object.fromEntries(cameras.map((c) => [c.id, c])),
-    [cameras],
-  );
+  // CAMERA ROSTER — THE WHOLE ESTATE, not this service's own rows.
+  //
+  // It read `/vms/cameras` alone. On a single-ownership estate that list is empty,
+  // so the camera filter had nothing to offer and every row printed a raw uuid
+  // where a camera name belongs — for events that all came from recorders.
+  //
+  // The events themselves are stored with the NODE-SIDE camera id (the event
+  // supervisor mirrors each recorder's ledger under `raw.camera_id`), so both the
+  // lookup and the filter's value must be that id, not the composite `fed:…` key
+  // the wall uses for placement.
+  const { cameras } = useEstateCameras();
+  const cameraById = useMemo(() => {
+    const m: Record<string, EstateCamera> = {};
+    for (const c of cameras) {
+      m[c.id] = c;
+      const real = (c as { real_id?: string }).real_id;
+      if (real) m[real] = c; // what an event actually carries
+    }
+    return m;
+  }, [cameras]);
   const cameraName = (id: string | null | undefined): string | null => (id ? cameraById[id]?.name : null) || null;
+  /** The id the events API filters on: node-side for a recorder-owned camera. */
+  const eventCameraId = (c: EstateCamera): string => (c as { real_id?: string }).real_id || c.id;
 
   // The day filter → a [from,to) window (local day).
   const window = useMemo(() => {
@@ -160,7 +172,7 @@ export default function CameraEventsPage() {
 
   const cameraOptions = [
     { value: "", label: "All cameras" },
-    ...cameras.map((c) => ({ value: c.id, label: c.name })),
+    ...cameras.map((c) => ({ value: eventCameraId(c), label: c.name })),
   ];
   const ackOptions = [
     { value: "", label: "All" },

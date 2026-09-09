@@ -27,7 +27,7 @@ import { asItems } from "@/lib/format";
 import { apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useScreens } from "@/lib/desktop";
-import { vms } from "@/features/vms/api";
+import { useEstateCameras } from "@/features/vms/hooks/useEstateCameras";
 import CameraRail from "@/features/vms/components/CameraRail";
 import type { EstateCamera } from "@/features/vms/types";
 
@@ -81,11 +81,15 @@ export default function WallConsole({ wallId: wallIdParam }: WallConsoleProps) {
     queryFn: () => videowall.monitors.list(wallId),
     enabled: !!wallId,
   });
-  const camerasQ = useQuery({
-    queryKey: ["vms-wall-cameras"],
-    queryFn: () => vms.cameras.list({ limit: 500 }),
-    refetchInterval: 30_000,
-  });
+  // THE WHOLE ESTATE, not this service's own camera rows.
+  //
+  // This asked `/vms/cameras` alone. On a single-ownership estate that list is
+  // empty — every camera belongs to a recorder — so the rail had nothing to drag
+  // onto a monitor, and a wall already holding federated cells could not name what
+  // was in them. `useEstateCameras` merges both sources and mints the composite
+  // `fed:<node>:<camera>` ids that wall cells are persisted with, which is exactly
+  // what WallCell resolves a cell against.
+  const { cameras, localQ: camerasQ } = useEstateCameras();
   const presetsQ = useQuery({
     queryKey: ["wall-presets", wallId],
     queryFn: () => videowall.presets.list(wallId),
@@ -99,7 +103,6 @@ export default function WallConsole({ wallId: wallIdParam }: WallConsoleProps) {
 
   const wall = wallQ.data;
   const monitors = useMemo(() => sortedMonitors(asItems(monitorsQ.data)), [monitorsQ.data]);
-  const cameras = useMemo(() => asItems(camerasQ.data), [camerasQ.data]);
   const presets = useMemo(() => asItems(presetsQ.data), [presetsQ.data]);
   const tours = useMemo(() => asItems(toursQ.data), [toursQ.data]);
   const cameraById = useMemo(() => {

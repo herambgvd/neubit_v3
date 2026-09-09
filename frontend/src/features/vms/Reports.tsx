@@ -12,6 +12,7 @@
 import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
+import Link from "next/link";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
@@ -20,6 +21,7 @@ import { apiError } from "@/lib/api";
 import { asItems, fmtBytes, fmtDateTime } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { vms } from "./api";
+import { useEstateCameras } from "./hooks/useEstateCameras";
 import ReportScheduleModal from "./components/ReportScheduleModal";
 import ReportRunsPanel, { scheduleRunsKey } from "./components/ReportRunsPanel";
 import type {
@@ -69,13 +71,14 @@ export default function ReportsPage() {
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null); // schedule id whose run history is open
 
-  // Cameras (optional narrowing + name lookup).
-  const camerasQ = useQuery({
-    queryKey: ["vms-cameras", "reports-picker"],
-    queryFn: () => vms.cameras.list({ limit: 500 }),
-    staleTime: 60_000,
-  });
-  const cameras = useMemo(() => asItems(camerasQ.data), [camerasQ.data]);
+  // Cameras for the optional narrowing — the WHOLE estate, not this service's own
+  // rows. Those are empty on a single-ownership estate, so the picker offered
+  // nothing at all; the event report (the one kind that DOES have data here, from
+  // the mirrored recorder ledger) could not be narrowed to a camera.
+  //
+  // The value is the id the events are stored under: node-side for a
+  // recorder-owned camera, not the composite `fed:` key the wall persists.
+  const { cameras } = useEstateCameras();
 
   const params = useMemo(() => {
     const p: QueryParams = { camera_id: cameraId || undefined };
@@ -153,7 +156,12 @@ export default function ReportsPage() {
 
   const cameraOptions = [
     { value: "", label: "All cameras (estate)" },
-    ...cameras.map((c) => ({ value: c.id, label: c.name })),
+    // The id the reports key on: node-side for a recorder-owned camera, not the
+    // composite `fed:` key the wall persists.
+    ...cameras.map((c) => ({
+      value: (c as { real_id?: string }).real_id || c.id,
+      label: c.name,
+    })),
   ];
   const kindOptions = REPORT_KINDS.map((k) => ({ value: k.value, label: k.label }));
 
@@ -395,10 +403,56 @@ export default function ReportsPage() {
   );
 }
 
+// WHAT THESE REPORTS CAN AND CANNOT SEE.
+//
+// Uptime, recording coverage and storage are computed from THIS SERVICE'S OWN
+// tables — camera-health samples, pooled Recording rows, StoragePool. On a
+// single-ownership estate none of those hold anything: the recorder owns the
+// cameras, writes the footage and owns the disks. The reports then came back with
+// `rows: []` and `totals: { cameras: 0, avg_uptime_pct: 0.0 }`, and the summary
+// tile printed "Avg uptime 0%" in red — a measurement, about an estate whose
+// cameras were all online.
+//
+// A zero that was never measured is the one thing this console does not print. An
+// empty report of these kinds says which store it read and where the real answer
+// lives, and shows no tiles at all.
+const VMS_OWNED_KINDS: Record<string, string> = {
+  "camera-uptime": "camera-health samples this service collects for cameras it owns",
+  "recording-coverage": "recordings written into this platform's own storage",
+  "storage-usage": "storage pools this platform manages",
+};
+
+function NothingToReport({ kind }: { kind: string }) {
+  return (
+    <div className="rounded-[12px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.55)] px-4 py-6 text-center">
+      <Icon icon="heroicons-outline:document-magnifying-glass" className="mx-auto mb-2 text-3xl text-[#9db0d8] opacity-60" />
+      <p className="text-sm font-medium text-[#f2f6ff]">Nothing to report in this window</p>
+      <p className="mx-auto mt-1 max-w-lg text-xs leading-relaxed text-[#9db0d8]">
+        This report reads {VMS_OWNED_KINDS[kind]}. There are none — which is normal
+        when the estate&apos;s cameras belong to recorders: they hold the footage,
+        the disks and their own health. Pulse reports those, live, from each
+        recorder.
+      </p>
+      <Link
+        href="/pulse"
+        className="mt-3 inline-flex items-center gap-1.5 rounded-[8px] border border-[rgba(96,165,250,.45)] bg-[rgba(96,165,250,.12)] px-2.5 py-1 text-[11.5px] text-nb-blueb transition hover:bg-[rgba(96,165,250,.2)]"
+      >
+        <Icon icon="heroicons:heart" className="text-[13px]" />
+        Open Pulse
+      </Link>
+    </div>
+  );
+}
+
 // ── Report renderer — one component per shape, driven by report.kind ─────────
 function ReportView({ report }: { report: ReportViewData }) {
   const totals = report.totals || {};
   const rows = report.rows || [];
+
+  // No rows for a kind that reads VMS-owned tables: say so, and print no zeros.
+  if (rows.length === 0 && VMS_OWNED_KINDS[report.kind]) {
+    return <NothingToReport kind={report.kind} />;
+  }
 
   if (report.kind === "camera-uptime") {
     return (
