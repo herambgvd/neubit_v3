@@ -52,7 +52,10 @@ export default function EventLivePane({ camera }: EventLivePaneProps) {
         )}
       </header>
 
-      <div className="relative aspect-video w-full bg-black">
+      {/* min-h-0 + flex-1: the frame takes the height the row gives it and the
+          video fits INSIDE, rather than the video's aspect ratio deciding how tall
+          the row must be. */}
+      <div className="relative min-h-0 w-full flex-1 bg-black">
         {!camera ? (
           <div className="flex h-full items-center justify-center px-4 text-center text-[12px] text-muted">
             No camera on this event.

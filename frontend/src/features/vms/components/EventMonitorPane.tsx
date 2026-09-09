@@ -138,7 +138,7 @@ export default function EventMonitorPane({
   const eventMs = event.occurred_at ? new Date(event.occurred_at).getTime() : null;
 
   return (
-    <div className="flex h-full flex-col rounded-xl border border-card-border bg-card">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card">
       {/* what + where */}
       <header className="flex flex-wrap items-center gap-2 border-b border-card-border px-3 py-2">
         <span className={`h-2 w-2 shrink-0 rounded-full ${sp.dot}`} />
@@ -152,7 +152,7 @@ export default function EventMonitorPane({
       </header>
 
       {/* the picture — the recording, at the event's own instant */}
-      <div className="relative aspect-video w-full bg-black">
+      <div className="relative min-h-0 w-full flex-1 bg-black">
         {mode === "recording" ? (
           eventMs != null && camera ? (
             // Anchored a few seconds BEFORE the event so it is seen beginning.

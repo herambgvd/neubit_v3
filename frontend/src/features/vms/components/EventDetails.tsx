@@ -70,7 +70,7 @@ export default function EventDetails({
     : null;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-card-border bg-card">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card">
       <header className="flex items-center gap-2 border-b border-card-border px-3 py-2">
         <Icon icon="heroicons-outline:information-circle" className="text-sm text-blue-500" />
         <span className="text-[12px] font-semibold text-foreground">Details</span>
@@ -86,6 +86,17 @@ export default function EventDetails({
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
+        <Row label="Status">
+          {event.acknowledged ? (
+            <span className="rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-400">
+              Acknowledged
+            </span>
+          ) : (
+            <span className="rounded-full border border-card-border px-1.5 py-0.5 text-[10px] text-muted">
+              Open
+            </span>
+          )}
+        </Row>
         <Row label="Event type">
           <span className="inline-flex items-center gap-1.5">
             <Icon icon={tp.icon} className={`text-sm ${sp.text}`} />
@@ -121,17 +132,6 @@ export default function EventDetails({
             <span className="break-words font-mono text-[11px] text-muted">{topic}</span>
           </Row>
         )}
-        <Row label="Status">
-          {event.acknowledged ? (
-            <span className="rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-400">
-              Acknowledged
-            </span>
-          ) : (
-            <span className="rounded-full border border-card-border px-1.5 py-0.5 text-[10px] text-muted">
-              Open
-            </span>
-          )}
-        </Row>
         <Row label="Event ID">
           <span className="break-all font-mono text-[10.5px] text-muted">
             {event.event_id || event.id || "—"}

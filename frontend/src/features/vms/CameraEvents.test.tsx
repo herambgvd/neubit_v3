@@ -16,7 +16,7 @@ import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { httpError, stubApi, type ApiStub } from "@/test/apiStub";
+import { httpError, stubApi, type ApiStub, type Recorded } from "@/test/apiStub";
 import { renderWithProviders } from "@/test/render";
 
 import CameraEventsPage from "./CameraEvents";
@@ -133,19 +133,16 @@ describe("the live strip", () => {
   });
 });
 
-describe("the control bar", () => {
-  it("is ONE row: live state, counts and filters together", async () => {
-    // It was two stacked cards — a strip of counts above a card of labelled
-    // dropdowns — which cost a fifth of the viewport before a single event was
-    // visible, on a screen whose whole job is the feed below it.
+describe("the header and the table's toolbar", () => {
+  it("keeps the counts in the header and the filters in the table", async () => {
+    // The filters narrow ROWS, so they belong where the rows are. Moving them out
+    // of the page header is what let the evidence panels come up the screen.
     renderWithProviders(<CameraEventsPage />);
     const critical = await screen.findByRole("button", { name: /Critical$/ });
-    const camera = screen.getByRole("button", { name: /filter by camera/i });
+    const camera = await screen.findByRole("button", { name: /filter by camera/i });
 
-    // Same bar: the chip's parent contains the camera picker's wrapper too.
-    const bar = critical.parentElement!;
-    expect(bar.contains(camera)).toBe(true);
-    expect(bar.querySelector('input[type="date"]')).toBeTruthy();
+    expect(critical.parentElement!.contains(camera)).toBe(false);
+    expect(camera.closest("table, section")).toBeTruthy();
   });
 
   it("has ONE control per thing it filters", async () => {
@@ -160,23 +157,30 @@ describe("the control bar", () => {
   });
 
   it("names every unlabelled filter for a screen reader", async () => {
-    // The visible labels went with the second row; the placeholder says what each
-    // one narrows, and this is what carries that to somebody who cannot see it.
+    // The visible labels are gone; each picker's placeholder says what it narrows,
+    // and this is what carries that to somebody who cannot see it.
     renderWithProviders(<CameraEventsPage />);
-    await screen.findByText("Live feed");
 
-    expect(screen.getByRole("button", { name: /filter by camera/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /filter by camera/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /filter by event type/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/filter by day/i)).toBeInTheDocument();
   });
 });
 
 describe("the feed", () => {
-  it("groups by day, so a time always has a date over it", async () => {
+  it("is ONE table with the date on every row, not a table per day", async () => {
+    // It was a table per day: three headers on a screen showing seventeen rows,
+    // and "everything on Channel 5" read in pieces.
     renderWithProviders(<CameraEventsPage />);
+    await screen.findByRole("checkbox", { name: /select all/i });
 
-    expect(await screen.findByText("Today")).toBeInTheDocument();
-    expect(screen.getByText("Yesterday")).toBeInTheDocument();
+    expect(screen.getAllByRole("table")).toHaveLength(1);
+    expect(screen.queryByText("Today")).toBeNull();
+    // Every row carries its own date — a time with no date is what the day
+    // headers used to carry.
+    const dated = screen.getAllByRole("row").slice(1);
+    expect(dated.length).toBeGreaterThan(0);
+    for (const row of dated) expect(row.textContent).toMatch(/\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2}|\w{3} \d/);
   });
 
   it("names the camera from the estate, not its uuid", async () => {
@@ -426,7 +430,7 @@ describe("a live arrival while the operator is reading", () => {
     // Wait for the HISTORY, not just the strip: an arrival in the first non-empty
     // commit is the first load, not news, and asserting before it lands would
     // test that instead.
-    await screen.findByText("Today");
+    await screen.findByRole("checkbox", { name: /select all/i });
 
     // Reading further down the feed…
     // act(): the scroll handler sets state, and React must flush it before the
@@ -446,7 +450,7 @@ describe("a live arrival while the operator is reading", () => {
   it("says nothing when they are already looking at the top", async () => {
     stubAll();
     const { rerender } = renderWithProviders(<CameraEventsPage />);
-    await screen.findByText("Today");
+    await screen.findByRole("checkbox", { name: /select all/i });
 
     liveFrames = [event({ id: "new-2", event_id: "new-2", event_type: "video_loss", occurred_at: TODAY })];
     rerender(<CameraEventsPage />);
@@ -493,5 +497,68 @@ describe("acknowledging a burst", () => {
     await screen.findByText("Live feed");
 
     expect(screen.queryByRole("button", { name: /acknowledge selected/i })).toBeNull();
+  });
+});
+
+
+describe("paging one long table", () => {
+  const many = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      event({ id: `p${i}`, event_id: `p${i}`, occurred_at: atLocal(0, 9 - (i % 8)) }),
+    );
+
+  it("shows a page at a time and says which page", async () => {
+    stubAll({ "GET /vms/events": { items: many(60), total: 60 } });
+    renderWithProviders(<CameraEventsPage />);
+    await screen.findByRole("checkbox", { name: /select all/i });
+
+    // 25 rows + the header row.
+    expect(screen.getAllByRole("row")).toHaveLength(26);
+    expect(screen.getByText("1–25 of 60")).toBeInTheDocument();
+    expect(screen.getByText("1 / 3")).toBeInTheDocument();
+  });
+
+  it("moves between pages", async () => {
+    stubAll({ "GET /vms/events": { items: many(60), total: 60 } });
+    renderWithProviders(<CameraEventsPage />);
+    await screen.findByRole("checkbox", { name: /select all/i });
+
+    await userEvent.click(screen.getByRole("button", { name: /next page/i }));
+    expect(screen.getByText("26–50 of 60")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /previous page/i })).toBeEnabled();
+  });
+
+  it("does not strand the operator on a page that a filter emptied", async () => {
+    // Narrowing from 60 rows to 3 while on page three would render nothing at
+    // all, which reads as "no events" rather than "you are past the end".
+    const rows = many(60);
+    stubAll({
+      // The stub honours the filter, so this exercises the narrowing rather than
+      // asserting against a list that never changed.
+      "GET /vms/events": (req: Recorded) =>
+        req.search.get("severity") === "critical"
+          ? { items: rows.slice(0, 3).map((r) => ({ ...r, severity: "critical" })), total: 3 }
+          : { items: rows, total: 60 },
+    });
+    renderWithProviders(<CameraEventsPage />);
+    await screen.findByRole("checkbox", { name: /select all/i });
+
+    await userEvent.click(screen.getByRole("button", { name: /next page/i }));
+    await userEvent.click(screen.getByRole("button", { name: /Critical$/ }));
+
+    expect(await screen.findByText("1 / 1")).toBeInTheDocument();
+  });
+});
+
+describe("the details column", () => {
+  it("leads with the status — the first thing asked of a row just clicked", async () => {
+    stubAll();
+    renderWithProviders(<CameraEventsPage />);
+
+    const details = (await screen.findByText("Details")).closest("div")!.parentElement!;
+    const labels = [...details.querySelectorAll("span")]
+      .map((el) => el.textContent?.trim())
+      .filter((t) => t === "Status" || t === "Event type" || t === "Severity");
+    expect(labels[0]).toBe("Status");
   });
 });

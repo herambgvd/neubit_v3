@@ -1,6 +1,11 @@
 "use client";
 
-// THE EVENT TABLE — dense, scannable, and selectable.
+// THE EVENT TABLE — one table, dense, scannable, selectable, paged.
+//
+// It was a table PER DAY, each with its own header and its own select-all. That
+// is three headers on a screen showing seventeen rows, and an operator who wants
+// "everything on Channel 5" reads it in pieces. One table, one set of columns,
+// one toolbar, and the date on every row.
 //
 // The feed was a stack of cards. Cards are right for a handful of things and
 // wrong for a shift's worth: a card repeats every label on every row, so eight
@@ -17,6 +22,7 @@
 // jobs: it is the ordinary way to look at something, and the checkbox is the way
 // to act on many. They never fight — the checkbox stops the click from reaching
 // the row.
+import type { ReactNode } from "react";
 import { Icon } from "@iconify/react";
 
 import { eventTypeLabel, fmtDate, fmtTime, sevPreset, typePreset, type NormalizedVmsEvent } from "../eventLib";
@@ -24,6 +30,7 @@ import { durationLabel, eventInterval } from "../eventState";
 import { useTicker } from "../hooks/useTicker";
 
 export interface EventTableProps {
+  /** The page's rows — already filtered and paged by the caller. */
   events: NormalizedVmsEvent[];
   selectedId?: string | null;
   onSelect?: (event: NormalizedVmsEvent) => void;
@@ -31,8 +38,11 @@ export interface EventTableProps {
   onToggleChecked: (key: string) => void;
   onToggleAll: () => void;
   cameraName?: (id: string | null | undefined) => string | null;
-  /** Day header text for the group this table renders ("Today"). */
-  label?: string;
+  /** The toolbar's own controls — filters live IN the table, where the rows they
+   *  narrow are, rather than in a separate card above the evidence panels. */
+  toolbar?: ReactNode;
+  /** Paging, rendered under the rows. */
+  footer?: ReactNode;
 }
 
 const keyOf = (e: NormalizedVmsEvent) => e.event_id || e.id || "";
@@ -45,7 +55,8 @@ export default function EventTable({
   onToggleChecked,
   onToggleAll,
   cameraName,
-  label,
+  toolbar,
+  footer,
 }: EventTableProps) {
   // One clock for the whole table: the open rows count up together, and a ticker
   // per row would be a timer per row.
@@ -55,13 +66,9 @@ export default function EventTable({
 
   return (
     <section className="overflow-hidden rounded-xl border border-card-border bg-card">
-      {label && (
-        <header className="flex items-center gap-2 border-b border-card-border px-3 py-2">
-          <Icon icon="heroicons-outline:calendar-days" className="text-sm text-blue-500" />
-          <span className="text-[12px] font-semibold text-foreground">{label}</span>
-          <span className="rounded-sm bg-hover px-1.5 py-0.5 font-mono text-[10px] text-muted">
-            {events.length}
-          </span>
+      {toolbar && (
+        <header className="flex flex-wrap items-center gap-2 border-b border-card-border px-3 py-2">
+          {toolbar}
         </header>
       )}
 
@@ -78,7 +85,7 @@ export default function EventTable({
                   className="h-3.5 w-3.5 accent-blue-500"
                 />
               </th>
-              <th className="px-2 py-1.5 font-medium">Time</th>
+              <th className="px-2 py-1.5 font-medium">When</th>
               <th className="px-2 py-1.5 font-medium">Duration</th>
               <th className="px-2 py-1.5 font-medium">Event</th>
               <th className="px-2 py-1.5 font-medium">Severity</th>
@@ -112,6 +119,9 @@ export default function EventTable({
                       className="h-3.5 w-3.5 accent-blue-500"
                     />
                   </td>
+                  {/* The date rides on every row now: without the day groups
+                      there is no header carrying it, and a time with no date is
+                      the one thing a shift-long feed must never print. */}
                   <td className="whitespace-nowrap px-2 py-1.5 font-mono text-muted">
                     <span className="text-foreground">{fmtTime(e.occurred_at)}</span>
                     <span className="ml-1.5 text-[10px]">{fmtDate(e.occurred_at)}</span>
@@ -161,6 +171,12 @@ export default function EventTable({
           </tbody>
         </table>
       </div>
+
+      {footer && (
+        <footer className="flex flex-wrap items-center gap-2 border-t border-card-border px-3 py-2">
+          {footer}
+        </footer>
+      )}
     </section>
   );
 }

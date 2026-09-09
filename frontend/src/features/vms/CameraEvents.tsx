@@ -23,7 +23,6 @@ import { vms } from "./api";
 import { useEstateCameras } from "./hooks/useEstateCameras";
 import { EVENT_TYPE_FILTERS, isAttentionSeverity } from "./constants";
 import { normalizeVmsEvent, type NormalizedVmsEvent } from "./eventLib";
-import { groupByDay } from "./eventGroups";
 import { useVmsEventStream } from "./hooks/useVmsEventStream";
 import type { EstateCamera, VmsEventPublic } from "./types";
 import EventMonitorPane from "./components/EventMonitorPane";
@@ -165,7 +164,7 @@ export default function CameraEventsPage() {
 
   // Severity breakdown + unacked count for the summary row (from the visible feed).
   const summary = useMemo(() => {
-    const s = { critical: 0, warning: 0, info: 0, unacked: 0 };
+    const s = { critical: 0, alarm: 0, warning: 0, info: 0, unacked: 0 };
     const isBucket = (k: string): k is keyof typeof s => Object.prototype.hasOwnProperty.call(s, k);
     for (const e of events) {
       if (isBucket(e.severity)) s[e.severity] += 1;
@@ -179,7 +178,13 @@ export default function CameraEventsPage() {
     ...cameras.map((c) => ({ value: eventCameraId(c), label: c.name })),
   ];
 
-  const groups = useMemo(() => groupByDay(events), [events]);
+  // ONE TABLE, PAGED. It was a table per day — three headers on a screen showing
+  // seventeen rows, and "everything on Channel 5" read in pieces. The date now
+  // rides on every row, and the page size is the operator's.
+  const [pageSize, setPageSize] = useState(25);
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(events.length / pageSize));
+  const pageRows = events.slice(page * pageSize, page * pageSize + pageSize);
   // ── "N new ↑" ─────────────────────────────────────────────────────────────
   //
   // A live feed that prepends while an operator is reading row forty moves the
@@ -249,6 +254,12 @@ export default function CameraEventsPage() {
     }
     setCheckedKeys(new Set());
   };
+
+  // A filter that shrinks the list must not leave the operator on page four of
+  // one page — nothing would render and the table would look empty.
+  useEffect(() => {
+    setPage((p) => Math.min(p, Math.max(0, Math.ceil(events.length / pageSize) - 1)));
+  }, [events.length, pageSize]);
 
   const goToNewest = () => {
     topKey.current = events[0]?.event_id || events[0]?.id || null;
@@ -336,16 +347,12 @@ export default function CameraEventsPage() {
 
   return (
     <div className="pb-8">
-      {/* ── ONE CONTROL BAR ───────────────────────────────────────────────
-          The live state, the counts an operator triages by, and the filters, on
-          ONE row. They were two stacked cards — a strip of counts above a card of
-          labelled dropdowns — which cost a fifth of the viewport before a single
-          event was visible, on a screen whose whole job is the feed below it.
-
-          The severity DROPDOWN is gone with them: the counts already filter by
-          severity, and two controls for one thing means the one an operator did
-          not touch silently contradicts the one they did. */}
-      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-card-border bg-card px-3 py-2">
+      {/* ── HEADER LINE ────────────────────────────────────────────────────
+          The live state and the counts an operator triages by, on one line with
+          no card around it — this is a header, not a panel. The FILTERS moved
+          into the table's own toolbar, where the rows they narrow are, which is
+          what let the evidence panels move up to the top of the page. */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <span className="inline-flex items-center gap-1.5">
           <span className="relative flex h-2.5 w-2.5">
             {live && connected && (
@@ -375,76 +382,11 @@ export default function CameraEventsPage() {
         <span className="mx-0.5 h-5 w-px bg-card-border" aria-hidden />
 
         <CountChip label="All" value={events.length} active={!severity && ack !== "false"} onClick={() => { setSeverity(""); setAck(""); }} />
-        <CountChip
-          label="Critical"
-          value={summary.critical}
-          tone="bad"
-          active={severity === "critical"}
-          onClick={() => setSeverity(severity === "critical" ? "" : "critical")}
-        />
-        <CountChip
-          label="Warning"
-          value={summary.warning}
-          tone="warn"
-          active={severity === "warning"}
-          onClick={() => setSeverity(severity === "warning" ? "" : "warning")}
-        />
-        <CountChip
-          label="Info"
-          value={summary.info}
-          active={severity === "info"}
-          onClick={() => setSeverity(severity === "info" ? "" : "info")}
-        />
-        <CountChip
-          label="Unacked"
-          value={summary.unacked}
-          tone={summary.unacked ? "warn" : "ok"}
-          active={ack === "false"}
-          onClick={() => setAck(ack === "false" ? "" : "false")}
-        />
-
-        <span className="mx-0.5 h-5 w-px bg-card-border" aria-hidden />
-
-        {/* The remaining filters, unlabelled: each one's placeholder already says
-            what it narrows ("All cameras", "All types"), so a column of uppercase
-            labels above them was a second row of chrome saying it again. The
-            accessible name carries it for a screen reader. */}
-        <div className="w-40">
-          <Select
-            ariaLabel="Filter by camera"
-            value={cameraId}
-            onChange={(e) => setCameraId(e.target.value)}
-            options={cameraOptions}
-            className="!mt-0 !h-8 !py-1"
-          />
-        </div>
-        <div className="w-36">
-          <Select
-            ariaLabel="Filter by event type"
-            value={eventType}
-            onChange={(e) => setEventType(e.target.value)}
-            options={EVENT_TYPE_FILTERS}
-            className="!mt-0 !h-8 !py-1"
-          />
-        </div>
-        <input
-          type="date"
-          aria-label="Filter by day"
-          value={day}
-          max={todayStr()}
-          onChange={(e) => setDay(e.target.value)}
-          className="h-8 rounded-lg border border-field bg-transparent px-2 text-[12px] text-foreground outline-hidden focus:border-muted"
-        />
-
-        {filtered && (
-          <button
-            type="button"
-            onClick={clearAll}
-            className="inline-flex items-center gap-1 rounded-md border border-card-border px-2 py-1 text-[11px] font-medium text-muted transition hover:bg-hover hover:text-foreground"
-          >
-            <Icon icon="heroicons-outline:x-mark" className="text-xs" /> Clear
-          </button>
-        )}
+        <CountChip label="Critical" value={summary.critical} tone="bad" active={severity === "critical"} onClick={() => setSeverity(severity === "critical" ? "" : "critical")} />
+        <CountChip label="Alarm" value={summary.alarm} tone="warn" active={severity === "alarm"} onClick={() => setSeverity(severity === "alarm" ? "" : "alarm")} />
+        <CountChip label="Warning" value={summary.warning} tone="warn" active={severity === "warning"} onClick={() => setSeverity(severity === "warning" ? "" : "warning")} />
+        <CountChip label="Info" value={summary.info} active={severity === "info"} onClick={() => setSeverity(severity === "info" ? "" : "info")} />
+        <CountChip label="Unacked" value={summary.unacked} tone={summary.unacked ? "warn" : "ok"} active={ack === "false"} onClick={() => setAck(ack === "false" ? "" : "false")} />
 
         <button
           type="button"
@@ -480,7 +422,13 @@ export default function CameraEventsPage() {
           frame from some other moment and label it as this one. Live answers a
           question an operator actually has — is it still going on — and says so
           when the camera is the thing that broke. */}
-      <div className="mb-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
+      {/* A FIXED ROW HEIGHT, and the reason is the screenshot: Details has a dozen
+          fields, the grid stretched to fit them, and the two video panels beside it
+          were stretched to match — a 16:9 player in a 24rem-tall cell letterboxes
+          into a black band. The row is bounded now and Details scrolls inside its
+          own card, so the players keep their aspect ratio and the table comes up
+          the screen. */}
+      <div className="mb-3 grid grid-cols-1 gap-3 lg:h-[21rem] lg:grid-cols-3">
         <EventMonitorPane
           event={selected}
           camera={monitorCamera}
@@ -574,29 +522,108 @@ export default function CameraEventsPage() {
           />
         </div>
       ) : (
-        <div className="space-y-3">
-          {groups.map((g) => (
-            <EventTable
-              key={g.key}
-              label={g.label}
-              events={g.events}
-              selectedId={selected?.event_id || selected?.id || null}
-              onSelect={(e) => {
-                setSelectedId(e.event_id || e.id || null);
-                setFollow(false);
-              }}
-              checked={checkedKeys}
-              onToggleChecked={toggleChecked}
-              onToggleAll={() => toggleAllIn(g.events)}
-              cameraName={cameraName}
-            />
-          ))}
-          {total > events.length && (
-            <p className="px-1 text-[11px] text-muted">
-              Showing {events.length} of {total} — narrow the day or the camera to see further back.
-            </p>
-          )}
-        </div>
+        <EventTable
+          events={pageRows}
+          selectedId={selected?.event_id || selected?.id || null}
+          onSelect={(e) => {
+            setSelectedId(e.event_id || e.id || null);
+            setFollow(false);
+          }}
+          checked={checkedKeys}
+          onToggleChecked={toggleChecked}
+          onToggleAll={() => toggleAllIn(pageRows)}
+          cameraName={cameraName}
+          toolbar={
+            <>
+              <div className="w-44">
+                <Select
+                  ariaLabel="Filter by camera"
+                  value={cameraId}
+                  onChange={(e) => setCameraId(e.target.value)}
+                  options={cameraOptions}
+                  className="!mt-0 !h-8 !py-1"
+                />
+              </div>
+              <div className="w-40">
+                <Select
+                  ariaLabel="Filter by event type"
+                  value={eventType}
+                  onChange={(e) => setEventType(e.target.value)}
+                  options={EVENT_TYPE_FILTERS}
+                  className="!mt-0 !h-8 !py-1"
+                />
+              </div>
+              <input
+                type="date"
+                aria-label="Filter by day"
+                value={day}
+                max={todayStr()}
+                onChange={(e) => setDay(e.target.value)}
+                className="h-8 rounded-lg border border-field bg-transparent px-2 text-[12px] text-foreground outline-hidden focus:border-muted"
+              />
+              {filtered && (
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  className="inline-flex items-center gap-1 rounded-md border border-card-border px-2 py-1 text-[11px] font-medium text-muted transition hover:bg-hover hover:text-foreground"
+                >
+                  <Icon icon="heroicons-outline:x-mark" className="text-xs" /> Clear
+                </button>
+              )}
+              <span className="ml-auto font-mono text-[11px] text-muted">
+                {events.length === 0
+                  ? "0"
+                  : `${page * pageSize + 1}–${Math.min(events.length, (page + 1) * pageSize)} of ${events.length}`}
+                {total > events.length && ` (of ${total} on the recorder)`}
+              </span>
+            </>
+          }
+          footer={
+            <>
+              <label className="inline-flex items-center gap-1.5 text-[11px] text-muted">
+                Rows
+                <select
+                  aria-label="Rows per page"
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setPage(0);
+                  }}
+                  className="h-7 rounded-md border border-field bg-transparent px-1.5 text-[11px] text-foreground outline-hidden"
+                >
+                  {[25, 50, 100].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <span className="ml-auto inline-flex items-center gap-1">
+                <button
+                  type="button"
+                  aria-label="Previous page"
+                  disabled={page === 0}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-card-border text-muted transition hover:text-foreground disabled:opacity-40"
+                >
+                  <Icon icon="heroicons-mini:chevron-left" className="text-xs" />
+                </button>
+                <span className="px-1 font-mono text-[11px] text-muted">
+                  {page + 1} / {pageCount}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Next page"
+                  disabled={page + 1 >= pageCount}
+                  onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-card-border text-muted transition hover:text-foreground disabled:opacity-40"
+                >
+                  <Icon icon="heroicons-mini:chevron-right" className="text-xs" />
+                </button>
+              </span>
+            </>
+          }
+        />
       )}
     </div>
   );
