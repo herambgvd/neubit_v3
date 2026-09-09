@@ -61,6 +61,28 @@ beforeEach(() => {
   stubAll();
 });
 
+describe("the rail's order", () => {
+  it("puts the channels above the calendar", async () => {
+    // The operator's order: pick the channels, THEN the day. The calendar's
+    // footage marks are read for the FIRST CHECKED channel, so with the calendar
+    // on top an operator paged a month that was marked for nothing yet, chose a
+    // day, and only then found the channels — at which point the marks changed
+    // under the choice they had already made.
+    renderWithProviders(<UnifiedPlayback />);
+    await screen.findByText("Channel 1");
+
+    const rail = screen.getByText("Channels").closest("aside")!;
+    const monthHeading = [...rail.querySelectorAll("*")].find((el) =>
+      /^[A-Z][a-z]+ \d{4}$/.test(el.textContent?.trim() || ""),
+    )!;
+    expect(monthHeading).toBeTruthy();
+
+    // DOCUMENT_POSITION_FOLLOWING: the calendar comes AFTER the channel picker.
+    const channels = screen.getByText("Channels");
+    expect(channels.compareDocumentPosition(monthHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
 describe("the channel rail", () => {
   it("groups channels under the recorder that owns them", async () => {
     renderWithProviders(<UnifiedPlayback />);

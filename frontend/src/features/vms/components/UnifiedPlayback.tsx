@@ -2,8 +2,9 @@
 
 // UnifiedPlayback — ONE synchronized playback workspace (CTOCAM/Lumina NVR style)
 // that replaces the old Single / Multi / NVR-footage tabs. An operator uses the
-// LEFT RAIL to compose a query — pick a DAY on the month calendar (footage days
-// are marked), a STREAM (Main/Sub), event-type filters, and CHECK up to 4 sources
+// LEFT RAIL to compose a query — CHECK up to 4 channels, pick a DAY on the month
+// calendar (footage days are marked for the first checked one), a STREAM
+// (Main/Sub) and event-type filters
 // (recorded cameras from our pooled storage, or 3rd-party NVR channels) — then hits
 // SEARCH to load them into a LOCKED 2×2 synced grid that plays on ONE master
 // timeline with ONE shared transport (play/pause, speed, skip).
@@ -749,11 +750,41 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
       style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
     >
       {/* ── Composer rail ──────────────────────────────────────────────────
-          Calendar → Stream → Event filters → Channel multi-select (≤4) → Search. */}
+          Channel multi-select (≤4) → Calendar → Stream → Event filters → Search. */}
       <aside className="flex w-80 shrink-0 flex-col rounded-xl border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.55)] backdrop-blur-xs [transform:translateZ(0)]">
-        {/* composer — calendar · stream · event filters · channel multi-select */}
+        {/* composer — channels · calendar · stream · event filters */}
         <div className="scroll-themed min-h-0 flex-1 overflow-y-auto p-3">
+          {/* ── Channel / camera multi-select (≤4) — FIRST ──
+              The order is the operator's order: pick the channels, THEN the day.
+              The calendar's footage marks are read for the first checked channel,
+              so with the calendar on top an operator paged through a month that
+              was marked for nothing yet, chose a day, and only then found the
+              channels — at which point the marks changed under the choice they
+              had already made. */}
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-[#9db0d8]">Channels</p>
+              <span className={`text-[11px] ${atCap ? "text-red-400" : "text-[#9db0d8]"}`}>
+                {checked.length}/{MAX_TILES}
+              </span>
+            </div>
+
+            <PlaybackChannelPicker
+              groups={pickerGroups}
+              checkedKeys={checkedKeys}
+              onToggle={toggleByKey}
+              max={MAX_TILES}
+              loading={fedCamsQ.isLoading}
+              error={
+                fedCamsQ.error
+                  ? apiError(fedCamsQ.error, "Could not reach the recorders")
+                  : null
+              }
+            />
+          </div>
+
           {/* ── Month calendar (footage days marked) ── */}
+          <div className="mt-4">
           <PlaybackCalendar
             viewYear={calView.year}
             viewMonth={calView.month}
@@ -783,6 +814,7 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
               because the recorder did not answer, not because it has nothing.
             </p>
           )}
+          </div>
 
           {/* ── Stream (Main / Sub) ── */}
           <div className="mt-4">
@@ -845,28 +877,6 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
             </div>
           </div>
 
-          {/* ── Channel / camera multi-select (≤4) ── */}
-          <div className="mt-4">
-            <div className="mb-1.5 flex items-center justify-between">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-[#9db0d8]">Channels</p>
-              <span className={`text-[11px] ${atCap ? "text-red-400" : "text-[#9db0d8]"}`}>
-                {checked.length}/{MAX_TILES}
-              </span>
-            </div>
-
-            <PlaybackChannelPicker
-              groups={pickerGroups}
-              checkedKeys={checkedKeys}
-              onToggle={toggleByKey}
-              max={MAX_TILES}
-              loading={fedCamsQ.isLoading}
-              error={
-                fedCamsQ.error
-                  ? apiError(fedCamsQ.error, "Could not reach the recorders")
-                  : null
-              }
-            />
-          </div>
         </div>
 
         {/* ── Search / Load ── */}
