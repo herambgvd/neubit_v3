@@ -338,13 +338,10 @@ const MAPPING: Record<string, ModelEntry & { subset?: string }> = {
   "features/vms/types.ts:OnvifConfig": { src: "VISION", file: "cameras/schemas.py", model: "OnvifConfig" },
   "features/vms/types.ts:PatternCreate": { src: "VISION", file: "patterns/schemas.py", model: "PatternCreate" },
   "features/vms/types.ts:PatternPublic": { src: "VISION", file: "patterns/schemas.py", model: "PatternPublic" },
-  "features/vms/types.ts:PlaybackRange": { src: "VISION", file: "playback/schemas.py", model: "PlaybackRange" },
   "features/vms/types.ts:PlaybackSessionPublic": { src: "VISION", file: "live/schemas.py", model: "PlaybackSessionPublic" },
-  "features/vms/types.ts:RecordedPlaybackPublic": { src: "VISION", file: "playback/schemas.py", model: "RecordedPlaybackPublic" },
   "features/vms/types.ts:RecordingConfigBody": { src: "VISION", file: "recording/schemas.py", model: "RecordingConfigBody" },
   "features/vms/types.ts:RecordingConfigPublic": { src: "VISION", file: "recording/schemas.py", model: "RecordingConfigPublic" },
   "features/vms/types.ts:RecordingControlResult": { src: "VISION", file: "recording/schemas.py", model: "RecordingControlResult" },
-  "features/vms/types.ts:RecordingDaysResponse": { src: "VISION", file: "playback/schemas.py", model: "RecordingDaysResponse" },
   "features/vms/types.ts:RecordingIntegrityResult": { src: "VISION", file: "storage/schemas.py", model: "RecordingIntegrityResult" },
   "features/vms/types.ts:RecordingPublic": { src: "VISION", file: "recording/schemas.py", model: "RecordingPublic" },
   "features/vms/types.ts:RecordingRollup": { src: "VISION", file: "dashboard/schemas.py", model: "RecordingRollup" },
@@ -355,9 +352,6 @@ const MAPPING: Record<string, ModelEntry & { subset?: string }> = {
   "features/vms/types.ts:StoragePoolSummary": { src: "VISION", file: "dashboard/schemas.py", model: "StoragePoolSummary" },
   "features/vms/types.ts:StorageRollup": { src: "VISION", file: "dashboard/schemas.py", model: "StorageRollup" },
   "features/vms/types.ts:StreamInfoPublic": { src: "VISION", file: "cameras/schemas.py", model: "StreamInfoPublic" },
-  "features/vms/types.ts:TimelineMarker": { src: "VISION", file: "playback/schemas.py", model: "TimelineMarker" },
-  "features/vms/types.ts:TimelineResponse": { src: "VISION", file: "playback/schemas.py", model: "TimelineResponse" },
-  "features/vms/types.ts:TimelineSegment": { src: "VISION", file: "playback/schemas.py", model: "TimelineSegment" },
   "features/vms/types.ts:VmsCameraPublic": { src: "VISION", file: "cameras/schemas.py", model: "CameraPublic" },
   "features/vms/types.ts:VmsEventPublic": { src: "VISION", file: "events/schemas.py", model: "VmsEventPublic" },
   /* --- features/workflow/types.ts --- */
@@ -523,6 +517,17 @@ const DICTS: Record<string, DictEntry> = {
 
 /** Ours, not the backend's. Each reason says which kind of local shape it is. */
 const LOCAL: Record<string, string> = {
+  // ── the playback shapes, after the VMS stopped serving footage ─────────────
+  // `app/vms/playback/schemas.py` is gone with the endpoints that answered about
+  // this platform's own pooled storage. These are what the CONSOLE builds now:
+  // segments folded from the owning recorder's ranges, markers built from the
+  // mirrored camera events, and the calendar's footage days derived client-side
+  // from a month of those ranges (nodes expose no recording-days endpoint).
+  "features/vms/types.ts:PlaybackRange": "one span as the owning recorder reports it (start + duration)",
+  "features/vms/types.ts:TimelineSegment": "folded from the recorder's own timeline ranges",
+  "features/vms/types.ts:TimelineMarker": "built from VmsEventPublic for the scrub bar",
+  "features/vms/types.ts:RecordingDaysResponse": "derived client-side from a month of recorder ranges",
+
   "lib/types.ts:ApiErrorBody": "the shared error envelope, shaped by the exception handler; every field optional",
   "lib/types.ts:Paged": "generic list envelope (items/total/skip/limit), not a model",
   "lib/types.ts:PublicSettings": "an open map of catalog values; only the keys this console reads are named",

@@ -249,12 +249,31 @@ def test_the_vms_does_not_configure_or_drive_recording(app):
     )
 
 
-def test_the_recording_read_model_is_still_browsable(app):
-    """The other half. Without these the estate has no cross-recorder footage index,
-    which is the part of recording the VMS legitimately owns."""
+# The browse surface used to be asserted PRESENT here, as "the part of recording the
+# VMS legitimately owns". It is not: it listed rows describing footage in this
+# service's own pooled storage, and this service has none — the recorder owns every
+# camera, writes every frame and keeps every disk, which is why the recording,
+# retention, tiering and RAID data-plane was removed. The cross-recorder index an
+# estate actually needs is the OWNING recorder's timeline, read through
+# /vms/federation/nodes/{id}/cameras/{id}/timeline.
+FORBIDDEN_VMS_OWNED_FOOTAGE = [
+    "GET /vms/cameras/{camera_id}/recordings",
+    "GET /vms/recordings/{rec_id}",
+    "POST /vms/cameras/{camera_id}/playback",
+    "GET /vms/cameras/{camera_id}/timeline",
+    "GET /vms/cameras/{camera_id}/recording-days",
+]
+
+
+def test_the_vms_serves_no_footage_of_its_own(app):
+    """Two answers about one camera's footage is how two timelines disagree."""
     mounted = _routes(app)
-    for route in ("GET /vms/cameras/{camera_id}/recordings", "GET /vms/recordings/{rec_id}"):
-        assert _is_mounted(mounted, route), f"{route} is gone"
+    back = [r for r in FORBIDDEN_VMS_OWNED_FOOTAGE if _is_mounted(mounted, r)]
+    assert not back, (
+        "the VMS is serving footage from its own storage again:\n  " + "\n  ".join(back)
+        + "\nThe recorder owns the camera, the frames and the disk. Playback, coverage "
+          "and clip browse go to it: /vms/federation/nodes/{id}/cameras/{id}/…"
+    )
 
 
 def test_storage_stays_a_read_model(app):

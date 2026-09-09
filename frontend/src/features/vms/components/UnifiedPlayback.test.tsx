@@ -79,12 +79,19 @@ describe("the channel rail", () => {
     expect(screen.queryByRole("button", { name: /VMS storage/i })).toBeNull();
   });
 
-  it("shows VMS-owned rows as one more branch when a deployment has them", async () => {
+  it("never asks this platform for footage, whatever it has rows for", async () => {
+    // The recording, retention and storage data-plane was taken OUT of this
+    // service on purpose: the recorder writes every frame and answers every
+    // question about it. A picker offering a second store would put that back in
+    // the operator's head, and a timeline stitched from two stores would be a
+    // claim this platform cannot support.
     stubAll({ "GET /vms/cameras": { items: [LOCAL_CAM], total: 1 } });
     renderWithProviders(<UnifiedPlayback />);
+    await screen.findByText("Channel 1");
 
-    expect(await screen.findByText("VMS storage")).toBeInTheDocument();
-    expect(screen.getByText("Lobby")).toBeInTheDocument();
+    expect(screen.queryByText("VMS storage")).toBeNull();
+    expect(screen.queryByText("Lobby")).toBeNull();
+    expect(stub.matching("GET /vms/cameras")).toHaveLength(0);
   });
 
   it("searches across channels and recorders, and says how many matched", async () => {
@@ -169,12 +176,13 @@ describe("a deep link from an alarm", () => {
     expect(screen.getByText(/ghost-cam/)).toBeInTheDocument();
   });
 
-  it("still resolves a camera in this platform's own storage", async () => {
-    window.history.replaceState({}, "", "/playback?camera=cam-local-1");
-    stubAll({ "GET /vms/cameras": { items: [LOCAL_CAM], total: 1 } });
+  it("resolves by the node-side id the alarm carries, without a by-id fetch", async () => {
+    window.history.replaceState({}, "", "/playback?camera=fed-cam-1");
     renderWithProviders(<UnifiedPlayback />);
 
-    expect(await screen.findByText("tile:Lobby")).toBeInTheDocument();
+    expect(await screen.findByText("tile:Channel 1")).toBeInTheDocument();
+    // No fallback lookup against a store that holds nothing.
+    expect(stub.matching("GET /vms/cameras/fed-cam-1")).toHaveLength(0);
   });
 });
 

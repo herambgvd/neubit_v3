@@ -19,12 +19,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiError } from "@/lib/api";
-import { vms } from "../api";
 import type { IsoWindow, PlayableSession, PlaybackSourceFn } from "../types";
 
 const RENEW_LEAD_MS = 45_000;
 
 export interface UsePlaybackSessionOptions {
+  /** Kept for callers that pass it; the owning recorder decides the profile now. */
   profile?: string;
   sourceFn?: PlaybackSourceFn | null;
   enabled?: boolean;
@@ -32,7 +32,7 @@ export interface UsePlaybackSessionOptions {
 
 export function usePlaybackSession(
   cameraId: string | null | undefined,
-  { profile = "main", sourceFn = null, enabled = true }: UsePlaybackSessionOptions = {},
+  { sourceFn = null, enabled = true }: UsePlaybackSessionOptions = {},
 ) {
   const [session, setSession] = useState<PlayableSession | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,11 +44,18 @@ export function usePlaybackSession(
   const disposedRef = useRef(false);
   const attemptRef = useRef(0);
 
-  // Prefer an explicit source (NVR footage) else the camera playback endpoint.
+  // The session comes from whoever OWNS the footage — always the recorder, handed
+  // in as `sourceFn`. There is no VMS-owned fallback: this service records nothing
+  // and stores nothing (the recording and storage data-plane was removed from it),
+  // so a default endpoint here would be a request that can only 404 or answer
+  // empty. Without a source there is no session, which the player renders as "no
+  // footage" rather than as a spinner.
   const issue = useCallback(
     (win: IsoWindow): Promise<PlayableSession> =>
-      sourceFn ? sourceFn(win) : vms.playback.session(cameraId ?? "", { ...win, profile }),
-    [cameraId, profile, sourceFn],
+      sourceFn
+        ? sourceFn(win)
+        : Promise.reject(new Error("no playback source for this camera")),
+    [sourceFn],
   );
 
   const clearRenew = () => {

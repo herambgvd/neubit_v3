@@ -98,8 +98,6 @@ import type {
   PatternUpdate,
   PlaybackSessionPublic,
   PtzResult,
-  RecordedPlaybackPublic,
-  RecordingDaysResponse,
   ReorderResult,
   ReportResponse,
   ReportRunList,
@@ -108,7 +106,6 @@ import type {
   ReportScheduleList,
   ReportSchedulePublic,
   ReportScheduleUpdate,
-  TimelineResponse,
   VmsCameraPublic,
   VmsEventListResponse,
   VmsEventPublic,
@@ -148,10 +145,6 @@ interface WindowOpt {
 }
 
 /** `{ month:"YYYY-MM", tzOffsetMinutes }` for the recording-days calendar marks. */
-interface RecordingDaysOpt {
-  month?: string;
-  tzOffsetMinutes?: number;
-}
 
 /** A federated recording-index page: window + profile + skip/limit. */
 interface FederatedRecordingsOpt extends WindowOpt {
@@ -552,27 +545,16 @@ export const vms = {
   // over a recorded window; `vision` mints a media token and returns a session.
   // hls_url ALREADY carries "?token=" — the player consumes it verbatim.
   // Seeking to a new timestamp = requesting a NEW session at that `from`.
-  playback: {
-    // POST /cameras/{id}/playback { from, to, profile? } →
-    //   { session_id, hls_url, token, from, to, ranges, expires_at }.
-    //   `from`/`to` are ISO strings; `ranges` are the covered [start,end] spans.
-    session: (cameraId: string, { from, to, profile = "main" }: WindowOpt & { profile?: string } = {}) =>
-      unwrap(api.post<RecordedPlaybackPublic>(`${CAMERAS}/${cameraId}/playback`, { from, to, profile })),
-    // GET /cameras/{id}/timeline?day=YYYY-MM-DD (or ?from=&to=) →
-    //   { coverage:[{start,end}], gaps:[{start,end}], total_seconds }.
-    timeline: (cameraId: string, params: QueryParams = {}) =>
-      unwrap(api.get<TimelineResponse>(`${CAMERAS}/${cameraId}/timeline${qs(params)}`)),
-    // GET /cameras/{id}/recording-days?month=YYYY-MM&tz_offset_minutes=330 →
-    //   { year, month, days:[14,15,…] } — days-of-month (LOCAL tz) that have footage.
-    //   Drives the playback calendar's footage marks. tz_offset_minutes is the
-    //   client's offset FROM UTC (= -getTimezoneOffset()).
-    recordingDays: (cameraId: string, { month, tzOffsetMinutes }: RecordingDaysOpt = {}) =>
-      unwrap(
-        api.get<RecordingDaysResponse>(
-          `${CAMERAS}/${cameraId}/recording-days${qs({ month, tz_offset_minutes: tzOffsetMinutes })}`,
-        ),
-      ),
-  },
+  // NO `playback` BLOCK — and that absence is the architecture.
+  //
+  // `POST /cameras/{id}/playback`, `/timeline` and `/recording-days` answer about
+  // footage in THIS platform's own pooled storage. It stores none: the recorder
+  // owns every camera, writes every frame and keeps every disk, which is why the
+  // recording, retention, tiering and RAID data-plane was removed from this
+  // service. Playback asks the owning recorder through the federation routes
+  // above, and a client method pointing at the old surface would be an invitation
+  // to add a second answer about the same footage.
+
 
 
   // ── Operational reports (P6-B) — uptime / coverage / storage / events ────

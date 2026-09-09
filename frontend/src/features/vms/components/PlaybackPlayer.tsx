@@ -176,11 +176,15 @@ export default function PlaybackPlayer({
   const windowEnd = controlled && extWindowEnd != null ? extWindowEnd : windowStart + DAY_MS;
 
   // ── Timeline (coverage + gaps) — standalone only ────────────────────────
+  //
+  // Always the OWNER'S timeline, handed in by the caller. There is no fallback to
+  // a VMS-owned one: this platform stores no footage, so a second source here
+  // could only ever answer "nothing", and an empty coverage bar is a statement
+  // about the recorder's disk that this service is not entitled to make.
   const timelineQ = useQuery({
     queryKey: ["vms-timeline", cameraId, day, !!sourceFn],
-    queryFn: async (): Promise<TimelineLike> =>
-      timelineFn ? timelineFn({ day }) : vms.playback.timeline(cameraId, { day }),
-    enabled: !controlled && !!cameraId,
+    queryFn: async (): Promise<TimelineLike> => (timelineFn ? timelineFn({ day }) : { coverage: [] }),
+    enabled: !controlled && !!cameraId && !!timelineFn,
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   });

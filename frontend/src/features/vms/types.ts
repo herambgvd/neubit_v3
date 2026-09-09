@@ -289,26 +289,28 @@ export interface PlaybackSessionPublic {
 /* --- audio / talk (backend/vision/app/vms/audio/schemas.py) ---------------- */
 
 
-/* --- playback (backend/vision/app/vms/playback/schemas.py) ----------------- */
+/* --- playback ---------------------------------------------------------------
+ *
+ * These no longer mirror a backend model, and that is the change worth writing
+ * down: `app/vms/playback/schemas.py` is GONE along with the endpoints that served
+ * footage out of this platform's own storage. What is left here are the shapes the
+ * CONSOLE builds:
+ *
+ *   TimelineSegment / TimelineMarker  what the ScrubBar paints — segments folded
+ *                                     from the recorder's own ranges, markers built
+ *                                     from mirrored camera events.
+ *   RecordingDaysResponse             the calendar's footage marks, DERIVED client
+ *                                     side from a month of recorder ranges (nodes
+ *                                     expose no recording-days endpoint).
+ */
 
+/** One recorded span as the OWNING RECORDER reports it: a start plus a duration,
+ *  and the trigger that caused it (which colours the bar). The federation payloads
+ *  below carry these; nothing in this platform produces one. */
 export interface PlaybackRange {
   start: string;
   duration: number;
-  /** Present on the Go recorder's ranges (federation timeline), absent on vision's. */
   trigger_type?: string | null;
-}
-
-export interface RecordedPlaybackPublic {
-  session_id: string;
-  camera_id: string;
-  kind: string;
-  profile: string;
-  hls_url?: string | null;
-  token: string;
-  from: string;
-  to: string;
-  ranges: PlaybackRange[];
-  expires_at: string;
 }
 
 export interface RecordingDaysResponse {
@@ -329,16 +331,6 @@ export interface TimelineMarker {
   severity: string;
   event_id: string;
   camera_id?: string | null;
-}
-
-export interface TimelineResponse {
-  camera_id: string;
-  from: string;
-  to: string;
-  coverage: TimelineSegment[];
-  gaps: TimelineSegment[];
-  markers: TimelineMarker[];
-  total_seconds: number;
 }
 
 /* --- recording (backend/vision/app/vms/recording/schemas.py) --------------- */

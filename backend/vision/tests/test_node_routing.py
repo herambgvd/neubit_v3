@@ -5,8 +5,8 @@ camera's assigned ``MediaNode`` into the ``NvrClient(base_url=...)`` for THAT ca
 
   * resolver: assigned → node api_url; unassigned → None; dangling node → None (no
     raise); blank api_url → None; cross-tenant node → None (tenant isolation).
-  * live/recording/playback: an assigned camera constructs the NvrClient with the
-    node's base_url; an unassigned camera reuses the shared/global client (back-compat).
+  * live: an assigned camera constructs the NvrClient with the node's base_url; an
+    unassigned camera reuses the shared/global client (back-compat).
 
 In-memory SQLite + monkeypatched ``NvrClient`` — mirrors ``test_nvr_footage_service``.
 """
@@ -224,104 +224,15 @@ async def test_live_start_unassigned_uses_global_client(db, monkeypatch):
     assert all(i.base_url is None for i in _CapturingNvr.instances)
 
 
-# There is no recording-start routing test any more: the VMS does not start
-# recordings. The recorder that fronts a camera reconciles its own recording mode,
-# so there is no per-camera node base for this service to resolve for a start. The
-# playback routing below is the property that still matters — footage is READ from
-# the node that holds it.
-
-
-async def test_playback_uses_node_base_for_assigned_camera(db, monkeypatch):
-    from datetime import datetime, timezone
-
-    import app.vms.playback.service as pb_mod
-    from app.vms.models import Recording
-
-    node = await _mk_node(db)
-    cam = await _mk_camera(db, media_node_id=node.id, name="PbCam")
-    # A recording in-window so playback proceeds to the nvr call.
-    db.add(Recording(
-        id=str(uuid.uuid4()), tenant_id=TENANT, camera_id=cam.id, profile="main",
-        path="/rec/x.mp4",
-        start_time=datetime(2026, 7, 9, 10, 0, tzinfo=timezone.utc),
-        end_time=datetime(2026, 7, 9, 10, 30, tzinfo=timezone.utc),
-    ))
-    await db.commit()
-    monkeypatch.setattr(pb_mod, "NvrClient", _CapturingNvr)
-
-    svc = pb_mod.PlaybackService(db, _scope(), bearer="jwt")
-    await svc.start_playback(
-        cam.id,
-        datetime(2026, 7, 9, 10, 0, tzinfo=timezone.utc),
-        datetime(2026, 7, 9, 10, 30, tzinfo=timezone.utc),
-        "main", actor=_Actor(),
-    )
-
-    assert NODE_URL in [i.base_url for i in _CapturingNvr.instances]
-
-
-# ── footage locality: playback routes by the RECORDING's node, not the camera's ─
-async def test_playback_routes_to_recording_node_after_reassign(db, monkeypatch):
-    """A camera reassigned A→B: OLD footage (media_node_id=A) must play from node A,
-    NOT the camera's CURRENT node B — so old recordings stay reachable."""
-    from datetime import datetime, timezone
-
-    import app.vms.playback.service as pb_mod
-    from app.vms.models import Recording
-
-    node_a = await _mk_node(db, api_url=NODE_A_URL, name="node-A")
-    node_b = await _mk_node(db, api_url=NODE_B_URL, name="node-B")
-    # Camera is CURRENTLY on node B (reassigned), but the recording was made on node A.
-    cam = await _mk_camera(db, media_node_id=node_b.id, name="ReassignedCam")
-    db.add(Recording(
-        id=str(uuid.uuid4()), tenant_id=TENANT, camera_id=cam.id, profile="main",
-        path="/rec/old-on-a.mp4", media_node_id=node_a.id,
-        start_time=datetime(2026, 7, 9, 10, 0, tzinfo=timezone.utc),
-        end_time=datetime(2026, 7, 9, 10, 30, tzinfo=timezone.utc),
-    ))
-    await db.commit()
-    monkeypatch.setattr(pb_mod, "NvrClient", _CapturingNvr)
-
-    svc = pb_mod.PlaybackService(db, _scope(), bearer="jwt")
-    await svc.start_playback(
-        cam.id,
-        datetime(2026, 7, 9, 10, 0, tzinfo=timezone.utc),
-        datetime(2026, 7, 9, 10, 30, tzinfo=timezone.utc),
-        "main", actor=_Actor(),
-    )
-
-    bases = [i.base_url for i in _CapturingNvr.instances]
-    # Routed to the RECORDING's node (A), NOT the camera's current node (B).
-    assert NODE_A_URL in bases
-    assert NODE_B_URL not in bases
-
-
-async def test_playback_null_recording_node_falls_back_to_camera(db, monkeypatch):
-    """A recording with NULL media_node_id (pre-locality) → falls back to the camera's
-    current node (unchanged single-node behaviour)."""
-    from datetime import datetime, timezone
-
-    import app.vms.playback.service as pb_mod
-    from app.vms.models import Recording
-
-    node = await _mk_node(db, api_url=NODE_URL, name="cam-node")
-    cam = await _mk_camera(db, media_node_id=node.id, name="NullRecCam")
-    db.add(Recording(
-        id=str(uuid.uuid4()), tenant_id=TENANT, camera_id=cam.id, profile="main",
-        path="/rec/no-node.mp4", media_node_id=None,
-        start_time=datetime(2026, 7, 9, 10, 0, tzinfo=timezone.utc),
-        end_time=datetime(2026, 7, 9, 10, 30, tzinfo=timezone.utc),
-    ))
-    await db.commit()
-    monkeypatch.setattr(pb_mod, "NvrClient", _CapturingNvr)
-
-    svc = pb_mod.PlaybackService(db, _scope(), bearer="jwt")
-    await svc.start_playback(
-        cam.id,
-        datetime(2026, 7, 9, 10, 0, tzinfo=timezone.utc),
-        datetime(2026, 7, 9, 10, 30, tzinfo=timezone.utc),
-        "main", actor=_Actor(),
-    )
-
-    # NULL recording node → resolves to the camera's current node (back-compat).
-    assert NODE_URL in [i.base_url for i in _CapturingNvr.instances]
+# THERE ARE NO PLAYBACK ROUTING TESTS ANY MORE, and no playback service to route.
+#
+# They asserted that a recorded session was minted against the node holding the
+# footage — which mattered while this service served footage out of its own pooled
+# storage. It does not: the recorder owns every camera, writes every frame and
+# keeps every disk, so the playback package (sessions, timeline, recording-days)
+# and the recording BROWSE routes went with the storage data-plane they belonged
+# to. The console asks the owning recorder through the federation routes, whose own
+# routing is covered by the federation suites.
+#
+# What this file still guards is the resolver above: which node base a per-camera
+# call is constructed with. That property outlives the surfaces that used it.

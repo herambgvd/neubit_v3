@@ -35,8 +35,6 @@ from app.vms.events.router import router as event_router
 from app.vms.federation.router import router as federation_router
 from app.vms.patterns.router import router as pattern_router
 from app.vms.pulse.router import router as pulse_router
-from app.vms.playback.router import router as playback_router
-from app.vms.recording.router import router as recording_router
 from app.vms.reports.router import router as reports_router
 # Storage pools/tier-rules/RAID (``/vms/storage/*``) are owned by the NVR — that
 # control-plane router is intentionally NOT mounted. Only the recording lock/verify
@@ -53,15 +51,23 @@ from app.vms.videowall.router import router as videowall_router
 # Live mounts after health (its literal ``/media/verify`` + ``/cameras/{id}/live``
 # deeper paths are distinct from the camera catch-all, but keeping it high preserves
 # match clarity) and before cameras — the P2-B streaming control plane. Recording
-# mounts alongside live (its ``/cameras/{id}/recording*`` + ``/recordings/{id}`` are
-# deeper/distinct from the camera catch-all) — the P3-A recording control plane.
+# NO RECORDING BROWSE ROUTER either — ``/vms/cameras/{id}/recordings`` and
+# ``/vms/recordings/{id}`` listed rows describing footage in this service's own
+# storage, which is the same retired concept. What REMAINS of the recording package
+# is the half that is not about storage: the linkage ``start_recording`` action,
+# which asks the owning recorder for an event clip, and the segment consumer that
+# records what the recorder tells us it wrote.
 # Storage mounts alongside recording — its ``/vms/storage/*`` prefix is distinct, and
 # its ``/vms/recordings/{id}/lock|unlock|verify`` (POST) don't collide with the
 # recording router's ``/vms/recordings/{id}`` (GET). The P3-B storage control plane.
-# Playback mounts alongside live/recording — its ``/vms/cameras/{id}/playback`` +
-# ``/vms/cameras/{id}/timeline`` paths are deeper than the camera ``/cameras/{id}``
-# catch-all, and distinct from the recording router's paths. The P4-A recorded-
-# playback control plane (recorded PlaybackSession + scrub-bar timeline).
+# THERE IS NO PLAYBACK ROUTER, and that absence is the architecture. It served
+# `/vms/cameras/{id}/playback|timeline|recording-days` — sessions and coverage over
+# footage in THIS service's own pooled storage. This service stores none: the
+# recorder owns every camera, writes every frame and keeps every disk, which is why
+# the recording, retention, tiering and RAID data-plane was removed from here. The
+# console asks the OWNING recorder (``/vms/federation/nodes/{id}/cameras/{id}/…``),
+# and a second endpoint answering about the same footage from an empty table is how
+# an operator ends up with two timelines that disagree.
 # Events mounts alongside playback — its ``/vms/events`` + ``/vms/cameras/{id}/events``
 # (GET) + ``/vms/events/{id}/ack`` (POST) are deeper/distinct from the camera
 # ``/cameras/{id}`` catch-all. The P5-A camera device-events feed (the event-supervisor
@@ -86,8 +92,6 @@ routers = [
     dashboard_router,
     health_router,
     live_router,
-    recording_router,
-    playback_router,
     reports_router,
     event_router,
     federation_router,
