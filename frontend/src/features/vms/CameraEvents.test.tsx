@@ -12,7 +12,7 @@
  *   * an empty feed says WHY it is empty. "No events" under an active filter and
  *     "no events" on a quiet estate are opposite instructions.
  */
-import { screen } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -24,8 +24,9 @@ import CameraEventsPage from "./CameraEvents";
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ can: () => true, hasModule: () => true }) }));
 // The SSE bridge is a live connection; this suite is about the rendered feed.
+let liveFrames: unknown[] = [];
 vi.mock("./hooks/useVmsEventStream", () => ({
-  useVmsEventStream: () => ({ events: [], connected: true }),
+  useVmsEventStream: () => ({ events: liveFrames, connected: true }),
 }));
 // The live canvas mints a node session and attaches WHEP/HLS; this suite is about
 // WHICH camera it is pointed at.
@@ -40,8 +41,17 @@ vi.mock("./components/TilePlayback", () => ({
   ),
 }));
 
-const now = new Date();
-const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000).toISOString();
+// Fixtures are pinned to LOCAL calendar days, not to "N hours ago": run this
+// suite at 00:30 and an hour-ago event belongs to YESTERDAY, which made the
+// day-grouping assertions pass or fail by the wall clock.
+const atLocal = (dayOffset: number, hour: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() - dayOffset);
+  d.setHours(hour, 0, 0, 0);
+  return d.toISOString();
+};
+const TODAY = atLocal(0, 9);
+const YESTERDAY = atLocal(1, 22);
 
 const event = (over: Record<string, unknown> = {}) => ({
   id: `e-${Math.random().toString(36).slice(2)}`,
@@ -51,10 +61,10 @@ const event = (over: Record<string, unknown> = {}) => ({
   source: "onvif_pullpoint",
   title: "Channel 1",
   raw: {},
-  occurred_at: hoursAgo(1),
+  occurred_at: TODAY,
   published: true,
   acknowledged: false,
-  created_at: hoursAgo(1),
+  created_at: TODAY,
   ...over,
 });
 
@@ -74,7 +84,7 @@ function stubAll(over: Record<string, unknown> = {}) {
       items: [
         event({ severity: "critical", event_type: "tamper" }),
         event({ severity: "warning" }),
-        event({ severity: "info", occurred_at: hoursAgo(30), created_at: hoursAgo(30) }),
+        event({ severity: "info", occurred_at: YESTERDAY, created_at: YESTERDAY }),
       ],
       total: 3,
     },
@@ -83,7 +93,11 @@ function stubAll(over: Record<string, unknown> = {}) {
   return stub;
 }
 
-beforeEach(() => stubAll());
+beforeEach(() => {
+  liveFrames = [];
+  Object.defineProperty(globalThis, "scrollY", { value: 0, writable: true, configurable: true });
+  stubAll();
+});
 
 describe("the live strip", () => {
   it("says whether events are arriving right now", async () => {
@@ -206,7 +220,7 @@ describe("the monitor pane", () => {
     // The pane exists to answer "what happened". It used to answer it with a link
     // to another page: a different query to compose and a lost place in the feed,
     // for the one question this surface is for.
-    const at = hoursAgo(1);
+    const at = TODAY;
     stubAll({
       "GET /vms/events": { items: [event({ severity: "alarm", occurred_at: at })], total: 1 },
     });
@@ -323,5 +337,129 @@ describe("the monitor pane", () => {
     // the clip itself.
     const links = await screen.findAllByRole("link", { name: /recording|investigate/i });
     expect(links[0].getAttribute("href")).toMatch(/\/playback\?camera=fed-cam-1&t=/);
+  });
+});
+
+
+describe("what is still happening", () => {
+  /**
+   * A stateful event with no `ended_at` has not finished. On the live estate four
+   * of them are open right now, one for thirteen hours — and every one rendered
+   * as an ordinary row in the day it BEGAN, thirty rows down, identical to a
+   * motion blip.
+   */
+  const openEvent = (over: Record<string, unknown> = {}) =>
+    event({
+      severity: "critical",
+      event_type: "connection_lost",
+      occurred_at: YESTERDAY,
+      created_at: YESTERDAY,
+      raw: { stateful: true, started_at: YESTERDAY, ended_at: null, payload: { reason: "connection refused" } },
+      ...over,
+    });
+
+  it("leads the page with the open ones, and how long they have been open", async () => {
+    stubAll({ "GET /vms/events": { items: [openEvent(), event()], total: 2 } });
+    renderWithProviders(<CameraEventsPage />);
+
+    const band = (await screen.findByText("Happening now")).closest("section")!;
+    expect(band).toBeInTheDocument();
+    // A duration, not a timestamp: hours since it started.
+    expect(within(band).getByText(/\d+h \d+m/)).toBeInTheDocument();
+  });
+
+  it("does not pin an instantaneous event there", async () => {
+    // A motion pulse has no end because it was a pulse. Treating that as "open"
+    // would leave every blip at the top of the screen forever.
+    stubAll({ "GET /vms/events": { items: [event({ raw: { stateful: false } })], total: 1 } });
+    renderWithProviders(<CameraEventsPage />);
+    await screen.findByText("Live");
+
+    expect(screen.queryByText("Happening now")).toBeNull();
+  });
+
+  it("puts an open event on the monitor when picked", async () => {
+    stubAll({ "GET /vms/events": { items: [openEvent({ id: "open-1", event_id: "open-1" })], total: 1 } });
+    renderWithProviders(<CameraEventsPage />);
+
+    const band = (await screen.findByText("Happening now")).closest("section")!;
+    await userEvent.click(within(band).getAllByRole("button")[0]);
+    expect(await screen.findByText(/^recording:/)).toBeInTheDocument();
+  });
+});
+
+describe("how long an event ran", () => {
+  it("prints the span the recorder measured", async () => {
+    const start = atLocal(0, 9);
+    const end = new Date(Date.parse(start) + 5 * 3_600_000 + 18 * 60_000).toISOString();
+    stubAll({
+      "GET /vms/events": {
+        items: [event({ event_type: "tamper", occurred_at: start, raw: { started_at: start, ended_at: end } })],
+        total: 1,
+      },
+    });
+    renderWithProviders(<CameraEventsPage />);
+
+    expect(await screen.findByText("5h 18m")).toBeInTheDocument();
+  });
+
+  it("says a span is unreliable rather than drawing it backwards", async () => {
+    // Observed on the live ledger: an end of 1970 against a start of today.
+    const start = atLocal(0, 9);
+    stubAll({
+      "GET /vms/events": {
+        items: [event({ occurred_at: start, raw: { started_at: start, ended_at: "1970-01-01T00:00:00Z" } })],
+        total: 1,
+      },
+    });
+    renderWithProviders(<CameraEventsPage />);
+
+    expect(await screen.findByText(/duration unreliable/i)).toBeInTheDocument();
+  });
+});
+
+
+describe("a live arrival while the operator is reading", () => {
+  /**
+   * A feed that prepends while somebody is at row forty moves the row they were
+   * reading. So arrivals are counted while they are away from the top, and the
+   * count is a button that takes them back — nothing is hidden, the rows are
+   * already in the list.
+   */
+  it("announces new events instead of yanking the scroll", async () => {
+    stubAll();
+    const { rerender } = renderWithProviders(<CameraEventsPage />);
+    // Wait for the HISTORY, not just the strip: an arrival in the first non-empty
+    // commit is the first load, not news, and asserting before it lands would
+    // test that instead.
+    await screen.findByText("Today");
+
+    // Reading further down the feed…
+    // act(): the scroll handler sets state, and React must flush it before the
+    // arrival below is judged against it.
+    act(() => {
+      (globalThis as { scrollY: number }).scrollY = 900;
+      globalThis.dispatchEvent(new Event("scroll"));
+    });
+    // …when something arrives.
+    liveFrames = [event({ id: "new-1", event_id: "new-1", event_type: "tamper", occurred_at: TODAY })];
+    rerender(<CameraEventsPage />);
+
+    const pill = await screen.findByRole("button", { name: /1 new event/i });
+    expect(pill).toBeInTheDocument();
+  });
+
+  it("says nothing when they are already looking at the top", async () => {
+    stubAll();
+    const { rerender } = renderWithProviders(<CameraEventsPage />);
+    await screen.findByText("Today");
+
+    liveFrames = [event({ id: "new-2", event_id: "new-2", event_type: "video_loss", occurred_at: TODAY })];
+    rerender(<CameraEventsPage />);
+
+    // The arrival really did reach the feed — otherwise this test would pass by
+    // testing nothing, which is exactly how a "no pill" assertion goes stale.
+    expect(await screen.findAllByText(/video loss/i)).not.toHaveLength(0);
+    expect(screen.queryByRole("button", { name: /new event/i })).toBeNull();
   });
 });

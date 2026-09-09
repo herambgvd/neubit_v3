@@ -11,6 +11,7 @@ import Link from "next/link";
 import { Icon } from "@iconify/react";
 
 import { typePreset, sevPreset, eventTypeLabel, fmtTime, fmtDate, type NormalizedVmsEvent } from "../eventLib";
+import { durationLabel, eventInterval } from "../eventState";
 
 /** The row's event: a normalized history row / live frame. Live frames from the
  *  bus surface `zone` top-level (vision events.normalize) when the device sent
@@ -44,6 +45,10 @@ export default function CameraEventRow({
   const tp = typePreset(event.event_type);
   const sp = sevPreset(event.severity);
   const acked = !!event.acknowledged;
+  // How long it RAN, or that it still is. A five-hour tamper and a motion pulse
+  // rendered identically while the row carried only a start time.
+  const interval = eventInterval(event);
+  const duration = durationLabel(event);
 
   // Deep-link to Playback at this event's time. occurred_at is an ISO string the
   // Playback page reads from ?t= to seek the scrub bar.
@@ -99,6 +104,32 @@ export default function CameraEventRow({
               <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${sp.cls}`}>{sp.label}</span>
               {event.title && event.title !== eventTypeLabel(event.event_type) && (
                 <span className="truncate text-xs font-medium text-foreground">{event.title}</span>
+              )}
+              {duration && (
+                <span
+                  title={
+                    interval.open
+                      ? "The recorder has not reported an end — this is still happening"
+                      : interval.invalid
+                        ? "The recorder reported an end before the start"
+                        : "How long the recorder measured it running"
+                  }
+                  className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 font-mono text-[10px] ${
+                    interval.open
+                      ? "bg-orange-500/15 text-orange-300"
+                      : interval.invalid
+                        ? "bg-hover text-muted italic"
+                        : "bg-hover text-muted"
+                  }`}
+                >
+                  {interval.open && (
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-orange-400 opacity-70" />
+                      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-orange-400" />
+                    </span>
+                  )}
+                  {duration}
+                </span>
               )}
               {acked && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-hover px-1.5 py-0.5 text-[10px] text-muted">

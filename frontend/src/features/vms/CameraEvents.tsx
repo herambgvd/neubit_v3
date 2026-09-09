@@ -24,10 +24,12 @@ import { useEstateCameras } from "./hooks/useEstateCameras";
 import { EVENT_TYPE_FILTERS, isAttentionSeverity } from "./constants";
 import { normalizeVmsEvent, eventKey, type NormalizedVmsEvent } from "./eventLib";
 import { groupByDay } from "./eventGroups";
+import { openEvents } from "./eventState";
 import { useVmsEventStream } from "./hooks/useVmsEventStream";
 import type { EstateCamera, VmsEventPublic } from "./types";
 import CameraEventRow from "./components/CameraEventRow";
 import EventMonitorPane from "./components/EventMonitorPane";
+import HappeningNow from "./components/HappeningNow";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
@@ -178,6 +180,51 @@ export default function CameraEventsPage() {
   ];
 
   const groups = useMemo(() => groupByDay(events), [events]);
+  // Still true, not merely happened — these lead the page. See eventState.
+  const openNow = useMemo(() => openEvents(events), [events]);
+
+  // ── "N new ↑" ─────────────────────────────────────────────────────────────
+  //
+  // A live feed that prepends while an operator is reading row forty moves the
+  // thing they were reading. So arrivals are COUNTED while they are away from the
+  // top (scrolled down, or paused), and the count is a button that takes them
+  // back. Nothing is hidden — the rows are already in the list; this only says
+  // that the top has changed.
+  const [pending, setPending] = useState(0);
+  const [atTop, setAtTop] = useState(true);
+  const topKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (typeof globalThis === "undefined" || !globalThis.addEventListener) return;
+    const onScroll = () => setAtTop((globalThis.scrollY || 0) < 120);
+    onScroll();
+    globalThis.addEventListener("scroll", onScroll, { passive: true });
+    return () => globalThis.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    const newestKey = events[0]?.event_id || events[0]?.id || null;
+    if (!newestKey) return;
+    if (topKey.current === null) {
+      topKey.current = newestKey; // first load is not "new"
+      return;
+    }
+    if (topKey.current === newestKey) return;
+    if (atTop && live) {
+      // They are looking at the top: the row is simply there, no announcement.
+      topKey.current = newestKey;
+      return;
+    }
+    // Count the arrivals they have not been shown, by position of the last seen.
+    const seenAt = events.findIndex((e) => (e.event_id || e.id) === topKey.current);
+    setPending(seenAt > 0 ? seenAt : (p) => p + 1);
+  }, [events, atTop, live]);
+
+  const goToNewest = () => {
+    topKey.current = events[0]?.event_id || events[0]?.id || null;
+    setPending(0);
+    globalThis.scrollTo?.({ top: 0, behavior: "smooth" });
+  };
 
   // ── THE MONITORING HALF ───────────────────────────────────────────────────
   //
@@ -375,6 +422,30 @@ export default function CameraEventsPage() {
           <Icon icon="heroicons-outline:arrow-path" className="text-xs" />
         </button>
       </div>
+
+      {/* What is still true leads what merely happened. */}
+      <HappeningNow
+        events={openNow}
+        selectedId={selected?.event_id || selected?.id || null}
+        cameraName={cameraName}
+        onSelect={(e) => {
+          setSelectedId(e.event_id || e.id || null);
+          setFollow(false);
+        }}
+      />
+
+      {pending > 0 && (
+        // Fixed, not in the flow: it must be reachable from row forty, which is
+        // where an operator is when this matters.
+        <button
+          type="button"
+          onClick={goToNewest}
+          className="fixed left-1/2 top-20 z-50 -translate-x-1/2 rounded-full border border-blue-500/50 bg-blue-500/15 px-3 py-1.5 text-[12px] font-medium text-blue-200 shadow-lg backdrop-blur-xs transition hover:bg-blue-500/25"
+        >
+          <Icon icon="heroicons-outline:arrow-up" className="mr-1 inline text-xs" />
+          {pending} new event{pending === 1 ? "" : "s"}
+        </button>
+      )}
 
       {/* ── Feed beside the monitor ───────────────────────────────────────
           The list is the left column and the camera is the right one, which is
