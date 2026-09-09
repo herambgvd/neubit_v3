@@ -105,6 +105,44 @@ describe("the live strip", () => {
   });
 });
 
+describe("the control bar", () => {
+  it("is ONE row: live state, counts and filters together", async () => {
+    // It was two stacked cards — a strip of counts above a card of labelled
+    // dropdowns — which cost a fifth of the viewport before a single event was
+    // visible, on a screen whose whole job is the feed below it.
+    renderWithProviders(<CameraEventsPage />);
+    const critical = await screen.findByRole("button", { name: /Critical$/ });
+    const camera = screen.getByRole("button", { name: /filter by camera/i });
+
+    // Same bar: the chip's parent contains the camera picker's wrapper too.
+    const bar = critical.parentElement!;
+    expect(bar.contains(camera)).toBe(true);
+    expect(bar.querySelector('input[type="date"]')).toBeTruthy();
+  });
+
+  it("has ONE control per thing it filters", async () => {
+    // The severity dropdown sat beside the severity counts. Two controls for one
+    // thing means the one an operator did not touch silently contradicts the one
+    // they did.
+    renderWithProviders(<CameraEventsPage />);
+    await screen.findByText("Live");
+
+    expect(screen.queryByRole("button", { name: /all severities/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /Critical$/ })).toBeInTheDocument();
+  });
+
+  it("names every unlabelled filter for a screen reader", async () => {
+    // The visible labels went with the second row; the placeholder says what each
+    // one narrows, and this is what carries that to somebody who cannot see it.
+    renderWithProviders(<CameraEventsPage />);
+    await screen.findByText("Live");
+
+    expect(screen.getByRole("button", { name: /filter by camera/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /filter by event type/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/filter by day/i)).toBeInTheDocument();
+  });
+});
+
 describe("the feed", () => {
   it("groups by day, so a time always has a date over it", async () => {
     renderWithProviders(<CameraEventsPage />);

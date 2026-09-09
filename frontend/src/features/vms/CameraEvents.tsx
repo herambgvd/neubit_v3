@@ -10,7 +10,7 @@
 // Data source mirrors the access EventsFeed: an INITIAL history fetch via
 // GET /vms/events (one request) + LIVE appends over SSE. Both are normalized to
 // one shape and de-duped by event id so every renderer works across sources.
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -21,7 +21,7 @@ import { asItems } from "@/lib/format";
 import { workflow as wfApi } from "@/features/workflow/api";
 import { vms } from "./api";
 import { useEstateCameras } from "./hooks/useEstateCameras";
-import { EVENT_TYPE_FILTERS, SEVERITY_FILTERS } from "./constants";
+import { EVENT_TYPE_FILTERS } from "./constants";
 import { normalizeVmsEvent, eventKey, type NormalizedVmsEvent } from "./eventLib";
 import { groupByDay } from "./eventGroups";
 import { useVmsEventStream } from "./hooks/useVmsEventStream";
@@ -175,11 +175,6 @@ export default function CameraEventsPage() {
     { value: "", label: "All cameras" },
     ...cameras.map((c) => ({ value: eventCameraId(c), label: c.name })),
   ];
-  const ackOptions = [
-    { value: "", label: "All" },
-    { value: "false", label: "Unacknowledged" },
-    { value: "true", label: "Acknowledged" },
-  ];
 
   const groups = useMemo(() => groupByDay(events), [events]);
   const filtered = !!(cameraId || eventType || severity || ack || day);
@@ -193,13 +188,16 @@ export default function CameraEventsPage() {
 
   return (
     <div className="pb-8">
-      {/* ── LIVE STRIP ────────────────────────────────────────────────────
-          The page starts on the feed's own pulse: whether events are arriving
-          right now, and the counts an operator triages by. The counts are
-          CLICKABLE — a severity is a filter, and a number you cannot act on is
-          decoration on a screen whose whole job is triage. No page heading: the
-          section names itself in the top bar, like every other console. */}
-      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-card-border bg-card px-3 py-2.5">
+      {/* ── ONE CONTROL BAR ───────────────────────────────────────────────
+          The live state, the counts an operator triages by, and the filters, on
+          ONE row. They were two stacked cards — a strip of counts above a card of
+          labelled dropdowns — which cost a fifth of the viewport before a single
+          event was visible, on a screen whose whole job is the feed below it.
+
+          The severity DROPDOWN is gone with them: the counts already filter by
+          severity, and two controls for one thing means the one an operator did
+          not touch silently contradicts the one they did. */}
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-card-border bg-card px-3 py-2">
         <span className="inline-flex items-center gap-1.5">
           <span className="relative flex h-2.5 w-2.5">
             {live && connected && (
@@ -220,20 +218,15 @@ export default function CameraEventsPage() {
           type="button"
           onClick={() => setLive((v) => !v)}
           title={live ? "Stop appending new events" : "Append new events as they arrive"}
-          className="inline-flex items-center gap-1 rounded-md border border-card-border px-2 py-1 text-[11px] font-medium text-muted transition hover:bg-hover hover:text-foreground"
+          aria-label={live ? "Pause the live feed" : "Resume the live feed"}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-card-border text-muted transition hover:bg-hover hover:text-foreground"
         >
           <Icon icon={live ? "heroicons-outline:pause" : "heroicons-outline:play"} className="text-xs" />
-          {live ? "Pause" : "Resume"}
         </button>
 
-        <span className="mx-1 h-4 w-px bg-card-border" aria-hidden />
+        <span className="mx-0.5 h-5 w-px bg-card-border" aria-hidden />
 
-        <CountChip
-          label="All"
-          value={events.length}
-          active={!severity}
-          onClick={() => setSeverity("")}
-        />
+        <CountChip label="All" value={events.length} active={!severity && ack !== "false"} onClick={() => { setSeverity(""); setAck(""); }} />
         <CountChip
           label="Critical"
           value={summary.critical}
@@ -249,6 +242,12 @@ export default function CameraEventsPage() {
           onClick={() => setSeverity(severity === "warning" ? "" : "warning")}
         />
         <CountChip
+          label="Info"
+          value={summary.info}
+          active={severity === "info"}
+          onClick={() => setSeverity(severity === "info" ? "" : "info")}
+        />
+        <CountChip
           label="Unacked"
           value={summary.unacked}
           tone={summary.unacked ? "warn" : "ok"}
@@ -256,48 +255,58 @@ export default function CameraEventsPage() {
           onClick={() => setAck(ack === "false" ? "" : "false")}
         />
 
-        <button
-          type="button"
-          onClick={() => qc.invalidateQueries({ queryKey: ["vms-events"] })}
-          title="Re-read the history"
-          className="ml-auto inline-flex items-center gap-1 rounded-md border border-card-border px-2 py-1 text-[11px] font-medium text-muted transition hover:bg-hover hover:text-foreground"
-        >
-          <Icon icon="heroicons-outline:arrow-path" className="text-xs" /> Refresh
-        </button>
-      </div>
+        <span className="mx-0.5 h-5 w-px bg-card-border" aria-hidden />
 
-      {/* ── Filters ── */}
-      <div className="mb-3 flex flex-wrap items-end gap-2 rounded-xl border border-card-border bg-card p-3">
-        <FilterField label="Camera">
-          <Select value={cameraId} onChange={(e) => setCameraId(e.target.value)} options={cameraOptions} className="!h-9 !py-1.5" />
-        </FilterField>
-        <FilterField label="Type">
-          <Select value={eventType} onChange={(e) => setEventType(e.target.value)} options={EVENT_TYPE_FILTERS} className="!h-9 !py-1.5" />
-        </FilterField>
-        <FilterField label="Severity">
-          <Select value={severity} onChange={(e) => setSeverity(e.target.value)} options={SEVERITY_FILTERS} className="!h-9 !py-1.5" />
-        </FilterField>
-        <FilterField label="Status">
-          <Select value={ack} onChange={(e) => setAck(e.target.value)} options={ackOptions} className="!h-9 !py-1.5" />
-        </FilterField>
-        <FilterField label="Day">
-          <input
-            type="date"
-            value={day}
-            max={todayStr()}
-            onChange={(e) => setDay(e.target.value)}
-            className="h-9 rounded-lg border border-field bg-transparent px-2.5 text-sm text-foreground outline-hidden focus:border-muted"
+        {/* The remaining filters, unlabelled: each one's placeholder already says
+            what it narrows ("All cameras", "All types"), so a column of uppercase
+            labels above them was a second row of chrome saying it again. The
+            accessible name carries it for a screen reader. */}
+        <div className="w-40">
+          <Select
+            ariaLabel="Filter by camera"
+            value={cameraId}
+            onChange={(e) => setCameraId(e.target.value)}
+            options={cameraOptions}
+            className="!mt-0 !h-8 !py-1"
           />
-        </FilterField>
+        </div>
+        <div className="w-36">
+          <Select
+            ariaLabel="Filter by event type"
+            value={eventType}
+            onChange={(e) => setEventType(e.target.value)}
+            options={EVENT_TYPE_FILTERS}
+            className="!mt-0 !h-8 !py-1"
+          />
+        </div>
+        <input
+          type="date"
+          aria-label="Filter by day"
+          value={day}
+          max={todayStr()}
+          onChange={(e) => setDay(e.target.value)}
+          className="h-8 rounded-lg border border-field bg-transparent px-2 text-[12px] text-foreground outline-hidden focus:border-muted"
+        />
+
         {filtered && (
           <button
             type="button"
             onClick={clearAll}
-            className="ml-auto inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-2 text-[11px] font-medium text-muted transition hover:bg-hover hover:text-foreground"
+            className="inline-flex items-center gap-1 rounded-md border border-card-border px-2 py-1 text-[11px] font-medium text-muted transition hover:bg-hover hover:text-foreground"
           >
             <Icon icon="heroicons-outline:x-mark" className="text-xs" /> Clear
           </button>
         )}
+
+        <button
+          type="button"
+          onClick={() => qc.invalidateQueries({ queryKey: ["vms-events"] })}
+          title="Re-read the history"
+          aria-label="Refresh"
+          className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-md border border-card-border text-muted transition hover:bg-hover hover:text-foreground"
+        >
+          <Icon icon="heroicons-outline:arrow-path" className="text-xs" />
+        </button>
       </div>
 
       {/* ── Feed ── */}
@@ -416,14 +425,5 @@ function CountChip({
       <span className={`font-mono text-[13px] tabular-nums ${toneCls}`}>{value}</span>
       {label}
     </button>
-  );
-}
-
-function FilterField({ label, children }: { label: ReactNode; children: ReactNode }) {
-  return (
-    <div className="min-w-[9rem]">
-      <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">{label}</label>
-      {children}
-    </div>
   );
 }
