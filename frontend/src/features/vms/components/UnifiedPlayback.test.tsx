@@ -61,29 +61,77 @@ beforeEach(() => {
   stubAll();
 });
 
-describe("which picker opens", () => {
-  it("opens on the recorders when that is where the cameras are", async () => {
+describe("the channel rail", () => {
+  it("groups channels under the recorder that owns them", async () => {
     renderWithProviders(<UnifiedPlayback />);
-    expect(await screen.findByText("Channel 1")).toBeInTheDocument();
+
+    expect(await screen.findByText("recorder-a")).toBeInTheDocument();
+    expect(screen.getByText("Channel 1")).toBeInTheDocument();
   });
 
-  it("opens on this platform's storage when the recorders own nothing", async () => {
-    stubAll({
-      "GET /vms/federation/cameras": { items: [], total: 0 },
-      "GET /vms/cameras": { items: [LOCAL_CAM], total: 1 },
-    });
-    renderWithProviders(<UnifiedPlayback />);
-    expect(await screen.findByText("Lobby")).toBeInTheDocument();
-  });
-
-  it("says where the footage IS when the open tab has none", async () => {
-    // "No cameras." was the whole message, on a page whose other tab held three.
-    stubAll({ "GET /vms/cameras": { items: [], total: 0 } });
+  it("offers no VMS-storage tab — that store can never hold footage here", async () => {
+    // Single ownership: the recorder owns every camera and writes every frame, so
+    // a tab pointing at this platform's own pooled storage was a choice between
+    // the cameras and an empty list.
     renderWithProviders(<UnifiedPlayback />);
     await screen.findByText("Channel 1");
 
-    await userEvent.click(screen.getByRole("button", { name: /VMS storage/i }));
-    expect(await screen.findByText(/recorded by their own recorder/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /VMS storage/i })).toBeNull();
+  });
+
+  it("shows VMS-owned rows as one more branch when a deployment has them", async () => {
+    stubAll({ "GET /vms/cameras": { items: [LOCAL_CAM], total: 1 } });
+    renderWithProviders(<UnifiedPlayback />);
+
+    expect(await screen.findByText("VMS storage")).toBeInTheDocument();
+    expect(screen.getByText("Lobby")).toBeInTheDocument();
+  });
+
+  it("searches across channels and recorders, and says how many matched", async () => {
+    // A recorder holds many channels and the rail is a quarter of the screen;
+    // scrolling to find one is the failure this replaces.
+    stubAll({
+      "GET /vms/federation/cameras": {
+        items: [
+          FED_CAM,
+          { ...FED_CAM, id: "fed-cam-2", name: "Loading bay" },
+          { ...FED_CAM, id: "fed-cam-3", name: "Back gate" },
+        ],
+        total: 3,
+      },
+    });
+    renderWithProviders(<UnifiedPlayback />);
+    await screen.findByText("Channel 1");
+
+    await userEvent.type(screen.getByLabelText(/search channels/i), "gate");
+
+    expect(await screen.findByText(/1 of 3 channels match/i)).toBeInTheDocument();
+    expect(screen.getByText("Back gate")).toBeInTheDocument();
+    expect(screen.queryByText("Loading bay")).toBeNull();
+  });
+
+  it("finds every channel on a recorder by the recorder's name", async () => {
+    renderWithProviders(<UnifiedPlayback />);
+    await screen.findByText("Channel 1");
+
+    await userEvent.type(screen.getByLabelText(/search channels/i), "recorder-a");
+    expect(await screen.findByText("Channel 1")).toBeInTheDocument();
+  });
+
+  it("says a search matched nothing rather than looking like an empty estate", async () => {
+    renderWithProviders(<UnifiedPlayback />);
+    await screen.findByText("Channel 1");
+
+    await userEvent.type(screen.getByLabelText(/search channels/i), "zzz");
+    expect(await screen.findByText(/no channel matches/i)).toBeInTheDocument();
+  });
+
+  it("collapses a recorder so a big estate stays scannable", async () => {
+    renderWithProviders(<UnifiedPlayback />);
+    await screen.findByText("Channel 1");
+
+    await userEvent.click(screen.getByRole("button", { name: /recorder-a/i }));
+    expect(screen.queryByText("Channel 1")).toBeNull();
   });
 
   it("reports unreachable recorders instead of an empty channel list", async () => {
@@ -92,6 +140,13 @@ describe("which picker opens", () => {
     });
     renderWithProviders(<UnifiedPlayback />);
     expect(await screen.findByText(/did not answer/i)).toBeInTheDocument();
+  });
+
+  it("says where cameras come from when there are none at all", async () => {
+    stubAll({ "GET /vms/federation/cameras": { items: [], total: 0 } });
+    renderWithProviders(<UnifiedPlayback />);
+
+    expect(await screen.findByText(/cameras are owned by recorders/i)).toBeInTheDocument();
   });
 });
 

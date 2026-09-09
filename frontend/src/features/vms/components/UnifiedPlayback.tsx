@@ -29,7 +29,6 @@ import { Icon } from "@iconify/react";
 
 import { Button, Select } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
-import { sites as sitesApi } from "@/lib/api/sites";
 import { vms } from "../api";
 import type {
   FederatedCamera,
@@ -42,6 +41,7 @@ import type {
 } from "../types";
 import PlaybackPlayer from "./PlaybackPlayer";
 import PlaybackCalendar from "./PlaybackCalendar";
+import PlaybackChannelPicker, { type PickerGroup } from "./PlaybackChannelPicker";
 import type { ExportRequest } from "./playbackTypes";
 import ScrubBar, {
   LEGEND_TYPES,
@@ -121,17 +121,6 @@ interface FederatedTile {
   federated: true;
 }
 type PlaybackTile = CameraTile | FederatedTile;
-// The source kinds the channel picker offers.
-type PickerKind = PlaybackTile["kind"];
-// "Recorded" and "Recorder" sat next to each other, one letter apart, naming two
-// things an operator has no reason to distinguish by those words: footage in this
-// platform's own pooled storage, and footage on the recorder that owns the camera.
-// The tabs now say WHERE the footage lives, which is the actual choice.
-const PICKER_KINDS: { k: PickerKind; label: string; icon: string }[] = [
-  { k: "federated", label: "Recorders", icon: "heroicons-outline:server-stack" },
-  { k: "camera", label: "VMS storage", icon: "heroicons-outline:circle-stack" },
-];
-
 const cameraTile = (c: Pick<VmsCameraPublic, "id" | "name">): CameraTile => ({
   key: `cam:${c.id}`,
   kind: "camera",
@@ -139,13 +128,6 @@ const cameraTile = (c: Pick<VmsCameraPublic, "id" | "name">): CameraTile => ({
   cameraId: c.id,
 });
 
-// Split a camera name like "NVR 45.64.11.69 - Channel 1" into a clear channel label
-// (primary) + its source (muted subtitle) so the sidebar rows don't truncate to "…Chann…".
-// Falls back to the whole name as primary when there's no "<source> - <channel>" shape.
-const splitCamName = (name = "") => {
-  const m = name.match(/^(.*\S)\s*[-·]\s*(.+)$/);
-  return m ? { primary: m[2].trim(), secondary: m[1].trim() } : { primary: name, secondary: null };
-};
 // kind='federated' → a recorder-owned / 3rd-party-NVR (e.g. Lumina) camera surfaced
 // through the federation proxy. nodeId/realId address it on the remote node; the
 // synthetic `cameraId` (like nvrTile's) satisfies the player's truthy-id guards +
@@ -234,24 +216,9 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
   const [seekMs, setSeekMs] = useState<number | null>(null);
   const [seekNonce, setSeekNonce] = useState(0); // bumped ONLY on an explicit user scrub
   const [focusKey, setFocusKey] = useState<string | null>(null); // tile expanded to full player
-  // WHICH PICKER OPENS FIRST.
-  //
-  // It was always "camera" — this service's own camera rows — and on a
-  // single-ownership estate there are none: every camera belongs to a recorder.
-  // So the page opened on an empty list reading "No cameras", one letter away
-  // from the tab that had all of them. The default is now decided by which side
-  // actually holds cameras (below), and an operator's explicit click always wins.
-  const [pickerKind, setPickerKind] = useState<PickerKind>("federated");
-  const pickerChosen = useRef(false);
-  // Recorded picker scaling (200+ cams): server-side search + site filter so the
-  // rail never renders a wall of checkboxes. `camSearch` is the raw input;
-  // `debouncedCamSearch` (250ms) is what the camera query actually keys on.
-  const [camSearch, setCamSearch] = useState("");
-  const [debouncedCamSearch, setDebouncedCamSearch] = useState("");
-  const [camSiteFilter, setCamSiteFilter] = useState(""); // "" = all sites
-  // Recorded picker tree (Default › Site › Camera) — collapsed branch keys. Empty
-  // ⇒ all expanded. While searching we force-expand so every match is visible.
-  const [pbCollapsed, setPbCollapsed] = useState(() => new Set<string>());
+  // Searching, grouping and collapse live in PlaybackChannelPicker: the rail
+  // is one recorder › camera tree, so the state that drove two pickers and a
+  // server-side camera search went with them.
   // The id a deep link named that no list could resolve — shown instead of an
   // empty workspace that looks like nothing was picked.
   const [deepLinkMiss, setDeepLinkMiss] = useState<string | null>(null);
@@ -291,53 +258,20 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
     setSelTo(null);
   }, [windowStart]);
 
-  // Debounce the Recorded-picker search into the query key (250ms) so typing
-  // doesn't fire a request per keystroke.
-  useEffect(() => {
-    const id = setTimeout(() => setDebouncedCamSearch(camSearch.trim()), 250);
-    return () => clearTimeout(id);
-  }, [camSearch]);
-
   // ── Deep-link ?camera=<id>[&t=<iso>] → open that camera as the sole tile ──
   const deepHandled = useRef(false);
-  // Recorded cameras — filtered SERVER-SIDE by the rail's search + site filter so
-  // the list stays small at 200+ cameras. Selections live in `checked` (keyed by
-  // tile.key) independent of this list, so filtering away a checked camera and
-  // back preserves the selection.
-  // The filters apply ONLY to the Recorded picker: the NVR channel list + deep-link
-  // resolution both derive from `cameras`, so on the NVR picker we drop the filters
-  // to get the unfiltered set (a stale Recorded search must not narrow NVR channels).
-  const camFiltering = pickerKind === "camera";
-  const camQ = camFiltering ? debouncedCamSearch : "";
-  const camSite = camFiltering ? camSiteFilter : "";
+  // VMS-owned camera rows. Single ownership means a deployment normally has NONE
+  // — the recorder owns every camera — so this is here for the legacy case and
+  // for the deep-link resolver, unfiltered: the rail's search is client-side over
+  // the merged tree now, so there is no server query to key on.
   const camerasQ = useQuery({
-    queryKey: ["vms-cameras", "playback-picker", camQ, camSite],
-    queryFn: () =>
-      vms.cameras.list({
-        q: camQ || undefined,
-        site_id: camSite || undefined,
-        limit: 200,
-      }),
-    // Not gated on the open tab any more: the deep-link resolver reads this list,
-    // and the tab that opens is chosen from whether it has anything in it.
+    queryKey: ["vms-cameras", "playback-picker"],
+    queryFn: () => vms.cameras.list({ limit: 200 }),
     staleTime: 60_000,
   });
   const cameras = useMemo(() => camerasQ.data?.items ?? [], [camerasQ.data]);
 
-  // Sites for the picker's site-filter dropdown + per-camera group headers. Same
-  // source Cameras.jsx uses (site_id → name).
-  const sitesQ = useQuery({
-    queryKey: ["sites-list"],
-    queryFn: () => sitesApi.list({ limit: 200 }),
-    staleTime: 60_000,
-    enabled: pickerKind === "camera",
-  });
-  const sites = useMemo(() => sitesQ.data?.items ?? [], [sitesQ.data]);
-  const siteNames = useMemo(() => {
-    const m: Record<string, string> = {};
-    for (const s of sites) m[s.site_id] = s.name;
-    return m;
-  }, [sites]);
+
 
 
 
@@ -363,16 +297,6 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
     staleTime: 60_000,
   });
   const fedCameras = useMemo(() => fedCamsQ.data?.items ?? [], [fedCamsQ.data]);
-
-  // Open on the side that HAS cameras. Recorder-owned is the default because every
-  // camera in a single-ownership estate is; a deployment whose cameras live in this
-  // platform's own storage flips to that tab once both lists have answered. An
-  // operator's own click (pickerChosen) is never overridden.
-  useEffect(() => {
-    if (pickerChosen.current) return;
-    if (fedCamsQ.isLoading || camerasQ.isLoading) return;
-    if (fedCameras.length === 0 && cameras.length > 0) setPickerKind("camera");
-  }, [fedCamsQ.isLoading, camerasQ.isLoading, fedCameras.length, cameras.length]);
 
   // DEEP LINK — ?camera=<id>[&t=<iso>], from an alarm's "watch the recording", the
   // camera-event row and the linkage popup.
@@ -432,10 +356,6 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
 
       setSources([tile]);
       setChecked([tile]); // reflect the deep-linked source in the rail's multi-select
-      if (tile.kind === "federated") {
-        pickerChosen.current = true;
-        setPickerKind("federated");
-      }
       if (t) {
         const d = new Date(t);
         if (!Number.isNaN(d.getTime())) {
@@ -649,7 +569,6 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
 
   // ── Rail multi-select (pre-Search) ───────────────────────────────────────
   // The operator CHECKS up to 4 channels in the rail; nothing loads until Search.
-  const isChecked = (key: string) => checked.some((t) => t.key === key);
   const atCap = checked.length >= MAX_TILES;
   const toggleCheck = (tile: PlaybackTile) => {
     setChecked((prev) => {
@@ -658,6 +577,67 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
       if (prev.length >= MAX_TILES) return prev; // enforce ≤4
       return [...prev, tile];
     });
+  };
+
+  // ── The rail's one channel list: recorder › camera ────────────────────────
+  //
+  // Grouped by the RECORDER that owns the camera, because that is the only
+  // grouping the estate has (single ownership — the VMS onboards nothing) and
+  // because a recorder holds many channels: a flat list of every channel on every
+  // recorder is unusable in a 25% rail at the moment an operator needs it.
+  //
+  // VMS-owned rows, if a deployment still carries any, are one more branch named
+  // for what they are — not a second tab that is empty forever.
+  const tileByKey = useMemo(() => {
+    const m = new Map<string, PlaybackTile>();
+    for (const c of fedCameras) {
+      const t = fedTile(c);
+      m.set(t.key, t);
+    }
+    for (const c of cameras) {
+      const t = cameraTile(c);
+      m.set(t.key, t);
+    }
+    return m;
+  }, [fedCameras, cameras]);
+
+  const pickerGroups = useMemo<PickerGroup[]>(() => {
+    const byNode = new Map<string, PickerGroup>();
+    for (const c of fedCameras) {
+      const nodeId = String(c.node_id);
+      let g = byNode.get(nodeId);
+      if (!g) {
+        g = {
+          key: `node:${nodeId}`,
+          label: c.node_name || "recorder",
+          icon: "heroicons-outline:server-stack",
+          rows: [],
+        };
+        byNode.set(nodeId, g);
+      }
+      g.rows.push({ key: fedTile(c).key, name: c.name, status: c.status });
+    }
+    const groups = [...byNode.values()].sort((a, b) => a.label.localeCompare(b.label));
+    groups.forEach((g) => g.rows.sort((a, b) => a.name.localeCompare(b.name)));
+
+    if (cameras.length > 0) {
+      groups.push({
+        key: "vms-storage",
+        label: "VMS storage",
+        icon: "heroicons-outline:circle-stack",
+        rows: cameras
+          .map((c) => ({ key: cameraTile(c).key, name: c.name, status: c.status }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      });
+    }
+    return groups;
+  }, [fedCameras, cameras]);
+
+  const checkedKeys = useMemo(() => new Set(checked.map((t) => t.key)), [checked]);
+
+  const toggleByKey = (key: string) => {
+    const tile = tileByKey.get(key);
+    if (tile) toggleCheck(tile);
   };
 
   // ── Search — load the checked (≤4) channels into the 2×2 grid ─────────────
@@ -827,33 +807,7 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
     return null;
   };
 
-  // ── Rail channel list — recorded cameras (checkbox multi-select) ──────────
-  // Cameras arrive already filtered server-side (search + site). Group them by
-  // site for scannable sticky sub-headers; cameras with no placement site fall
-  // into an "Unassigned" group pinned to the end.
-  const railCameras = cameras;
-  const camGroups = useMemo(() => {
-    type RailGroup = { key: string; name: string; cameras: VmsCameraPublic[] };
-    const bySite = new Map<string, RailGroup>(); // site_id → { name, cameras: [] }
-    let unassigned: RailGroup | null = null;
-    for (const c of railCameras) {
-      const sid = c.placement?.site_id;
-      if (sid) {
-        let group = bySite.get(sid);
-        if (!group) {
-          group = { key: sid, name: siteNames[sid] || "Site", cameras: [] };
-          bySite.set(sid, group);
-        }
-        group.cameras.push(c);
-      } else {
-        if (!unassigned) unassigned = { key: "__unassigned", name: "Unassigned", cameras: [] };
-        unassigned.cameras.push(c);
-      }
-    }
-    const groups = Array.from(bySite.values()).sort((a, b) => a.name.localeCompare(b.name));
-    if (unassigned) groups.push(unassigned);
-    return groups;
-  }, [railCameras, siteNames]);
+
 
   return (
     // transform:translateZ(0) — pin this whole surface to its own GPU compositing
@@ -972,237 +926,18 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
               </span>
             </div>
 
-            {/* kind toggle [Recorded | NVR | Recorder] */}
-            <div className="mb-2 flex gap-1">
-              {PICKER_KINDS.map((t) => (
-                <button
-                  key={t.k}
-                  type="button"
-                  onClick={() => {
-                    pickerChosen.current = true;
-                    setPickerKind(t.k);
-                  }}
-                  className={`flex flex-1 items-center justify-center gap-1 rounded-lg px-1.5 py-1.5 text-[12px] transition ${
-                    pickerKind === t.k
-                      ? "bg-[rgba(150,180,245,.08)] font-medium text-[#f2f6ff]"
-                      : "text-[#9db0d8] hover:bg-[rgba(150,180,245,.07)] hover:text-[#67e8f9]"
-                  }`}
-                >
-                  <Icon icon={t.icon} className="text-sm" />
-                  {t.label}
-                </button>
-              ))}
-            </div>
-
-            {atCap && (
-              <p className="mb-1.5 text-[11px] text-red-400">Max 4 channels — uncheck one to add another.</p>
-            )}
-
-            {pickerKind === "camera" ? (
-              <div className="space-y-2">
-                {/* Server-side search + site filter keep the list navigable at 200+ cams. */}
-                <label className="relative block">
-                  <Icon
-                    icon="heroicons-outline:magnifying-glass"
-                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#9db0d8]"
-                  />
-                  <input
-                    value={camSearch}
-                    onChange={(e) => setCamSearch(e.target.value)}
-                    placeholder="Search cameras…"
-                    className="h-8 w-full rounded-lg border border-[rgba(150,180,245,.28)] bg-transparent pl-8 pr-3 text-[13px] text-[#f2f6ff] placeholder:text-[#7e93bf] outline-hidden focus:border-muted"
-                  />
-                </label>
-                <Select
-                  value={camSiteFilter}
-                  onChange={(e) => setCamSiteFilter(e.target.value)}
-                  options={[
-                    { value: "", label: "All sites" },
-                    ...sites.map((s) => ({ value: s.site_id, label: s.name })),
-                  ]}
-                  className="!h-8 !py-1"
-                />
-
-                {camerasQ.isLoading ? (
-                  <p className="px-2 py-6 text-center text-xs text-[#9db0d8]">Loading…</p>
-                ) : railCameras.length === 0 ? (
-                  <p className="px-2 py-6 text-center text-xs text-[#9db0d8]">
-                    {camSearch.trim() || camSiteFilter
-                      ? "No cameras match that search."
-                      : fedCameras.length > 0
-                        ? // The one sentence that was missing: nothing is stored HERE,
-                          // and the cameras are on the other tab.
-                          `No footage is stored in this platform. ${fedCameras.length} camera(s) are recorded by their own recorder — see the Recorders tab.`
-                        : "No cameras."}
-                  </p>
-                ) : (
-                  (() => {
-                    // Tree: Default › Site › Camera (scales for many cameras). Search
-                    // (server-side) force-expands via pbSearching.
-                    const pbSearching = camSearch.trim().length > 0;
-                    const pbOpen = (k: string) => pbSearching || !pbCollapsed.has(k);
-                    const pbToggle = (k: string) =>
-                      setPbCollapsed((prev) => {
-                        const n = new Set<string>(prev);
-                        if (n.has(k)) n.delete(k);
-                        else n.add(k);
-                        return n;
-                      });
-                    const renderCamRow = (c: VmsCameraPublic) => {
-                      const { primary, secondary } = splitCamName(c.name);
-                      const tile = cameraTile(c);
-                      const on = isChecked(tile.key);
-                      return (
-                        <label
-                          key={c.id}
-                          title={c.name}
-                          className={`flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left text-[13px] text-[#f2f6ff] transition hover:bg-[rgba(150,180,245,.07)] ${
-                            !on && atCap ? "opacity-40" : ""
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            className="sr-only"
-                            checked={on}
-                            disabled={!on && atCap}
-                            onChange={() => toggleCheck(tile)}
-                          />
-                          <span
-                            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition ${
-                              on ? "border-foreground bg-foreground text-background" : "border-[rgba(150,180,245,.28)]"
-                            }`}
-                          >
-                            {on && <Icon icon="heroicons-solid:check" className="text-[11px]" />}
-                          </span>
-                          {c.nvr_channel_number != null && (
-                            <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded-sm bg-[rgba(150,180,245,.08)] px-1 font-mono text-[11px] font-semibold tabular-nums text-[#9db0d8]">
-                              {c.nvr_channel_number}
-                            </span>
-                          )}
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate">{primary}</span>
-                            {secondary && (
-                              <span className="block truncate text-[11px] text-[#9db0d8]">{secondary}</span>
-                            )}
-                          </span>
-                        </label>
-                      );
-                    };
-                    const rootOpen = pbOpen("__pb_root__");
-                    return (
-                      <div>
-                        <button
-                          type="button"
-                          onClick={() => pbToggle("__pb_root__")}
-                          className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left transition hover:bg-[rgba(150,180,245,.07)]"
-                        >
-                          <Icon
-                            icon="heroicons-mini:chevron-right"
-                            className={`shrink-0 text-sm text-[#9db0d8] transition-transform ${rootOpen ? "rotate-90" : ""}`}
-                          />
-                          <Icon icon="heroicons-outline:building-office-2" className="shrink-0 text-sm text-[#9db0d8]" />
-                          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-[#f2f6ff]">Default</span>
-                          <span className="shrink-0 rounded-full bg-[rgba(150,180,245,.08)] px-1.5 text-[10px] font-semibold tabular-nums text-[#9db0d8]">
-                            {railCameras.length}
-                          </span>
-                        </button>
-                        {rootOpen && (
-                          <div className="mt-0.5 space-y-0.5 border-l border-[rgba(160,150,245,.14)] pl-1.5">
-                            {camGroups.map((g) => {
-                              const open = pbOpen(g.key);
-                              return (
-                                <div key={g.key}>
-                                  <button
-                                    type="button"
-                                    onClick={() => pbToggle(g.key)}
-                                    className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left transition hover:bg-[rgba(150,180,245,.07)]"
-                                  >
-                                    <Icon
-                                      icon="heroicons-mini:chevron-right"
-                                      className={`shrink-0 text-sm text-[#9db0d8] transition-transform ${open ? "rotate-90" : ""}`}
-                                    />
-                                    <Icon
-                                      icon={g.key === "__unassigned" ? "heroicons-outline:inbox" : "heroicons-outline:map-pin"}
-                                      className="shrink-0 text-sm text-[#9db0d8]"
-                                    />
-                                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#f2f6ff]">{g.name}</span>
-                                    <span className="shrink-0 rounded-full bg-[rgba(150,180,245,.08)] px-1.5 text-[10px] font-semibold tabular-nums text-[#9db0d8]">
-                                      {g.cameras.length}
-                                    </span>
-                                  </button>
-                                  {open && (
-                                    <div className="grid grid-cols-2 gap-0.5 border-l border-[rgba(160,150,245,.14)] pl-1.5">
-                                      {g.cameras.map(renderCamRow)}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()
-                )}
-              </div>
-            ) : (
-              /* Recorder cameras — flat checkbox list (node · site subtitle). */
-              <div className="space-y-1">
-                {fedCamsQ.isLoading ? (
-                  <p className="px-2 py-6 text-center text-xs text-[#9db0d8]">Loading…</p>
-                ) : fedCamsQ.error ? (
-                  // A recorder that did not answer must not read as an estate with
-                  // no cameras — one sends the operator to onboarding, the other to
-                  // the recorder.
-                  <p className="px-2 py-6 text-center text-xs text-red-300">
-                    {apiError(fedCamsQ.error, "Could not reach the recorders")}
-                  </p>
-                ) : fedCameras.length === 0 ? (
-                  <p className="px-2 py-6 text-center text-xs text-[#9db0d8]">
-                    {cameras.length > 0
-                      ? "No recorder-owned cameras. This platform's own storage has some — see the VMS storage tab."
-                      : "No recorder cameras."}
-                  </p>
-                ) : (
-                  fedCameras.map((c) => {
-                    const tile = fedTile(c);
-                    const on = isChecked(tile.key);
-                    // `site_name` is the node's own field, read through the open dict.
-                    const sub = [c.node_name, typeof c.site_name === "string" ? c.site_name : null]
-                      .filter(Boolean)
-                      .join(" · ");
-                    return (
-                      <label
-                        key={tile.key}
-                        title={c.name}
-                        className={`flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-[#f2f6ff] transition hover:bg-[rgba(150,180,245,.07)] ${
-                          !on && atCap ? "opacity-40" : ""
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          className="sr-only"
-                          checked={on}
-                          disabled={!on && atCap}
-                          onChange={() => toggleCheck(tile)}
-                        />
-                        <span
-                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition ${
-                            on ? "border-foreground bg-foreground text-background" : "border-[rgba(150,180,245,.28)]"
-                          }`}
-                        >
-                          {on && <Icon icon="heroicons-solid:check" className="text-[11px]" />}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate">{c.name}</span>
-                          {sub && <span className="block truncate text-[11px] text-[#9db0d8]">{sub}</span>}
-                        </span>
-                      </label>
-                    );
-                  })
-                )}
-              </div>
-            )}
+            <PlaybackChannelPicker
+              groups={pickerGroups}
+              checkedKeys={checkedKeys}
+              onToggle={toggleByKey}
+              max={MAX_TILES}
+              loading={fedCamsQ.isLoading || camerasQ.isLoading}
+              error={
+                fedCamsQ.error
+                  ? apiError(fedCamsQ.error, "Could not reach the recorders")
+                  : null
+              }
+            />
           </div>
         </div>
 
