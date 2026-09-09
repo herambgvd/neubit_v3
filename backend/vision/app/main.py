@@ -48,7 +48,6 @@ from app.vms.health import HealthSampler
 from app.vms.linkage import LinkageConsumer
 from app.vms.media_nodes import NodeHeartbeatMonitor
 from app.vms.recording import RecordingConsumer
-from app.vms.reports import ReportScheduler
 # NOTE: storage retention/tiering + RAID monitoring are owned by the NVR, not this
 # VMS — their workers (RetentionTieringWorker, RaidMonitor) are intentionally NOT run.
 
@@ -142,14 +141,9 @@ async def lifespan(app: FastAPI):
     await linkage_consumer.start()
     app.state.linkage_consumer = linkage_consumer
 
-    # P6-B operational reporting: the report scheduler fires each ENABLED ReportSchedule
-    # on its cadence — computes the report (uptime/coverage/storage/event-stats) in that
-    # schedule's tenant scope, renders it (CSV/PDF/JSON), and publishes
-    # ``tenant.<id>.notify.request`` for the workflow/notifier connector to fan out. Own
-    # DB session per cycle; graceful (a bad schedule records last_error + advances).
-    report_scheduler = ReportScheduler(get_sessionmaker())
-    await report_scheduler.start()
-    app.state.report_scheduler = report_scheduler
+    # No report scheduler. The VMS computed uptime/coverage/storage/event reports on
+    # a cadence and mailed them — a second reporting product, reading tables this
+    # service no longer fills. Reporting is DashForge's (Configurations → Dashboards).
 
     # No ANR fulfiller here any more. The recorder detects its own recording gaps
     # AND fills them now (nvr internal/anr + estate.BackfillGap): it holds the camera
@@ -165,7 +159,6 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    await report_scheduler.stop()
     await event_supervisor.stop()
     await node_heartbeat.stop()
     await sampler.stop()

@@ -66,7 +66,19 @@ _PLATFORM_SCOPE = Scope(tenant_id=None, is_superadmin=True)
 # How far back a node is asked for on the FIRST poll after this process starts. Short
 # on purpose: the point is to catch what happened during a restart, not to re-import
 # history that is already in the table.
-_COLD_START_LOOKBACK = timedelta(minutes=15)
+# HOW FAR BACK A COLD START ASKS.
+#
+# This was 15 minutes, with the watermark held in memory only — so a restart asked
+# each recorder for the last quarter of an hour and nothing else. On a live estate
+# that meant an empty event feed while the recorder held 56 events, the newest of
+# them ninety minutes old: the poll succeeded every time and returned nothing.
+#
+# The watermark is persisted now (media_nodes.events_synced_at), so this only
+# applies to a node whose ledger has never been mirrored. A day is the right size
+# for that: it is what makes a newly enrolled recorder's existing events show up at
+# all, and re-asking is free — the ingest path dedupes on (camera, type,
+# time-bucket) behind a UNIQUE constraint.
+_COLD_START_LOOKBACK = timedelta(hours=24)
 
 
 def _env_int(name: str, default: int) -> int:
@@ -114,9 +126,9 @@ class EventSupervisor:
         self._sessionmaker = sessionmaker
         self._task: asyncio.Task | None = None
         self._stopping = asyncio.Event()
-        # node id → the newest ``created_at`` already ingested from it. In memory
-        # only: a restart falls back to _COLD_START_LOOKBACK, and the dedupe makes
-        # the resulting overlap free.
+        # node id → the newest ``created_at`` already ingested from it, as a
+        # per-process fast path. The DURABLE copy is media_nodes.events_synced_at,
+        # which is what a restarted process resumes from.
         self._watermark: dict[str, datetime] = {}
 
     async def start(self) -> None:
@@ -172,7 +184,13 @@ class EventSupervisor:
         api_url = (getattr(node, "api_url", None) or "").strip()
         if not api_url:
             return
-        since = self._watermark.get(node.id) or (_utcnow() - _COLD_START_LOOKBACK)
+        # In-process watermark, else the one persisted on the node row, else a cold
+        # start. The middle term is the one that matters: without it a restart
+        # forgets everything the recorder is still holding.
+        stored = getattr(node, "events_synced_at", None)
+        if stored is not None and stored.tzinfo is None:
+            stored = stored.replace(tzinfo=timezone.utc)
+        since = self._watermark.get(node.id) or stored or (_utcnow() - _COLD_START_LOOKBACK)
         try:
             payload = await fed.list_events_node(
                 api_url,
@@ -200,7 +218,13 @@ class EventSupervisor:
                 if created > newest:
                     newest = created
                 await self._ingest(svc, node, raw)
-            await db.commit()
+            # The watermark moves ONLY after a batch is ingested, and it is written
+            # where a restart can find it. An unreachable recorder never reaches
+            # here, so whatever it kept is asked for again when it returns.
+            row = await db.get(MediaNode, node.id)
+            if row is not None:
+                row.events_synced_at = newest
+                await db.commit()
         self._watermark[node.id] = newest
 
     async def _ingest(self, svc: VmsEventService, node: MediaNode, raw: dict) -> None:

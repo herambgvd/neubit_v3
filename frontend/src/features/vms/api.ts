@@ -99,13 +99,6 @@ import type {
   PlaybackSessionPublic,
   PtzResult,
   ReorderResult,
-  ReportResponse,
-  ReportRunList,
-  ReportRunPublic,
-  ReportScheduleCreate,
-  ReportScheduleList,
-  ReportSchedulePublic,
-  ReportScheduleUpdate,
   VmsCameraPublic,
   VmsEventListResponse,
   VmsEventPublic,
@@ -116,8 +109,6 @@ const GROUPS = "/vms/camera-groups";
 const PATTERNS = "/vms/patterns";
 const EVENTS = "/vms/events";
 const LINKAGE = "/vms/linkage-rules";
-const REPORTS = "/vms/reports";
-const REPORT_SCHEDULES = "/vms/report-schedules";
 const BOOKMARKS = "/vms/bookmarks";
 const PULSE = "/vms/pulse";
 const EVIDENCE = "/vms/evidence";
@@ -563,37 +554,12 @@ export const vms = {
   //   health-summary. JSON shape: { kind, window{from,to,seconds}, rows[],
   //   totals{}, by_type?, by_severity?, status_counts? }. Reads gate on
   //   vms.playback.view; schedule writes on vms.config.manage.
-  reports: {
-    // GET /vms/reports/{kind}?from=&to=&camera_id= → the JSON report.
-    get: (kind: string, params: QueryParams = {}) => unwrap(api.get<ReportResponse>(`${REPORTS}/${kind}${qs(params)}`)),
-    // GET /vms/reports/{kind}/export?format=csv|pdf&from=&to=&camera_id= → a
-    //   CSV/PDF download (fetched as a blob so the Bearer header is sent).
-    exportBlob: (kind: string, params: QueryParams = {}) =>
-      blob(api.get<Blob>(`${REPORTS}/${kind}/export${qs(params)}`, { responseType: "blob" })),
-    schedules: {
-      // GET /vms/report-schedules → { items, total }.
-      list: (params: QueryParams = {}) => unwrap(api.get<ReportScheduleList>(`${REPORT_SCHEDULES}${qs(params)}`)),
-      create: (body: ReportScheduleCreate) => unwrap(api.post<ReportSchedulePublic>(REPORT_SCHEDULES, body)),
-      update: (id: string, body: ReportScheduleUpdate) =>
-        unwrap(api.patch<ReportSchedulePublic>(`${REPORT_SCHEDULES}/${id}`, body)),
-      remove: (id: string) => unwrap(api.delete<void>(`${REPORT_SCHEDULES}/${id}`)),
-      // GET /vms/report-schedules/{id}/runs?limit=&offset= → { items: ReportRunPublic[],
-      //   total } (newest-first). ReportRunPublic: { id, schedule_id, name, kind,
-      //   export_format, window{from,to}, status: done|error, output_size, error,
-      //   computed_at, notified_at }.
-      runs: (id: string, params: QueryParams = {}) =>
-        unwrap(api.get<ReportRunList>(`${REPORT_SCHEDULES}/${id}/runs${qs(params)}`)),
-      // GET /vms/report-schedules/{id}/runs/{runId}/download → the report FILE
-      //   (CSV/PDF/JSON) as a blob (fetched so the Bearer header is sent, then saved
-      //   by the caller). Content-Disposition is set server-side.
-      runDownloadBlob: (id: string, runId: string) =>
-        blob(api.get<Blob>(`${REPORT_SCHEDULES}/${id}/runs/${runId}/download`, { responseType: "blob" })),
-      // POST /vms/report-schedules/{id}/run-now → the created ReportRunPublic (fires
-      //   the report immediately; does NOT change the schedule's cadence). Returns 201
-      //   even when the run's status is "error" — inspect `status`.
-      runNow: (id: string) => unwrap(api.post<ReportRunPublic>(`${REPORT_SCHEDULES}/${id}/run-now`, {})),
-    },
-  },
+  // NO `reports` BLOCK. The VMS's own report console — uptime, coverage, storage,
+  // event counts, plus a scheduler that mailed them — is retired: reporting is
+  // DashForge's, surfaced through the dashboards registered under Configurations →
+  // Dashboards. Two reporting surfaces means two definitions of the same number,
+  // and the one nobody maintains is the one an operator quotes.
+
 
   // ── Bookmarks (G3) — mark moments / ranges on a camera timeline ──────────
   // An operator flags an instant (point) or a span (range) in recorded footage

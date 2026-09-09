@@ -35,7 +35,6 @@ from app.vms.events.router import router as event_router
 from app.vms.federation.router import router as federation_router
 from app.vms.patterns.router import router as pattern_router
 from app.vms.pulse.router import router as pulse_router
-from app.vms.reports.router import router as reports_router
 # Storage pools/tier-rules/RAID (``/vms/storage/*``) are owned by the NVR — that
 # control-plane router is intentionally NOT mounted. Only the recording lock/verify
 # router (``/vms/recordings/{id}/lock|unlock|verify``) is kept (recording integrity).
@@ -76,10 +75,13 @@ from app.vms.videowall.router import router as videowall_router
 # ``/vms/linkage-fires`` are distinct prefixes (no collision with the camera catch-all).
 # The P5-B event-linkage control plane (event→action rules + the fire-audit; the linkage
 # consumer, wired in app.main, runs the rules on camera + access events).
-# Reports mounts alongside export — its ``/vms/reports/{kind}`` + ``/vms/report-schedules``
-# are distinct prefixes (no collision with the camera ``/cameras/{id}`` catch-all). The
-# P6-B operational-reporting control plane (uptime/coverage/storage/event reports + the
-# ReportScheduler that fires recurring reports via the notify path).
+# THERE IS NO REPORTS ROUTER. Uptime, recording coverage, storage usage and event
+# counts were computed here and mailed on a cadence — a second reporting product
+# inside the VMS, and one that read tables this service no longer fills (it owns no
+# footage and no disks). Reporting is DashForge's: dashboards are registered under
+# Configurations → Dashboards and shown per console. Two reporting surfaces means
+# two definitions of the same number, and the one nobody maintains is the one an
+# operator quotes.
 routers = [
     # Pulse — the estate's operational health, fanned out from each recorder's own
     # System-Monitor board (/vms/pulse/*). Mounts first: its literal prefix is
@@ -92,7 +94,6 @@ routers = [
     dashboard_router,
     health_router,
     live_router,
-    reports_router,
     event_router,
     federation_router,
     linkage_router,

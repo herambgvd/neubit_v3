@@ -60,9 +60,20 @@ class VmsEvent(Base):
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
 
     # Nullable: a system event (e.g. storage_low) may not be tied to a camera.
+    #
+    # NO FOREIGN KEY, and that is the architecture. This column carried
+    # ``ForeignKey("cameras.id")`` — the cameras THIS service owns rows for. It owns
+    # none: the recorder owns every camera, and an event mirrored from a recorder's
+    # ONVIF ledger names a camera on THAT box. Every one of them violated the
+    # constraint and was discarded, silently (the ingest path's except-clause was
+    # written for a racing duplicate and logged it at debug), so the console showed
+    # an empty event feed while the recorder held 56 events.
+    #
+    # The id is still indexed and still what the console filters on — it is simply
+    # not a local row's primary key. The camera's NAME is resolved from the
+    # federated list, which is where the camera is.
     camera_id: Mapped[str | None] = mapped_column(
         String(36),
-        ForeignKey("cameras.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )

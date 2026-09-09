@@ -85,6 +85,22 @@ class MediaNode(Base):
     # error, and the two are never connected.
     credential_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
+    # HOW FAR THIS NODE'S EVENT LEDGER HAS BEEN MIRRORED.
+    #
+    # The supervisor asks each recorder for events `since` a watermark. That
+    # watermark used to live in memory only, with a 15-minute cold-start fallback,
+    # so every restart of this service asked for the last quarter of an hour and
+    # nothing else — and on a live estate that meant an event feed that was
+    # permanently EMPTY while the recorder held 56 events, the newest of them
+    # ninety minutes old. Nothing logged an error: the poll succeeded and returned
+    # nothing.
+    #
+    # Written only after a batch is ingested, so an unreachable recorder keeps
+    # whatever it was holding for the next successful poll.
+    events_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )

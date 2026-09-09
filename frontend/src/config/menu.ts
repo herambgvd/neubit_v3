@@ -128,7 +128,11 @@ export const streamTabs: NavItem[] = [
   // intentionally NOT a sub-tab here.
   { title: "Playback", icon: "heroicons-outline:play", link: "/playback", perm: "vms.playback.view", module: "vms" },
   { title: "Camera events", icon: "heroicons:bell-alert", link: "/camera-events", perm: "vms.camera.read", module: "vms" },
-  { title: "Reports", icon: "heroicons:chart-bar-square", link: "/reports", perm: "vms.playback.view", module: "vms" },
+  // NO REPORTS TAB. The VMS's own report console (uptime, coverage, storage,
+  // event counts, and a scheduler that mailed them) is gone: reporting is
+  // DashForge's, surfaced through the registered dashboards under Building
+  // Intelligence and Surveillance. Two reporting surfaces means two definitions of
+  // the same number, and the one nobody maintains is the one an operator quotes.
 ];
 
 // The route the Streaming top-nav item jumps to (first enabled stream tab).

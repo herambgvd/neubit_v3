@@ -75,10 +75,12 @@ def test_the_walk_sees_the_whole_surface():
 
     The floor is a SANITY check on the walk, not a target for the service's size.
     It was 190 when the VMS still carried its own device plane; that plane moved to
-    the recorder that owns the cameras, so the surface is legitimately smaller now.
-    Lower it when routes are deliberately removed — never raise it to paper over a
-    walk that stopped seeing them."""
-    assert len(PROTECTED) > 150, len(PROTECTED)
+    the recorder that owns the cameras. It came down again when the playback and
+    recording-browse routes went (this service serves no footage of its own) and
+    again when the report console went (reporting is DashForge's). Lower it when
+    routes are deliberately removed — never raise it to paper over a walk that
+    stopped seeing them."""
+    assert len(PROTECTED) > 130, len(PROTECTED)
 
 
 @pytest.mark.parametrize("method,url", PROTECTED, ids=lambda v: str(v))

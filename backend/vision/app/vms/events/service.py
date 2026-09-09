@@ -189,9 +189,18 @@ class VmsEventService:
         self.db.add(row)
         try:
             await self.db.commit()
-        except Exception as exc:  # noqa: BLE001 — a racing insert (unique key) is fine
+        except Exception as exc:  # noqa: BLE001
             await self.db.rollback()
-            log.debug("event dedup race for key=%s: %s", key, exc)
+            # A racing insert on the dedup key is expected and boring. ANYTHING ELSE
+            # is an event being thrown away, and it used to be logged at debug as a
+            # "dedup race" whatever it was — which is how a foreign-key violation
+            # discarded every mirrored recorder event without a line above DEBUG.
+            if "dedup" in str(exc).lower() or "unique" in str(exc).lower():
+                log.debug("event dedup race for key=%s: %s", key, exc)
+            else:
+                log.warning(
+                    "event DISCARDED (camera_id=%s type=%s): %s", camera_id, event_type, exc
+                )
             return None
         await self.db.refresh(row)
 
