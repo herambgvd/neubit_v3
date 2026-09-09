@@ -13,9 +13,11 @@ Two router objects, split by trust boundary:
 
 from __future__ import annotations
 
+import json
 import os
 
 from datetime import datetime
+from urllib.parse import parse_qsl
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
@@ -458,6 +460,53 @@ def build_public_router(bus: EventBus) -> APIRouter:
             chunks.append(chunk)
         return b"".join(chunks)
 
+    def _parse_body(raw: bytes, content_type: str) -> dict:
+        """The posted body as a dict.
+
+        Parsed from the bytes ALREADY READ by `_read_capped`, never by asking the
+        request again. That was the bug: draining `request.stream()` for the cap
+        and then calling `await request.json()` reads the stream a second time,
+        which raises "Stream consumed" — and a bare `except Exception` turned it
+        into an empty payload. Every JSON POST answered 202, stored `{}` and
+        published an empty event; a webhook with a schema rejected every delivery
+        for a field the sender had plainly sent.
+
+        An EMPTY body stays a valid empty payload — some senders post nothing and
+        the event is the signal. A form-encoded body is read, because that is a
+        real webhook shape and dropping it silently is what this function exists
+        to stop. Anything else is refused with a reason: "accepted" for a body
+        nobody could read is the worst possible answer, because the sender stops
+        looking and the event never existed.
+        """
+        if not raw:
+            return {}
+        ctype = (content_type or "").split(";")[0].strip().lower()
+        if ctype == "application/x-www-form-urlencoded":
+            form: dict = {}
+            for key, val in parse_qsl(raw.decode("utf-8", "replace"), keep_blank_values=True):
+                if key in form:
+                    if isinstance(form[key], list):
+                        form[key].append(val)
+                    else:
+                        form[key] = [form[key], val]
+                else:
+                    form[key] = val
+            return form
+        try:
+            parsed = json.loads(raw)
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ValidationError(
+                f"body is not valid JSON: {exc}", code="BODY_UNREADABLE", status_code=422
+            ) from exc
+        # A JSON scalar or array is valid JSON and not a payload this pipeline can
+        # route on; wrapping it silently would invent a shape the operator never
+        # wrote their paths against.
+        if not isinstance(parsed, dict):
+            raise ValidationError(
+                "body must be a JSON object", code="BODY_UNREADABLE", status_code=422
+            )
+        return parsed
+
     @public_router.api_route(
         "/hooks/{slug}",
         methods=["GET", "POST"],
@@ -482,11 +531,7 @@ def build_public_router(bus: EventBus) -> APIRouter:
                 else:
                     payload[key] = val
         else:
-            # Tolerant body parse — an empty body is a valid {} payload.
-            try:
-                payload = await request.json() if raw_body else {}
-            except Exception:
-                payload = {}
+            payload = _parse_body(raw_body, request.headers.get("content-type", ""))
         svc = ReceiverService(db, bus)
         _event_type, event_id = await svc.handle(slug, request, payload, raw_body)
         return IngestResponse(accepted=True, event_id=event_id)

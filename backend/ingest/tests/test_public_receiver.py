@@ -112,3 +112,82 @@ async def test_an_ordinary_event_is_still_accepted(app, session):
     assert r.status_code == 202, r.text
     assert r.json()["accepted"] is True
     assert await _log_count(session) == 1
+
+
+# ── THE BODY ACTUALLY ARRIVES ────────────────────────────────────────────────
+#
+# The receiver caps the body by draining `request.stream()` and then called
+# `await request.json()` — which reads the stream a SECOND time, raises
+# "Stream consumed", and was swallowed by a bare `except Exception: payload = {}`.
+#
+# So every JSON POST answered 202, stored `raw_payload: {}`, and published an
+# empty event. Nothing failed: the sender saw an accepted delivery, the log said
+# published, and the payload was gone. A schema on the webhook turned it into
+# "'zone' is a required property" for a body that plainly had one.
+
+
+async def test_a_posted_body_reaches_the_pipeline(app, session):
+    wh = await _webhook(session)
+    async with _client(app) as c:
+        r = await c.post(f"/ingest/hooks/{wh.slug}", json={"zone": "B2", "severity": "high"})
+    assert r.status_code == 202
+
+    row = (
+        await session.execute(
+            select(IngestEventLog).order_by(IngestEventLog.created_at.desc()).limit(1)
+        )
+    ).scalars().first()
+    assert row.raw_payload == {"zone": "B2", "severity": "high"}
+
+
+async def test_a_schema_sees_the_body_that_was_sent(app, session):
+    # The shape the bug wore in the field: a webhook with a schema rejecting
+    # every delivery for a field the sender did send.
+    wh = await _webhook(session)
+    wh.payload_schema = {"type": "object", "required": ["zone"]}
+    await session.commit()
+
+    async with _client(app) as c:
+        r = await c.post(f"/ingest/hooks/{wh.slug}", json={"zone": "B2"})
+    assert r.status_code == 202, r.text
+
+
+async def test_an_empty_body_is_still_an_empty_payload(app, session):
+    # Documented behaviour, and some senders really do POST nothing.
+    wh = await _webhook(session)
+    async with _client(app) as c:
+        r = await c.post(f"/ingest/hooks/{wh.slug}")
+    assert r.status_code == 202
+
+
+async def test_a_form_encoded_body_is_read_rather_than_dropped(app, session):
+    # A real webhook shape. It used to become {} in silence, like everything else.
+    wh = await _webhook(session)
+    async with _client(app) as c:
+        r = await c.post(
+            f"/ingest/hooks/{wh.slug}",
+            content=b"zone=B2&severity=high",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+    assert r.status_code == 202
+
+    row = (
+        await session.execute(
+            select(IngestEventLog).order_by(IngestEventLog.created_at.desc()).limit(1)
+        )
+    ).scalars().first()
+    assert row.raw_payload == {"zone": "B2", "severity": "high"}
+
+
+async def test_a_body_that_is_neither_says_so_instead_of_publishing_nothing(app, session):
+    # "Accepted" for a body we could not read is the worst answer: the sender
+    # stops looking, and the event never existed.
+    wh = await _webhook(session)
+    async with _client(app) as c:
+        r = await c.post(
+            f"/ingest/hooks/{wh.slug}",
+            content=b"\x01\x02 not json",
+            headers={"Content-Type": "application/octet-stream"},
+        )
+    assert r.status_code == 422
+    assert "body" in r.text.lower()
