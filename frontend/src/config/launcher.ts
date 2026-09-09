@@ -77,6 +77,16 @@ export const LAUNCHER_MODES: LauncherMode[] = [
         accent: "#67e8f9",
         tiles: [
           { icon: "heroicons:bell-alert", label: "Alarms", href: "/events", tone: "hot", perm: "neubit.read" },
+          // The surveillance-category dashboards. Same viewer as Building
+          // Intelligence's tile, pinned to `vms` — which is what stops one strip
+          // holding every console's dashboards in registration order.
+          //
+          // Gated on `dashforge.read` (the key that mints the embed token, so the
+          // tile and the data behind it turn on one thing) plus the `analytics`
+          // module the routes are mounted behind. NOT `vms`: the module gate is
+          // the backend's, and naming a different one here would show a tile that
+          // 403s.
+          { icon: "heroicons:squares-2x2", label: "Dashboards", href: "/surveillance/dashboards", tone: "teal", perm: "dashforge.read", module: "analytics" },
           { icon: "heroicons:chart-bar-square", label: "Video Analytics", soon: true },
         ],
       },
@@ -230,6 +240,10 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           // would read SOON to everyone including an admin, with the page behind
           // it working perfectly. `dashforge.read` is also what mints the embed
           // token, so the tile and the data it leads to now turn on one thing.
+          // The page behind this pins the `building` CATEGORY, so the tile opens
+          // THIS console's dashboards rather than every dashboard registered on
+          // the platform — Surveillance has its own tile onto its own category,
+          // and Configurations → Dashboards is where they are filed.
           { icon: "heroicons:squares-2x2", label: "Dashboards", href: "/bi/dashboards", tone: "att", perm: "dashforge.read", module: "analytics" },
         ],
       },
@@ -250,6 +264,13 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           { icon: "heroicons:adjustments-horizontal", label: "System", href: "/system", tone: "blue", perm: "settings.manage" },
           { icon: "heroicons:shield-exclamation", label: "Security", href: "/config/security", tone: "blue", perm: "security.manage" },
           { icon: "heroicons:squares-2x2", label: "Platform", href: "/platform", tone: "blue", perm: "settings.manage" },
+          // Where a dashboard is REGISTERED, renamed, re-filed and removed. It
+          // used to be a create form on the Building Intelligence viewer, which
+          // meant managing a surveillance dashboard started by opening Building
+          // Intelligence. Gated on `dashforge.read` rather than `manage` so an
+          // operator can see what exists; every write on the screen is behind
+          // `dashforge.manage` and the buttons are absent without it.
+          { icon: "heroicons:rectangle-group", label: "Dashboards", href: "/config/dashboards", tone: "blue", perm: "dashforge.read", module: "analytics" },
           { icon: "heroicons:share", label: "Federation", href: "/federation", tone: "blue", perm: "vms.camera.read", module: "vms" },
         ],
       },

@@ -72,6 +72,10 @@ export const configConsoles: NavItem[] = [
   { title: "Patterns", icon: "heroicons-outline:rectangle-group", link: "/config/patterns", perm: "vms.config.manage", module: "vms" },
   { title: "Workflow", icon: "heroicons-outline:rectangle-stack", link: "/workflow-config", perm: "neubit.read", module: "workflow" },
   { title: "Ingest", icon: "heroicons-outline:arrow-down-on-square-stack", link: "/ingest", perm: "neubit.read", module: "workflow" },
+  // Where DashForge dashboards are registered and filed under the console that
+  // shows them. Read-gated, not manage-gated: the screen shows what exists to an
+  // operator and hides every write behind `dashforge.manage`.
+  { title: "Dashboards", icon: "heroicons-outline:rectangle-group", link: "/config/dashboards", perm: "dashforge.read", module: "analytics" },
   { title: "Security", icon: "heroicons-outline:shield-exclamation", link: "/config/security", perm: "security.manage" },
   // Federation is a System & Policy console on the HOME launcher — list it here too
   // so the ⌘K command palette can reach it like every other Configurations surface.

@@ -45,9 +45,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.deps import get_current_user, require_permission
 from ..auth.models import User
+from ..core.errors import ValidationError
 from ..db.base import get_db
 from ..tenancy.features import require_feature, require_tenant_active
 from ..tenancy.scope import Scope, get_scope
+from .categories import normalize as _normalize_category
 from .client import DashForgeUnavailable, client as dashforge
 from .config import get_dashforge_settings
 from .schemas import (
@@ -85,6 +87,18 @@ async def _service(
 Svc = Annotated[EmbedRegistryService, Depends(_service)]
 
 
+def normalize_category(value: str) -> str:
+    """A ``?category=`` value as a stored slug, or a 422 naming the valid set.
+
+    An unknown category answered with an empty list would read as "this console
+    has no dashboards" when it means "that is not a category".
+    """
+    try:
+        return _normalize_category(value)
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from None
+
+
 # ── registrations ────────────────────────────────────────────────────────────
 
 
@@ -96,12 +110,19 @@ Svc = Annotated[EmbedRegistryService, Depends(_service)]
 async def list_embeds(
     svc: Svc,
     search: Optional[str] = Query(None, max_length=160),
+    category: Optional[str] = Query(None, max_length=32),
 ) -> EmbedListResponse:
     """Every DashForge dashboard this caller's tenant shows.
 
     Carries no token — one here would make the session gate below decorative.
+
+    ``category`` narrows to one console's own dashboards. An unknown value is a
+    422 naming the valid set rather than an empty list, which would read as "this
+    console has no dashboards" when it means "that is not a category".
     """
-    items, total = await svc.list_(search=search)
+    items, total = await svc.list_(
+        search=search, category=normalize_category(category) if category else None
+    )
     return EmbedListResponse(
         items=[EmbedPublic.model_validate(r) for r in items], total=total
     )

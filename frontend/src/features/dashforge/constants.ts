@@ -29,3 +29,31 @@ export const REMINT_MARGIN_MS = 60_000;
  *  passed (a laptop resumed from sleep) would schedule at a negative delay and
  *  re-mint in a tight loop. */
 export const REMINT_MIN_MS = 5_000;
+
+/** Which console shows a registered dashboard.
+ *
+ *  MIRRORS `backend/core/app/dashforge/categories.py` — same slugs, same order,
+ *  and `categories.test.ts` reads that file and fails if the two drift. The set
+ *  is closed on both sides for one reason: a category no tab names is a
+ *  dashboard that is registered, listed by nothing, and reachable only by its
+ *  direct link.
+ *
+ *  The icon is this side's own — the backend has no view of the console's
+ *  iconography and should not grow one. */
+export const CATEGORIES: { slug: string; label: string; icon: string }[] = [
+  { slug: "building", label: "Building Intelligence", icon: "heroicons:building-office-2" },
+  { slug: "vms", label: "Surveillance", icon: "heroicons:video-camera" },
+  { slug: "access", label: "Access Control", icon: "heroicons:key" },
+  { slug: "workflow", label: "Workflow", icon: "heroicons:rectangle-stack" },
+  { slug: "general", label: "General", icon: "heroicons:squares-2x2" },
+];
+
+/** What a registration gets when nobody chose — visible under "General" rather
+ *  than filed nowhere. Must match the backend's DEFAULT_CATEGORY. */
+export const DEFAULT_CATEGORY = "general";
+
+/** The operator-facing label for a slug. An unknown slug (a row written before a
+ *  category was retired, say) shows its raw value rather than disappearing. */
+export function categoryLabel(slug: string): string {
+  return CATEGORIES.find((c) => c.slug === slug)?.label ?? slug;
+}

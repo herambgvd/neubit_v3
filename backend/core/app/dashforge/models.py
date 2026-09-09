@@ -84,6 +84,14 @@ class DashForgeEmbed(Base):
     workspace_ref: Mapped[str] = mapped_column(String(64), nullable=False)
     dashboard_ref: Mapped[str] = mapped_column(String(64), nullable=False)
 
+    # Which console shows it — see ``categories.py`` for why the set is closed.
+    # Stored as a slug rather than a FK: the set is code, not operator data, and a
+    # table would invite a sixth category no console has a tab for.
+    category: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="general",
+        server_default=text("'general'"), index=True,
+    )
+
     # Locked filter bindings baked into the token signature at mint. See above.
     scope: Mapped[dict] = mapped_column(
         JSON, nullable=False, default=dict, server_default=text("'{}'")

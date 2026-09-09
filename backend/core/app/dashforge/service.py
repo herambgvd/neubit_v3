@@ -27,14 +27,24 @@ class EmbedRegistryService:
         self.scope = scope
         self.actor = actor
 
-    async def list_(self, *, search: str | None = None) -> tuple[list[DashForgeEmbed], int]:
+    async def list_(
+        self, *, search: str | None = None, category: str | None = None
+    ) -> tuple[list[DashForgeEmbed], int]:
+        """Registrations for this tenant, optionally one console's own.
+
+        ``category`` is how each console shows ITS dashboards and not every other
+        console's — the filter runs in SQL so a surveillance operator's list is
+        never a client-side slice of the building-intelligence set.
+        """
         stmt = scoped(select(DashForgeEmbed), DashForgeEmbed, self.scope)
+        if category:
+            stmt = stmt.where(DashForgeEmbed.category == category)
         if search:
             like = f"%{search}%"
             stmt = stmt.where(
                 or_(DashForgeEmbed.name.ilike(like), DashForgeEmbed.description.ilike(like))
             )
-        stmt = stmt.order_by(DashForgeEmbed.name)
+        stmt = stmt.order_by(DashForgeEmbed.category, DashForgeEmbed.name)
         rows = list((await self.db.execute(stmt)).scalars().all())
         return rows, len(rows)
 
@@ -52,6 +62,7 @@ class EmbedRegistryService:
             tenant_id=self.scope.tenant_id,
             name=body.name.strip(),
             description=(body.description or None),
+            category=body.category,
             workspace_ref=body.workspace_ref.strip(),
             dashboard_ref=body.dashboard_ref.strip(),
             scope=body.scope,
@@ -77,6 +88,8 @@ class EmbedRegistryService:
             row.name = body.name.strip()
         if "description" in fields:
             row.description = body.description or None
+        if "category" in fields and body.category is not None:
+            row.category = body.category
         if "workspace_ref" in fields and body.workspace_ref is not None:
             row.workspace_ref = body.workspace_ref.strip()
         if "dashboard_ref" in fields and body.dashboard_ref is not None:

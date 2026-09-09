@@ -9,7 +9,7 @@
 // the gateway prefix, which is the reason the move needed no frontend edit.
 //
 // Backend contract:
-//   GET    /dashforge/dashboards            ?search        (dashforge.read)
+//   GET    /dashforge/dashboards   ?search &category        (dashforge.read)
 //   POST   /dashforge/dashboards                           (dashforge.manage)
 //   GET    /dashforge/dashboards/{id}                      (dashforge.read)
 //   PATCH  /dashforge/dashboards/{id}                      (dashforge.manage)
@@ -35,6 +35,8 @@ export interface DashForgeEmbed {
   id: string;
   name: string;
   description: string | null;
+  /** Which console shows it — see `constants.ts` for the closed set. */
+  category: string;
   /** DashForge's own workspace / dashboard ids. Strings on purpose — NeuBit does
    *  not encode another product's key type. */
   workspace_ref: string;
@@ -60,12 +62,23 @@ export interface DashForgeSession {
 }
 
 export const dashforge = {
-  list: (search?: string): Promise<{ items: DashForgeEmbed[]; total: number }> =>
-    unwrap(api.get(BASE, { params: search ? { search } : undefined })),
+  /** `category` narrows to one console's own dashboards. It is a QUERY, not a
+   *  client-side filter: a surveillance operator's list must not be a slice of a
+   *  response that carried every other console's rows to the browser first. */
+  list: (params: { search?: string; category?: string } = {}): Promise<{
+    items: DashForgeEmbed[];
+    total: number;
+  }> => {
+    const q: Record<string, string> = {};
+    if (params.search) q.search = params.search;
+    if (params.category) q.category = params.category;
+    return unwrap(api.get(BASE, { params: Object.keys(q).length ? q : undefined }));
+  },
 
   register: (body: {
     name: string;
     description?: string | null;
+    category?: string;
     workspace_ref: string;
     dashboard_ref: string;
     scope?: Record<string, string>;

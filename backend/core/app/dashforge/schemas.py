@@ -18,6 +18,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .categories import DEFAULT_CATEGORY, normalize as _normalize_category
+
 MAX_SCOPE_BINDINGS = 16
 MAX_SCOPE_VALUE_LEN = 512
 # DashForge ids are its own; this only stops a pathological string from reaching
@@ -45,6 +47,10 @@ def _clean_scope(value: dict | None) -> dict:
 class EmbedCreate(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     description: str | None = Field(default=None, max_length=1024)
+    # Which console shows it. Defaulted rather than required so a registration
+    # made before the field existed — or by a script — is still findable, under
+    # "General", instead of belonging to no tab at all.
+    category: str = DEFAULT_CATEGORY
     workspace_ref: str = Field(min_length=1, max_length=MAX_REF_LEN)
     dashboard_ref: str = Field(min_length=1, max_length=MAX_REF_LEN)
     scope: dict[str, str] = Field(default_factory=dict)
@@ -53,6 +59,11 @@ class EmbedCreate(BaseModel):
     @classmethod
     def _scope(cls, v):
         return _clean_scope(v)
+
+    @field_validator("category")
+    @classmethod
+    def _category(cls, v):
+        return _normalize_category(v)
 
 
 class EmbedUpdate(BaseModel):
@@ -65,6 +76,7 @@ class EmbedUpdate(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=160)
     description: str | None = Field(default=None, max_length=1024)
+    category: str | None = None
     workspace_ref: str | None = Field(default=None, min_length=1, max_length=MAX_REF_LEN)
     dashboard_ref: str | None = Field(default=None, min_length=1, max_length=MAX_REF_LEN)
     scope: dict[str, str] | None = None
@@ -74,6 +86,11 @@ class EmbedUpdate(BaseModel):
     def _scope(cls, v):
         return None if v is None else _clean_scope(v)
 
+    @field_validator("category")
+    @classmethod
+    def _category(cls, v):
+        return None if v is None else _normalize_category(v)
+
 
 class EmbedPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -81,6 +98,7 @@ class EmbedPublic(BaseModel):
     id: str
     name: str
     description: str | None
+    category: str
     workspace_ref: str
     dashboard_ref: str
     scope: dict
