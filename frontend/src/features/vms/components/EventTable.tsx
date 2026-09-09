@@ -22,7 +22,7 @@
 // jobs: it is the ordinary way to look at something, and the checkbox is the way
 // to act on many. They never fight — the checkbox stops the click from reaching
 // the row.
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import { Icon } from "@iconify/react";
 
 import { eventTypeLabel, fmtDate, fmtTime, sevPreset, typePreset, type NormalizedVmsEvent } from "../eventLib";
@@ -41,8 +41,14 @@ export interface EventTableProps {
   /** The toolbar's own controls — filters live IN the table, where the rows they
    *  narrow are, rather than in a separate card above the evidence panels. */
   toolbar?: ReactNode;
-  /** Paging, rendered under the rows. */
-  footer?: ReactNode;
+  /** Paging. It rides at the RIGHT OF THE TOOLBAR, not under the rows: the page
+   *  itself does not scroll any more, so a footer under a full table would be the
+   *  one control an operator had to reach past the rows for. */
+  paging?: ReactNode;
+  /** The rows' scroll container — the page needs it to answer "are they at the
+   *  top" for the new-events pill, and to take them back there. */
+  scrollRef?: RefObject<HTMLDivElement | null>;
+  onScroll?: () => void;
 }
 
 const keyOf = (e: NormalizedVmsEvent) => e.event_id || e.id || "";
@@ -56,7 +62,9 @@ export default function EventTable({
   onToggleAll,
   cameraName,
   toolbar,
-  footer,
+  paging,
+  scrollRef,
+  onScroll,
 }: EventTableProps) {
   // One clock for the whole table: the open rows count up together, and a ticker
   // per row would be a timer per row.
@@ -65,16 +73,19 @@ export default function EventTable({
   const allChecked = events.length > 0 && events.every((e) => checked.has(keyOf(e)));
 
   return (
-    <section className="overflow-hidden rounded-xl border border-card-border bg-card">
-      {toolbar && (
-        <header className="flex flex-wrap items-center gap-2 border-b border-card-border px-3 py-2">
+    // A column that FILLS its pane: header pinned, rows scrolling inside. The page
+    // around it does not scroll at all.
+    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card">
+      {(toolbar || paging) && (
+        <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-card-border px-3 py-2">
           {toolbar}
+          {paging && <span className="ml-auto flex items-center gap-2">{paging}</span>}
         </header>
       )}
 
-      <div className="overflow-x-auto">
+      <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-auto">
         <table className="w-full min-w-[46rem] text-left">
-          <thead>
+          <thead className="sticky top-0 z-10 bg-card">
             <tr className="border-b border-card-border text-[10px] uppercase tracking-wide text-muted">
               <th className="w-8 px-2 py-1.5">
                 <input
@@ -171,12 +182,6 @@ export default function EventTable({
           </tbody>
         </table>
       </div>
-
-      {footer && (
-        <footer className="flex flex-wrap items-center gap-2 border-t border-card-border px-3 py-2">
-          {footer}
-        </footer>
-      )}
     </section>
   );
 }

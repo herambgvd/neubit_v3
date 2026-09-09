@@ -25,6 +25,7 @@ import { Avatar } from "@/components/ui/kit";
 import MenuNavigator from "@/components/shell/MenuNavigator";
 import GlobalBrand from "@/components/shell/GlobalBrand";
 import HeaderSectionNav from "@/components/shell/HeaderSectionNav";
+import { HeaderSlotOutlet } from "@/components/shell/HeaderSlot";
 import { useAuth } from "@/lib/auth";
 import type { NotificationOut, Page } from "@/lib/types";
 
@@ -336,7 +337,11 @@ export default function GlobalNavDock({ home = false }: { home?: boolean }) {
           (min-w-0) so a wide sub-view segment can never push the dock cluster off
           screen. Renders nothing on routes without a section nav. */}
       <HeaderSectionNav />
-      <div className="ml-auto flex shrink-0 items-center gap-1.5">
+      {/* A page's own top-bar controls (Events: live state + the severity counts).
+          Empty on every route that puts nothing in it. `nav-scroll` + min-w-0 so a
+          long set of chips scrolls instead of pushing the dock cluster off screen. */}
+      <HeaderSlotOutlet className="nav-scroll ml-auto flex min-w-0 items-center gap-1.5 overflow-x-auto" />
+      <div className="flex shrink-0 items-center gap-1.5">
         {home && <HomeStatusStrip />}
         <button
           onClick={() => window.dispatchEvent(new Event("palette:open"))}

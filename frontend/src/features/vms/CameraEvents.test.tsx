@@ -12,13 +12,14 @@
  *   * an empty feed says WHY it is empty. "No events" under an active filter and
  *     "no events" on a quiet estate are opposite instructions.
  */
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { httpError, stubApi, type ApiStub, type Recorded } from "@/test/apiStub";
 import { renderWithProviders } from "@/test/render";
 
+import { HeaderSlotOutlet } from "@/components/shell/HeaderSlot";
 import CameraEventsPage from "./CameraEvents";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
@@ -417,6 +418,47 @@ describe("how long an event ran", () => {
 });
 
 
+describe("the operator never scrolls this page", () => {
+  /**
+   * Two screenshots' worth of feedback: the live state and the severity counts
+   * were a row ON the page, and the paging sat under a full table. Both cost the
+   * operator either a row of evidence or a scroll to reach a control. The counts
+   * now ride in the GLOBAL TOP BAR beside the "Events" badge, and the paging is at
+   * the RIGHT OF THE TABLE'S TOOLBAR, above the rows it pages.
+   */
+  it("puts the live state and the counts in the top bar", async () => {
+    stubAll();
+    renderWithProviders(
+      <>
+        <header data-testid="topbar">
+          <HeaderSlotOutlet />
+        </header>
+        <CameraEventsPage />
+      </>,
+    );
+
+    const bar = screen.getByTestId("topbar");
+    expect(bar).toContainElement(await screen.findByText("Live feed"));
+    expect(bar).toContainElement(screen.getByRole("button", { name: /Critical$/ }));
+    expect(bar).toContainElement(screen.getByRole("button", { name: /Unacked$/ }));
+  });
+
+  it("pages from above the rows, not from under them", async () => {
+    stubAll();
+    renderWithProviders(<CameraEventsPage />);
+    const table = await screen.findByRole("table");
+
+    // The paging controls are in the table's HEADER — the element the rows scroll
+    // inside comes after them, so a full page of rows never buries them.
+    const next = screen.getByRole("button", { name: /next page/i });
+    expect(table.contains(next)).toBe(false);
+    expect(
+      next.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+});
+
+
 describe("a live arrival while the operator is reading", () => {
   /**
    * A feed that prepends while somebody is at row forty moves the row they were
@@ -432,12 +474,15 @@ describe("a live arrival while the operator is reading", () => {
     // test that instead.
     await screen.findByRole("checkbox", { name: /select all/i });
 
-    // Reading further down the feed…
+    // Reading further down the feed. The PAGE does not scroll any more — the rows
+    // do, inside the table — so this is the table's own scroll, which is what the
+    // pill now watches.
     // act(): the scroll handler sets state, and React must flush it before the
     // arrival below is judged against it.
+    const rows = screen.getByRole("table").parentElement as HTMLElement;
     act(() => {
-      (globalThis as { scrollY: number }).scrollY = 900;
-      globalThis.dispatchEvent(new Event("scroll"));
+      Object.defineProperty(rows, "scrollTop", { value: 900, configurable: true });
+      fireEvent.scroll(rows);
     });
     // …when something arrives.
     liveFrames = [event({ id: "new-1", event_id: "new-1", event_type: "tamper", occurred_at: TODAY })];

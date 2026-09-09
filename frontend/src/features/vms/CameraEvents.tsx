@@ -16,6 +16,7 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { EmptyState, Select } from "@/components/ui/kit";
+import { HeaderSlot } from "@/components/shell/HeaderSlot";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { workflow as wfApi } from "@/features/workflow/api";
@@ -196,13 +197,9 @@ export default function CameraEventsPage() {
   const [atTop, setAtTop] = useState(true);
   const topKey = useRef<string | null>(null);
 
-  useEffect(() => {
-    if (typeof globalThis === "undefined" || !globalThis.addEventListener) return;
-    const onScroll = () => setAtTop((globalThis.scrollY || 0) < 120);
-    onScroll();
-    globalThis.addEventListener("scroll", onScroll, { passive: true });
-    return () => globalThis.removeEventListener("scroll", onScroll);
-  }, []);
+  // The ROWS scroll, not the page: "at the top" is the table's own scrollTop.
+  const rowsRef = useRef<HTMLDivElement | null>(null);
+  const onRowsScroll = () => setAtTop((rowsRef.current?.scrollTop ?? 0) < 120);
 
   useEffect(() => {
     const newestKey = events[0]?.event_id || events[0]?.id || null;
@@ -264,7 +261,9 @@ export default function CameraEventsPage() {
   const goToNewest = () => {
     topKey.current = events[0]?.event_id || events[0]?.id || null;
     setPending(0);
-    globalThis.scrollTo?.({ top: 0, behavior: "smooth" });
+    setPage(0);
+    setAtTop(true);
+    rowsRef.current?.scrollTo?.({ top: 0, behavior: "smooth" });
   };
 
   // ── THE MONITORING HALF ───────────────────────────────────────────────────
@@ -346,13 +345,18 @@ export default function CameraEventsPage() {
   };
 
   return (
-    <div className="pb-8">
-      {/* ── HEADER LINE ────────────────────────────────────────────────────
-          The live state and the counts an operator triages by, on one line with
-          no card around it — this is a header, not a panel. The FILTERS moved
-          into the table's own toolbar, where the rows they narrow are, which is
-          what let the evidence panels move up to the top of the page. */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+    // A COLUMN THAT FILLS THE PANE. Nothing on this screen scrolls except the
+    // rows: an operator watching the selected event's recording should never have
+    // to scroll the video off the top to reach the list, and scrolling back is
+    // time in the one place there is none.
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      {/* ── IN THE TOP BAR ──────────────────────────────────────────────────
+          The live state and the severity counts ride in the GLOBAL HEADER, beside
+          the "Events" badge — the same place the section names itself. They were a
+          row on the page, and a row on the page is a row of evidence lost. The
+          FILTERS live in the table's toolbar, with the rows they narrow. */}
+      <HeaderSlot>
+      <div className="flex flex-wrap items-center gap-1.5">
         <span className="inline-flex items-center gap-1.5">
           <span className="relative flex h-2.5 w-2.5">
             {live && connected && (
@@ -393,11 +397,12 @@ export default function CameraEventsPage() {
           onClick={() => qc.invalidateQueries({ queryKey: ["vms-events"] })}
           title="Re-read the history"
           aria-label="Refresh"
-          className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-md border border-card-border text-muted transition hover:bg-hover hover:text-foreground"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-card-border text-muted transition hover:bg-hover hover:text-foreground"
         >
           <Icon icon="heroicons-outline:arrow-path" className="text-xs" />
         </button>
       </div>
+      </HeaderSlot>
 
       {pending > 0 && (
         // Fixed, not in the flow: it must be reachable from row forty, which is
@@ -428,7 +433,7 @@ export default function CameraEventsPage() {
           into a black band. The row is bounded now and Details scrolls inside its
           own card, so the players keep their aspect ratio and the table comes up
           the screen. */}
-      <div className="mb-3 grid grid-cols-1 gap-3 lg:h-[21rem] lg:grid-cols-3">
+      <div className="grid shrink-0 grid-cols-1 gap-3 lg:h-[19rem] lg:grid-cols-3">
         <EventMonitorPane
           event={selected}
           camera={monitorCamera}
@@ -462,7 +467,7 @@ export default function CameraEventsPage() {
       {/* Bulk actions appear only when there is a selection — a burst of motion
           from one camera is acknowledged in one action, not twenty-nine. */}
       {checkedKeys.size > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-blue-500/40 bg-blue-500/10 px-3 py-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-xl border border-blue-500/40 bg-blue-500/10 px-3 py-2">
           <span className="text-[12px] text-blue-200">
             {checkedKeys.size} selected
           </span>
@@ -485,13 +490,13 @@ export default function CameraEventsPage() {
       )}
 
       {q.isLoading ? (
-        <div className="flex items-center gap-2 rounded-xl border border-card-border bg-card p-6 text-xs text-muted">
+        <div className="flex min-h-0 flex-1 items-center gap-2 rounded-xl border border-card-border bg-card p-6 text-xs text-muted">
           <Icon icon="svg-spinners:180-ring" className="text-sm" /> Loading events…
         </div>
       ) : q.isError ? (
         // A failed read must never look like a quiet estate — one is a reason to
         // relax, the other is a reason to look at the recorder.
-        <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-500">
+        <div className="flex min-h-0 flex-1 items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-500">
           <Icon icon="heroicons-outline:exclamation-circle" className="mt-0.5 shrink-0 text-sm" />
           <div>
             <p className="font-medium">Could not load events</p>
@@ -499,7 +504,7 @@ export default function CameraEventsPage() {
           </div>
         </div>
       ) : events.length === 0 ? (
-        <div className="rounded-xl border border-card-border bg-card">
+        <div className="grid min-h-0 flex-1 place-items-center rounded-xl border border-card-border bg-card">
           <EmptyState
             icon={filtered ? "heroicons-outline:funnel" : "heroicons-outline:bell-slash"}
             title={filtered ? "No events match these filters" : "No events yet"}
@@ -522,7 +527,12 @@ export default function CameraEventsPage() {
           />
         </div>
       ) : (
+        // min-h-0 flex-1: the table takes whatever the evidence row left and
+        // scrolls its ROWS inside that, so the toolbar and the paging stay put.
+        <div className="min-h-0 flex-1">
         <EventTable
+          scrollRef={rowsRef}
+          onScroll={onRowsScroll}
           events={pageRows}
           selectedId={selected?.event_id || selected?.id || null}
           onSelect={(e) => {
@@ -570,16 +580,16 @@ export default function CameraEventsPage() {
                   <Icon icon="heroicons-outline:x-mark" className="text-xs" /> Clear
                 </button>
               )}
-              <span className="ml-auto font-mono text-[11px] text-muted">
+            </>
+          }
+          paging={
+            <>
+              <span className="font-mono text-[11px] text-muted">
                 {events.length === 0
                   ? "0"
                   : `${page * pageSize + 1}–${Math.min(events.length, (page + 1) * pageSize)} of ${events.length}`}
                 {total > events.length && ` (of ${total} on the recorder)`}
               </span>
-            </>
-          }
-          footer={
-            <>
               <label className="inline-flex items-center gap-1.5 text-[11px] text-muted">
                 Rows
                 <select
@@ -598,7 +608,7 @@ export default function CameraEventsPage() {
                   ))}
                 </select>
               </label>
-              <span className="ml-auto inline-flex items-center gap-1">
+              <span className="inline-flex items-center gap-1">
                 <button
                   type="button"
                   aria-label="Previous page"
@@ -624,6 +634,7 @@ export default function CameraEventsPage() {
             </>
           }
         />
+        </div>
       )}
     </div>
   );

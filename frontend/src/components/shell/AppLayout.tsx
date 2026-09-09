@@ -116,6 +116,10 @@ export default function AppLayout({ children }: { children?: ReactNode }) {
     // Unified Playback is a control-room surface (source rail + synchronized grid +
     // master timeline) — the PAGE must not scroll; it fills the bounded pane via h-full.
     pathname === "/playback" ||
+    // Events is a triage surface: the evidence panels and the table's toolbar must
+    // stay put and the ROWS scroll inside the table. Scrolling the whole page moved
+    // the video the operator was watching off the top of the screen.
+    pathname === "/camera-events" ||
     // Config master/detail surfaces — same bounded, fill-the-pane layout as the device
     // pages (list-aside + detail card, no page scroll). Keeps all mgmt screens consistent.
     pathname === "/sites" ||
