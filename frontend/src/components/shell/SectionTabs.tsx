@@ -48,6 +48,9 @@ export default function SectionTabs({ tabs, label, icon }: SectionTabsProps) {
           {label}
         </div>
       )}
+      {/* A section with no sub-tabs (Pulse) is a BADGE and nothing else — an
+          empty pill box next to it reads as a control that lost its contents. */}
+      {visible.length > 0 && (
       <nav className={segBox}>
         {visible.map((t) => {
           if (t.disabled) {
@@ -102,6 +105,7 @@ export default function SectionTabs({ tabs, label, icon }: SectionTabsProps) {
           );
         })}
       </nav>
+      )}
     </div>
   );
 }

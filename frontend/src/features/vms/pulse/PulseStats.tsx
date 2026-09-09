@@ -7,6 +7,7 @@
 // The partial banner above them is not decoration. With one recorder unreachable
 // "109 / 112" is a lie that looks precise: those 112 are the cameras of the
 // recorders that answered, and the unreachable one's cameras are simply absent.
+import type { ReactNode } from "react";
 import { Icon } from "@iconify/react";
 
 import type { PulseOverview } from "../types";
@@ -39,7 +40,14 @@ function Stat({
   );
 }
 
-export default function PulseStats({ data }: { data: PulseOverview }) {
+export default function PulseStats({
+  data,
+  right,
+}: {
+  data: PulseOverview;
+  /** Freshness + refresh, rendered at the end of the figures row. */
+  right?: ReactNode;
+}) {
   const t = data.totals;
   const partial = answeredLabel(data);
   const rec = recordingLabel(t.recording_gap_free, t.cameras_recording);
@@ -54,7 +62,7 @@ export default function PulseStats({ data }: { data: PulseOverview }) {
           <p className="text-[11.5px] leading-relaxed text-nb-warn">{partial}</p>
         </div>
       )}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Stat
           icon="heroicons:server-stack"
           label="Recorders"
@@ -102,6 +110,7 @@ export default function PulseStats({ data }: { data: PulseOverview }) {
           sub="shortest default across the estate"
           tone="idle"
         />
+        {right}
       </div>
     </div>
   );

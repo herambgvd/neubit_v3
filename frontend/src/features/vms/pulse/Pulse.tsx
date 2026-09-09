@@ -11,6 +11,12 @@
 // Every one of those is measured by the OWNING RECORDER, so this screen is a
 // fan-out and a roll-up (vision's `app/vms/pulse`), never a second measurement.
 //
+// The page carries NO heading of its own: Pulse names itself in the top bar
+// beside the brand, the way Live and Devices do (HeaderSectionNav), so the
+// screen starts on the figures instead of on a title and a paragraph explaining
+// itself. What the surface is for belongs in this comment and in the launcher
+// tile, not in a banner the operator reads once and then scrolls past forever.
+//
 // Shape: the five figures, then attention on the left and the drill-down on the
 // right — a recorder's own board, or one camera's fault chain, which is where an
 // operator finds out whether the fault is the camera, the network or the
@@ -25,7 +31,6 @@ import {
   ConsolePage,
   ConsolePanel,
   EmptyPane,
-  EstateHeader,
   IconButton,
   LoadingBlock,
   PanelHeader,
@@ -43,10 +48,6 @@ import PulseStats from "./PulseStats";
 import RecorderBoard from "./RecorderBoard";
 
 const PERM_READ = "vms.camera.read";
-
-const HEADER_DESC =
-  "What the recorders report about the estate right now: cameras, recording, storage and " +
-  "what needs attention. Service and container health lives under Configurations → Platform.";
 
 /** What the right pane is showing. A camera selection carries its recorder,
  *  because the fault trace is answered BY the recorder that owns the camera. */
@@ -116,7 +117,6 @@ export default function Pulse() {
   if (!can(PERM_READ)) {
     return (
       <ConsolePage>
-        <EstateHeader crumbs={[{ label: "Pulse" }]} desc={HEADER_DESC} />
         <EmptyPane
           icon="heroicons:lock-closed"
           title="No estate access"
@@ -129,7 +129,6 @@ export default function Pulse() {
   if (overviewQ.isLoading) {
     return (
       <ConsolePage>
-        <EstateHeader crumbs={[{ label: "Pulse" }]} desc={HEADER_DESC} />
         <LoadingBlock label="Asking the recorders…" />
       </ConsolePage>
     );
@@ -140,7 +139,6 @@ export default function Pulse() {
     // green board look identical to someone glancing at a wall.
     return (
       <ConsolePage>
-        <EstateHeader crumbs={[{ label: "Pulse" }]} desc={HEADER_DESC} />
         <EmptyPane
           icon="heroicons:exclamation-triangle"
           title="Could not read the estate"
@@ -152,11 +150,13 @@ export default function Pulse() {
 
   return (
     <ConsolePage>
-      <EstateHeader
-        crumbs={[{ label: "Pulse" }]}
-        desc={HEADER_DESC}
+      {/* Freshness rides WITH the figures rather than in a title bar: every number
+          below is a reading with an age, and "updated 2m ago" is the difference
+          between a healthy estate and a stale page about one. */}
+      <PulseStats
+        data={data}
         right={
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <span className="font-mono text-[10.5px] text-nb-faint">
               {overviewQ.isFetching ? "refreshing…" : `updated ${fmtRelative(data.generated_at)}`}
             </span>
@@ -172,8 +172,6 @@ export default function Pulse() {
           </div>
         }
       />
-
-      <PulseStats data={data} />
 
       <ConsoleGrid>
         {/* LEFT — what needs an operator, worst first (ranked by the service) */}

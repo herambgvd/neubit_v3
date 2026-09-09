@@ -114,6 +114,17 @@ function stubAll(over: Record<string, unknown> = {}) {
 beforeEach(() => stubAll());
 
 describe("the estate figures", () => {
+  it("starts on the figures — the page carries no heading of its own", async () => {
+    // Pulse names itself in the top bar (HeaderSectionNav), like Live. A title
+    // and a paragraph explaining the screen used to sit above a board whose whole
+    // job is to be read at a glance.
+    renderWithProviders(<Pulse />);
+    await screen.findByText("2 / 3");
+
+    expect(screen.queryByRole("heading", { name: /pulse/i })).toBeNull();
+    expect(screen.queryByText(/what the recorders report about the estate/i)).toBeNull();
+  });
+
   it("shows what the recorders report", async () => {
     renderWithProviders(<Pulse />);
 

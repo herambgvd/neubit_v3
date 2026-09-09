@@ -33,5 +33,11 @@ export default function HeaderSectionNav() {
   if (isStreamingRoute(pathname)) {
     return <SectionTabs tabs={streamTabs} label="Streaming" icon="heroicons:signal" />;
   }
+  // Pulse names itself in the top bar, beside the brand, the way Live and Devices
+  // do — so the page below it carries no heading of its own. It has no sub-tabs:
+  // the badge IS the section nav.
+  if (pathname === "/pulse") {
+    return <SectionTabs tabs={[]} label="Pulse" icon="heroicons:heart" />;
+  }
   return null;
 }
