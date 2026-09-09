@@ -93,6 +93,7 @@ describe("the create control", () => {
       "features/core/tags/Tags.tsx",
       "features/core/email-templates/EmailTemplates.tsx",
       "features/ingest/components/CategoryList.tsx",
+      "features/dashforge/DashboardsManager.tsx",
       "features/workflow/components/config/SopsTab.tsx",
       "features/workflow/components/config/FormsTab.tsx",
       "features/workflow/components/config/FormatsTab.tsx",

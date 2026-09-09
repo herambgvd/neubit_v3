@@ -26,6 +26,7 @@
 // surfaces accent BLUE (nb-blue / nb-blueb) to match their launcher tone and the
 // ConsoleStrip modtab; teal stays reserved for Surveillance.
 import { Icon } from "@iconify/react";
+import Link from "next/link";
 import type { ComponentPropsWithoutRef, FormEvent, MouseEvent, ReactNode } from "react";
 
 import { Button, type ButtonProps } from "@/components/ui/kit";
@@ -404,22 +405,32 @@ export interface PaneActionProps {
   icon: string;
   title?: string;
   onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
+  /** Render as a link instead of a button. Same chrome either way, so a pane
+   *  action that NAVIGATES (open this thing where it is shown) is not a second
+   *  button style invented next to the ones that act. */
+  href?: string;
   children?: ReactNode;
 }
 
 // Header action inside a detail pane (Edit) and its destructive icon-only sibling
 // (Delete). RoleDetail and UserDetail each hand-rolled these; the Delete buttons
 // had already diverged (one labelled, one a bare icon chip).
-export function PaneAction({ icon, title, onClick, children }: PaneActionProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      className="inline-flex items-center gap-1 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1.5 text-xs text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
-    >
+export function PaneAction({ icon, title, onClick, href, children }: PaneActionProps) {
+  const cls =
+    "inline-flex items-center gap-1 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1.5 text-xs text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb";
+  const body = (
+    <>
       <Icon icon={icon} className="text-sm" />
       {children}
+    </>
+  );
+  return href ? (
+    <Link href={href} title={title} className={cls}>
+      {body}
+    </Link>
+  ) : (
+    <button type="button" onClick={onClick} title={title} className={cls}>
+      {body}
     </button>
   );
 }

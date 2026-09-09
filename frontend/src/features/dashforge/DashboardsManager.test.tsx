@@ -71,11 +71,11 @@ describe("the list", () => {
     expect(screen.getAllByText(/Building Intelligence/).length).toBeGreaterThan(0);
   });
 
-  it("narrows to one category when its chip is picked", async () => {
+  it("narrows to one category when its filter is picked", async () => {
     renderWithProviders(<DashboardsManager />);
     await screen.findAllByText("Energy overview");
 
-    await userEvent.click(screen.getByRole("button", { name: /^Surveillance 1$/ }));
+    await userEvent.click(screen.getByRole("button", { name: /^Video 1$/ }));
 
     expect(screen.getAllByText("Camera uptime")).not.toHaveLength(0);
     expect(screen.queryByText("Energy overview")).toBeNull();
@@ -97,7 +97,7 @@ describe("registering", () => {
     renderWithProviders(<DashboardsManager />);
     await screen.findAllByText("Energy overview");
 
-    await userEvent.click(screen.getByRole("button", { name: /register a dashboard/i }));
+    await userEvent.click(screen.getByRole("button", { name: /new dashboard/i }));
     await userEvent.type(await screen.findByLabelText(/^name/i), "Door alarms");
     await userEvent.click(screen.getByRole("button", { name: /category/i }));
     await userEvent.click(await screen.findByRole("option", { name: "Access Control" }));
@@ -115,8 +115,8 @@ describe("registering", () => {
     renderWithProviders(<DashboardsManager />);
     await screen.findAllByText("Energy overview");
 
-    await userEvent.click(screen.getByRole("button", { name: /^Surveillance 1$/ }));
-    await userEvent.click(screen.getByRole("button", { name: /register a dashboard/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^Video 1$/ }));
+    await userEvent.click(screen.getByRole("button", { name: /new dashboard/i }));
     await userEvent.type(await screen.findByLabelText(/^name/i), "Wall health");
     await userEvent.type(screen.getByLabelText(/workspace id/i), "ws9");
     await userEvent.type(screen.getByLabelText(/dashboard id/i), "db9");
@@ -168,7 +168,7 @@ describe("without dashforge.manage", () => {
     renderWithProviders(<DashboardsManager />);
     await screen.findAllByText("Energy overview");
 
-    expect(screen.queryByRole("button", { name: /register a dashboard/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /new dashboard/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /^edit$/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /^remove$/i })).toBeNull();
   });
