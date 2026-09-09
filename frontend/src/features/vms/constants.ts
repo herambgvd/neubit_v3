@@ -191,15 +191,37 @@ export function presetFor<M extends Record<string, unknown>>(
 // ── Event severity → v3 theme preset (P5-A/C) ────────────────────────────
 // The driver/system severity (info|warning|critical) drives the row band, the
 // scrub-bar marker color, and the severity filter.
+// THE LADDER HAS FOUR RUNGS, and "alarm" is the one that was missing.
+//
+// The recorder declares an ONVIF motion or tamper as `severity: "alarm"` — that is
+// the word in its ledger and in our own rows (`motion|alarm`, `tamper|alarm`). This
+// map had no such key, so every one of them fell through to INFO: a tamper alarm
+// rendered in the same blue as a heartbeat, the Warning chip counted zero forever,
+// and a notification rule keyed on severity could never fire for the events an
+// operator actually cares about.
+//
+// The order is the operator's: CRITICAL (the recorder itself is in trouble) beats
+// ALARM (a camera reported something happening) beats WARNING beats INFO.
 export const SEVERITY_PRESETS = {
-  critical: { label: "Critical", dot: "bg-red-500", text: "text-red-500", band: "bg-red-500", cls: "bg-red-500/10 text-red-500", fill: "#ef4444", rank: 3 },
+  critical: { label: "Critical", dot: "bg-red-500", text: "text-red-500", band: "bg-red-500", cls: "bg-red-500/10 text-red-500", fill: "#ef4444", rank: 4 },
+  alarm: { label: "Alarm", dot: "bg-orange-500", text: "text-orange-400", band: "bg-orange-500", cls: "bg-orange-500/10 text-orange-400", fill: "#fb923c", rank: 3 },
   warning: { label: "Warning", dot: "bg-amber-500", text: "text-amber-500", band: "bg-amber-500", cls: "bg-amber-500/10 text-amber-500", fill: "#f59e0b", rank: 2 },
   info: { label: "Info", dot: "bg-blue-500", text: "text-blue-500", band: "bg-blue-500", cls: "bg-blue-500/10 text-blue-500", fill: "#3b82f6", rank: 1 },
 };
 
+/** Severities that get an operator's ATTENTION: a toast off-screen, and the
+ *  auto-follow on the monitoring page. Anything below is feed-only — a console
+ *  that toasts a heartbeat teaches an operator to ignore toasts. */
+export const ATTENTION_SEVERITIES = ["critical", "alarm"] as const;
+
+export function isAttentionSeverity(sev: string | null | undefined): boolean {
+  return (ATTENTION_SEVERITIES as readonly string[]).includes(String(sev || "").toLowerCase());
+}
+
 export const SEVERITY_FILTERS = [
   { value: "", label: "All severities" },
   { value: "critical", label: "Critical" },
+  { value: "alarm", label: "Alarm" },
   { value: "warning", label: "Warning" },
   { value: "info", label: "Info" },
 ];

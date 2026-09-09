@@ -10,7 +10,7 @@
 // Data source mirrors the access EventsFeed: an INITIAL history fetch via
 // GET /vms/events (one request) + LIVE appends over SSE. Both are normalized to
 // one shape and de-duped by event id so every renderer works across sources.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -21,12 +21,13 @@ import { asItems } from "@/lib/format";
 import { workflow as wfApi } from "@/features/workflow/api";
 import { vms } from "./api";
 import { useEstateCameras } from "./hooks/useEstateCameras";
-import { EVENT_TYPE_FILTERS } from "./constants";
+import { EVENT_TYPE_FILTERS, isAttentionSeverity } from "./constants";
 import { normalizeVmsEvent, eventKey, type NormalizedVmsEvent } from "./eventLib";
 import { groupByDay } from "./eventGroups";
 import { useVmsEventStream } from "./hooks/useVmsEventStream";
 import type { EstateCamera, VmsEventPublic } from "./types";
 import CameraEventRow from "./components/CameraEventRow";
+import EventMonitorPane from "./components/EventMonitorPane";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
@@ -177,6 +178,72 @@ export default function CameraEventsPage() {
   ];
 
   const groups = useMemo(() => groupByDay(events), [events]);
+
+  // ── THE MONITORING HALF ───────────────────────────────────────────────────
+  //
+  // An alarm list beside a canvas that switches to the alarm's camera is what
+  // every enterprise VMS does with this screen, and the reason is not decoration:
+  // the operator is HERE to look, so the console shows the picture rather than
+  // telling them a picture exists somewhere else.
+  //
+  // `follow` is what makes it a monitoring surface rather than a list with a
+  // viewer attached — a new alarm takes the canvas. It only ever follows an
+  // ATTENTION severity: a canvas that jumps to a heartbeat gets switched off, and
+  // then it is not there for the alarm either.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [follow, setFollow] = useState(true);
+  const followed = useRef<string | null>(null);
+
+  const eventById = useMemo(() => {
+    const m = new Map<string, NormalizedVmsEvent>();
+    for (const e of events) {
+      const k = e.event_id || e.id;
+      if (k) m.set(k, e);
+    }
+    return m;
+  }, [events]);
+
+  // The toast off this page links here with ?event=<id>: the operator clicked a
+  // notification about ONE event, so that is the one the canvas opens on.
+  useEffect(() => {
+    // `globalThis`, not `window`: this component already binds a local `window`
+    // for the day range, and the shadow makes the global unreachable here.
+    if (typeof globalThis === "undefined" || !globalThis.location) return;
+    const asked = new URLSearchParams(globalThis.location.search).get("event");
+    if (asked) {
+      setSelectedId(asked);
+      setFollow(false); // they asked for this one; do not yank it away
+    }
+  }, []);
+
+  // Auto-follow: the newest attention event takes the canvas, once. `followed`
+  // remembers which one so an operator who clicks another row keeps it until a
+  // NEWER alarm arrives.
+  useEffect(() => {
+    if (!follow) return;
+    const newest = events.find((e) => isAttentionSeverity(e.severity));
+    const key = newest?.event_id || newest?.id;
+    if (!key || followed.current === key) return;
+    followed.current = key;
+    setSelectedId(key);
+  }, [events, follow]);
+
+  const selected = useMemo(() => {
+    if (selectedId && eventById.has(selectedId)) return eventById.get(selectedId) ?? null;
+    // Nothing chosen yet: the newest event, so the pane is never blank while the
+    // feed has something in it.
+    return events[0] ?? null;
+  }, [selectedId, eventById, events]);
+
+  /** The camera an event names, as the ESTATE knows it — the recorder that owns
+   *  it and the id it answers to there. The event carries the node-side id; the
+   *  estate list is keyed by both that and the composite `fed:` key, so this
+   *  resolves either way. Without a match there is no session to mint, live or
+   *  recorded, and the pane says so rather than guessing. */
+  const monitorCamera = useMemo(
+    () => (selected?.camera_id ? cameraById[selected.camera_id] ?? null : null),
+    [selected, cameraById],
+  );
   const filtered = !!(cameraId || eventType || severity || ack || day);
   const clearAll = () => {
     setCameraId("");
@@ -309,7 +376,14 @@ export default function CameraEventsPage() {
         </button>
       </div>
 
-      {/* ── Feed ── */}
+      {/* ── Feed beside the monitor ───────────────────────────────────────
+          The list is the left column and the camera is the right one, which is
+          the shape every alarm-monitoring surface has: an operator reads the
+          feed and watches the picture without leaving either. On a narrow
+          screen they stack, feed first — the list is the thing you can act on
+          with no video at all. */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_26rem]">
+        <div className="min-w-0">
       {q.isLoading ? (
         <div className="flex items-center gap-2 rounded-xl border border-card-border bg-card p-6 text-xs text-muted">
           <Icon icon="svg-spinners:180-ring" className="text-sm" /> Loading events…
@@ -366,6 +440,13 @@ export default function CameraEventsPage() {
                     key={eventKey(e, idx)}
                     event={e}
                     cameraName={cameraName(e.camera_id)}
+                    selected={(selected?.event_id || selected?.id) === (e.event_id || e.id)}
+                    onSelect={(ev) => {
+                      setSelectedId(ev.event_id || ev.id || null);
+                      // An explicit pick wins until a NEWER alarm arrives; without
+                      // this the canvas snaps back on the next frame.
+                      setFollow(false);
+                    }}
                     incidentId={incidentByEventId.get(e.event_id || e.id || "") || null}
                     onAck={(ev) => {
                       if (ev.id) ackMut.mutate(ev.id);
@@ -383,6 +464,26 @@ export default function CameraEventsPage() {
           )}
         </div>
       )}
+        </div>
+
+        {/* The canvas. Sticky, because the feed scrolls and the picture is what
+            the operator is watching while it does. */}
+        <div className="lg:sticky lg:top-3 lg:self-start">
+          <EventMonitorPane
+            event={selected}
+            camera={monitorCamera}
+            incidentId={
+              selected ? incidentByEventId.get(selected.event_id || selected.id || "") || null : null
+            }
+            follow={follow}
+            onFollowChange={setFollow}
+            onAck={(ev) => {
+              if (ev.id) ackMut.mutate(ev.id);
+            }}
+            ackPending={ackMut.isPending && !!selected?.id && ackMut.variables === selected.id}
+          />
+        </div>
+      </div>
     </div>
   );
 }

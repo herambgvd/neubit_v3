@@ -23,11 +23,23 @@ export interface CameraEventRowProps {
   event: CameraEventRowEvent;
   cameraName?: string | null;
   incidentId?: string | null;
+  /** True when this row's event is the one in the monitor pane. */
+  selected?: boolean;
+  /** Clicking the row puts its camera on the canvas beside the feed. */
+  onSelect?: (event: CameraEventRowEvent) => void;
   onAck?: (event: CameraEventRowEvent) => void;
   ackPending?: boolean;
 }
 
-export default function CameraEventRow({ event, cameraName, incidentId = null, onAck, ackPending = false }: CameraEventRowProps) {
+export default function CameraEventRow({
+  event,
+  cameraName,
+  incidentId = null,
+  selected = false,
+  onSelect,
+  onAck,
+  ackPending = false,
+}: CameraEventRowProps) {
   const [open, setOpen] = useState(false);
   const tp = typePreset(event.event_type);
   const sp = sevPreset(event.severity);
@@ -43,7 +55,29 @@ export default function CameraEventRow({ event, cameraName, incidentId = null, o
   const raw = event.raw && Object.keys(event.raw).length ? event.raw : null;
 
   return (
-    <div className="flex items-stretch gap-0 hover:bg-hover/50">
+    <div
+      // The row is the SELECTOR for the monitor pane, so it is a button in
+      // everything but tag: clickable, focusable, and marked when it is the one
+      // on the canvas. The actions inside it stop propagation so acknowledging
+      // does not also move the picture.
+      role={onSelect ? "button" : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      aria-pressed={onSelect ? selected : undefined}
+      onClick={onSelect ? () => onSelect(event) : undefined}
+      onKeyDown={
+        onSelect
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelect(event);
+              }
+            }
+          : undefined
+      }
+      className={`flex items-stretch gap-0 outline-hidden transition ${
+        onSelect ? "cursor-pointer" : ""
+      } ${selected ? "bg-blue-500/10" : "hover:bg-hover/50"}`}
+    >
       {/* Severity band */}
       <span className={`w-1 shrink-0 ${sp.band}`} aria-hidden />
 
@@ -86,7 +120,10 @@ export default function CameraEventRow({ event, cameraName, incidentId = null, o
               {raw && (
                 <button
                   type="button"
-                  onClick={() => setOpen((o) => !o)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpen((o) => !o);
+                  }}
                   className="ml-auto inline-flex items-center gap-0.5 text-[10px] text-muted hover:text-foreground"
                 >
                   <Icon icon={open ? "heroicons-outline:chevron-down" : "heroicons-outline:chevron-right"} className="text-xs" />
@@ -127,8 +164,12 @@ export default function CameraEventRow({ event, cameraName, incidentId = null, o
             )}
           </div>
 
-          {/* Actions */}
-          <div className="flex shrink-0 flex-col items-stretch gap-1">
+          {/* Actions. The row itself selects; these must NOT also move the
+              picture, so each stops the click from reaching it. */}
+          <div
+            className="flex shrink-0 flex-col items-stretch gap-1"
+            onClick={(e) => e.stopPropagation()}
+          >
             {!acked && onAck && (
               <button
                 type="button"

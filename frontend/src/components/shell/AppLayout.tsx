@@ -11,6 +11,7 @@ import { FullPageLoader } from "@/components/ui/kit";
 import Footer from "@/components/shell/Footer";
 import GlobalNavDock from "@/components/shell/GlobalNavDock";
 import VmsPopupHost from "@/features/vms/components/VmsPopupHost";
+import EventNotifierHost from "@/features/vms/components/EventNotifierHost";
 import { useAuth } from "@/lib/auth";
 import type { PublicSettings } from "@/lib/types";
 
@@ -183,8 +184,13 @@ export default function AppLayout({ children }: { children?: ReactNode }) {
           immersive wall. */}
       {!home && !immersiveWall && <Footer />}
       <CommandPalette />
-      {/* App-wide operator popups (VMS linkage `popup` action → floating live camera). */}
+      {/* App-wide operator popups (VMS linkage `popup` action → floating live camera).
+          That one is an action an operator CONFIGURED on a rule, so it pops video
+          wherever they are. The notifier below is the ambient half: an alarm the
+          console noticed, shown as a corner toast off the Events page and as video
+          on it — never a camera thrown over an unrelated task. */}
       <VmsPopupHost />
+      <EventNotifierHost />
     </div>
   );
 }
