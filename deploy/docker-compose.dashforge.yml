@@ -10,10 +10,11 @@
 # and this file only ever ADDS to what it already publishes.
 #
 # OPT-IN. It is not auto-merged like docker-compose.override.yml is, because a
-# NeuBit deployment without DashForge is a supported shape — the `dashforge`
-# service in the base file serves its registry and answers 503 on an embed
-# session, which is the honest answer when the peer is not deployed. Turn it on
-# by naming it explicitly:
+# NeuBit deployment without DashForge is a supported shape — CORE serves the
+# registry (the satellite folded into `backend/core/app/dashforge` on 2026-09-05;
+# there is no `dashforge` service in the base file any more) and answers 503 on
+# an embed session, which is the honest answer when the peer is not deployed.
+# Turn it on by naming it explicitly:
 #
 #   DASHFORGE_REPO=/path/to/dashforge/project \
 #     docker compose -f docker-compose.yml -f docker-compose.override.yml \
