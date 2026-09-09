@@ -34,10 +34,10 @@ const SITE = {
   is_active: true,
 } as unknown as SitePublic;
 
-function renderDetail(tab = "info") {
+function renderDetail(tab = "info", site = SITE) {
   return render(
     <SiteDetail
-      site={SITE}
+      site={site}
       // The cast is the point of the last test: a stored tab string can name a
       // tab this pane no longer has.
       tab={tab as never}
@@ -45,10 +45,30 @@ function renderDetail(tab = "info") {
       onClose={() => {}}
       onEdit={() => {}}
       onDelete={() => {}}
+      onRestore={() => {}}
       onChangeThreat={() => {}}
     />,
   );
 }
+
+describe("a deactivated site", () => {
+  it("offers Restore instead of a second Delete", () => {
+    // `DELETE /sites/{id}` sets is_active=false and cascades it to the floors and
+    // zones; nothing is destroyed and `restore` puts it all back. Offering Delete
+    // on an already-deactivated site says otherwise.
+    renderDetail("info", { ...SITE, is_active: false } as never);
+
+    expect(screen.getByRole("button", { name: /restore/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /deactivate site/i })).not.toBeInTheDocument();
+  });
+
+  it("offers Deactivate while it is active", () => {
+    renderDetail();
+
+    expect(screen.getByRole("button", { name: /deactivate site/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /restore/i })).not.toBeInTheDocument();
+  });
+});
 
 describe("the tabs a site has", () => {
   it("are the site's own: info, floors, zones", () => {

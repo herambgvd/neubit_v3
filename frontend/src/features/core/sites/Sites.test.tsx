@@ -9,7 +9,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SitePublic } from "@/lib/types";
-import { httpError, paged, stubApi, type ApiStub } from "@/test/apiStub";
+import { httpError, paged, stubApi, type ApiStub, type Recorded } from "@/test/apiStub";
 import { renderWithProviders } from "@/test/render";
 
 import SitesConfigPage from "./Sites";
@@ -67,6 +67,7 @@ beforeEach(() => {
     "PATCH /sites/*": HQ,
     "DELETE /sites/*": {},
     "PUT /sites/*": HQ,
+    "POST /sites/*": HQ,
   });
 });
 
@@ -100,27 +101,66 @@ describe("which row is open", () => {
   });
 });
 
-describe("deleting a site", () => {
-  it("asks for confirmation and sends nothing until it is given", async () => {
+describe("deactivating a site", () => {
+  it("asks first, and says what actually happens", async () => {
+    // `DELETE /sites/{id}` sets is_active=false and cascades that to the floors
+    // and zones. The prompt used to say "and all of its floors and zones … this
+    // cannot be undone", which was wrong twice: nothing is destroyed, and
+    // `restore` puts it all back.
     renderWithProviders(<SitesConfigPage />);
     await screen.findAllByText("Pune HQ");
 
-    await userEvent.click(screen.getByRole("button", { name: /delete site/i }));
+    await userEvent.click(screen.getByRole("button", { name: /deactivate site/i }));
 
-    expect(await screen.findByText(/all of its floors and zones/i)).toBeInTheDocument();
+    expect(await screen.findByText(/nothing is deleted/i)).toBeInTheDocument();
     expect(stub.matching("DELETE /sites/*")).toHaveLength(0);
   });
 
-  it("deletes the site that was open, not the first one in the list", async () => {
+  it("deactivates the site that was open, not the first one in the list", async () => {
     renderWithProviders(<SitesConfigPage />);
     await screen.findAllByText("Pune HQ");
     await userEvent.click(screen.getAllByText("Nashik Depot")[0]);
 
-    await userEvent.click(await screen.findByRole("button", { name: /delete site/i }));
-    await userEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await userEvent.click(await screen.findByRole("button", { name: /deactivate site/i }));
+    await userEvent.click(await screen.findByRole("button", { name: "Deactivate" }));
 
     await waitFor(() => expect(stub.matching("DELETE /sites/*")).toHaveLength(1));
     expect(stub.matching("DELETE /sites/*")[0].url).toBe("/sites/s2");
+  });
+});
+
+describe("the sites that were deactivated", () => {
+  it("asks the API for them — they are hidden from the default list, not gone", async () => {
+    // Without this the console had no way back to a deactivated site: the list
+    // defaults to is_active=true, so the row vanished, and nothing called the
+    // restore endpoint that exists to bring it back.
+    renderWithProviders(<SitesConfigPage />);
+    await screen.findAllByText("Pune HQ");
+
+    await userEvent.click(screen.getByRole("button", { name: /show deactivated sites/i }));
+
+    await waitFor(() =>
+      // `sites.list` builds the query into the URL, so the values are in `search`.
+      expect(stub.matching("GET /sites").some((c) => c.search.get("is_active") === "false")).toBe(
+        true,
+      ),
+    );
+  });
+
+  it("restores one instead of offering to delete it again", async () => {
+    stub.set({
+      "GET /sites": (req: Recorded) =>
+        req.search.get("is_active") === "false"
+          ? { items: [{ ...HQ, is_active: false }], total: 1 }
+          : { items: [HQ, DEPOT], total: 2 },
+    });
+    renderWithProviders(<SitesConfigPage />);
+    await screen.findAllByText("Pune HQ");
+
+    await userEvent.click(screen.getByRole("button", { name: /show deactivated sites/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /restore/i }));
+
+    await waitFor(() => expect(stub.matching("POST /sites/s1/restore")).toHaveLength(1));
   });
 });
 

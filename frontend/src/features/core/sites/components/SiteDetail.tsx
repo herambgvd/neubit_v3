@@ -30,10 +30,12 @@ export interface SiteDetailProps {
   onClose: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  /** Reactivate a deactivated site (with its floors and zones). */
+  onRestore: () => void;
   onChangeThreat: (level: ThreatLevel) => void;
 }
 
-export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, onDelete, onChangeThreat }: SiteDetailProps) {
+export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, onDelete, onRestore, onChangeThreat }: SiteDetailProps) {
   /**
    * BUILDING FACTS ARE NOT HERE ANY MORE.
    *
@@ -101,7 +103,16 @@ export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, on
           <PaneAction icon="heroicons-outline:pencil-square" onClick={onEdit}>
             Edit
           </PaneAction>
-          <PaneDeleteAction title="Delete site" onClick={onDelete} />
+          {/* A deactivated site is not deleted — the row, its floor plan and the
+              devices placed on it are all still there. Offering Delete again on
+              one would say otherwise; Restore is the act that is available. */}
+          {site.is_active === false ? (
+            <PaneAction icon="heroicons-outline:arrow-uturn-left" onClick={onRestore}>
+              Restore
+            </PaneAction>
+          ) : (
+            <PaneDeleteAction title="Deactivate site" onClick={onDelete} />
+          )}
         </div>
       </header>
 

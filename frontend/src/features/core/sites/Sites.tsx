@@ -32,15 +32,21 @@ type PageMode = "view" | "create" | "edit";
 
 export default function SitesConfigPage() {
   const qc = useQueryClient();
+  // DELETING A SITE DEACTIVATES IT. `DELETE /sites/{id}` sets is_active=false and
+  // cascades that to the floors and zones; the row, its floor plan and every
+  // device placed on it survive, and `POST /sites/{id}/restore` brings them all
+  // back. The list defaults to active sites only, so a deleted site simply
+  // vanished — and nothing in this console called restore, which made a
+  // reversible act permanent in practice and the "inactive" count below always
+  // read 0. This toggle is the way back.
+  const [archived, setArchived] = useState(false);
   const sitesQ = useQuery({
-    queryKey: ["sites-list"],
-    queryFn: () => sitesApi.list({ limit: 100 }),
+    queryKey: ["sites-list", archived ? "archived" : "active"],
+    queryFn: () => sitesApi.list({ limit: 100, is_active: !archived }),
   });
 
   const items = useMemo(() => sitesQ.data?.items ?? [], [sitesQ.data]);
   const total = sitesQ.data?.total ?? items.length;
-  const active = items.filter((s) => s.is_active !== false).length;
-  const inactive = items.length - active;
 
   const [q, setQ] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -79,9 +85,18 @@ export default function SitesConfigPage() {
   const remove = useMutation({
     mutationFn: (id: string) => sitesApi.remove(id),
     onSuccess: () => {
-      toast.success("Site removed");
+      toast.success("Site deactivated");
       qc.invalidateQueries({ queryKey: ["sites-list"] });
       setSelectedId(null);
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  const restore = useMutation({
+    mutationFn: (id: string) => sitesApi.restore(id),
+    onSuccess: () => {
+      toast.success("Site restored");
+      qc.invalidateQueries({ queryKey: ["sites-list"] });
     },
     onError: (e) => toast.error(apiError(e)),
   });
@@ -108,9 +123,20 @@ export default function SitesConfigPage() {
               <>
                 <PanelCounts
                   items={[
-                    { tone: "good", value: active, label: "active" },
-                    { tone: "idle", value: inactive, label: "inactive" },
+                    archived
+                      ? { tone: "idle", value: total, label: "deactivated" }
+                      : { tone: "good", value: total, label: "active" },
                   ]}
+                />
+                <IconButton
+                  icon={archived ? "heroicons-outline:eye" : "heroicons-outline:archive-box"}
+                  title={archived ? "Show active sites" : "Show deactivated sites"}
+                  onClick={() => {
+                    setArchived((v) => !v);
+                    // The other list's selection is not in this one.
+                    setSelectedId(null);
+                    setClosed(false);
+                  }}
                 />
                 {/* The ONLY way to start a site now that the footer button is
                     gone, so it carries a real accessible name rather than
@@ -155,6 +181,7 @@ export default function SitesConfigPage() {
           ) : (
             <SiteDetail
               site={selected}
+              onRestore={() => restore.mutate(selected.site_id)}
               tab={tab}
               onTabChange={setTab}
               onClose={() => {
@@ -164,9 +191,12 @@ export default function SitesConfigPage() {
               onEdit={() => setMode("edit")}
               onDelete={() =>
                 setConfirm({
-                  title: "Delete site?",
-                  message: `Delete site "${selected.name}" and all of its floors and zones? This cannot be undone.`,
-                  confirmLabel: "Delete",
+                  title: "Deactivate site?",
+                  // What it ACTUALLY does. The old text said "and all of its
+                  // floors and zones … cannot be undone", which was wrong twice:
+                  // nothing is destroyed and `restore` puts it all back.
+                  message: `"${selected.name}" and its floors and zones are hidden from this console and from every picker. Nothing is deleted — it can be restored from the deactivated list.`,
+                  confirmLabel: "Deactivate",
                   onConfirm: () => {
                     remove.mutate(selected.site_id);
                     setConfirm(null);
