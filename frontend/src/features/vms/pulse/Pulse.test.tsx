@@ -123,6 +123,10 @@ describe("the estate figures", () => {
 
     expect(screen.queryByRole("heading", { name: /pulse/i })).toBeNull();
     expect(screen.queryByText(/what the recorders report about the estate/i)).toBeNull();
+    // …and no freshness line either: the board polls, the button spins, so
+    // "updated 12s ago" only restated what the page was already doing.
+    expect(screen.queryByText(/updated /i)).toBeNull();
+    expect(screen.getByRole("button", { name: /refresh now/i })).toBeInTheDocument();
   });
 
   it("shows what the recorders report", async () => {

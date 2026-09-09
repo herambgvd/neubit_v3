@@ -37,7 +37,6 @@ import {
   PanelList,
 } from "@/components/console";
 import { apiError } from "@/lib/api";
-import { fmtRelative } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 
 import { vms } from "../api";
@@ -150,26 +149,23 @@ export default function Pulse() {
 
   return (
     <ConsolePage>
-      {/* Freshness rides WITH the figures rather than in a title bar: every number
-          below is a reading with an age, and "updated 2m ago" is the difference
-          between a healthy estate and a stale page about one. */}
+      {/* Refresh only. There was an "updated 12s ago" beside it; the board polls
+          every 20s and the button spins while it fetches, so the line restated
+          what the page was already doing and aged into noise on a wall. */}
       <PulseStats
         data={data}
         right={
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="font-mono text-[10.5px] text-nb-faint">
-              {overviewQ.isFetching ? "refreshing…" : `updated ${fmtRelative(data.generated_at)}`}
-            </span>
-            <IconButton
-              icon="heroicons:arrow-path"
-              title="Refresh now"
-              onClick={() => {
-                overviewQ.refetch();
-                if (focus?.kind === "node") boardQ.refetch();
-                if (focus?.kind === "camera") traceQ.refetch();
-              }}
-            />
-          </div>
+          <IconButton
+            icon="heroicons:arrow-path"
+            title={overviewQ.isFetching ? "Refreshing…" : "Refresh now"}
+            disabled={overviewQ.isFetching}
+            className={overviewQ.isFetching ? "animate-spin" : undefined}
+            onClick={() => {
+              overviewQ.refetch();
+              if (focus?.kind === "node") boardQ.refetch();
+              if (focus?.kind === "camera") traceQ.refetch();
+            }}
+          />
         }
       />
 
