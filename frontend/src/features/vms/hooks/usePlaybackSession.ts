@@ -141,8 +141,21 @@ export function usePlaybackSession(
      making it state would re-render every consumer at request time rather than
      when the session lands. It is read here only as the fallback that keeps
      from/to populated during that gap. */
+  // A SESSION WITH NO PLAYABLE URL IS AN ANSWER, NOT A PENDING REQUEST.
+  //
+  // A recorder answers 200 with an empty `playback_url` and `ranges: []` when the
+  // window holds no footage — a normal, common reply, not a failure. The hook
+  // reported it as a success with a null url, and every consumer's "no url yet"
+  // branch is a SPINNER, so a camera with nothing recorded spun forever. On an
+  // estate where nothing was recording that was every tile on the page. Naming the
+  // state lets a player say "no footage in this window" instead.
+  const settled = !loading && !error && session != null;
+  const playable = Boolean(session?.hls_url || session?.webrtc_url);
+
   return {
     session,
+    /** True when the recorder answered but had nothing to play in this window. */
+    empty: settled && !playable,
     hlsUrl: session?.hls_url || null,
     // NVR-footage sessions also expose a WHEP (WebRTC) endpoint on the same MediaMTX
     // path — the preferred NVR playback transport (codec-proof: H.264 direct, H.265 via

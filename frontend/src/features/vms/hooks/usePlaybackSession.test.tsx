@@ -176,3 +176,61 @@ describe("keeping a long scrub alive", () => {
     expect(sourceFn).toHaveBeenCalledTimes(before);
   });
 });
+
+describe("a window the recorder has no footage for", () => {
+  /**
+   * The recorder answers 200 with an empty `playback_url` and `ranges: []` — a
+   * normal reply, not a failure. It used to land as "success with no url", and
+   * every consumer reads "no url yet" as STILL LOADING, so a camera with nothing
+   * recorded showed a spinner that never resolved. On an estate where nothing was
+   * recording, that was every tile on the page.
+   */
+  it("is reported as empty, not as still loading and not as an error", async () => {
+    const sourceFn = vi.fn(async (win: IsoWindow) =>
+      ({ session_id: "s-empty", hls_url: "", from: win.from, to: win.to, ranges: [] }) as unknown as PlayableSession,
+    );
+    const { result } = renderHook(() => usePlaybackSession("cam-1", { sourceFn }));
+
+    await act(async () => {
+      await result.current.load(WINDOW);
+    });
+
+    expect(result.current.empty).toBe(true);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
+    expect(result.current.hlsUrl).toBeNull();
+  });
+
+  it("is not claimed for a session that plays over WebRTC only", async () => {
+    // NVR footage often arrives as a WHEP url with no HLS at all; that IS playable.
+    const sourceFn = vi.fn(async (win: IsoWindow) =>
+      ({ session_id: "s-whep", hls_url: "", webrtc_url: "https://media/whep", from: win.from, to: win.to, ranges: [] }) as unknown as PlayableSession,
+    );
+    const { result } = renderHook(() => usePlaybackSession("cam-1", { sourceFn }));
+
+    await act(async () => {
+      await result.current.load(WINDOW);
+    });
+
+    expect(result.current.empty).toBe(false);
+  });
+
+  it("is not claimed while a load is still in flight", async () => {
+    // Otherwise the tile flashes "no footage" on every seek before the answer lands.
+    let release: (s: PlayableSession) => void = () => {};
+    const sourceFn = vi.fn(() => new Promise<PlayableSession>((res) => (release = res)));
+    const { result } = renderHook(() => usePlaybackSession("cam-1", { sourceFn }));
+
+    act(() => {
+      void result.current.load(WINDOW);
+    });
+    expect(result.current.loading).toBe(true);
+    expect(result.current.empty).toBe(false);
+
+    await act(async () => {
+      release(session("s1"));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.empty).toBe(false);
+  });
+});

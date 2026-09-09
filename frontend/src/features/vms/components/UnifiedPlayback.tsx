@@ -28,6 +28,7 @@ import { skipToken, useQueries, useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
 import { Button, Select } from "@/components/ui/kit";
+import { apiError } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
 import { vms } from "../api";
 import type {
@@ -122,9 +123,13 @@ interface FederatedTile {
 type PlaybackTile = CameraTile | FederatedTile;
 // The source kinds the channel picker offers.
 type PickerKind = PlaybackTile["kind"];
+// "Recorded" and "Recorder" sat next to each other, one letter apart, naming two
+// things an operator has no reason to distinguish by those words: footage in this
+// platform's own pooled storage, and footage on the recorder that owns the camera.
+// The tabs now say WHERE the footage lives, which is the actual choice.
 const PICKER_KINDS: { k: PickerKind; label: string; icon: string }[] = [
-  { k: "camera", label: "Recorded", icon: "heroicons-outline:video-camera" },
-  { k: "federated", label: "Recorder", icon: "heroicons-outline:globe-alt" },
+  { k: "federated", label: "Recorders", icon: "heroicons-outline:server-stack" },
+  { k: "camera", label: "VMS storage", icon: "heroicons-outline:circle-stack" },
 ];
 
 const cameraTile = (c: Pick<VmsCameraPublic, "id" | "name">): CameraTile => ({
@@ -229,7 +234,15 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
   const [seekMs, setSeekMs] = useState<number | null>(null);
   const [seekNonce, setSeekNonce] = useState(0); // bumped ONLY on an explicit user scrub
   const [focusKey, setFocusKey] = useState<string | null>(null); // tile expanded to full player
-  const [pickerKind, setPickerKind] = useState<PickerKind>("camera");
+  // WHICH PICKER OPENS FIRST.
+  //
+  // It was always "camera" — this service's own camera rows — and on a
+  // single-ownership estate there are none: every camera belongs to a recorder.
+  // So the page opened on an empty list reading "No cameras", one letter away
+  // from the tab that had all of them. The default is now decided by which side
+  // actually holds cameras (below), and an operator's explicit click always wins.
+  const [pickerKind, setPickerKind] = useState<PickerKind>("federated");
+  const pickerChosen = useRef(false);
   // Recorded picker scaling (200+ cams): server-side search + site filter so the
   // rail never renders a wall of checkboxes. `camSearch` is the raw input;
   // `debouncedCamSearch` (250ms) is what the camera query actually keys on.
@@ -239,6 +252,9 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
   // Recorded picker tree (Default › Site › Camera) — collapsed branch keys. Empty
   // ⇒ all expanded. While searching we force-expand so every match is visible.
   const [pbCollapsed, setPbCollapsed] = useState(() => new Set<string>());
+  // The id a deep link named that no list could resolve — shown instead of an
+  // empty workspace that looks like nothing was picked.
+  const [deepLinkMiss, setDeepLinkMiss] = useState<string | null>(null);
 
   // ── Rail composer state (drives the Search → load) ───────────────────────
   // Default to MAIN — that's the profile we record (sub is the live web/WHEP stream, not
@@ -302,6 +318,8 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
         site_id: camSite || undefined,
         limit: 200,
       }),
+    // Not gated on the open tab any more: the deep-link resolver reads this list,
+    // and the tab that opens is chosen from whether it has anything in it.
     staleTime: 60_000,
   });
   const cameras = useMemo(() => camerasQ.data?.items ?? [], [camerasQ.data]);
@@ -321,45 +339,7 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
     return m;
   }, [sites]);
 
-  useEffect(() => {
-    if (deepHandled.current || typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const camera = params.get("camera");
-    const t = params.get("t");
-    if (!camera) return;
-    // The picker list is now server-filtered + capped at 200, so the deep-linked
-    // camera may NOT be in it (large tenant / active filter). Resolve from the list
-    // when present, else fetch that one camera by id — the deep-link must always open.
-    let cancelled = false;
-    (async () => {
-      let c = cameras.find((x) => x.id === camera);
-      if (!c) {
-        try {
-          c = await vms.cameras.get(camera);
-        } catch {
-          return;
-        }
-      }
-      if (cancelled || !c || deepHandled.current) return;
-      deepHandled.current = true;
-      const tile = cameraTile(c);
-      setSources([tile]);
-      setChecked([tile]); // reflect the deep-linked source in the rail's multi-select
-      if (t) {
-        const d = new Date(t);
-        if (!Number.isNaN(d.getTime())) {
-          setDay(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
-          setCalView({ year: d.getFullYear(), month: d.getMonth() }); // page the calendar to it
-          const ms = d.getTime();
-          setClock(ms);
-          setSeekMs(ms);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [cameras]);
+
 
   // There is no NVR picker any more.
   //
@@ -381,9 +361,96 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
     queryKey: ["vms-federation-cameras", "playback-picker"],
     queryFn: () => vms.federation.cameras(),
     staleTime: 60_000,
-    enabled: pickerKind === "federated",
   });
   const fedCameras = useMemo(() => fedCamsQ.data?.items ?? [], [fedCamsQ.data]);
+
+  // Open on the side that HAS cameras. Recorder-owned is the default because every
+  // camera in a single-ownership estate is; a deployment whose cameras live in this
+  // platform's own storage flips to that tab once both lists have answered. An
+  // operator's own click (pickerChosen) is never overridden.
+  useEffect(() => {
+    if (pickerChosen.current) return;
+    if (fedCamsQ.isLoading || camerasQ.isLoading) return;
+    if (fedCameras.length === 0 && cameras.length > 0) setPickerKind("camera");
+  }, [fedCamsQ.isLoading, camerasQ.isLoading, fedCameras.length, cameras.length]);
+
+  // DEEP LINK — ?camera=<id>[&t=<iso>], from an alarm's "watch the recording", the
+  // camera-event row and the linkage popup.
+  //
+  // It used to resolve the id against THIS platform's cameras alone and give up
+  // silently on a miss (`catch { return }`). On a single-ownership estate every
+  // one of those ids is a recorder-owned camera, so `GET /vms/cameras/{id}` 404s
+  // and the link opened an empty Playback with no explanation — the alarm's most
+  // useful action, doing nothing.
+  //
+  // Three sources are tried in the order that costs least: the loaded picker
+  // list, the federated list (the recorder-owned cameras), then a by-id fetch.
+  // Nothing found is SAID, because a link that leads nowhere must not look like
+  // an operator forgetting to pick a camera.
+  useEffect(() => {
+    if (deepHandled.current || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const camera = params.get("camera");
+    const t = params.get("t");
+    if (!camera) return;
+    // Wait for both lists to settle: resolving before they land would fall
+    // through to the by-id fetch for a camera that is in one of them.
+    if (camerasQ.isLoading || fedCamsQ.isLoading) return;
+
+    let cancelled = false;
+    (async () => {
+      let tile: PlaybackTile | null = null;
+
+      const local = cameras.find((x) => x.id === camera);
+      if (local) tile = cameraTile(local);
+
+      if (!tile) {
+        // A federated camera answers to its node-side id, and the alarm/event
+        // rows carry exactly that.
+        const fed = fedCameras.find(
+          (c) => c.id === camera || (typeof c.real_id === "string" && c.real_id === camera),
+        );
+        if (fed) tile = fedTile(fed);
+      }
+
+      if (!tile) {
+        try {
+          const one = await vms.cameras.get(camera);
+          if (one) tile = cameraTile(one);
+        } catch {
+          /* not one of ours either — reported below */
+        }
+      }
+
+      if (cancelled || deepHandled.current) return;
+      deepHandled.current = true;
+
+      if (!tile) {
+        setDeepLinkMiss(camera);
+        return;
+      }
+
+      setSources([tile]);
+      setChecked([tile]); // reflect the deep-linked source in the rail's multi-select
+      if (tile.kind === "federated") {
+        pickerChosen.current = true;
+        setPickerKind("federated");
+      }
+      if (t) {
+        const d = new Date(t);
+        if (!Number.isNaN(d.getTime())) {
+          setDay(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+          setCalView({ year: d.getFullYear(), month: d.getMonth() }); // page the calendar to it
+          const ms = d.getTime();
+          setClock(ms);
+          setSeekMs(ms);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [cameras, fedCameras, camerasQ.isLoading, fedCamsQ.isLoading]);
 
   // ── Calendar footage marks ───────────────────────────────────────────────
   // The calendar tracks the FIRST-selected channel's footage-days for the month
@@ -416,12 +483,71 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
     })),
   });
 
+  // EVENT MARKERS FOR RECORDER-OWNED CAMERAS.
+  //
+  // A federated timeline carries coverage ranges and their trigger_type — enough to
+  // COLOUR the bars — but no event markers, so the flags on the master timeline (and
+  // the legend that filters them) were empty for every recorder-owned camera, which
+  // on a single-ownership estate is all of them.
+  //
+  // They do not need a new federated call: the event supervisor already mirrors each
+  // recorder's ONVIF ledger into this service's own `vms_events`, keyed by the
+  // node-side camera id — which is exactly the id a federated tile holds. One query
+  // per loaded federated source, over the same window as the coverage.
+  const fedMarkerQs = useQueries({
+    queries: sources
+      .filter((s): s is FederatedTile => s.kind === "federated")
+      .map((s) => ({
+        queryKey: ["vms-pb-fed-events", s.realId, range.from, range.to],
+        queryFn: () =>
+          vms.events.list({ camera_id: s.realId, from: range.from, to: range.to, limit: 500 }),
+        staleTime: 30_000,
+        retry: false,
+        refetchOnWindowFocus: false,
+      })),
+  });
+
+  const fedMarkers: TimelineMarker[] = useMemo(() => {
+    const out: TimelineMarker[] = [];
+    for (const q of fedMarkerQs) {
+      for (const e of q.data?.items || []) {
+        // `occurred_at` is when it HAPPENED; `created_at` is when this service heard
+        // about it, which on a poll can be a minute later and would plant the flag
+        // somewhere the footage does not match.
+        const at = e.occurred_at || e.created_at;
+        if (!at) continue;
+        out.push({
+          t: at,
+          event_type: e.event_type,
+          severity: e.severity,
+          event_id: e.id,
+          camera_id: e.camera_id,
+        });
+      }
+    }
+    return out;
+  }, [fedMarkerQs]);
+
   // Union coverage + markers across the ≤4 sources, KEEPING each span's trigger_type
   // so the seekbar can color it (via the shared palette). NVR footage has no trigger
   // → default "continuous" (Normal). Merging only fuses TOUCHING spans of the SAME
   // trigger; different triggers stay separate items (matches the backend model), so a
   // motion span never gets swallowed into a continuous one. The event-type filter then
   // hides coverage/markers whose legend bucket is unchecked.
+  // WHICH SOURCES COULD NOT BE READ.
+  //
+  // The merge below skips a query with no data (`if (!d) return`), so an
+  // unreachable recorder produced exactly the same empty timeline as a camera
+  // that recorded nothing — and "no footage" is the reading an operator acts on.
+  // These are counted so the bar can say the difference out loud.
+  const coverageFailures = useMemo(
+    () =>
+      coverageQs
+        .map((q, i) => (q.error ? { name: sources[i]?.name || "a source", error: q.error } : null))
+        .filter(Boolean) as { name: string; error: unknown }[],
+    [coverageQs, sources],
+  );
+
   const { mergedCoverage, markers } = useMemo(() => {
     const spans: MsSpan[] = []; // { s, e, trigger } (trigger = backend trigger_type)
     const marks: TimelineMarker[] = [];
@@ -468,14 +594,17 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
       }
     }
 
-    // Filter markers by the same event-filter (event_type → legend bucket).
-    const keptMarks = marks.filter((m) => eventFilter.has(legendKeyForEventType(m.event_type)));
+    // Filter markers by the same event-filter (event_type → legend bucket). The
+    // federated ones come from this service's mirror of each recorder's ledger.
+    const keptMarks = [...marks, ...fedMarkers].filter((m) =>
+      eventFilter.has(legendKeyForEventType(m.event_type)),
+    );
 
     return {
       mergedCoverage: merged.map((m) => ({ start: iso(m.s), end: iso(m.e), trigger_type: m.trigger })),
       markers: keptMarks,
     };
-  }, [coverageQs, eventFilter]);
+  }, [coverageQs, fedMarkers, eventFilter]);
 
   // Default the playhead to first coverage when it appears (and not playing).
   const firstCoverageMs = useMemo(() => {
@@ -764,6 +893,14 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
               )
             }
           />
+          {/* An unmarked calendar means "no footage that month" OR "we could not
+              ask" — and only one of those is a reason to pick another day. */}
+          {recordingDaysQ.error && calTrack && (
+            <p className="mt-1 px-1 text-[10.5px] leading-relaxed text-amber-200">
+              Footage days could not be read for {calTrack.name} — days are unmarked
+              because the recorder did not answer, not because it has nothing.
+            </p>
+          )}
 
           {/* ── Stream (Main / Sub) ── */}
           <div className="mt-4">
@@ -841,7 +978,10 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
                 <button
                   key={t.k}
                   type="button"
-                  onClick={() => setPickerKind(t.k)}
+                  onClick={() => {
+                    pickerChosen.current = true;
+                    setPickerKind(t.k);
+                  }}
                   className={`flex flex-1 items-center justify-center gap-1 rounded-lg px-1.5 py-1.5 text-[12px] transition ${
                     pickerKind === t.k
                       ? "bg-[rgba(150,180,245,.08)] font-medium text-[#f2f6ff]"
@@ -886,7 +1026,15 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
                 {camerasQ.isLoading ? (
                   <p className="px-2 py-6 text-center text-xs text-[#9db0d8]">Loading…</p>
                 ) : railCameras.length === 0 ? (
-                  <p className="px-2 py-6 text-center text-xs text-[#9db0d8]">No cameras.</p>
+                  <p className="px-2 py-6 text-center text-xs text-[#9db0d8]">
+                    {camSearch.trim() || camSiteFilter
+                      ? "No cameras match that search."
+                      : fedCameras.length > 0
+                        ? // The one sentence that was missing: nothing is stored HERE,
+                          // and the cameras are on the other tab.
+                          `No footage is stored in this platform. ${fedCameras.length} camera(s) are recorded by their own recorder — see the Recorders tab.`
+                        : "No cameras."}
+                  </p>
                 ) : (
                   (() => {
                     // Tree: Default › Site › Camera (scales for many cameras). Search
@@ -1002,8 +1150,19 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
               <div className="space-y-1">
                 {fedCamsQ.isLoading ? (
                   <p className="px-2 py-6 text-center text-xs text-[#9db0d8]">Loading…</p>
+                ) : fedCamsQ.error ? (
+                  // A recorder that did not answer must not read as an estate with
+                  // no cameras — one sends the operator to onboarding, the other to
+                  // the recorder.
+                  <p className="px-2 py-6 text-center text-xs text-red-300">
+                    {apiError(fedCamsQ.error, "Could not reach the recorders")}
+                  </p>
                 ) : fedCameras.length === 0 ? (
-                  <p className="px-2 py-6 text-center text-xs text-[#9db0d8]">No recorder cameras.</p>
+                  <p className="px-2 py-6 text-center text-xs text-[#9db0d8]">
+                    {cameras.length > 0
+                      ? "No recorder-owned cameras. This platform's own storage has some — see the VMS storage tab."
+                      : "No recorder cameras."}
+                  </p>
                 ) : (
                   fedCameras.map((c) => {
                     const tile = fedTile(c);
@@ -1101,10 +1260,17 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
         >
           {sources.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center text-center text-[#9db0d8]">
-              <Icon icon="heroicons-outline:play" className="mb-3 text-5xl opacity-40" />
-              <p className="font-medium text-[#f2f6ff]">No sources loaded</p>
+              <Icon
+                icon={deepLinkMiss ? "heroicons:exclamation-triangle" : "heroicons-outline:play"}
+                className={`mb-3 text-5xl ${deepLinkMiss ? "text-red-400/70" : "opacity-40"}`}
+              />
+              <p className="font-medium text-[#f2f6ff]">
+                {deepLinkMiss ? "That camera is not in this estate" : "No sources loaded"}
+              </p>
               <p className="mt-1 text-sm">
-                Pick a day, check up to 4 channels on the left, and hit Search to play them in sync.
+                {deepLinkMiss
+                  ? `Nothing here owns camera ${deepLinkMiss}. It may have been removed, or belong to a recorder this account cannot see.`
+                  : "Pick a day, check up to 4 channels on the left, and hit Search to play them in sync."}
               </p>
             </div>
           ) : focusTile ? (
@@ -1222,6 +1388,23 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
         {/* master transport (grid mode only) */}
         {sources.length > 0 && !focusTile && (
           <div className="shrink-0 border-t border-[rgba(160,150,245,.22)] p-3">
+            {/* A source that did not answer is NAMED. Without this the timeline for
+                an unreachable recorder is indistinguishable from one that recorded
+                nothing — and the operator acts on "no footage". */}
+            {coverageFailures.length > 0 && (
+              <div className="mb-2 flex items-start gap-2 rounded-lg border border-[rgba(251,191,36,.4)] bg-[rgba(251,191,36,.1)] px-2.5 py-1.5">
+                <Icon
+                  icon="heroicons:exclamation-triangle"
+                  className="mt-0.5 shrink-0 text-[13px] text-amber-300"
+                />
+                <p className="text-[11px] leading-relaxed text-amber-200">
+                  Coverage could not be read for{" "}
+                  {coverageFailures.map((f) => f.name).join(", ")} — the timeline
+                  below is missing {coverageFailures.length === 1 ? "that source" : "those sources"}, not
+                  showing that {coverageFailures.length === 1 ? "it has" : "they have"} no footage.
+                </p>
+              </div>
+            )}
             <ScrubBar
               coverage={mergedCoverage}
               markers={markers}

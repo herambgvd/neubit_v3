@@ -196,7 +196,20 @@ export default function PlaybackPlayer({
   // ── Bookmarks + evidence holds (G3) — standalone only ───────────────────
   const qc = useQueryClient();
   const { can } = useAuth();
-  const canLock = can("vms.recording.control");
+  // BOOKMARKS AND HOLDS ARE KEYED ON THIS PLATFORM'S OWN CAMERA ROWS.
+  //
+  // A federated tile's `cameraId` is the synthetic "<nodeId>:<realId>" the player
+  // needs to address the recorder — not a VMS camera id — so a bookmark or a hold
+  // written against it is refused by the API with "Camera is too long" (the column
+  // is a uuid). The list queries for both were already disabled for `sourceFn`
+  // tiles, so a write that DID land could never be seen either.
+  //
+  // The buttons follow the same condition now. Not disabled-with-a-tooltip:
+  // annotating recorder-owned footage is the recorder's own surface, and offering
+  // a greyed control here would advertise a feature this console does not have.
+  const vmsOwnedFootage = !sourceFn;
+  const canAnnotate = vmsOwnedFootage;
+  const canLock = can("vms.recording.control") && vmsOwnedFootage;
   // Permission AND a recorder to ask. Without the second, there is nothing that
   // could run the search.
   const canSearch = can("vms.playback.view") && !!nodeId && !!realCameraId;
@@ -271,7 +284,7 @@ export default function PlaybackPlayer({
   }, [coverage]);
 
   // ── Playback session ────────────────────────────────────────────────────
-  const { hlsUrl, webrtcUrl, loading, error, load, clear } = usePlaybackSession(cameraId, {
+  const { hlsUrl, webrtcUrl, loading, error, empty, load, clear } = usePlaybackSession(cameraId, {
     profile,
     sourceFn,
     enabled: !!cameraId,
@@ -762,7 +775,12 @@ export default function PlaybackPlayer({
     }
   };
 
-  const noRecordings = !controlled && !timelineQ.isLoading && coverage.length === 0;
+  // Nothing to play, said by either source of truth: the local timeline has no
+  // coverage for the day, or the recorder answered this window with no footage.
+  // The second is how a federated camera reports it, and without it the focus
+  // player showed a black frame with no explanation.
+  const noRecordings =
+    !controlled && ((!timelineQ.isLoading && coverage.length === 0) || empty);
 
   // ── Slaved (controlled) cell — just the video ────────────────────────────
   if (controlled) {
@@ -786,15 +804,26 @@ export default function PlaybackPlayer({
            
           <video ref={videoRef} className="h-full w-full object-contain" playsInline muted />
         )}
-        {(loading || (!hlsUrl && !error)) && (
+        {/* A SPINNER MEANS A REQUEST IS IN FLIGHT — nothing else.
+            It used to also cover "answered, with no url", which is what a recorder
+            replies for a window holding no footage: on an estate where nothing is
+            recording, every tile span forever with no way to tell that from a slow
+            recorder. The three states are now distinct and each says which it is. */}
+        {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white/80">
             <Icon icon="svg-spinners:180-ring" className="text-xl" />
+          </div>
+        )}
+        {empty && !loading && !error && !videoError && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/60 px-2 text-center text-[11px] text-white/70">
+            <Icon icon="heroicons-outline:film" className="text-xl opacity-60" />
+            No footage in this window
           </div>
         )}
         {(error || videoError) && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/70 px-2 text-center text-[11px] text-red-300">
             <Icon icon="heroicons:exclamation-triangle" className="text-xl" />
-            No footage
+            {error || "Could not play this stream"}
           </div>
         )}
       </div>
@@ -895,16 +924,18 @@ export default function PlaybackPlayer({
             className="h-8 rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-2.5 text-sm text-[#f2f6ff] outline-hidden focus:border-[rgba(34,211,238,.5)]"
           />
           <CtrlBtn icon="heroicons-outline:camera" title="Snapshot" onClick={snapshot} disabled={!hlsUrl} plain />
-          <CtrlBtn
-            icon="heroicons-outline:bookmark"
-            title="Bookmark this moment"
-            onClick={() => {
-              setActiveBookmark(null);
-              setEditBookmark(null);
-              setBookmarkSeed({ start: iso(current ?? windowStart) });
-            }}
-            plain
-          />
+          {canAnnotate && (
+            <CtrlBtn
+              icon="heroicons-outline:bookmark"
+              title="Bookmark this moment"
+              onClick={() => {
+                setActiveBookmark(null);
+                setEditBookmark(null);
+                setBookmarkSeed({ start: iso(current ?? windowStart) });
+              }}
+              plain
+            />
+          )}
           {canSearch && (
             <CtrlBtn
               icon="heroicons-outline:magnifying-glass-circle"
