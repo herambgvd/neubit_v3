@@ -1,6 +1,6 @@
 "use client";
 
-// VMS → Camera events (P5-C). The camera device-events surface: normalized
+// VMS → EVENTS. The estate's device-event feed: normalized
 // ONVIF/brand device events (motion|tamper|video_loss|io_input|line_crossing|
 // zone_intrusion|audio|…) + system events, with filters (camera / type /
 // severity / date / ack), LIVE updates over the core realtime SSE bridge
@@ -15,7 +15,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { EmptyState, MetricRow, PageHeader, Select } from "@/components/ui/kit";
+import { EmptyState, Select } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { workflow as wfApi } from "@/features/workflow/api";
@@ -23,6 +23,7 @@ import { vms } from "./api";
 import { useEstateCameras } from "./hooks/useEstateCameras";
 import { EVENT_TYPE_FILTERS, SEVERITY_FILTERS } from "./constants";
 import { normalizeVmsEvent, eventKey, type NormalizedVmsEvent } from "./eventLib";
+import { groupByDay } from "./eventGroups";
 import { useVmsEventStream } from "./hooks/useVmsEventStream";
 import type { EstateCamera, VmsEventPublic } from "./types";
 import CameraEventRow from "./components/CameraEventRow";
@@ -180,40 +181,93 @@ export default function CameraEventsPage() {
     { value: "true", label: "Acknowledged" },
   ];
 
+  const groups = useMemo(() => groupByDay(events), [events]);
+  const filtered = !!(cameraId || eventType || severity || ack || day);
+  const clearAll = () => {
+    setCameraId("");
+    setEventType("");
+    setSeverity("");
+    setAck("");
+    setDay("");
+  };
+
   return (
     <div className="pb-8">
-      <PageHeader
-        title="Camera events"
-        subtitle="Device-level camera events — motion, tamper, video-loss, I/O, line/zone, and system alerts."
-        actions={
-          <span className="inline-flex items-center gap-1.5 text-[11px]">
-            <span className={`h-2 w-2 rounded-full ${live ? (connected ? "bg-emerald-500" : "bg-amber-500") : "bg-muted"}`} />
-            <span className="text-muted">{!live ? "Live off" : connected ? "Live" : "Reconnecting…"}</span>
-            <button
-              type="button"
-              onClick={() => setLive((v) => !v)}
-              className="ml-1 inline-flex items-center gap-1 rounded-md border border-card-border px-2 py-1 text-[11px] font-medium text-muted hover:bg-hover hover:text-foreground"
-            >
-              <Icon icon={live ? "heroicons-outline:pause" : "heroicons-outline:play"} className="text-xs" />
-              {live ? "Pause" : "Resume"}
-            </button>
+      {/* ── LIVE STRIP ────────────────────────────────────────────────────
+          The page starts on the feed's own pulse: whether events are arriving
+          right now, and the counts an operator triages by. The counts are
+          CLICKABLE — a severity is a filter, and a number you cannot act on is
+          decoration on a screen whose whole job is triage. No page heading: the
+          section names itself in the top bar, like every other console. */}
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-card-border bg-card px-3 py-2.5">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="relative flex h-2.5 w-2.5">
+            {live && connected && (
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" />
+            )}
+            <span
+              className={`relative inline-flex h-2.5 w-2.5 rounded-full ${
+                live ? (connected ? "bg-emerald-500" : "bg-amber-500") : "bg-muted"
+              }`}
+            />
           </span>
-        }
-      />
+          <span className="text-[12px] font-semibold text-foreground">
+            {!live ? "Paused" : connected ? "Live" : "Reconnecting…"}
+          </span>
+        </span>
 
-      {/* Summary */}
-      <MetricRow
-        className="mb-4"
-        items={[
-          { label: "Events", value: events.length, icon: "heroicons-outline:signal", tone: "info" },
-          { label: "Critical", value: summary.critical, icon: "heroicons:exclamation-triangle", tone: summary.critical ? "bad" : "neutral" },
-          { label: "Warning", value: summary.warning, icon: "heroicons-outline:exclamation-circle", tone: summary.warning ? "warn" : "neutral" },
-          { label: "Unacked", value: summary.unacked, icon: "heroicons-outline:bell-alert", tone: summary.unacked ? "warn" : "ok" },
-        ]}
-      />
+        <button
+          type="button"
+          onClick={() => setLive((v) => !v)}
+          title={live ? "Stop appending new events" : "Append new events as they arrive"}
+          className="inline-flex items-center gap-1 rounded-md border border-card-border px-2 py-1 text-[11px] font-medium text-muted transition hover:bg-hover hover:text-foreground"
+        >
+          <Icon icon={live ? "heroicons-outline:pause" : "heroicons-outline:play"} className="text-xs" />
+          {live ? "Pause" : "Resume"}
+        </button>
 
-      {/* Filters */}
-      <div className="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-card-border bg-card p-3">
+        <span className="mx-1 h-4 w-px bg-card-border" aria-hidden />
+
+        <CountChip
+          label="All"
+          value={events.length}
+          active={!severity}
+          onClick={() => setSeverity("")}
+        />
+        <CountChip
+          label="Critical"
+          value={summary.critical}
+          tone="bad"
+          active={severity === "critical"}
+          onClick={() => setSeverity(severity === "critical" ? "" : "critical")}
+        />
+        <CountChip
+          label="Warning"
+          value={summary.warning}
+          tone="warn"
+          active={severity === "warning"}
+          onClick={() => setSeverity(severity === "warning" ? "" : "warning")}
+        />
+        <CountChip
+          label="Unacked"
+          value={summary.unacked}
+          tone={summary.unacked ? "warn" : "ok"}
+          active={ack === "false"}
+          onClick={() => setAck(ack === "false" ? "" : "false")}
+        />
+
+        <button
+          type="button"
+          onClick={() => qc.invalidateQueries({ queryKey: ["vms-events"] })}
+          title="Re-read the history"
+          className="ml-auto inline-flex items-center gap-1 rounded-md border border-card-border px-2 py-1 text-[11px] font-medium text-muted transition hover:bg-hover hover:text-foreground"
+        >
+          <Icon icon="heroicons-outline:arrow-path" className="text-xs" /> Refresh
+        </button>
+      </div>
+
+      {/* ── Filters ── */}
+      <div className="mb-3 flex flex-wrap items-end gap-2 rounded-xl border border-card-border bg-card p-3">
         <FilterField label="Camera">
           <Select value={cameraId} onChange={(e) => setCameraId(e.target.value)} options={cameraOptions} className="!h-9 !py-1.5" />
         </FilterField>
@@ -235,75 +289,133 @@ export default function CameraEventsPage() {
             className="h-9 rounded-lg border border-field bg-transparent px-2.5 text-sm text-foreground outline-hidden focus:border-muted"
           />
         </FilterField>
-        {(cameraId || eventType || severity || ack || day) && (
+        {filtered && (
           <button
             type="button"
-            onClick={() => {
-              setCameraId("");
-              setEventType("");
-              setSeverity("");
-              setAck("");
-              setDay("");
-            }}
-            className="ml-auto inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-2 text-[11px] font-medium text-muted hover:bg-hover hover:text-foreground"
+            onClick={clearAll}
+            className="ml-auto inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-2 text-[11px] font-medium text-muted transition hover:bg-hover hover:text-foreground"
           >
             <Icon icon="heroicons-outline:x-mark" className="text-xs" /> Clear
           </button>
         )}
       </div>
 
-      {/* Feed */}
-      <div className="overflow-hidden rounded-xl border border-card-border bg-card">
-        <div className="flex items-center gap-2 border-b border-card-border px-3 py-2 text-xs">
-          <Icon icon="heroicons-outline:signal" className="text-sm text-blue-500" />
-          <span className="font-semibold text-foreground">Events</span>
-          <span className="rounded-sm bg-hover px-1.5 py-0.5 font-mono text-[10px] text-muted">{events.length}</span>
-          {total > events.length && <span className="text-[10px] text-muted/70">of {total}</span>}
-          <button
-            type="button"
-            onClick={() => qc.invalidateQueries({ queryKey: ["vms-events"] })}
-            className="ml-auto inline-flex items-center gap-1 rounded-md border border-card-border px-2 py-1 text-[11px] font-medium text-muted hover:bg-hover hover:text-foreground"
-          >
-            <Icon icon="heroicons-outline:arrow-path" className="text-xs" /> Refresh
-          </button>
+      {/* ── Feed ── */}
+      {q.isLoading ? (
+        <div className="flex items-center gap-2 rounded-xl border border-card-border bg-card p-6 text-xs text-muted">
+          <Icon icon="svg-spinners:180-ring" className="text-sm" /> Loading events…
         </div>
-
-        {q.isLoading ? (
-          <div className="flex items-center gap-2 p-6 text-xs text-muted">
-            <Icon icon="svg-spinners:180-ring" className="text-sm" /> Loading events…
+      ) : q.isError ? (
+        // A failed read must never look like a quiet estate — one is a reason to
+        // relax, the other is a reason to look at the recorder.
+        <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-500">
+          <Icon icon="heroicons-outline:exclamation-circle" className="mt-0.5 shrink-0 text-sm" />
+          <div>
+            <p className="font-medium">Could not load events</p>
+            <p className="mt-0.5 text-[11px] opacity-80">{apiError(q.error, "Unknown error")}</p>
           </div>
-        ) : q.isError ? (
-          <div className="m-3 flex items-start gap-2 rounded-md border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-500">
-            <Icon icon="heroicons-outline:exclamation-circle" className="mt-0.5 shrink-0 text-sm" />
-            <div>
-              <p className="font-medium">Failed to load events</p>
-              <p className="mt-0.5 text-[11px] opacity-80">{apiError(q.error, "Unknown error")}</p>
-            </div>
-          </div>
-        ) : events.length === 0 ? (
+        </div>
+      ) : events.length === 0 ? (
+        <div className="rounded-xl border border-card-border bg-card">
           <EmptyState
-            icon="heroicons-outline:bell-slash"
-            title="No camera events"
-            subtitle="Device events appear here as cameras report them."
+            icon={filtered ? "heroicons-outline:funnel" : "heroicons-outline:bell-slash"}
+            title={filtered ? "No events match these filters" : "No events yet"}
+            subtitle={
+              filtered
+                ? "Widen the day, the camera or the severity — the feed itself is live."
+                : "Events appear here the moment a recorder reports one — motion, tamper, video loss, I/O."
+            }
+            action={
+              filtered ? (
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  className="inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-1.5 text-[11px] font-medium text-muted transition hover:bg-hover hover:text-foreground"
+                >
+                  <Icon icon="heroicons-outline:x-mark" className="text-xs" /> Clear filters
+                </button>
+              ) : undefined
+            }
           />
-        ) : (
-          <div className="divide-y divide-card-border">
-            {events.map((e, idx) => (
-              <CameraEventRow
-                key={eventKey(e, idx)}
-                event={e}
-                cameraName={cameraName(e.camera_id)}
-                incidentId={incidentByEventId.get(e.event_id || e.id || "") || null}
-                onAck={(ev) => {
-                  if (ev.id) ackMut.mutate(ev.id);
-                }}
-                ackPending={ackMut.isPending && ackMut.variables === e.id}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        // Grouped by DAY, with the header sticky: scrolling a long feed without
+        // one leaves an operator reading times with no date attached to them.
+        <div className="space-y-3">
+          {groups.map((g) => (
+            <section key={g.key} className="overflow-hidden rounded-xl border border-card-border bg-card">
+              <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-card-border bg-card/95 px-3 py-2 backdrop-blur-xs">
+                <Icon icon="heroicons-outline:calendar-days" className="text-sm text-blue-500" />
+                <span className="text-[12px] font-semibold text-foreground">{g.label}</span>
+                <span className="rounded-sm bg-hover px-1.5 py-0.5 font-mono text-[10px] text-muted">
+                  {g.events.length}
+                </span>
+              </header>
+              <div className="divide-y divide-card-border">
+                {g.events.map((e, idx) => (
+                  <CameraEventRow
+                    key={eventKey(e, idx)}
+                    event={e}
+                    cameraName={cameraName(e.camera_id)}
+                    incidentId={incidentByEventId.get(e.event_id || e.id || "") || null}
+                    onAck={(ev) => {
+                      if (ev.id) ackMut.mutate(ev.id);
+                    }}
+                    ackPending={ackMut.isPending && ackMut.variables === e.id}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
+          {total > events.length && (
+            <p className="px-1 text-[11px] text-muted">
+              Showing {events.length} of {total} — narrow the day or the camera to see further back.
+            </p>
+          )}
+        </div>
+      )}
     </div>
+  );
+}
+
+/** A count that FILTERS. The strip used to be four read-only tiles; a number an
+ *  operator can see but not act on is decoration on a triage screen. */
+function CountChip({
+  label,
+  value,
+  tone = "info",
+  active,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  tone?: "info" | "bad" | "warn" | "ok";
+  active?: boolean;
+  onClick: () => void;
+}) {
+  const toneCls =
+    tone === "bad"
+      ? "text-red-400"
+      : tone === "warn"
+        ? "text-amber-400"
+        : tone === "ok"
+          ? "text-emerald-400"
+          : "text-foreground";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={!!active}
+      title={active ? `Stop filtering by ${label}` : `Show only ${label}`}
+      className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] transition ${
+        active
+          ? "border-blue-500/50 bg-blue-500/10 text-foreground"
+          : "border-card-border text-muted hover:bg-hover hover:text-foreground"
+      }`}
+    >
+      <span className={`font-mono text-[13px] tabular-nums ${toneCls}`}>{value}</span>
+      {label}
+    </button>
   );
 }
 

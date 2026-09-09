@@ -45,10 +45,12 @@ export const menuItems: NavItem[] = [
   // Streaming → the immersive Live video wall (/streaming). Explicit `link` so Live is
   // directly reachable from the overlay (it is intentionally not a Surveillance sub-tab).
   { title: "Streaming", icon: "heroicons:signal", section: "streaming", module: "vms", link: "/streaming" },
-  // "Incidents" = the PSIM alarm/incident surface (SOP-driven, cross-domain incidents
-  // live here, like neubit_v2). Named distinctly from Streaming → "Camera events" (the
-  // raw device-level event feed) to remove the "Events vs Camera events" confusion.
-  // Route stays /events. Workflow config lives under Config → Workflow.
+  // "Incidents" = the PSIM alarm/incident surface (SOP-driven, cross-domain
+  // incidents live here, like neubit_v2) — a thing an operator WORKS, with a state
+  // machine behind it. Surveillance → "Events" is the raw device feed a recorder
+  // reports: motion, tamper, video loss. The two names carry that difference; the
+  // old pair ("Incidents" vs "Camera events") made the second sound like a subset
+  // of the first, which it is not. Route stays /events.
   { title: "Incidents", icon: "heroicons:calendar-days", link: "/events", perm: "workflow.instance.read" },
   // Hidden for now (coming later) — uncomment to restore in the top nav.
   // { title: "Network", icon: "heroicons:server-stack", link: "/network", disabled: true, module: "nms" },
@@ -119,7 +121,7 @@ export function isDevicesRoute(pathname?: string | null): boolean {
 }
 
 // ── Streaming sub-tab bar — the video-viewing surfaces (VMS) ──────────────
-//   Video Wall (live), Playback, Camera events. Onboarding stays under Devices.
+//   Video Wall (live), Playback, Events. Onboarding stays under Devices.
 //   (Recordings folded into Playback — its calendar/timeline covers estate browse +
 //   clip extract, and evidence-lock lives in Playback's focus player.)
 export const streamTabs: NavItem[] = [
@@ -127,7 +129,10 @@ export const streamTabs: NavItem[] = [
   // Home) — the separate shared "Wall Console" surface was merged into it, so it's
   // intentionally NOT a sub-tab here.
   { title: "Playback", icon: "heroicons-outline:play", link: "/playback", perm: "vms.playback.view", module: "vms" },
-  { title: "Camera events", icon: "heroicons:bell-alert", link: "/camera-events", perm: "vms.camera.read", module: "vms" },
+  // Named just "Events": every camera in the estate belongs to a recorder, so
+  // "Camera events" said something the operator already knows and cost the tab its
+  // width. The route keeps its path — deep links from alarms and popups carry it.
+  { title: "Events", icon: "heroicons:bell-alert", link: "/camera-events", perm: "vms.camera.read", module: "vms" },
   // NO REPORTS TAB. The VMS's own report console (uptime, coverage, storage,
   // event counts, and a scheduler that mailed them) is gone: reporting is
   // DashForge's, surfaced through the registered dashboards under Building

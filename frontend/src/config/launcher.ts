@@ -97,6 +97,17 @@ export const LAUNCHER_MODES: LauncherMode[] = [
         accent: "#67e8f9",
         tiles: [
           { icon: "heroicons:bell-alert", label: "Alarms", href: "/events", tone: "hot", perm: "workflow.instance.read" },
+          // EVENTS HAS ITS OWN CARD. It was reachable only as a TAB inside the
+          // Streaming/Playback strip, so the estate's live device feed — motion,
+          // tamper, video loss, I/O — was something an operator had to be inside
+          // Playback to find. It is not a sub-view of playing footage back; it is
+          // where the reason to play something back arrives.
+          //
+          // Next to Alarms on purpose, and named against it: an ALARM is an
+          // incident somebody works, with a state machine behind it; an EVENT is
+          // what a recorder reported. The two are one click apart because that is
+          // the actual workflow — see an event, decide whether it is an incident.
+          { icon: "heroicons:bolt", label: "Events", href: "/camera-events", tone: "hot", perm: "vms.camera.read", module: "vms" },
           { icon: "heroicons:chart-bar-square", label: "Video Analytics", soon: true },
         ],
       },
