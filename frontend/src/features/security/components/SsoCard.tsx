@@ -11,7 +11,7 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { ActionButton } from "@/components/console";
-import { Input, Toggle } from "@/components/ui/kit";
+import { ConfirmDialog, Input, Toggle, type ConfirmState } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { security } from "../api";
 import SecuritySection from "./SecuritySection";
@@ -54,6 +54,7 @@ export default function SsoCard({ canManage }: SsoCardProps) {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["security-sso"], queryFn: () => security.sso.get() });
 
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [form, setForm] = useState<SsoForm>(EMPTY);
   const [secret, setSecret] = useState("");
   const [groupRoleMap, setGroupRoleMap] = useState<RoleMap>({});
@@ -126,6 +127,7 @@ export default function SsoCard({ canManage }: SsoCardProps) {
   });
 
   return (
+    <>
     <SecuritySection
       title="Single sign-on (OIDC)"
       desc="Let users authenticate through your identity provider (Okta, Azure AD, Google, Keycloak). Users are provisioned + mapped to roles from their IdP claims."
@@ -212,7 +214,18 @@ export default function SsoCard({ canManage }: SsoCardProps) {
             <button
               className="text-xs text-red-500 transition hover:underline"
               onClick={() => {
-                if (window.confirm("Remove the SSO configuration?")) remove.mutate();
+                setConfirm({
+                  title: "Remove the SSO configuration?",
+                  // Says what STOPS. "Are you sure?" over a destructive auth
+                  // change tells an admin nothing about who is locked out by it.
+                  message:
+                    "Sign-in through the identity provider stops immediately. Accounts that only ever signed in through it will not be able to sign in until SSO is configured again.",
+                  confirmLabel: "Remove",
+                  onConfirm: () => {
+                    remove.mutate();
+                    setConfirm(null);
+                  },
+                });
               }}
             >
               Remove SSO configuration
@@ -227,6 +240,8 @@ export default function SsoCard({ canManage }: SsoCardProps) {
         </p>
       </div>
     </SecuritySection>
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={remove.isPending} />
+    </>
   );
 }
 

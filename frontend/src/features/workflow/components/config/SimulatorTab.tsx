@@ -16,7 +16,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Badge, Spinner, checkboxClass } from "@/components/ui/kit";
+import { Badge, ConfirmDialog, Spinner, checkboxClass, type ConfirmState } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
@@ -70,6 +70,7 @@ export default function SimulatorTab() {
   const sitesQ = useQuery({ queryKey: ["sim-sites"], queryFn: () => sitesApi.list({ limit: 200 }) });
   const sites = asItems(sitesQ.data);
 
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [eventType, setEventType] = useState("");
   const [alertCode, setAlertCode] = useState("");
   const [siteId, setSiteId] = useState("");
@@ -121,21 +122,31 @@ export default function SimulatorTab() {
     }
     if (Object.keys(next).length) { setErrors(next); return; }
     setErrors({});
-    // Live run (dry-run OFF) creates a REAL incident + fires SOP actions from a
-    // config screen — confirm before it happens.
-    if (!dryRun && !window.confirm(
-      "Run LIVE — this creates a real incident and fires the SOP's real actions " +
-      "(notifications, linkage, etc). Continue?"
-    )) {
-      return;
-    }
-    simulate.mutate({
+    const body = {
       event_type: eventType.trim(),
       payload,
       site_id: siteId || null,
       alert_code: alertCode.trim() || null,
       dry_run: dryRun,
-    });
+    };
+    // Live run (dry-run OFF) creates a REAL incident + fires SOP actions from a
+    // config screen — confirm before it happens. The console's own dialog, not
+    // `window.confirm`: a browser chrome box is the one destructive prompt an
+    // operator cannot tell apart from a page they are not on.
+    if (!dryRun) {
+      setConfirm({
+        title: "Run live?",
+        message:
+          "This creates a real incident and fires the SOP's real actions — notifications go out, linkage runs. A dry run reports the same matches and changes nothing.",
+        confirmLabel: "Run live",
+        onConfirm: () => {
+          simulate.mutate(body);
+          setConfirm(null);
+        },
+      });
+      return;
+    }
+    simulate.mutate(body);
   }
 
   return (
@@ -246,6 +257,11 @@ export default function SimulatorTab() {
           )}
         </div>
       </div>
+      <ConfirmDialog
+        state={confirm}
+        onClose={() => setConfirm(null)}
+        pending={simulate.isPending}
+      />
     </div>
   );
 }

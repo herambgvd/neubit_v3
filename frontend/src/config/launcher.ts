@@ -56,6 +56,17 @@ export interface LauncherGate {
   hasModule: (key?: string) => boolean;
 }
 
+// GATE KEYS ARE CATALOG KEYS.
+//
+// Every `perm` below must be a key core's permission catalog knows
+// (`backend/core/app/auth/permissions.py`). A key the catalog does not carry can
+// be held by NOBODY except a wildcard admin — the role editor cannot even offer
+// it — so a tile naming one reads SOON to every real operator while the page
+// behind it works perfectly. `dashboards.read` did exactly that once; so did
+// `neubit.read`, which was never a catalog key at all and gated eight tiles
+// including Live, Playback, Alarms and Sites. Each is now the key the ROUTE
+// behind it actually enforces, so the tile and its data turn on one thing.
+
 export const LAUNCHER_MODES: LauncherMode[] = [
   {
     id: "surv",
@@ -67,8 +78,8 @@ export const LAUNCHER_MODES: LauncherMode[] = [
         title: "Watch",
         accent: "#67e8f9",
         tiles: [
-          { icon: "heroicons:play-circle", label: "Live", href: "/streaming", tone: "teal", perm: "neubit.read", module: "vms" },
-          { icon: "heroicons:backward", label: "Playback", href: "/playback", tone: "teal", perm: "neubit.read", module: "vms" },
+          { icon: "heroicons:play-circle", label: "Live", href: "/streaming", tone: "teal", perm: "vms.live.view", module: "vms" },
+          { icon: "heroicons:backward", label: "Playback", href: "/playback", tone: "teal", perm: "vms.playback.view", module: "vms" },
           { icon: "heroicons:heart", label: "Pulse", href: "/system-health", tone: "teal", perm: "system.read" },
         ],
       },
@@ -76,7 +87,7 @@ export const LAUNCHER_MODES: LauncherMode[] = [
         title: "Act",
         accent: "#67e8f9",
         tiles: [
-          { icon: "heroicons:bell-alert", label: "Alarms", href: "/events", tone: "hot", perm: "neubit.read" },
+          { icon: "heroicons:bell-alert", label: "Alarms", href: "/events", tone: "hot", perm: "workflow.instance.read" },
           { icon: "heroicons:chart-bar-square", label: "Video Analytics", soon: true },
         ],
       },
@@ -271,7 +282,7 @@ export const LAUNCHER_MODES: LauncherMode[] = [
         accent: "#93c5fd",
         tiles: [
           { icon: "heroicons:users", label: "Users & Roles", href: "/users", tone: "blue", perm: "user.read" },
-          { icon: "heroicons:map-pin", label: "Sites", href: "/sites", tone: "blue", perm: "neubit.read" },
+          { icon: "heroicons:map-pin", label: "Sites", href: "/sites", tone: "blue", perm: "sites.read" },
           { icon: "heroicons:adjustments-horizontal", label: "System", href: "/system", tone: "blue", perm: "settings.manage" },
           { icon: "heroicons:shield-exclamation", label: "Security", href: "/config/security", tone: "blue", perm: "security.manage" },
           { icon: "heroicons:squares-2x2", label: "Platform", href: "/platform", tone: "blue", perm: "settings.manage" },
@@ -289,16 +300,16 @@ export const LAUNCHER_MODES: LauncherMode[] = [
         title: "Devices & Automation",
         accent: "#93c5fd",
         tiles: [
-          { icon: "heroicons:video-camera", label: "Devices", href: "/devices/cameras", tone: "blue", perm: "neubit.read", module: "vms" },
+          { icon: "heroicons:video-camera", label: "Devices", href: "/devices/cameras", tone: "blue", perm: "vms.camera.read", module: "vms" },
           { icon: "heroicons:circle-stack", label: "Storage", href: "/storage", tone: "blue", perm: "vms.camera.read", module: "vms" },
-          { icon: "heroicons:bolt", label: "Linkage & Policies", href: "/config/linkage", tone: "att", perm: "neubit.read", module: "vms" },
+          { icon: "heroicons:bolt", label: "Linkage & Policies", href: "/config/linkage", tone: "att", perm: "vms.camera.read", module: "vms" },
           { icon: "heroicons:computer-desktop", label: "Wall Layouts", href: "/config/video-wall", tone: "blue", perm: "vms.wall.manage", module: "vms" },
           // Beside Wall Layouts on purpose: a wall layout is where tiles GO, a pattern
           // is what rotates through them. Gated on vms.config.manage, matching
           // PERM_MANAGE on the patterns + camera-group routers.
           { icon: "heroicons-outline:rectangle-group", label: "Patterns", href: "/config/patterns", tone: "blue", perm: "vms.config.manage", module: "vms" },
-          { icon: "heroicons:rectangle-stack", label: "Workflow", href: "/workflow-config", tone: "blue", perm: "neubit.read", module: "workflow" },
-          { icon: "heroicons:arrow-down-on-square-stack", label: "Ingest", href: "/ingest", tone: "blue", perm: "neubit.read", module: "workflow" },
+          { icon: "heroicons:rectangle-stack", label: "Workflow", href: "/workflow-config", tone: "blue", perm: "workflow.sop.read", module: "workflow" },
+          { icon: "heroicons:arrow-down-on-square-stack", label: "Ingest", href: "/ingest", tone: "blue", perm: "ingest.read", module: "workflow" },
         ],
       },
     ],

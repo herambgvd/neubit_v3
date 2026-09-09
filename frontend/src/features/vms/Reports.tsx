@@ -15,7 +15,7 @@ import { isAxiosError } from "axios";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
-import { Button, PageHeader, Select } from "@/components/ui/kit";
+import { Button, ConfirmDialog, PageHeader, Select, type ConfirmState } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { asItems, fmtBytes, fmtDateTime } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
@@ -66,6 +66,7 @@ export default function ReportsPage() {
   const [downloading, setDownloading] = useState<"csv" | "pdf" | null>(null);
   // null = closed, "new" = open on a blank form, a schedule = open for editing.
   const [scheduleModal, setScheduleModal] = useState<ReportSchedulePublic | "new" | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null); // schedule id whose run history is open
 
   // Cameras (optional narrowing + name lookup).
@@ -342,9 +343,17 @@ export default function ReportsPage() {
                             <button
                               className="ml-2 text-muted transition hover:text-red-500"
                               title="Delete"
-                              onClick={() => {
-                                if (window.confirm(`Delete schedule "${s.name}"?`)) deleteSchedule.mutate(s.id);
-                              }}
+                              onClick={() =>
+                                setConfirm({
+                                  title: "Delete schedule",
+                                  message: `“${s.name}” stops running. Reports it has already produced are kept.`,
+                                  confirmLabel: "Delete",
+                                  onConfirm: () => {
+                                    deleteSchedule.mutate(s.id);
+                                    setConfirm(null);
+                                  },
+                                })
+                              }
                             >
                               <Icon icon="heroicons-outline:trash" className="text-base" />
                             </button>
@@ -376,6 +385,11 @@ export default function ReportsPage() {
           setScheduleModal(null);
           qc.invalidateQueries({ queryKey: ["vms-report-schedules"] });
         }}
+      />
+      <ConfirmDialog
+        state={confirm}
+        onClose={() => setConfirm(null)}
+        pending={deleteSchedule.isPending}
       />
     </div>
   );

@@ -64,6 +64,22 @@ describe("the master/detail split", () => {
   });
 });
 
+describe("the destructive-confirm control", () => {
+  it("is the console's own dialog, never the browser's", () => {
+    // `window.confirm` is unstyled browser chrome: it names the SITE, not the
+    // console, carries no explanation of what the action does, and cannot be
+    // told apart from a prompt raised by a page the operator is not on. Four
+    // screens still raised one — the two security cards (removing SSO and the
+    // directory), the workflow simulator's live run, and a report schedule —
+    // while every other console used <ConfirmDialog>.
+    const offenders = FILES.filter((f) => {
+      const body = code(readFileSync(f, "utf8"));
+      return /\bwindow\.confirm\s*\(/.test(body);
+    }).map(rel);
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe("the create control", () => {
   it("scans the real source tree", () => {
     // A glob matching nothing would make every assertion below pass.

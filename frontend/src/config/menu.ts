@@ -18,6 +18,10 @@
 /** A navigable surface. `disabled` marks a feature that is not built yet: it
  *  renders greyed with a "Soon" pill, so the full menu shape exists from day one.
  *  `perm` and `module` gate visibility (see `can` / `hasModule` in lib/auth). */
+/** A navigable surface. `perm` must be a key core's permission catalog carries
+ *  (`backend/core/app/auth/permissions.py`) — see the note in `launcher.ts`: a
+ *  key nobody can hold hides the item from every operator who is not a wildcard
+ *  admin, while the page behind it works. */
 export interface NavItem {
   title: string;
   icon: string;
@@ -33,7 +37,7 @@ export interface NavItem {
 // ── Jump-to surfaces (⊞ MENU overlay "Jump to" group) ────────────────
 export const menuItems: NavItem[] = [
   // Hidden for now (coming later) — uncomment to restore in the top nav.
-  // { title: "Home", icon: "heroicons-outline:home", link: "/home", perm: "neubit.read" },
+  // { title: "Home", icon: "heroicons-outline:home", link: "/home", perm: "sites.read" },
   // Devices → the estate zone (Access Control; federated Cameras view + Recorders with VMS).
   // Carries an explicit `link` so it surfaces as a "Jump to" cell in the ⊞ MENU overlay;
   // the full device tab list lives in the overlay's Configurations group.
@@ -45,7 +49,7 @@ export const menuItems: NavItem[] = [
   // live here, like neubit_v2). Named distinctly from Streaming → "Camera events" (the
   // raw device-level event feed) to remove the "Events vs Camera events" confusion.
   // Route stays /events. Workflow config lives under Config → Workflow.
-  { title: "Incidents", icon: "heroicons:calendar-days", link: "/events", perm: "neubit.read" },
+  { title: "Incidents", icon: "heroicons:calendar-days", link: "/events", perm: "workflow.instance.read" },
   // Hidden for now (coming later) — uncomment to restore in the top nav.
   // { title: "Network", icon: "heroicons:server-stack", link: "/network", disabled: true, module: "nms" },
   // { title: "Octosense", icon: "heroicons:rss", link: "/octosense", disabled: true, module: "octosense" },
@@ -63,15 +67,15 @@ export const menuItems: NavItem[] = [
 // "Configurations" column is built from THIS list.
 export const configConsoles: NavItem[] = [
   { title: "Users & Roles", icon: "heroicons-outline:users", link: "/users", perm: "user.read" },
-  { title: "Sites", icon: "heroicons-outline:map-pin", link: "/sites", perm: "neubit.read" },
+  { title: "Sites", icon: "heroicons-outline:map-pin", link: "/sites", perm: "sites.read" },
   { title: "Video Wall", icon: "heroicons-outline:computer-desktop", link: "/config/video-wall", perm: "vms.wall.manage", module: "vms" },
-  { title: "Linkage", icon: "heroicons-outline:bolt", link: "/config/linkage", perm: "neubit.read", module: "vms" },
+  { title: "Linkage", icon: "heroicons-outline:bolt", link: "/config/linkage", perm: "vms.camera.read", module: "vms" },
   // Patterns + Camera Groups — the rotating wall sequences and the camera sets they
   // rotate through. An operator SAVES a group from the Streaming wall, so without a
   // way back in there is no way to rename, re-layout or delete one.
   { title: "Patterns", icon: "heroicons-outline:rectangle-group", link: "/config/patterns", perm: "vms.config.manage", module: "vms" },
-  { title: "Workflow", icon: "heroicons-outline:rectangle-stack", link: "/workflow-config", perm: "neubit.read", module: "workflow" },
-  { title: "Ingest", icon: "heroicons-outline:arrow-down-on-square-stack", link: "/ingest", perm: "neubit.read", module: "workflow" },
+  { title: "Workflow", icon: "heroicons-outline:rectangle-stack", link: "/workflow-config", perm: "workflow.sop.read", module: "workflow" },
+  { title: "Ingest", icon: "heroicons-outline:arrow-down-on-square-stack", link: "/ingest", perm: "ingest.read", module: "workflow" },
   // Where DashForge dashboards are registered and filed under the console that
   // shows them. Read-gated, not manage-gated: the screen shows what exists to an
   // operator and hides every write behind `dashforge.manage`.
@@ -90,16 +94,16 @@ export const configConsoles: NavItem[] = [
 
 // ── Devices sub-tab bar — the ONBOARDING zone only (onboard devices here) ──
 export const deviceTabs: NavItem[] = [
-  { title: "Access Control", icon: "heroicons:lock-closed", link: "/access-control", perm: "neubit.read", module: "access" },
+  { title: "Access Control", icon: "heroicons:lock-closed", link: "/access-control", perm: "access.read", module: "access" },
   // Cameras = a FEDERATED, read-only view of every recorder-owned camera (single
   // ownership: the standalone recorder owns all cameras — direct + 3rd-party NVRs
   // onboarded on the recorder edge). The VMS never onboards cameras; management
   // happens on the owning recorder.
-  { title: "Cameras", icon: "heroicons-outline:video-camera", link: "/devices/cameras", perm: "neubit.read", module: "vms" },
+  { title: "Cameras", icon: "heroicons-outline:video-camera", link: "/devices/cameras", perm: "vms.camera.read", module: "vms" },
   // Recorders = our recorder NODE registry (federated standalone recorders). This is
   // the only Devices onboarding surface — 3rd-party NVRs are onboarded ON a recorder,
   // so the old VMS-side "NVR" onboarding tab has been retired.
-  { title: "Recorders", icon: "heroicons:cpu-chip", link: "/devices/recorders", perm: "neubit.read", module: "vms" },
+  { title: "Recorders", icon: "heroicons:cpu-chip", link: "/devices/recorders", perm: "vms.camera.read", module: "vms" },
 ];
 
 // The route the Devices top-nav item jumps to (first enabled device tab).
@@ -122,8 +126,8 @@ export const streamTabs: NavItem[] = [
   // The video wall IS the Live console at /streaming (immersive, reached from
   // Home) — the separate shared "Wall Console" surface was merged into it, so it's
   // intentionally NOT a sub-tab here.
-  { title: "Playback", icon: "heroicons-outline:play", link: "/playback", perm: "neubit.read", module: "vms" },
-  { title: "Camera events", icon: "heroicons:bell-alert", link: "/camera-events", perm: "neubit.read", module: "vms" },
+  { title: "Playback", icon: "heroicons-outline:play", link: "/playback", perm: "vms.playback.view", module: "vms" },
+  { title: "Camera events", icon: "heroicons:bell-alert", link: "/camera-events", perm: "vms.camera.read", module: "vms" },
   { title: "Reports", icon: "heroicons:chart-bar-square", link: "/reports", perm: "vms.playback.view", module: "vms" },
 ];
 

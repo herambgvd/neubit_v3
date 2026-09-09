@@ -9,7 +9,7 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { ActionButton, QuietButton } from "@/components/console";
-import { Input, Toggle } from "@/components/ui/kit";
+import { ConfirmDialog, Input, Toggle, type ConfirmState } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { security } from "../api";
 import SecuritySection from "./SecuritySection";
@@ -53,6 +53,7 @@ export default function DirectoryCard({ canManage }: DirectoryCardProps) {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["security-directory"], queryFn: () => security.directory.get() });
 
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [form, setForm] = useState<DirectoryForm>(EMPTY);
   const [password, setPassword] = useState("");
   const [groupRoleMap, setGroupRoleMap] = useState<RoleMap>({});
@@ -133,6 +134,7 @@ export default function DirectoryCard({ canManage }: DirectoryCardProps) {
   });
 
   return (
+    <>
     <SecuritySection
       title="LDAP / Active Directory"
       desc="Authenticate against a corporate directory and map directory groups to roles. Users can sign in with their AD credentials."
@@ -227,7 +229,18 @@ export default function DirectoryCard({ canManage }: DirectoryCardProps) {
             <button
               className="text-xs text-red-500 transition hover:underline"
               onClick={() => {
-                if (window.confirm("Remove the directory configuration?")) remove.mutate();
+                setConfirm({
+                  title: "Remove the directory configuration?",
+                  // Says what STOPS. "Are you sure?" over a destructive auth
+                  // change tells an admin nothing about who is locked out by it.
+                  message:
+                    "Directory sign-in and user lookup stop immediately. Accounts that authenticate against the directory will not be able to sign in until it is configured again.",
+                  confirmLabel: "Remove",
+                  onConfirm: () => {
+                    remove.mutate();
+                    setConfirm(null);
+                  },
+                });
               }}
             >
               Remove directory configuration
@@ -242,5 +255,7 @@ export default function DirectoryCard({ canManage }: DirectoryCardProps) {
         </p>
       </div>
     </SecuritySection>
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={remove.isPending} />
+    </>
   );
 }
