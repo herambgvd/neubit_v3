@@ -33,11 +33,18 @@ export default function HeaderSectionNav() {
   if (isStreamingRoute(pathname)) {
     return <SectionTabs tabs={streamTabs} label="Streaming" icon="heroicons:signal" />;
   }
-  // Pulse names itself in the top bar, beside the brand, the way Live and Devices
-  // do — so the page below it carries no heading of its own. It has no sub-tabs:
-  // the badge IS the section nav.
+  // Pulse and Events each name themselves in the top bar, beside the brand, the
+  // way Live and Devices do — so the page below carries no heading of its own.
+  // Neither has sub-tabs: the badge IS the section nav.
+  //
+  // Events used to ride the Streaming strip, which said it was a sub-view of
+  // playing footage back. It is not: it is where the reason to play something back
+  // arrives, and it has its own card on the Surveillance launcher.
   if (pathname === "/pulse") {
     return <SectionTabs tabs={[]} label="Pulse" icon="heroicons:heart" />;
+  }
+  if (pathname === "/camera-events") {
+    return <SectionTabs tabs={[]} label="Events" icon="heroicons:bolt" />;
   }
   return null;
 }

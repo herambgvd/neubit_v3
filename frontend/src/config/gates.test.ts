@@ -24,6 +24,12 @@ import { describe, expect, it } from "vitest";
 import { LAUNCHER_MODES } from "./launcher";
 import { configConsoles, deviceTabs, menuItems, streamTabs } from "./menu";
 
+/** Every tile of one launcher mode, in the order it renders. */
+function tiles(modeId: string) {
+  const mode = LAUNCHER_MODES.find((m) => m.id === modeId)!;
+  return mode.groups.flatMap((g) => g.tiles);
+}
+
 const CATALOG = path.resolve(
   __dirname,
   "../../..",
@@ -71,5 +77,30 @@ describe("navigation gates", () => {
     const keys = catalogKeys();
     const unknown = NAV_PERMS.filter((g) => !keys.has(g.perm)).map((g) => `${g.where} → ${g.perm}`);
     expect(unknown).toEqual([]);
+  });
+});
+
+
+describe("the Surveillance launcher", () => {
+  it("puts Events before Alarms — that is the workflow's own order", () => {
+    // A recorder reports an event; an operator decides whether it is an incident;
+    // only then is there an alarm to work.
+    const labels = tiles("surv").map((t) => t.label);
+    expect(labels.indexOf("Events")).toBeGreaterThan(-1);
+    expect(labels.indexOf("Events")).toBeLessThan(labels.indexOf("Alarms"));
+  });
+
+  it("does not promise a separate Video Analytics console", () => {
+    // An AI detection is an event like any other: the recorder's AI bridge reports
+    // it, the supervisor mirrors it, and it lands in the feed beside motion and
+    // tamper. A tile for it would be a second place to look for the same rows.
+    expect(tiles("surv").map((t) => t.label)).not.toContain("Video Analytics");
+  });
+
+  it("reaches Events from the launcher, not from inside Playback", () => {
+    // It rode the Streaming sub-tab strip, which said the estate's live device
+    // feed was a sub-view of playing footage back.
+    expect(streamTabs.map((t) => t.link)).not.toContain("/camera-events");
+    expect(tiles("surv").map((t) => t.href)).toContain("/camera-events");
   });
 });

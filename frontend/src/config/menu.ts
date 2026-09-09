@@ -121,7 +121,7 @@ export function isDevicesRoute(pathname?: string | null): boolean {
 }
 
 // ── Streaming sub-tab bar — the video-viewing surfaces (VMS) ──────────────
-//   Video Wall (live), Playback, Events. Onboarding stays under Devices.
+//   Video Wall (live) + Playback. Onboarding stays under Devices.
 //   (Recordings folded into Playback — its calendar/timeline covers estate browse +
 //   clip extract, and evidence-lock lives in Playback's focus player.)
 export const streamTabs: NavItem[] = [
@@ -129,10 +129,11 @@ export const streamTabs: NavItem[] = [
   // Home) — the separate shared "Wall Console" surface was merged into it, so it's
   // intentionally NOT a sub-tab here.
   { title: "Playback", icon: "heroicons-outline:play", link: "/playback", perm: "vms.playback.view", module: "vms" },
-  // Named just "Events": every camera in the estate belongs to a recorder, so
-  // "Camera events" said something the operator already knows and cost the tab its
-  // width. The route keeps its path — deep links from alarms and popups carry it.
-  { title: "Events", icon: "heroicons:bell-alert", link: "/camera-events", perm: "vms.camera.read", module: "vms" },
+  // NO EVENTS TAB. Events is its own Surveillance card, not a sub-view of playing
+  // footage back: it is where the REASON to play something back arrives. Leaving it
+  // in this strip said the opposite — that an operator gets to the estate's live
+  // device feed by first opening Playback. The route keeps its path
+  // (/camera-events), which is what the alarm and popup deep links carry.
   // NO REPORTS TAB. The VMS's own report console (uptime, coverage, storage,
   // event counts, and a scheduler that mailed them) is gone: reporting is
   // DashForge's, surfaced through the registered dashboards under Building
