@@ -10,13 +10,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import {
-  durationLabel,
-  eventInterval,
-  formatDuration,
-  openEvents,
-  openFor,
-} from "./eventState";
+import { durationLabel, eventInterval, formatDuration, openFor } from "./eventState";
 
 const NOW = Date.parse("2026-09-10T12:00:00Z");
 
@@ -41,13 +35,6 @@ describe("an open event", () => {
     expect(openFor(e, NOW)).toBe(0);
   });
 
-  it("leads the list, longest-running first", () => {
-    const old = ev({ stateful: true, started_at: "2026-09-09T22:00:00Z" }, { id: "old" });
-    const recent = ev({ stateful: true, started_at: "2026-09-10T11:00:00Z" }, { id: "recent" });
-    const closed = ev({ stateful: true, started_at: "2026-09-10T10:00:00Z", ended_at: "2026-09-10T10:05:00Z" }, { id: "closed" });
-
-    expect(openEvents([recent, closed, old]).map((e) => (e as { id: string }).id)).toEqual(["old", "recent"]);
-  });
 });
 
 describe("a closed event", () => {

@@ -22,14 +22,14 @@ import { workflow as wfApi } from "@/features/workflow/api";
 import { vms } from "./api";
 import { useEstateCameras } from "./hooks/useEstateCameras";
 import { EVENT_TYPE_FILTERS, isAttentionSeverity } from "./constants";
-import { normalizeVmsEvent, eventKey, type NormalizedVmsEvent } from "./eventLib";
+import { normalizeVmsEvent, type NormalizedVmsEvent } from "./eventLib";
 import { groupByDay } from "./eventGroups";
-import { openEvents } from "./eventState";
 import { useVmsEventStream } from "./hooks/useVmsEventStream";
 import type { EstateCamera, VmsEventPublic } from "./types";
-import CameraEventRow from "./components/CameraEventRow";
 import EventMonitorPane from "./components/EventMonitorPane";
-import HappeningNow from "./components/HappeningNow";
+import EventDetails from "./components/EventDetails";
+import EventLivePane from "./components/EventLivePane";
+import EventTable from "./components/EventTable";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
@@ -180,9 +180,6 @@ export default function CameraEventsPage() {
   ];
 
   const groups = useMemo(() => groupByDay(events), [events]);
-  // Still true, not merely happened — these lead the page. See eventState.
-  const openNow = useMemo(() => openEvents(events), [events]);
-
   // ── "N new ↑" ─────────────────────────────────────────────────────────────
   //
   // A live feed that prepends while an operator is reading row forty moves the
@@ -220,6 +217,39 @@ export default function CameraEventsPage() {
     setPending(seenAt > 0 ? seenAt : (p) => p + 1);
   }, [events, atTop, live]);
 
+  // ── Bulk selection ────────────────────────────────────────────────────────
+  // Twenty-nine of the fifty-nine events on this estate are motion from one
+  // camera. Acknowledging a burst one row at a time is the work the console
+  // should be doing.
+  const [checkedKeys, setCheckedKeys] = useState<Set<string>>(() => new Set());
+
+  const toggleChecked = (key: string) =>
+    setCheckedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const toggleAllIn = (group: NormalizedVmsEvent[]) =>
+    setCheckedKeys((prev) => {
+      const keys = group.map((e) => e.event_id || e.id || "").filter(Boolean);
+      const all = keys.every((k) => prev.has(k));
+      const next = new Set(prev);
+      keys.forEach((k) => (all ? next.delete(k) : next.add(k)));
+      return next;
+    });
+
+  const ackSelected = () => {
+    // Only what is actually unacknowledged: re-acking is a no-op on the server,
+    // but sending it is still a request per row for nothing.
+    for (const key of checkedKeys) {
+      const e = eventById.get(key);
+      if (e && !e.acknowledged && e.id) ackMut.mutate(e.id);
+    }
+    setCheckedKeys(new Set());
+  };
+
   const goToNewest = () => {
     topKey.current = events[0]?.event_id || events[0]?.id || null;
     setPending(0);
@@ -241,14 +271,18 @@ export default function CameraEventsPage() {
   const [follow, setFollow] = useState(true);
   const followed = useRef<string | null>(null);
 
-  const eventById = useMemo(() => {
+  // Not hand-memoized: the compiler could not preserve a useMemo here (the Map is
+  // built by mutation), and a manual memo it has to skip costs the whole
+  // component its optimisation. Building a Map over at most a few hundred rows is
+  // not the expense; the skipped compilation would be.
+  const eventById = ((): Map<string, NormalizedVmsEvent> => {
     const m = new Map<string, NormalizedVmsEvent>();
     for (const e of events) {
       const k = e.event_id || e.id;
       if (k) m.set(k, e);
     }
     return m;
-  }, [events]);
+  })();
 
   // The toast off this page links here with ?event=<id>: the operator clicked a
   // notification about ONE event, so that is the one the canvas opens on.
@@ -324,7 +358,7 @@ export default function CameraEventsPage() {
             />
           </span>
           <span className="text-[12px] font-semibold text-foreground">
-            {!live ? "Paused" : connected ? "Live" : "Reconnecting…"}
+            {!live ? "Feed paused" : connected ? "Live feed" : "Reconnecting…"}
           </span>
         </span>
 
@@ -423,17 +457,6 @@ export default function CameraEventsPage() {
         </button>
       </div>
 
-      {/* What is still true leads what merely happened. */}
-      <HappeningNow
-        events={openNow}
-        selectedId={selected?.event_id || selected?.id || null}
-        cameraName={cameraName}
-        onSelect={(e) => {
-          setSelectedId(e.event_id || e.id || null);
-          setFollow(false);
-        }}
-      />
-
       {pending > 0 && (
         // Fixed, not in the flow: it must be reachable from row forty, which is
         // where an operator is when this matters.
@@ -447,14 +470,72 @@ export default function CameraEventsPage() {
         </button>
       )}
 
-      {/* ── Feed beside the monitor ───────────────────────────────────────
-          The list is the left column and the camera is the right one, which is
-          the shape every alarm-monitoring surface has: an operator reads the
-          feed and watches the picture without leaving either. On a narrow
-          screen they stack, feed first — the list is the thing you can act on
-          with no video at all. */}
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_26rem]">
-        <div className="min-w-0">
+      {/* ── EVIDENCE ABOVE, LIST BELOW ─────────────────────────────────────
+          The shape every alarm console converges on: the selected event's
+          RECORDING, its FACTS, and what is happening on that camera NOW, across
+          the top; the list underneath, dense enough to scan a shift in.
+
+          The third panel is live rather than a still. A recorder keeps no
+          snapshot of a past instant, so a "Snapshot" pane could only ever show a
+          frame from some other moment and label it as this one. Live answers a
+          question an operator actually has — is it still going on — and says so
+          when the camera is the thing that broke. */}
+      <div className="mb-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <EventMonitorPane
+          event={selected}
+          camera={monitorCamera}
+          follow={follow}
+          onFollowChange={setFollow}
+        />
+        {selected ? (
+          <EventDetails
+            event={selected}
+            cameraName={cameraName(selected.camera_id)}
+            recorderName={(monitorCamera as { node_name?: string } | null)?.node_name ?? null}
+            incidentId={incidentByEventId.get(selected.event_id || selected.id || "") || null}
+            onAck={(ev) => {
+              if (ev.id) ackMut.mutate(ev.id);
+            }}
+            ackPending={ackMut.isPending && !!selected.id && ackMut.variables === selected.id}
+            investigateHref={
+              selected.camera_id && selected.occurred_at
+                ? `/playback?camera=${encodeURIComponent(selected.camera_id)}&t=${encodeURIComponent(selected.occurred_at)}`
+                : null
+            }
+          />
+        ) : (
+          <div className="flex items-center justify-center rounded-xl border border-card-border bg-card p-6 text-center text-[12px] text-muted">
+            Pick an event to see what it is and what it needs.
+          </div>
+        )}
+        <EventLivePane camera={monitorCamera} />
+      </div>
+
+      {/* Bulk actions appear only when there is a selection — a burst of motion
+          from one camera is acknowledged in one action, not twenty-nine. */}
+      {checkedKeys.size > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-blue-500/40 bg-blue-500/10 px-3 py-2">
+          <span className="text-[12px] text-blue-200">
+            {checkedKeys.size} selected
+          </span>
+          <button
+            type="button"
+            onClick={ackSelected}
+            disabled={ackMut.isPending}
+            className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11.5px] text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50"
+          >
+            <Icon icon="heroicons-outline:check" className="text-xs" /> Acknowledge selected
+          </button>
+          <button
+            type="button"
+            onClick={() => setCheckedKeys(new Set())}
+            className="inline-flex items-center gap-1.5 rounded-md border border-card-border px-2.5 py-1 text-[11.5px] text-muted transition hover:text-foreground"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       {q.isLoading ? (
         <div className="flex items-center gap-2 rounded-xl border border-card-border bg-card p-6 text-xs text-muted">
           <Icon icon="svg-spinners:180-ring" className="text-sm" /> Loading events…
@@ -493,40 +574,22 @@ export default function CameraEventsPage() {
           />
         </div>
       ) : (
-        // Grouped by DAY, with the header sticky: scrolling a long feed without
-        // one leaves an operator reading times with no date attached to them.
         <div className="space-y-3">
           {groups.map((g) => (
-            <section key={g.key} className="overflow-hidden rounded-xl border border-card-border bg-card">
-              <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-card-border bg-card/95 px-3 py-2 backdrop-blur-xs">
-                <Icon icon="heroicons-outline:calendar-days" className="text-sm text-blue-500" />
-                <span className="text-[12px] font-semibold text-foreground">{g.label}</span>
-                <span className="rounded-sm bg-hover px-1.5 py-0.5 font-mono text-[10px] text-muted">
-                  {g.events.length}
-                </span>
-              </header>
-              <div className="divide-y divide-card-border">
-                {g.events.map((e, idx) => (
-                  <CameraEventRow
-                    key={eventKey(e, idx)}
-                    event={e}
-                    cameraName={cameraName(e.camera_id)}
-                    selected={(selected?.event_id || selected?.id) === (e.event_id || e.id)}
-                    onSelect={(ev) => {
-                      setSelectedId(ev.event_id || ev.id || null);
-                      // An explicit pick wins until a NEWER alarm arrives; without
-                      // this the canvas snaps back on the next frame.
-                      setFollow(false);
-                    }}
-                    incidentId={incidentByEventId.get(e.event_id || e.id || "") || null}
-                    onAck={(ev) => {
-                      if (ev.id) ackMut.mutate(ev.id);
-                    }}
-                    ackPending={ackMut.isPending && ackMut.variables === e.id}
-                  />
-                ))}
-              </div>
-            </section>
+            <EventTable
+              key={g.key}
+              label={g.label}
+              events={g.events}
+              selectedId={selected?.event_id || selected?.id || null}
+              onSelect={(e) => {
+                setSelectedId(e.event_id || e.id || null);
+                setFollow(false);
+              }}
+              checked={checkedKeys}
+              onToggleChecked={toggleChecked}
+              onToggleAll={() => toggleAllIn(g.events)}
+              cameraName={cameraName}
+            />
           ))}
           {total > events.length && (
             <p className="px-1 text-[11px] text-muted">
@@ -535,26 +598,6 @@ export default function CameraEventsPage() {
           )}
         </div>
       )}
-        </div>
-
-        {/* The canvas. Sticky, because the feed scrolls and the picture is what
-            the operator is watching while it does. */}
-        <div className="lg:sticky lg:top-3 lg:self-start">
-          <EventMonitorPane
-            event={selected}
-            camera={monitorCamera}
-            incidentId={
-              selected ? incidentByEventId.get(selected.event_id || selected.id || "") || null : null
-            }
-            follow={follow}
-            onFollowChange={setFollow}
-            onAck={(ev) => {
-              if (ev.id) ackMut.mutate(ev.id);
-            }}
-            ackPending={ackMut.isPending && !!selected?.id && ackMut.variables === selected.id}
-          />
-        </div>
-      </div>
     </div>
   );
 }

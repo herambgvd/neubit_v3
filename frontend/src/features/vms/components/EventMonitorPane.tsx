@@ -8,7 +8,7 @@
 //
 //   1. WHAT and WHERE — the type, the camera, the severity, and the recorder's own
 //      reason out of the payload (`connection refused ×3`), not the transport name;
-//   2. THE PICTURE — and by default that is the RECORDING, starting a few seconds
+//   THE PICTURE — and by default that is the RECORDING, starting a few seconds
 //      before the event and running past it. An operator opening an alarm wants to
 //      see what happened, not what is happening now; live is one click away for
 //      when the answer is "is it still going on?".
@@ -28,12 +28,10 @@
 // and it only ever follows an ATTENTION severity — a canvas that jumps to a
 // heartbeat is a canvas an operator turns off.
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { Icon } from "@iconify/react";
 
 import { vms } from "../api";
-import { sevPreset, eventTypeLabel, typePreset, fmtTime, fmtDate, type NormalizedVmsEvent } from "../eventLib";
-import { ago } from "../eventGroups";
+import { sevPreset, eventTypeLabel, typePreset, fmtTime, type NormalizedVmsEvent } from "../eventLib";
 import type { EstateCamera, LiveSessionSource } from "../types";
 import LivePlayer from "./LivePlayer";
 import TilePlayback from "./TilePlayback";
@@ -50,11 +48,8 @@ export interface EventMonitorPaneProps {
    *  answers to there. Without both there is neither a live session nor a
    *  recorded one to mint. */
   camera: EstateCamera | null;
-  incidentId?: string | null;
   follow: boolean;
   onFollowChange: (follow: boolean) => void;
-  onAck?: (event: NormalizedVmsEvent) => void;
-  ackPending?: boolean;
 }
 
 /** The recorder's own words for why, dug out of the payload it sent. A row that
@@ -72,11 +67,8 @@ function reasonOf(event: NormalizedVmsEvent): string | null {
 export default function EventMonitorPane({
   event,
   camera,
-  incidentId = null,
   follow,
   onFollowChange,
-  onAck,
-  ackPending = false,
 }: EventMonitorPaneProps) {
   // A node-issued live session, minted through the owning recorder — the same
   // path the wall and the camera detail use. Keyed on the pair so switching
@@ -144,10 +136,6 @@ export default function EventMonitorPane({
   // report what actually happens.
   const offline = camera?.status ? String(camera.status).toLowerCase() !== "online" : false;
   const eventMs = event.occurred_at ? new Date(event.occurred_at).getTime() : null;
-  const playbackHref =
-    event.camera_id && event.occurred_at
-      ? `/playback?camera=${encodeURIComponent(event.camera_id)}&t=${encodeURIComponent(event.occurred_at)}`
-      : null;
 
   return (
     <div className="flex h-full flex-col rounded-xl border border-card-border bg-card">
@@ -236,55 +224,6 @@ export default function EventMonitorPane({
         )}
       </div>
 
-      {/* when + why + the move */}
-      <div className="flex flex-1 flex-col gap-2 p-3">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
-          <span className="font-mono text-foreground">{fmtTime(event.occurred_at)}</span>
-          <span className="font-mono">{fmtDate(event.occurred_at)}</span>
-          <span>· {ago(event.occurred_at)} ago</span>
-          {event.acknowledged && (
-            <span className="rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-400">
-              Acknowledged
-            </span>
-          )}
-        </div>
-
-        {reason && !offline && (
-          <p className="break-words font-mono text-[11px] leading-relaxed text-muted">{reason}</p>
-        )}
-
-        <div className="mt-auto flex flex-wrap items-center gap-2">
-          {/* The clip plays HERE; this is for when one clip is not the answer and
-              the operator wants the whole timeline, other cameras beside it and
-              the export tools. */}
-          {playbackHref && (
-            <Link
-              href={playbackHref}
-              className="inline-flex items-center gap-1.5 rounded-md border border-card-border px-2.5 py-1.5 text-[11.5px] text-muted transition hover:bg-hover hover:text-foreground"
-            >
-              <Icon icon="heroicons-outline:arrow-top-right-on-square" className="text-xs" /> Investigate
-            </Link>
-          )}
-          {!event.acknowledged && onAck && (
-            <button
-              type="button"
-              disabled={ackPending}
-              onClick={() => onAck(event)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-card-border px-2.5 py-1.5 text-[11.5px] text-muted transition hover:bg-hover hover:text-foreground disabled:opacity-50"
-            >
-              <Icon icon="heroicons-outline:check" className="text-xs" /> Acknowledge
-            </button>
-          )}
-          {incidentId && (
-            <Link
-              href={`/events/${incidentId}`}
-              className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/40 bg-blue-500/10 px-2.5 py-1.5 text-[11.5px] text-blue-400 transition hover:bg-blue-500/20"
-            >
-              <Icon icon="heroicons-outline:calendar-days" className="text-xs" /> Open incident
-            </Link>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

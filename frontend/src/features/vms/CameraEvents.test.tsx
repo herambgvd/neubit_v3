@@ -12,7 +12,7 @@
  *   * an empty feed says WHY it is empty. "No events" under an active filter and
  *     "no events" on a quiet estate are opposite instructions.
  */
-import { act, screen, within } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -102,7 +102,7 @@ beforeEach(() => {
 describe("the live strip", () => {
   it("says whether events are arriving right now", async () => {
     renderWithProviders(<CameraEventsPage />);
-    expect(await screen.findByText("Live")).toBeInTheDocument();
+    expect(await screen.findByText("Live feed")).toBeInTheDocument();
   });
 
   it("counts what an operator triages by", async () => {
@@ -115,7 +115,7 @@ describe("the live strip", () => {
 
   it("filters by a count — the tiles used to be read-only", async () => {
     renderWithProviders(<CameraEventsPage />);
-    await screen.findByText("Live");
+    await screen.findByText("Live feed");
 
     await userEvent.click(screen.getByRole("button", { name: /Critical$/ }));
 
@@ -126,10 +126,10 @@ describe("the live strip", () => {
 
   it("pauses the live append without unmounting the feed", async () => {
     renderWithProviders(<CameraEventsPage />);
-    await screen.findByText("Live");
+    await screen.findByText("Live feed");
 
     await userEvent.click(screen.getByRole("button", { name: /pause/i }));
-    expect(await screen.findByText("Paused")).toBeInTheDocument();
+    expect(await screen.findByText("Feed paused")).toBeInTheDocument();
   });
 });
 
@@ -153,7 +153,7 @@ describe("the control bar", () => {
     // thing means the one an operator did not touch silently contradicts the one
     // they did.
     renderWithProviders(<CameraEventsPage />);
-    await screen.findByText("Live");
+    await screen.findByText("Live feed");
 
     expect(screen.queryByRole("button", { name: /all severities/i })).toBeNull();
     expect(screen.getByRole("button", { name: /Critical$/ })).toBeInTheDocument();
@@ -163,7 +163,7 @@ describe("the control bar", () => {
     // The visible labels went with the second row; the placeholder says what each
     // one narrows, and this is what carries that to somebody who cannot see it.
     renderWithProviders(<CameraEventsPage />);
-    await screen.findByText("Live");
+    await screen.findByText("Live feed");
 
     expect(screen.getByRole("button", { name: /filter by camera/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /filter by event type/i })).toBeInTheDocument();
@@ -189,7 +189,7 @@ describe("an empty feed", () => {
   it("says the filters are hiding things, and offers to clear them", async () => {
     stubAll({ "GET /vms/events": { items: [], total: 0 } });
     renderWithProviders(<CameraEventsPage />);
-    await screen.findByText("Live");
+    await screen.findByText("Live feed");
 
     await userEvent.click(screen.getByRole("button", { name: /Critical$/ }));
 
@@ -239,7 +239,9 @@ describe("the monitor pane", () => {
     await screen.findByText(/^recording:/);
 
     await userEvent.click(screen.getByRole("button", { name: /^live$/i }));
-    expect(await screen.findByText("live:Channel 1")).toBeInTheDocument();
+    // Two now: the recording pane switched to live, and the Live view panel that
+    // is always beside it.
+    expect(await screen.findAllByText("live:Channel 1")).toHaveLength(2);
   });
 
   it("does not call a camera offline just because its status has not arrived", async () => {
@@ -255,7 +257,7 @@ describe("the monitor pane", () => {
     await screen.findByText(/^recording:/);
 
     await userEvent.click(screen.getByRole("button", { name: /^live$/i }));
-    expect(await screen.findByText("live:Channel 1")).toBeInTheDocument();
+    expect(await screen.findAllByText("live:Channel 1")).not.toHaveLength(0);
     expect(screen.queryByText(/not streaming/i)).toBeNull();
   });
 
@@ -294,7 +296,7 @@ describe("the monitor pane", () => {
     expect(follow).toBeChecked();
 
     // Clicking a row is an explicit choice; the canvas must stop being yanked.
-    await userEvent.click(screen.getAllByRole("button", { name: /tamper/i })[0]);
+    await userEvent.click(screen.getAllByRole("row", { name: /tamper/i })[0]);
     expect(follow).not.toBeChecked();
   });
 
@@ -323,15 +325,16 @@ describe("the monitor pane", () => {
     await screen.findByText(/^recording:/);
     await userEvent.click(screen.getByRole("button", { name: /^live$/i }));
 
-    expect(await screen.findByText(/not streaming/i)).toBeInTheDocument();
-    expect(screen.getByText(/connection refused/)).toBeInTheDocument();
+    expect(await screen.findAllByText(/not streaming/i)).not.toHaveLength(0);
+    // The recorder's own sentence, on the pane and in the Details column.
+    expect(screen.getAllByText(/connection refused/)).not.toHaveLength(0);
     expect(screen.queryByText(/^live:/)).toBeNull();
   });
 
   it("offers the recording from the event's instant", async () => {
     stubAll();
     renderWithProviders(<CameraEventsPage />);
-    await screen.findByText("Live");
+    await screen.findByText("Live feed");
 
     // The row still links out for the full investigation surface; the PANE plays
     // the clip itself.
@@ -343,10 +346,10 @@ describe("the monitor pane", () => {
 
 describe("what is still happening", () => {
   /**
-   * A stateful event with no `ended_at` has not finished. On the live estate four
-   * of them are open right now, one for thirteen hours — and every one rendered
-   * as an ordinary row in the day it BEGAN, thirty rows down, identical to a
-   * motion blip.
+   * A stateful event with no `ended_at` has not finished — four are open on the
+   * live estate, one for thirteen hours. It used to render as an ordinary row in
+   * the day it began, identical to a motion blip. It is a STATUS now, in the
+   * column an operator scans, counting up while they look at it.
    */
   const openEvent = (over: Record<string, unknown> = {}) =>
     event({
@@ -358,33 +361,23 @@ describe("what is still happening", () => {
       ...over,
     });
 
-  it("leads the page with the open ones, and how long they have been open", async () => {
+  it("is marked Ongoing, with the time it has been running", async () => {
     stubAll({ "GET /vms/events": { items: [openEvent(), event()], total: 2 } });
     renderWithProviders(<CameraEventsPage />);
 
-    const band = (await screen.findByText("Happening now")).closest("section")!;
-    expect(band).toBeInTheDocument();
+    expect(await screen.findAllByText("Ongoing")).not.toHaveLength(0);
     // A duration, not a timestamp: hours since it started.
-    expect(within(band).getByText(/\d+h \d+m/)).toBeInTheDocument();
+    expect(screen.getAllByText(/\d+h \d+m/).length).toBeGreaterThan(0);
   });
 
-  it("does not pin an instantaneous event there", async () => {
-    // A motion pulse has no end because it was a pulse. Treating that as "open"
-    // would leave every blip at the top of the screen forever.
+  it("does not mark an instantaneous event as ongoing", async () => {
+    // A motion pulse has no end because it was a pulse. Calling that "ongoing"
+    // would leave every blip flagged forever.
     stubAll({ "GET /vms/events": { items: [event({ raw: { stateful: false } })], total: 1 } });
     renderWithProviders(<CameraEventsPage />);
-    await screen.findByText("Live");
+    await screen.findByText("Live feed");
 
-    expect(screen.queryByText("Happening now")).toBeNull();
-  });
-
-  it("puts an open event on the monitor when picked", async () => {
-    stubAll({ "GET /vms/events": { items: [openEvent({ id: "open-1", event_id: "open-1" })], total: 1 } });
-    renderWithProviders(<CameraEventsPage />);
-
-    const band = (await screen.findByText("Happening now")).closest("section")!;
-    await userEvent.click(within(band).getAllByRole("button")[0]);
-    expect(await screen.findByText(/^recording:/)).toBeInTheDocument();
+    expect(screen.queryByText("Ongoing")).toBeNull();
   });
 });
 
@@ -400,7 +393,8 @@ describe("how long an event ran", () => {
     });
     renderWithProviders(<CameraEventsPage />);
 
-    expect(await screen.findByText("5h 18m")).toBeInTheDocument();
+    // Both the row and the Details panel carry it.
+    expect(await screen.findAllByText("5h 18m")).not.toHaveLength(0);
   });
 
   it("says a span is unreliable rather than drawing it backwards", async () => {
@@ -414,7 +408,7 @@ describe("how long an event ran", () => {
     });
     renderWithProviders(<CameraEventsPage />);
 
-    expect(await screen.findByText(/duration unreliable/i)).toBeInTheDocument();
+    expect(await screen.findAllByText(/duration unreliable/i)).not.toHaveLength(0);
   });
 });
 
@@ -461,5 +455,43 @@ describe("a live arrival while the operator is reading", () => {
     // testing nothing, which is exactly how a "no pill" assertion goes stale.
     expect(await screen.findAllByText(/video loss/i)).not.toHaveLength(0);
     expect(screen.queryByRole("button", { name: /new event/i })).toBeNull();
+  });
+});
+
+
+describe("acknowledging a burst", () => {
+  /**
+   * Twenty-nine of the fifty-nine events on this estate are motion from one
+   * camera. Acknowledging them a row at a time is the work the console should be
+   * doing, which is what the checkboxes are for.
+   */
+  it("acks every selected event in one action", async () => {
+    stubAll({
+      "GET /vms/events": {
+        items: [
+          event({ id: "a1", event_id: "a1" }),
+          event({ id: "a2", event_id: "a2" }),
+          event({ id: "a3", event_id: "a3", acknowledged: true }),
+        ],
+        total: 3,
+      },
+    });
+    renderWithProviders(<CameraEventsPage />);
+    // findBy: the strip renders before the history lands, so waiting on "Live
+    // feed" would assert against an empty table.
+    const selectAll = await screen.findByRole("checkbox", { name: /select all/i });
+    await userEvent.click(selectAll);
+    await userEvent.click(screen.getByRole("button", { name: /acknowledge selected/i }));
+
+    // Only the two that were open: re-acking the third is a request for nothing.
+    await waitFor(() => expect(stub.matching("POST /vms/events/*")).toHaveLength(2));
+  });
+
+  it("offers no bulk action until something is selected", async () => {
+    stubAll();
+    renderWithProviders(<CameraEventsPage />);
+    await screen.findByText("Live feed");
+
+    expect(screen.queryByRole("button", { name: /acknowledge selected/i })).toBeNull();
   });
 });

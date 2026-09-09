@@ -83,14 +83,6 @@ export function openFor(event: NormalizedVmsEvent, now = Date.now()): number | n
   return Math.max(0, now - startMs);
 }
 
-/** The events happening right now, longest-running first — the ones that are
- *  still true, so they lead rather than sitting in the day they began. */
-export function openEvents(events: NormalizedVmsEvent[]): NormalizedVmsEvent[] {
-  return events
-    .filter((e) => eventInterval(e).open)
-    .sort((a, b) => (eventInterval(a).startMs ?? 0) - (eventInterval(b).startMs ?? 0));
-}
-
 /** What a row prints beside its time: how long it ran, or that it still is. */
 export function durationLabel(event: NormalizedVmsEvent, now = Date.now()): string | null {
   const iv = eventInterval(event);

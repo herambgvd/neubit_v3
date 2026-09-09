@@ -1,7 +1,7 @@
 "use client";
 
 // Shared derivations for the VMS camera-events feed / timeline markers. Keeps the
-// preset lookups + label/time helpers in one place so CameraEvents, CameraEventRow,
+// preset lookups + label/time helpers in one place so CameraEvents, EventTable,
 // and the ScrubBar markers agree. JSX-free (data + string helpers only).
 
 import type { DateInput } from "@/lib/format";
