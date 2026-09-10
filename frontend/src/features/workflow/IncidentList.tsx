@@ -55,7 +55,7 @@ import AlarmFacts from "./components/incidents/AlarmFacts";
 import AlarmTrail from "./components/incidents/AlarmTrail";
 import SlaRing from "./components/incidents/SlaRing";
 import ProcedureSteps from "./components/incidents/ProcedureSteps";
-import IncidentMap from "./components/incidents/IncidentMap";
+import AlarmMap from "./components/incidents/AlarmMap";
 import AssignModal from "./components/detail/AssignModal";
 import { useIncidentStream } from "./hooks/useIncidentStream";
 import {
@@ -628,8 +628,13 @@ export default function WorkflowPage() {
         )}
 
         {view === "map" ? (
-          <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-card-border bg-card p-3">
-            <IncidentMap incidents={instances} sites={sitesList} siteName={siteName} sopName={sopName} />
+          <div className="min-h-0 flex-1 overflow-auto">
+            <AlarmMap
+              incidents={instances}
+              sites={sitesList}
+              selectedSiteId={siteId}
+              onSelectSite={(id) => setSiteId(id)}
+            />
           </div>
         ) : (
           // THE BENTO, sized by its CONTENT. The first build stretched every cell
