@@ -279,6 +279,11 @@ export default function CameraEventsPage() {
   // then it is not there for the alarm either.
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [follow, setFollow] = useState(true);
+  // NOTHING SELECTED IS A STATE AN OPERATOR CAN REACH. The triptych opens on an
+  // event they did not choose — the newest one, or an alarm that took the canvas
+  // — so without this the only way off an event is onto another one, and a
+  // console that cannot be put down keeps showing a camera at whoever walks past.
+  const [dismissed, setDismissed] = useState(false);
   const followed = useRef<string | null>(null);
 
   // Not hand-memoized: the compiler could not preserve a useMemo here (the Map is
@@ -311,20 +316,21 @@ export default function CameraEventsPage() {
   // remembers which one so an operator who clicks another row keeps it until a
   // NEWER alarm arrives.
   useEffect(() => {
-    if (!follow) return;
+    if (!follow || dismissed) return;
     const newest = events.find((e) => isAttentionSeverity(e.severity));
     const key = newest?.event_id || newest?.id;
     if (!key || followed.current === key) return;
     followed.current = key;
     setSelectedId(key);
-  }, [events, follow]);
+  }, [events, follow, dismissed]);
 
   const selected = useMemo(() => {
+    if (dismissed) return null;
     if (selectedId && eventById.has(selectedId)) return eventById.get(selectedId) ?? null;
     // Nothing chosen yet: the newest event, so the pane is never blank while the
     // feed has something in it.
     return events[0] ?? null;
-  }, [selectedId, eventById, events]);
+  }, [dismissed, selectedId, eventById, events]);
 
   /** The camera an event names, as the ESTATE knows it — the recorder that owns
    *  it and the id it answers to there. The event carries the node-side id; the
@@ -438,7 +444,10 @@ export default function CameraEventsPage() {
           event={selected}
           camera={monitorCamera}
           follow={follow}
-          onFollowChange={setFollow}
+          onFollowChange={(on) => {
+            setFollow(on);
+            if (on) setDismissed(false); // asking to follow alarms is asking to be shown one
+          }}
         />
         {selected ? (
           <EventDetails
@@ -455,6 +464,11 @@ export default function CameraEventsPage() {
                 ? `/playback?camera=${encodeURIComponent(selected.camera_id)}&t=${encodeURIComponent(selected.occurred_at)}`
                 : null
             }
+            onClose={() => {
+              setDismissed(true);
+              setSelectedId(null);
+              setFollow(false); // or the next alarm would put it straight back
+            }}
           />
         ) : (
           <div className="flex items-center justify-center rounded-xl border border-card-border bg-card p-6 text-center text-[12px] text-muted">
@@ -537,6 +551,7 @@ export default function CameraEventsPage() {
           selectedId={selected?.event_id || selected?.id || null}
           onSelect={(e) => {
             setSelectedId(e.event_id || e.id || null);
+            setDismissed(false);
             setFollow(false);
           }}
           checked={checkedKeys}

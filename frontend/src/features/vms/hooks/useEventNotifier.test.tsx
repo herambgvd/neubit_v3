@@ -11,14 +11,24 @@
  * toasts a heartbeat teaches an operator to ignore toasts, and then it has no way
  * left to tell them something is wrong.
  */
-import { renderHook } from "@testing-library/react";
+import { render, renderHook, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // vi.mock is hoisted above the file's own consts, so the spy is created INSIDE
 // the factory and read back through the mocked module.
 vi.mock("sonner", () => {
   const fn = vi.fn();
-  return { toast: Object.assign(fn, { success: vi.fn(), error: vi.fn() }) };
+  return {
+    toast: Object.assign(fn, {
+      success: vi.fn(),
+      error: vi.fn(),
+      custom: vi.fn(),
+      dismiss: vi.fn(),
+    }),
+  };
 });
 
 const push = vi.fn();
@@ -33,11 +43,40 @@ vi.mock("./useVmsEventStream", () => ({
   useVmsEventStream: () => ({ events: frames, connected: true }),
 }));
 
+// The estate roster: the corner names the camera and the recorder that owns it,
+// which is the difference between "Channel 1" and a node-side uuid.
+vi.mock("./useEstateCameras", () => ({
+  useEstateCameras: () => ({
+    cameras: [{ id: "fed:n1:cam-1", real_id: "fed-cam-1", name: "Lobby entrance", node_name: "recorder-a" }],
+  }),
+}));
+
+const ack = vi.fn((_id: string) => Promise.resolve({}));
+vi.mock("../api", () => ({ vms: { events: { ack: (id: string) => ack(id) } } }));
+
 import { toast as toastImport } from "sonner";
 
 import { setEventsMuted, useEventNotifier } from "./useEventNotifier";
 
-const toast = toastImport as unknown as ReturnType<typeof vi.fn>;
+const toast = toastImport as unknown as ReturnType<typeof vi.fn> & {
+  custom: ReturnType<typeof vi.fn>;
+  dismiss: ReturnType<typeof vi.fn>;
+};
+
+/** The hook needs a QueryClient (it invalidates the feed after an ack). */
+const wrapper = ({ children }: { children: ReactNode }) => (
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    {children}
+  </QueryClientProvider>
+);
+const run = () => renderHook(() => useEventNotifier(), { wrapper });
+
+/** Render whatever the notifier handed sonner, so the toast can be asserted on
+ *  as the thing an operator actually sees. */
+function renderToast(call = 0) {
+  const node = (toast.custom.mock.calls[call][0] as (id: string) => ReactNode)("toast-1");
+  render(<QueryClientProvider client={new QueryClient()}>{node}</QueryClientProvider>);
+}
 
 const frame = (over: Record<string, unknown> = {}) => ({
   id: `e-${Math.random().toString(36).slice(2)}`,
@@ -52,6 +91,9 @@ const frame = (over: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   toast.mockClear();
+  toast.custom.mockClear();
+  toast.dismiss.mockClear();
+  ack.mockClear();
   push.mockClear();
   frames = [];
   pathname = "/streaming";
@@ -59,42 +101,68 @@ beforeEach(() => {
 });
 
 describe("off the Events page", () => {
-  it("toasts an alarm with what and where", () => {
-    frames = [frame({ event_type: "tamper" })];
-    renderHook(() => useEventNotifier());
+  it("says what, how bad, where and when — not just a type and a name", () => {
+    // It used to be one line, "tamper · Channel 2", which is barely more than
+    // "something happened". An operator triages on severity, camera, recorder and
+    // age, and every one of those was a page away.
+    frames = [frame({ event_type: "tamper", severity: "critical" })];
+    run();
+    renderToast();
 
-    expect(toast).toHaveBeenCalledTimes(1);
-    expect(String(toast.mock.calls[0][0])).toMatch(/tamper · Channel 1/);
+    expect(screen.getByText("Tamper")).toBeInTheDocument();
+    expect(screen.getByText("Critical")).toBeInTheDocument();
+    // The ESTATE's name for the camera, and the recorder that owns it — the frame
+    // itself only carried "Channel 1" and a node-side id.
+    expect(screen.getByText(/Lobby entrance/)).toBeInTheDocument();
+    expect(screen.getByText(/recorder-a/)).toBeInTheDocument();
+    expect(screen.getByText(/just now/)).toBeInTheDocument();
   });
 
-  it("takes one click to the event that raised it", () => {
+  it("takes one click to the event that raised it", async () => {
     frames = [frame({ event_id: "ev-9" })];
-    renderHook(() => useEventNotifier());
+    run();
+    renderToast();
 
-    const opts = toast.mock.calls[0][1] as { action: { onClick: () => void } };
-    opts.action.onClick();
+    await userEvent.click(screen.getByRole("button", { name: /view video/i }));
     expect(push).toHaveBeenCalledWith("/camera-events?event=ev-9");
+  });
+
+  it("acknowledges from the corner, without opening the page", async () => {
+    // An alarm an operator RECOGNISES should not cost a navigation to close.
+    frames = [frame({ id: "row-7" })];
+    run();
+    renderToast();
+
+    await userEvent.click(screen.getByRole("button", { name: /acknowledge/i }));
+    expect(ack).toHaveBeenCalledWith("row-7");
+  });
+
+  it("a critical waits for a decision instead of expiring", () => {
+    frames = [frame({ severity: "critical" })];
+    run();
+    const opts = toast.custom.mock.calls[0][1] as { duration: number };
+    expect(opts.duration).toBe(Infinity);
   });
 
   it("stays quiet for anything below an alarm", () => {
     // The rule that keeps the mechanism worth having.
     frames = [frame({ severity: "info" }), frame({ severity: "warning" })];
-    renderHook(() => useEventNotifier());
-    expect(toast).not.toHaveBeenCalled();
+    run();
+    expect(toast.custom).not.toHaveBeenCalled();
   });
 
   it("stays quiet when the operator muted it", () => {
     setEventsMuted(true);
     frames = [frame()];
-    renderHook(() => useEventNotifier());
-    expect(toast).not.toHaveBeenCalled();
+    run();
+    expect(toast.custom).not.toHaveBeenCalled();
   });
 
   it("says a thing once, however often the buffer replays it", () => {
     const one = frame({ event_id: "ev-dup" });
     frames = [one, { ...one }];
-    renderHook(() => useEventNotifier());
-    expect(toast).toHaveBeenCalledTimes(1);
+    run();
+    expect(toast.custom).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -102,8 +170,8 @@ describe("on the Events page", () => {
   it("says nothing — the video is already showing it", () => {
     pathname = "/camera-events";
     frames = [frame()];
-    renderHook(() => useEventNotifier());
-    expect(toast).not.toHaveBeenCalled();
+    run();
+    expect(toast.custom).not.toHaveBeenCalled();
   });
 
   it("does not toast it LATER either, once the operator navigates away", () => {
@@ -112,10 +180,10 @@ describe("on the Events page", () => {
     pathname = "/camera-events";
     const one = frame({ event_id: "ev-seen" });
     frames = [one];
-    const { rerender } = renderHook(() => useEventNotifier());
+    const { rerender } = renderHook(() => useEventNotifier(), { wrapper });
 
     pathname = "/streaming";
     rerender();
-    expect(toast).not.toHaveBeenCalled();
+    expect(toast.custom).not.toHaveBeenCalled();
   });
 });

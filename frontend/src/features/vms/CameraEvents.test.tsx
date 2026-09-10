@@ -418,6 +418,45 @@ describe("how long an event ran", () => {
 });
 
 
+describe("putting an event down", () => {
+  /**
+   * The triptych opens on an event the operator did not choose — the newest one,
+   * or an alarm that took the canvas under Follow. Without a close, the only way
+   * off an event is onto another one, and a console that cannot be put down keeps
+   * a camera on screen for whoever walks past it.
+   */
+  it("clears the selection, and the next alarm does not put it back", async () => {
+    stubAll();
+    const { rerender } = renderWithProviders(<CameraEventsPage />);
+    await screen.findByText("Details");
+
+    await userEvent.click(screen.getByRole("button", { name: /close event details/i }));
+
+    expect(screen.queryByText("Details")).toBeNull();
+    expect(await screen.findByText(/pick an event/i)).toBeInTheDocument();
+
+    // An alarm arrives while nothing is selected. Follow was switched off by the
+    // close — being shown the next one is exactly what the operator declined.
+    liveFrames = [event({ id: "after-close", event_id: "after-close", severity: "critical", occurred_at: TODAY })];
+    rerender(<CameraEventsPage />);
+
+    expect(await screen.findAllByText(/pick an event/i)).not.toHaveLength(0);
+  });
+
+  it("comes back the moment a row is clicked", async () => {
+    stubAll();
+    renderWithProviders(<CameraEventsPage />);
+    await screen.findByText("Details");
+    await userEvent.click(screen.getByRole("button", { name: /close event details/i }));
+    await screen.findByText(/pick an event/i);
+
+    await userEvent.click(screen.getAllByRole("row")[1]);
+
+    expect(await screen.findByText("Details")).toBeInTheDocument();
+  });
+});
+
+
 describe("the operator never scrolls this page", () => {
   /**
    * Two screenshots' worth of feedback: the live state and the severity counts

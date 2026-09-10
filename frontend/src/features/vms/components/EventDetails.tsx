@@ -28,6 +28,11 @@ export interface EventDetailsProps {
   ackPending?: boolean;
   /** Playback deep link — for the whole timeline, when one clip is not enough. */
   investigateHref?: string | null;
+  /** Let go of this event. The triptych holds a selection the operator did not
+   *  always make (the newest event, or an alarm that took the canvas), so there
+   *  has to be a way to put it down — otherwise the only way off an event is onto
+   *  another one. */
+  onClose?: () => void;
 }
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -58,6 +63,7 @@ export default function EventDetails({
   onAck,
   ackPending = false,
   investigateHref = null,
+  onClose,
 }: EventDetailsProps) {
   const iv = eventInterval(event);
   // Only an OPEN event needs a clock: its duration is still changing.
@@ -82,6 +88,17 @@ export default function EventDetails({
             </span>
             Ongoing
           </span>
+        )}
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            title="Close — stop showing this event"
+            aria-label="Close event details"
+            className={`${iv.open ? "" : "ml-auto "}inline-flex h-6 w-6 items-center justify-center rounded-md text-muted transition hover:bg-hover hover:text-foreground`}
+          >
+            <Icon icon="heroicons-outline:x-mark" className="text-sm" />
+          </button>
         )}
       </header>
 
