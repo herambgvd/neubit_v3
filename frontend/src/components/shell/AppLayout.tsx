@@ -91,7 +91,11 @@ export default function AppLayout({ children }: { children?: ReactNode }) {
   // Both the single-operator Live wall (/streaming) and a shared Wall Console
   // (/wall/<id>) are full-bleed operations consoles with their OWN top toolbar —
   // the global header/submenu/footer are suppressed so they fill the viewport.
-  const immersiveWall = pathname === "/streaming" || pathname.startsWith("/wall/");
+  // The alarm HUB is the same kind of surface as the wall: a screen a control
+  // room leaves up, looked at rather than navigated. It carries its own bar and
+  // its own way out, so the global header and footer would only cost it rows.
+  const immersiveWall =
+    pathname === "/streaming" || pathname.startsWith("/wall/") || pathname === "/alarms/hub";
 
   // The NeuBit HOME metro launcher is a full-bleed, single-viewport surface (its own
   // navy backdrop, no page padding) — it fills the bounded pane and scrolls internally.

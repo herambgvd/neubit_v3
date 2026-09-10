@@ -144,12 +144,18 @@ export function slaFor(it: Incident, now = Date.now()): SlaInfo | null {
   return { deadline, remainingMin, breached, overdue, label: `${abs(remainingMin)} left`, tone: "ok" };
 }
 
-// Is this incident breaching its SLA right now (open + past-deadline, or the
-// backend flag)? Used for the "SLA breaching" stat tile.
+// Is this incident breaching its SLA right now — open, and either past its
+// deadline by our clock OR marked breached by the backend?
+//
+// It read `s.overdue` alone, which is the LOCAL clock only, while its own comment
+// claimed it honoured the flag. An incident the server had already marked
+// breached — a deadline it moved, a pause it accounted for — was counted as
+// on-time by every caller: the Overdue chip, the queue's ordering, and the hub's
+// idea of what to work next. `s.breached` is the one that folds both in.
 export function isSlaBreaching(it: Incident, now = Date.now()): boolean {
   if (!isOpen(it.status)) return false;
   const s = slaFor(it, now);
-  return !!(s && s.overdue);
+  return !!(s && s.breached);
 }
 
 // "NEW" window: created (or first seen) within the last N seconds.

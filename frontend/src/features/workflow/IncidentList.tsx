@@ -463,7 +463,15 @@ export default function WorkflowPage() {
                 Queue
               </span>
               <span className="font-mono text-[11px] text-muted">{total}</span>
-              <span className="ml-auto">
+              <span className="ml-auto flex items-center gap-1.5">
+                <Link
+                  href="/alarms/hub"
+                  title="Hub mode — full screen, one alarm at a time"
+                  aria-label="Open hub mode"
+                  className="inline-flex h-6 w-7 items-center justify-center rounded-[6px] border border-red-500/40 bg-red-500/10 text-red-300 transition hover:bg-red-500/20"
+                >
+                  <Icon icon="heroicons-solid:bell-alert" className="text-xs" />
+                </Link>
                 <ViewToggle view={view} onChange={setView} />
               </span>
             </div>
