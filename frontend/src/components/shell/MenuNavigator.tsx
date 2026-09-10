@@ -125,15 +125,33 @@ export default function MenuNavigator() {
     items: g.tiles.map((t): NavCell => ({ title: t.label, icon: t.icon, link: t.href })),
   }));
 
+  // THE LAUNCHER, drawn like the rest of the bar's controls — a thin outlined
+  // glyph in a quiet bordered square, the same treatment the lock and fullscreen
+  // buttons use. It was a filled cyan tile with a glow, which made the way INTO
+  // the menu the loudest thing in a header whose job is to stay out of the way.
+  // An inline stroke SVG rather than an icon-font glyph, so it matches those two
+  // exactly: same 1.7 stroke, same round joins.
   const launcher = (
     <button
       type="button"
       onClick={() => setOpen(true)}
       title="Open menu navigator"
       aria-label="Open menu navigator"
-      className="grid h-9 w-9 place-items-center rounded-[8px] border border-[rgba(34,211,238,.4)] bg-[rgba(34,211,238,.13)] text-[#67e8f9] transition hover:border-[rgba(34,211,238,.7)] hover:shadow-[0_0_16px_rgba(34,211,238,.3)]"
+      className="grid h-9 w-9 place-items-center rounded-[7px] border border-[rgba(150,180,245,.22)] text-[#aec2e8] transition hover:border-[#22d3ee] hover:text-[#67e8f9]"
     >
-      <Icon icon="heroicons-outline:home" className="text-[18px]" />
+      <svg
+        viewBox="0 0 24 24"
+        width="17"
+        height="17"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M4 10.5 12 4l8 6.5V19a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z" />
+      </svg>
     </button>
   );
 
