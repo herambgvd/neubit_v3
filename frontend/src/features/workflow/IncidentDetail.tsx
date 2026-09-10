@@ -407,36 +407,25 @@ export default function WorkflowDetailPage() {
       <div className="grid items-start gap-6 xl:grid-cols-3">
       <Section title="Evidence">
         {cameraId ? (
-          <div className="grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-1">
-            <figure className="m-0 self-start overflow-hidden rounded-xl border border-card-border">
-              <div className={`relative aspect-video w-full ${camera ? "bg-black" : ""}`}>
-                <EvidencePicture incident={inst} camera={camera} kind="recording" />
-              </div>
-              <figcaption className="flex items-center gap-2 border-t border-card-border px-3 py-2 text-[11px] text-muted">
-                What the recorder held when it fired
-                {eventTime && <span className="font-mono">· {fmtDateTime(eventTime)}</span>}
-                {camera && (
-                  <Link
-                    href={`/playback?camera=${encodeURIComponent(cameraId)}${
-                      eventTime ? `&t=${encodeURIComponent(eventTime)}` : ""
-                    }`}
-                    className="ml-auto inline-flex items-center gap-1 rounded-md border border-card-border px-2 py-0.5 transition hover:bg-hover hover:text-foreground"
-                  >
-                    <Icon icon="heroicons-outline:film" className="text-xs" /> Timeline
-                  </Link>
-                )}
-              </figcaption>
-            </figure>
-
-            <figure className="m-0 self-start overflow-hidden rounded-xl border border-card-border">
-              <div className={`relative aspect-video w-full ${camera ? "bg-black" : ""}`}>
-                <EvidencePicture incident={inst} camera={camera} kind="live" />
-              </div>
-              <figcaption className="border-t border-card-border px-3 py-2 text-[11px] text-muted">
-                What the same camera shows now
-              </figcaption>
-            </figure>
-          </div>
+          <figure className="m-0 self-start overflow-hidden rounded-xl border border-card-border">
+            <div className={`relative aspect-video w-full ${camera ? "bg-black" : ""}`}>
+              <EvidencePicture incident={inst} camera={camera} kind="recording" />
+            </div>
+            <figcaption className="flex flex-wrap items-center gap-2 border-t border-card-border px-3 py-2 text-[11px] text-muted">
+              What the recorder held when it fired
+              {eventTime && <span className="font-mono">· {fmtDateTime(eventTime)}</span>}
+              {camera && (
+                <Link
+                  href={`/playback?camera=${encodeURIComponent(cameraId)}${
+                    eventTime ? `&t=${encodeURIComponent(eventTime)}` : ""
+                  }`}
+                  className="ml-auto inline-flex items-center gap-1 rounded-md border border-card-border px-2 py-0.5 transition hover:bg-hover hover:text-foreground"
+                >
+                  <Icon icon="heroicons-outline:film" className="text-xs" /> Timeline
+                </Link>
+              )}
+            </figcaption>
+          </figure>
         ) : (
           <p className="text-[13px] text-muted">
             No camera behind this one — it was raised without a camera event, so the record
@@ -570,6 +559,24 @@ export default function WorkflowDetailPage() {
         )}
       </Section>
 
+      <Section title="Live view">
+        {cameraId ? (
+          <figure className="m-0 self-start overflow-hidden rounded-xl border border-card-border">
+            <div className={`relative aspect-video w-full ${camera ? "bg-black" : ""}`}>
+              <EvidencePicture incident={inst} camera={camera} kind="live" />
+            </div>
+            <figcaption className="border-t border-card-border px-3 py-2 text-[11px] text-muted">
+              What the same camera shows now
+            </figcaption>
+          </figure>
+        ) : (
+          <p className="text-[13px] text-muted">
+            Nothing to watch — this alarm names no camera.
+          </p>
+        )}
+      </Section>
+      </div>
+
       <Section title="Log">
         <div className="grid">
           <div className="grid grid-cols-[8.5rem_1fr] gap-3 border-b border-card-border/60 py-2 text-[13px]">
@@ -611,7 +618,6 @@ export default function WorkflowDetailPage() {
         </div>
       </Section>
 
-      </div>
 
       {/* ── THE FLOW ───────────────────────────────────────────────────────
           A list says which step an alarm is ON; only the graph says what leads

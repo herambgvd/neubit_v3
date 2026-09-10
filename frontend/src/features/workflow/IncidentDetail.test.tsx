@@ -168,14 +168,37 @@ describe("the case file", () => {
     expect(screen.getByText("Deadline")).toBeInTheDocument();
 
     // Then the document's sections. The three columns come first — what the
-    // camera saw, what this operator can do, what has already been done — and the
-    // two references an operator consults sit below them.
+    // recorder held, what this operator can do, and what the camera shows now —
+    // so the band is uniform: a picture, the actions, a picture. What has already
+    // been done, the flow and the raw event sit below them.
     // Waited on the last one: the flow renders only once the SOP's states land.
     await screen.findByRole("heading", { name: "Procedure flow" });
     const sections = screen
       .getAllByRole("heading", { level: 2 })
       .map((h) => h.textContent?.trim());
-    expect(sections).toEqual(["Evidence", "Actions", "Log", "Procedure flow", "Raw event"]);
+    expect(sections).toEqual([
+      "Evidence",
+      "Actions",
+      "Live view",
+      "Log",
+      "Procedure flow",
+      "Raw event",
+    ]);
+  });
+
+  it("shows both pictures, one at each end of the band", async () => {
+    // Uniform on purpose: a picture, the actions, a picture. What the recorder
+    // held when it fired and what the camera shows now are two exhibits of the
+    // same size, not a big one and a thumbnail.
+    renderWithProviders(<IncidentDetail />);
+
+    const evidence = (await screen.findByRole("heading", { name: "Evidence" })).parentElement!;
+    const live = screen.getByRole("heading", { name: "Live view" }).parentElement!;
+    expect(within(evidence).getByTestId("recording")).toBeInTheDocument();
+    expect(within(live).getByText(/^live:/)).toBeInTheDocument();
+    // Neither column holds the other's picture.
+    expect(within(evidence).queryByText(/^live:/)).toBeNull();
+    expect(within(live).queryByTestId("recording")).toBeNull();
   });
 
   it("logs what was done, and the note somebody was made to write", async () => {
