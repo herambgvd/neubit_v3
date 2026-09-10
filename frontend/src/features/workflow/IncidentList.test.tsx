@@ -7,7 +7,9 @@
  *
  *   1. IT WAS INVALID HTML. The whole alarm card was a <Link>, and the camera
  *      strip inside it held another one. An <a> inside an <a> threw a hydration
- *      error on every render of /alarms. The row is a selector now, not a link.
+ *      error on every render of /alarms. A rail row is a selector now, not a
+ *      link — and a click must not navigate, or it throws away the footage the
+ *      operator was just told to look at.
  *   2. TWO OF THE FOUR COUNTS LIED ABOUT THEIR SCOPE — "Critical" and "Active"
  *      come from /stats (the whole deployment) while "Overdue" and "Unassigned"
  *      can only be counted from the rows loaded. Four tiles in a row, two meaning
@@ -100,14 +102,11 @@ function stubAll(over: Record<string, unknown> = {}) {
 }
 
 describe("the queue", () => {
-  it("is a table whose rows do not navigate", async () => {
-    // The card WAS a link, and it wrapped another one. A row that navigates also
-    // throws away the video the operator was just told to look at.
+  it("has rows that select rather than navigate", async () => {
     stubAll();
     renderWithProviders(<IncidentList />);
 
-    const table = await screen.findByRole("table");
-    const row = within(table).getAllByRole("row")[1];
+    const row = await screen.findByRole("button", { name: /Tamper · Channel 1/ });
     expect(within(row).queryByRole("link")).toBeNull();
   });
 
@@ -115,13 +114,12 @@ describe("the queue", () => {
     stubAll();
     renderWithProviders(<IncidentList />);
 
-    // The first row is selected without being asked, so the panes are never blank
-    // while the queue holds something.
-    // The procedure's name appears on the row AND in the facts column — one
-    // screen, two readings of the same alarm, which is the point of the layout.
-    expect(await screen.findAllByText("Camera tamper")).toHaveLength(2);
+    // The first alarm takes the big cell without being asked, so the bento is
+    // never blank while the queue holds something.
     expect(await screen.findByTestId("recording")).toHaveAttribute("data-camera", "Channel 1");
     expect(screen.getByText("live:Channel 1")).toBeInTheDocument();
+    // Its own title, in the cell rather than only in the rail.
+    expect(screen.getByRole("heading", { name: "Tamper · Channel 1" })).toBeInTheDocument();
   });
 
   it("plays the recording from before the event, not from the alarm's own time", async () => {
@@ -203,7 +201,7 @@ describe("an empty queue", () => {
     stubAll({ "GET /workflow/instances": { items: [], total: 0 } });
     renderWithProviders(<IncidentList />);
 
-    expect(await screen.findByText("No alarms")).toBeInTheDocument();
+    expect(await screen.findByText(/no alarms\./i)).toBeInTheDocument();
     expect(screen.getByText(/rule matches an event, or when somebody escalates/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /go to events/i })).toHaveAttribute("href", "/events");
   });
@@ -218,5 +216,113 @@ describe("an empty queue", () => {
     );
 
     expect(await screen.findByText(/no alarms match these filters/i)).toBeInTheDocument();
+  });
+});
+
+
+describe("the bento", () => {
+  /**
+   * B was chosen over the table for a reason: an alarm is worked, not scanned.
+   * The screen has to answer the three questions that follow the picture — how
+   * long is left, what is the next step, and is it still happening.
+   */
+  it("shows the clock as a shape, not only as a number", async () => {
+    stubAll();
+    renderWithProviders(<IncidentList />);
+
+    // 90 of 120 minutes left on a 2h procedure.
+    const ring = await screen.findByRole("img", { name: /1h 30m/i });
+    expect(ring).toBeInTheDocument();
+  });
+
+  it("draws a full ring when the deadline has passed, not an empty one", async () => {
+    // Empty means "none left"; so does empty when there was never a clock. An
+    // overdue alarm fills the ring in the breach colour so the two cannot be
+    // confused at a glance.
+    stubAll({
+      "GET /workflow/instances": {
+        items: [
+          incident({
+            instance_id: "i-late",
+            sla_deadline: new Date(NOW.getTime() - 6 * 60_000).toISOString(),
+            is_sla_breached: true,
+          }),
+        ],
+        total: 1,
+      },
+    });
+    const { container } = renderWithProviders(<IncidentList />);
+
+    await screen.findByRole("img", { name: /overdue/i });
+    const arc = container.querySelector("circle[stroke-dasharray]") as SVGCircleElement;
+    const [drawn, whole] = (arc.getAttribute("stroke-dasharray") || "").split(" ").map(Number);
+    expect(drawn).toBeCloseTo(whole, 1);
+    expect(arc.getAttribute("stroke")).toBe("#f87171");
+  });
+
+  it("says there is no limit rather than drawing an empty ring", async () => {
+    // An empty ring and "no clock at all" must not look the same — one means out
+    // of time, the other means the procedure never set one.
+    stubAll({
+      "GET /workflow/instances": {
+        items: [incident({ sla_hours: null, sla_deadline: null })],
+        total: 1,
+      },
+    });
+    renderWithProviders(<IncidentList />);
+
+    expect(await screen.findByRole("img", { name: /no time limit/i })).toBeInTheDocument();
+  });
+
+  it("runs the procedure's own moves, not a fixed set of buttons", async () => {
+    stubAll({
+      "GET /workflow/sops/s1/states": [
+        { state_id: "st1", sop_id: "s1", name: "Open", description: null, color: "#F59E0B", position_x: 0, position_y: 0, is_initial: true, is_terminal: false, is_cancellation: false, sla_hours: null, entry_actions: [], exit_actions: [], required_role_ids: [], order: 0, created_at: iso(0), updated_at: iso(0) },
+        { state_id: "st2", sop_id: "s1", name: "Investigating", description: null, color: "#3B82F6", position_x: 0, position_y: 0, is_initial: false, is_terminal: false, is_cancellation: false, sla_hours: null, entry_actions: [], exit_actions: [], required_role_ids: [], order: 1, created_at: iso(0), updated_at: iso(0) },
+        { state_id: "st3", sop_id: "s1", name: "Dismissed", description: null, color: "#6B7280", position_x: 0, position_y: 0, is_initial: false, is_terminal: false, is_cancellation: true, sla_hours: null, entry_actions: [], exit_actions: [], required_role_ids: [], order: 3, created_at: iso(0), updated_at: iso(0) },
+      ],
+      "GET /workflow/instances": { items: [incident({ instance_id: "i-1" })], total: 1 },
+      "GET /workflow/instances/i-1/available-transitions": [
+        { transition_id: "tr1", sop_id: "s1", from_state_id: "st1", to_state_id: "st2", label: "Start investigating", description: null, requires_note: false, confirmation_required: false, required_role_ids: [], form_id: null, conditions: [], notification_config: null, created_at: iso(0), updated_at: iso(0) },
+      ],
+      "PATCH /workflow/instances/i-1/transition": incident({ status: "active" }),
+    });
+    renderWithProviders(<IncidentList />);
+
+    // The cancellation branch is NOT drawn as a step in the line — "Dismissed" is
+    // a way off the path, not step three of three.
+    expect(await screen.findByText("Investigating")).toBeInTheDocument();
+    expect(screen.queryByText("Dismissed")).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Start investigating" }));
+    await vi.waitFor(() =>
+      expect(stub.matching("PATCH /workflow/instances/i-1/transition")).toHaveLength(1),
+    );
+    expect(stub.body("PATCH /workflow/instances/i-1/transition")?.transition_id).toBe("tr1");
+  });
+
+  it("asks for the note a transition demands before it will run", async () => {
+    stubAll({
+      "GET /workflow/sops/s1/states": [],
+      "GET /workflow/instances": { items: [incident({ instance_id: "i-1" })], total: 1 },
+      "GET /workflow/instances/i-1/available-transitions": [
+        { transition_id: "tr9", sop_id: "s1", from_state_id: "st1", to_state_id: "st3", label: "Resolve", description: null, requires_note: true, confirmation_required: false, required_role_ids: [], form_id: null, conditions: [], notification_config: null, created_at: iso(0), updated_at: iso(0) },
+      ],
+      "PATCH /workflow/instances/i-1/transition": incident({ status: "completed" }),
+    });
+    renderWithProviders(<IncidentList />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Resolve" }));
+    // Nothing has been sent yet: the procedure asked for an account of what
+    // happened, and an incident closed without one teaches nobody anything.
+    expect(stub.matching("PATCH /workflow/instances/i-1/transition")).toHaveLength(0);
+
+    await userEvent.type(screen.getByRole("textbox", { name: /say what happened/i }), "lens wiped clean");
+    await userEvent.click(screen.getByRole("button", { name: /^Resolve$/ }));
+
+    await vi.waitFor(() =>
+      expect(stub.matching("PATCH /workflow/instances/i-1/transition")).toHaveLength(1),
+    );
+    expect(stub.body("PATCH /workflow/instances/i-1/transition")?.notes).toBe("lens wiped clean");
   });
 });
