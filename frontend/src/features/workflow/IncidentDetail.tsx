@@ -395,10 +395,14 @@ export default function WorkflowDetailPage() {
         </dl>
       </header>
 
-      {/* ── EVIDENCE ───────────────────────────────────────────────────── */}
+      {/* ── EVIDENCE beside PROCEDURE ──────────────────────────────────────
+          The exhibits are evidence, not a video wall: stacked in a narrow column
+          they stay legible without taking the screen, and the procedure gets the
+          width it actually needs for its flow. */}
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
       <Section title="Evidence">
         {cameraId ? (
-          <div className="grid items-start gap-3 sm:grid-cols-2">
+          <div className="grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-1">
             <figure className="m-0 self-start overflow-hidden rounded-xl border border-card-border">
               <div className={`relative aspect-video w-full ${camera ? "bg-black" : ""}`}>
                 <EvidencePicture incident={inst} camera={camera} kind="recording" />
@@ -436,11 +440,6 @@ export default function WorkflowDetailPage() {
         )}
       </Section>
 
-      {/* ── PROCEDURE beside LOG ───────────────────────────────────────────
-          What to do next, against what has already been done. Side by side
-          because an operator reads one to decide the other, and because a
-          single narrow column left most of a control-room screen empty. */}
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
       <Section title="Procedure">
         {/* THE FLOW ITSELF. A list can say which step an alarm is on; only the
             graph says what leads where — which is the question an operator has
@@ -537,7 +536,12 @@ export default function WorkflowDetailPage() {
         )}
       </Section>
 
-      {/* ── LOG ────────────────────────────────────────────────────────── */}
+      </div>
+
+      {/* ── LOG beside CLOSE OUT ───────────────────────────────────────────
+          What was done, and how it ends. The two halves of the record a
+          handover or an audit actually reads. */}
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
       <Section title="Log">
         <div className="grid">
           <div className="grid grid-cols-[8.5rem_1fr] gap-3 border-b border-card-border/60 py-2 text-[13px]">
@@ -578,8 +582,6 @@ export default function WorkflowDetailPage() {
           )}
         </div>
       </Section>
-
-      </div>
 
       {/* ── CLOSE OUT ──────────────────────────────────────────────────── */}
       <Section title="Close out">
@@ -622,6 +624,8 @@ export default function WorkflowDetailPage() {
           </div>
         )}
       </Section>
+
+      </div>
 
       {/* ── RAW EVENT ──────────────────────────────────────────────────── */}
       {inst.trigger_data && (
