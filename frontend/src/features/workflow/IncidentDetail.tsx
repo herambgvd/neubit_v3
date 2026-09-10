@@ -29,7 +29,7 @@ import { useEstateCameras } from "@/features/vms/hooks/useEstateCameras";
 import type { EstateCamera } from "@/features/vms/types";
 import { workflow as wfApi } from "./api";
 import type { FormPublic, InstanceStatus, StatePublic, TransitionPublic } from "./types";
-import { EvidencePicture } from "./components/incidents/AlarmEvidence";
+import { EvidencePicture, RecordingWithTransport } from "./components/incidents/AlarmEvidence";
 import { originOf } from "./components/incidents/AlarmFacts";
 import { currentStepIndex, orderedSteps } from "./components/incidents/ProcedureSteps";
 import {
@@ -408,9 +408,7 @@ export default function WorkflowDetailPage() {
       <Section title="Evidence">
         {cameraId ? (
           <figure className="m-0 self-start overflow-hidden rounded-xl border border-card-border">
-            <div className={`relative aspect-video w-full ${camera ? "bg-black" : ""}`}>
-              <EvidencePicture incident={inst} camera={camera} kind="recording" />
-            </div>
+            <RecordingWithTransport incident={inst} camera={camera} />
             <figcaption className="flex h-9 items-center gap-2 border-t border-card-border px-3 text-[11px] text-muted">
               <span className="truncate">What the recorder held when it fired</span>
               {eventTime && <span className="shrink-0 font-mono">· {fmtDateTime(eventTime)}</span>}

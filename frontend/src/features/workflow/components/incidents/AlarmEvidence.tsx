@@ -15,13 +15,16 @@
 // So: the big cell shows the recording when there IS footage and live when there
 // is not, the operator can override with one click, and whichever picture is not
 // in the big cell is the one in the small one. The space is never dead.
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
 import LivePlayer from "@/features/vms/components/LivePlayer";
 import TilePlayback from "@/features/vms/components/TilePlayback";
 import { vms } from "@/features/vms/api";
-import type { EstateCamera, LiveSessionSource } from "@/features/vms/types";
+import { createClock } from "@/features/vms/hooks/useWallPlayback";
+import type { EstateCamera, LiveSessionSource, PlaybackRange } from "@/features/vms/types";
+import RecordingScrubber from "./RecordingScrubber";
 import type { InstancePublic } from "../../types";
 import { incCameraId, incEventTime } from "./lib";
 
@@ -38,6 +41,13 @@ export interface EvidencePictureProps {
   /** Only the recording reports this; live has no such state. */
   onFootage?: (present: boolean) => void;
   compact?: boolean;
+  /** Seek, in ms — set by the transport bar. Absent = play from the event. */
+  anchorMs?: number | null;
+  anchorSeq?: number;
+  playing?: boolean;
+  speed?: number;
+  /** Publishes where the video actually is, for the bar above it to follow. */
+  clock?: ReturnType<typeof createClock> | null;
 }
 
 function Blank({ icon, title, body }: { icon: string; title: string; body?: string }) {
@@ -58,6 +68,11 @@ export function EvidencePicture({
   kind,
   onFootage,
   compact = false,
+  anchorMs = null,
+  anchorSeq,
+  playing = true,
+  speed = 1,
+  clock = null,
 }: EvidencePictureProps) {
   const nodeId = (camera as { node_id?: string } | null)?.node_id ?? null;
   const realId = (camera as { real_id?: string } | null)?.real_id ?? null;
@@ -156,14 +171,108 @@ export function EvidencePicture({
     <TilePlayback
       key={`${camera.id}:${eventMs}`}
       camera={camera}
-      anchorMs={eventMs - PRE_ROLL_MS}
-      anchorSeq={eventMs}
+      anchorMs={anchorMs ?? eventMs - PRE_ROLL_MS}
+      anchorSeq={anchorSeq ?? eventMs}
       windowToMs={eventMs + POST_ROLL_MS}
-      playing
+      playing={playing}
+      speed={speed}
       muted
       compact={compact}
       onFootage={onFootage}
+      master={!!clock}
+      clock={clock}
     />
+  );
+}
+
+/** The window the case plays: a run-up before the event, and the minute after. */
+export function evidenceWindow(incident: InstancePublic): { fromMs: number; toMs: number; eventMs: number } | null {
+  const at = incEventTime(incident);
+  const eventMs = at ? new Date(at).getTime() : NaN;
+  if (!Number.isFinite(eventMs)) return null;
+  return { fromMs: eventMs - PRE_ROLL_MS, toMs: eventMs + POST_ROLL_MS, eventMs };
+}
+
+/** THE RECORDING, WITH ITS TRANSPORT. State lives here — a seek is a new anchor,
+ *  so the bar and the tile cannot disagree about where the video is. */
+export function RecordingWithTransport({
+  incident,
+  camera,
+  onFootage,
+}: {
+  incident: InstancePublic | null;
+  camera: EstateCamera | null;
+  onFootage?: (present: boolean) => void;
+}) {
+  const win = incident ? evidenceWindow(incident) : null;
+  // useState, not useRef: the clock is READ during render (the transport
+  // subscribes to it), and a ref read in render is the thing the compiler
+  // refuses. A lazy initializer gives the same one-per-mount value.
+  const [clock] = useState(createClock);
+  const [anchorMs, setAnchorMs] = useState<number | null>(null);
+  const [seq, setSeq] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  const [speed, setSpeed] = useState(1);
+
+  const nodeId = (camera as { node_id?: string } | null)?.node_id ?? null;
+  const realId = (camera as { real_id?: string } | null)?.real_id ?? null;
+
+  // What the recorder actually holds across this window. Without it the bar
+  // cannot tell "nothing recorded" from "nothing happened" — which is the whole
+  // reason to draw one on an estate that does not record every camera.
+  const coverageQ = useQuery({
+    queryKey: ["alarm-coverage", nodeId, realId, win?.fromMs, win?.toMs],
+    queryFn: () =>
+      vms.federation.timeline(nodeId!, realId!, {
+        from: new Date(win!.fromMs).toISOString(),
+        to: new Date(win!.toMs).toISOString(),
+      }),
+    enabled: !!nodeId && !!realId && !!win,
+    retry: false,
+    staleTime: 60_000,
+  });
+  const ranges = (coverageQ.data?.ranges || []) as PlaybackRange[];
+
+  return (
+    <>
+      <div className={`relative aspect-video w-full ${incident && camera ? "bg-black" : ""}`}>
+        <EvidencePicture
+          incident={incident}
+          camera={camera}
+          kind="recording"
+          onFootage={onFootage}
+          anchorMs={anchorMs}
+          anchorSeq={seq}
+          playing={playing}
+          speed={speed}
+          clock={clock}
+        />
+        {/* OVER the picture, the way every player puts its transport — and the
+            reason it is not a strip UNDER it: the live card beside this one has
+            no transport to match, and two exhibits of different heights was the
+            thing being fixed when this was added. */}
+        {win && camera && (
+          <div className="absolute inset-x-0 bottom-0 z-10 bg-[rgba(8,15,34,.82)] backdrop-blur-xs">
+        <RecordingScrubber
+          fromMs={win.fromMs}
+          toMs={win.toMs}
+          eventMs={win.eventMs}
+          clock={clock}
+          playing={playing}
+          speed={speed}
+          ranges={ranges}
+          onSeek={(ms) => {
+            setAnchorMs(ms);
+            setSeq((n) => n + 1);
+            clock.set(ms);
+          }}
+          onPlayingChange={setPlaying}
+          onSpeedChange={setSpeed}
+        />
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 

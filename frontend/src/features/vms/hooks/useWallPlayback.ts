@@ -85,7 +85,7 @@ export function makeWindow(atMs: number, seconds: number): WallWindow {
 // ── the shared playhead ─────────────────────────────────────────────────────
 // A plain subscribable value. The master tile publishes; the transport bar and
 // the synced tiles subscribe. Deliberately outside React: see the header.
-function createClock(): WallClock {
+export function createClock(): WallClock {
   let ms: number | null = null;
   // When a TILE last published. `advance` deliberately does not touch it, so the
   // heartbeat below can tell "a camera is driving this" from "nobody is".
