@@ -42,6 +42,7 @@ import {
   sev,
   slaFor,
 } from "./components/incidents/lib";
+import StateMachine from "./components/detail/StateMachine";
 import EventPayloadInspector from "./components/detail/EventPayloadInspector";
 import AssignModal from "./components/detail/AssignModal";
 import TransitionFormModal from "./components/detail/TransitionFormModal";
@@ -260,7 +261,7 @@ export default function WorkflowDetailPage() {
   );
 
   return (
-    <article className="mx-auto grid max-w-[68rem] gap-6 pb-10">
+    <article className="grid w-full gap-6 pb-10">
       {/* ── MASTHEAD ───────────────────────────────────────────────────────
           Who this case is, and the moves that are not part of the procedure. A
           document's title block, not a toolbar card. */}
@@ -397,8 +398,8 @@ export default function WorkflowDetailPage() {
       {/* ── EVIDENCE ───────────────────────────────────────────────────── */}
       <Section title="Evidence">
         {cameraId ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <figure className="m-0 overflow-hidden rounded-xl border border-card-border">
+          <div className="grid items-start gap-3 sm:grid-cols-2">
+            <figure className="m-0 self-start overflow-hidden rounded-xl border border-card-border">
               <div className={`relative aspect-video w-full ${camera ? "bg-black" : ""}`}>
                 <EvidencePicture incident={inst} camera={camera} kind="recording" />
               </div>
@@ -418,7 +419,7 @@ export default function WorkflowDetailPage() {
               </figcaption>
             </figure>
 
-            <figure className="m-0 overflow-hidden rounded-xl border border-card-border">
+            <figure className="m-0 self-start overflow-hidden rounded-xl border border-card-border">
               <div className={`relative aspect-video w-full ${camera ? "bg-black" : ""}`}>
                 <EvidencePicture incident={inst} camera={camera} kind="live" />
               </div>
@@ -435,8 +436,25 @@ export default function WorkflowDetailPage() {
         )}
       </Section>
 
-      {/* ── PROCEDURE ──────────────────────────────────────────────────── */}
+      {/* ── PROCEDURE beside LOG ───────────────────────────────────────────
+          What to do next, against what has already been done. Side by side
+          because an operator reads one to decide the other, and because a
+          single narrow column left most of a control-room screen empty. */}
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
       <Section title="Procedure">
+        {/* THE FLOW ITSELF. A list can say which step an alarm is on; only the
+            graph says what leads where — which is the question an operator has
+            when the obvious next step is not the one they want. */}
+        {states.length > 0 && (
+          <StateMachine
+            title="How this procedure runs"
+            states={states}
+            transitions={transitions}
+            currentStateId={inst.current_state ?? undefined}
+            currentStateName={inst.current_state_name ?? undefined}
+          />
+        )}
+
         {steps.length === 0 ? (
           <p className="text-[13px] text-muted">
             {statesQ.isLoading
@@ -450,21 +468,33 @@ export default function WorkflowDetailPage() {
               const current = at === i;
               return (
                 <li key={st.state_id} className="flex items-start gap-2.5 text-[13px]">
+                  {/* A ROUND mark, not a square one: the squares read as
+                      checkboxes an operator was meant to tick. Done is filled
+                      green, the current step is a lit ring, the rest are outlines. */}
                   <span
-                    className={`mt-[3px] grid h-[15px] w-[15px] shrink-0 place-items-center rounded border text-[9px] ${
+                    className={`mt-[3px] grid h-[15px] w-[15px] shrink-0 place-items-center rounded-full border text-[9px] ${
                       done
                         ? "border-emerald-500 bg-emerald-500 text-background"
                         : current
-                          ? "border-blue-400"
+                          ? "border-blue-400 bg-blue-400/20 ring-2 ring-blue-400/30"
                           : "border-card-border"
                     }`}
                   >
-                    {done ? "✓" : ""}
+                    {done ? "✓" : current ? <span className="h-1.5 w-1.5 rounded-full bg-blue-400" /> : ""}
                   </span>
                   <span className="min-w-0">
-                    <span className={current ? "text-foreground" : done ? "text-muted" : "text-muted/80"}>
+                    <span
+                      className={
+                        current ? "font-medium text-foreground" : done ? "text-muted" : "text-muted/80"
+                      }
+                    >
                       {st.name}
                     </span>
+                    {current && (
+                      <span className="ml-2 rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-blue-300">
+                        now
+                      </span>
+                    )}
                     {st.description && (current || !done) && (
                       <span className="block text-[12px] text-muted">{st.description}</span>
                     )}
@@ -548,6 +578,8 @@ export default function WorkflowDetailPage() {
           )}
         </div>
       </Section>
+
+      </div>
 
       {/* ── CLOSE OUT ──────────────────────────────────────────────────── */}
       <Section title="Close out">

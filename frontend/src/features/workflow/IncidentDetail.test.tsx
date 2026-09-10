@@ -212,6 +212,20 @@ describe("the case file", () => {
     expect(screen.getByRole("link", { name: /back to the queue/i })).toHaveAttribute("href", "/alarms");
   });
 
+  it("draws the procedure's flow, not only the step it is on", async () => {
+    // A list says WHICH step; only the graph says what leads where — which is the
+    // question an operator has when the obvious next step is not the one they want.
+    renderWithProviders(<IncidentDetail />);
+
+    expect(await screen.findByText("How this procedure runs")).toBeInTheDocument();
+    // Every state the SOP defines is drawn, including the ones this alarm has not
+    // reached and the branch it may never take.
+    // Drawn in the SVG, not only listed as a step below it.
+    const flow = screen.getByText("How this procedure runs").closest("div")!.parentElement!;
+    const svg = flow.querySelector("svg") as SVGSVGElement;
+    expect([...svg.querySelectorAll("text")].map((t) => t.textContent)).toContain("Escalated");
+  });
+
   it("puts a move that ENDS the case under Close out, not under Procedure", async () => {
     // The two sections split the same list by where the move lands, so neither
     // invents a button the other already owns.

@@ -77,22 +77,32 @@ export interface StateMachineProps {
   transitions: TransitionPublic[];
   currentStateId?: string | null;
   currentStateName?: string | null;
+  /** What to call it above the diagram. "State machine" is what it IS; on an
+   *  operator's case page it is the flow their procedure runs, and the words
+   *  should be theirs. */
+  title?: string;
 }
 
-export default function StateMachine({ states, transitions, currentStateId, currentStateName }: StateMachineProps) {
+export default function StateMachine({
+  states,
+  transitions,
+  currentStateId,
+  currentStateName,
+  title = "State machine",
+}: StateMachineProps) {
   const layout = useLayout(states);
   const isCurrent = (s: StatePublic): boolean =>
     stateId(s) === currentStateId || stateName(s) === currentStateName;
 
   return (
     <div className="rounded-xl border border-card-border bg-card">
-      <header className="px-5 py-4 border-b border-card-border">
-        <h3 className="text-sm font-semibold text-foreground">State machine</h3>
+      <header className="px-4 py-3 border-b border-card-border">
+        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
         <p className="text-xs text-muted mt-0.5">
           {states.length} state(s) · {transitions.length} transition(s)
         </p>
       </header>
-      <div className="px-5 py-5">
+      <div className="px-4 py-4">
         {states.length === 0 ? (
           <p className="text-sm text-muted">SOP definition not available.</p>
         ) : (
