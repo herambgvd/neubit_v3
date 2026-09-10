@@ -120,6 +120,11 @@ export function EvidencePicture({
       );
     }
     return (
+      // ABSOLUTE, like the recording tile. LivePlayer's root is an in-flow box
+      // whose height follows the stream, so inside an `aspect-video` frame it
+      // pushed the frame taller than 16:9 — which is why the live card sat lower
+      // than the recording beside it. Pinned to the frame, both cards are the
+      // same height and the picture letterboxes inside rather than stretching it.
       <LivePlayer
         key={`${nodeId}:${realId}`}
         cameraId={camera.id}
@@ -130,6 +135,7 @@ export function EvidencePicture({
         autoPlay
         muted
         fit="contain"
+        className="absolute inset-0 h-full w-full"
       />
     );
   }

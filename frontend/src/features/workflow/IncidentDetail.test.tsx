@@ -28,7 +28,11 @@ vi.mock("@/features/vms/components/TilePlayback", () => ({
   },
 }));
 vi.mock("@/features/vms/components/LivePlayer", () => ({
-  default: ({ cameraName }: { cameraName?: string }) => <div>live:{cameraName}</div>,
+  default: ({ cameraName, className }: { cameraName?: string; className?: string }) => (
+    <div data-testid="live" className={className}>
+      live:{cameraName}
+    </div>
+  ),
 }));
 vi.mock("next/navigation", () => ({
   // The page reads its id from the route segment.
@@ -207,6 +211,11 @@ describe("the case file", () => {
       (col) => col.querySelector("figcaption") as HTMLElement,
     );
     expect(caps.every((c) => c.className.includes("h-9"))).toBe(true);
+
+    // And the live player is PINNED to its 16:9 frame. Its root is an in-flow box
+    // whose height follows the stream, so left unpinned it pushed the frame taller
+    // than 16:9 and the card sat lower than the recording beside it.
+    expect(within(live).getByTestId("live").className).toContain("absolute inset-0");
   });
 
   it("logs what was done, and the note somebody was made to write", async () => {
