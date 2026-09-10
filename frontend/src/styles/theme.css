@@ -186,23 +186,31 @@
    because an SVG group's default transform origin is the viewBox corner, which
    would swing these around the top-left of the screen rather than spin them in
    place. */
+/* The iris HUNTS rather than pulses: open, overshoot, settle, hold. A sine wave
+   reads as a screensaver; a mechanism that finishes moving reads as a lens. The
+   first version breathed 3% and could not be seen at all — the amplitude is what
+   makes it legible from a desk, and the hold is what keeps it from nagging. */
 @keyframes nb-iris-breathe {
-  0%, 100% { transform: scale(1); opacity: 1 }
-  50% { transform: scale(1.03); opacity: .82 }
+  0% { transform: scale(1); opacity: .85 }
+  18% { transform: scale(1.08); opacity: 1 }
+  30% { transform: scale(.985); opacity: .95 }
+  40%, 100% { transform: scale(1); opacity: .85 }
 }
 @keyframes nb-iris-turn { to { transform: rotate(360deg) } }
+/* The flare crosses the coating and is GONE — a light source passing, not a
+   radar sweep going round for ever. */
 @keyframes nb-lens-sweep {
-  0% { transform: rotate(0deg); opacity: 0 }
-  8% { opacity: .5 }
-  36% { opacity: 0 }
-  100% { transform: rotate(220deg); opacity: 0 }
+  0% { transform: rotate(-30deg); opacity: 0 }
+  12% { opacity: .85 }
+  45% { opacity: 0 }
+  100% { transform: rotate(290deg); opacity: 0 }
 }
 .nb-iris,
 .nb-iris-blades,
 .nb-lens-sweep { transform-box: fill-box; transform-origin: center; will-change: transform }
-.nb-iris { animation: nb-iris-breathe 9s ease-in-out infinite }
-.nb-iris-blades { animation: nb-iris-turn 60s linear infinite }
-.nb-lens-sweep { animation: nb-lens-sweep 12s ease-in-out infinite }
+.nb-iris { animation: nb-iris-breathe 11s ease-in-out infinite }
+.nb-iris-blades { animation: nb-iris-turn 72s linear infinite }
+.nb-lens-sweep { animation: nb-lens-sweep 9s ease-in-out infinite }
 
 /* prefers-reduced-motion. The `.react-grid-*` selectors below are dead with the
    rest of the builder's CSS (see the header above) — RGL is not installed. The

@@ -210,38 +210,23 @@ export function LoginForm({ email, setEmail, password, setPassword, error, busy,
       </div>
       */}
 
-      {/* The footer used to read "MFA enforced · dual-authorization on privileged
-          roles · every sign-in audit-logged. Account logins federate through your
-          identity provider (SAML / OIDC) — NeuBit stores no passwords."
+      {/* NO FOOTER. It carried a line about audit logging and two-step
+          verification, and three badges — IS 19319 · STQC, ISO 27001-READY,
+          PERPETUAL LICENCE.
 
-          On a page that now offers one password field, most of that was false,
-          and it was already false before the buttons came off:
-            · MFA is AVAILABLE (TOTP, with a second step on this same screen) but
-              not enforced — there is no security policy row on this deployment
-              and no account has TOTP switched on.
-            · Dual-authorization is about privileged ACTIONS, not signing in. It
-              never had anything to do with this page.
-            · Federation through SAML/OIDC is not what happens here. SAML is
-              unimplemented; OIDC is unconfigured and this form does not use it.
-            · "NeuBit stores no passwords" is contradicted by the field directly
-              above it, which posts one against a stored hash.
-          What survives is the part that is true and checkable: every sign-in
-          writes an `auth.login` row to the audit trail. */}
-      <div className="mt-[18px] border-t border-[rgba(160,150,245,.2)] pt-[13px] font-mono text-[10px] leading-[1.7] text-[#9a92c8]">
-        <b className="text-[#cfd0f2]">Every sign-in is audit-logged.</b> Two-step
-        verification is requested at sign-in when it is enabled on your account.
-        <div className="mt-[9px] flex flex-wrap gap-[7px]">
-          <span className="rounded-[12px] border border-[rgba(52,211,153,.4)] px-[10px] py-[3px] text-[9px] tracking-[0.6px] text-[#34d399]">
-            IS 19319 · STQC
-          </span>
-          <span className="rounded-[12px] border border-[rgba(160,150,245,.2)] px-[10px] py-[3px] text-[9px] tracking-[0.6px] text-[#9a92c8]">
-            ISO 27001-READY
-          </span>
-          <span className="rounded-[12px] border border-[rgba(160,150,245,.2)] px-[10px] py-[3px] text-[9px] tracking-[0.6px] text-[#9a92c8]">
-            PERPETUAL LICENCE
-          </span>
-        </div>
-      </div>
+          The line was true but is not this screen's job: a person signing in is
+          not deciding whether to trust the product, they already have an account.
+          The badges are claims about the company, on the one page whose only task
+          is to take a password — and "ISO 27001-READY" is a claim about intent
+          rather than a certification anybody holds.
+
+          What was here before that was worse and is documented so it does not
+          come back: "MFA enforced · dual-authorization on privileged roles ·
+          logins federate through your identity provider (SAML / OIDC) — NeuBit
+          stores no passwords." MFA is available, not enforced; dual-authorization
+          is about privileged ACTIONS, not signing in; SAML is unimplemented and
+          OIDC unconfigured; and the no-passwords line was contradicted by the
+          field directly above it. */}
     </div>
   );
 }

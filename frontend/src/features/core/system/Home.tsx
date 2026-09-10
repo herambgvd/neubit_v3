@@ -67,6 +67,11 @@ function Soul() {
           <stop offset="0" stopColor="#18305a" stopOpacity=".5" />
           <stop offset="60%" stopColor="#0c1530" stopOpacity="0" />
         </radialGradient>
+        <radialGradient id="nblens" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#22d3ee" stopOpacity=".13" />
+          <stop offset="60%" stopColor="#4c6ef5" stopOpacity=".05" />
+          <stop offset="100%" stopColor="#0c1530" stopOpacity="0" />
+        </radialGradient>
         <pattern id="nbdots" width="84" height="84" patternUnits="userSpaceOnUse">
           <circle cx="14" cy="18" r="1" fill="#8fb0e8" opacity=".1" />
           <circle cx="58" cy="60" r="1" fill="#8fb0e8" opacity=".07" />
@@ -74,11 +79,13 @@ function Soul() {
       </defs>
       <rect width="1600" height="900" fill="url(#nbv)" />
       <rect width="1600" height="900" fill="url(#nbdots)" />
-      <g transform="translate(1210,350)" fill="none" stroke="#8fb0e8" opacity=".06">
+      <g transform="translate(1210,350)" fill="none" stroke="#8fb0e8" opacity=".09">
         <circle r="300" strokeWidth="1" />
         <circle r="430" strokeWidth="1" />
       </g>
-      <g transform="translate(1210,350)" fill="none" stroke="#22d3ee" opacity=".16">
+      <g transform="translate(1210,350)" fill="none" stroke="#22d3ee" opacity=".26">
+        {/* The glass, so the middle is optics rather than a hole. */}
+        <circle r="140" fill="url(#nblens)" stroke="none" className="nb-iris" />
         <g className="nb-iris">
           <circle r="48" strokeWidth="1.3" />
           <circle r="88" strokeWidth="1" />
@@ -96,9 +103,9 @@ function Soul() {
           <path d="M0 48 L-27 21" />
         </g>
         {/* The sweep: one arc of the outer ring, brightened and carried round. */}
-        <g className="nb-lens-sweep" stroke="#67e8f9" opacity="0" strokeLinecap="round">
-          <path d="M 0 -134 A 134 134 0 0 1 95 -95" strokeWidth="2" />
-          <path d="M 0 -88 A 88 88 0 0 1 62 -62" strokeWidth="1.4" opacity=".7" />
+        <g className="nb-lens-sweep" stroke="#a5f3fc" opacity="0" strokeLinecap="round">
+          <path d="M 0 -134 A 134 134 0 0 1 95 -95" strokeWidth="2.6" />
+          <path d="M 0 -88 A 88 88 0 0 1 62 -62" strokeWidth="1.8" opacity=".7" />
         </g>
       </g>
       <g stroke="#8fb0e8" fill="none" opacity=".12" strokeLinecap="round">
