@@ -160,7 +160,7 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
     return { clusters, unplaced, siteCount: forSite.length, unmappedNoSite };
   }, [incidents, effectiveSiteId, zones]);
 
-  const openIncident = (it: InstancePublic) => router.push(`/events/${incId(it)}`);
+  const openIncident = (it: InstancePublic) => router.push(`/alarms/${incId(it)}`);
 
   const mapSelCls =
     "h-9 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(0,0,0,.28)] px-2.5 text-sm text-[#aec2e8] outline-hidden transition focus:border-[rgba(34,211,238,.5)]";

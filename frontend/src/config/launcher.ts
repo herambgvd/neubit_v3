@@ -104,8 +104,8 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           //
           // Named against Alarms on purpose: an EVENT is what a recorder reported;
           // an ALARM is an incident somebody works, with a state machine behind it.
-          { icon: "heroicons:bolt", label: "Events", href: "/camera-events", tone: "hot", perm: "vms.camera.read", module: "vms" },
-          { icon: "heroicons:bell-alert", label: "Alarms", href: "/events", tone: "hot", perm: "workflow.instance.read" },
+          { icon: "heroicons:bolt", label: "Events", href: "/events", tone: "hot", perm: "vms.camera.read", module: "vms" },
+          { icon: "heroicons:bell-alert", label: "Alarms", href: "/alarms", tone: "hot", perm: "workflow.instance.read" },
           // NO "VIDEO ANALYTICS" TILE. It was a SOON card for a surface that will
           // never need one: an AI detection is an event like any other — the
           // recorder's AI bridge reports it, the supervisor mirrors it, and it

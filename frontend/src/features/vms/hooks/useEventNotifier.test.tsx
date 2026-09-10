@@ -124,7 +124,7 @@ describe("off the Events page", () => {
     renderToast();
 
     await userEvent.click(screen.getByRole("button", { name: /view video/i }));
-    expect(push).toHaveBeenCalledWith("/camera-events?event=ev-9");
+    expect(push).toHaveBeenCalledWith("/events?event=ev-9");
   });
 
   it("acknowledges from the corner, without opening the page", async () => {
@@ -168,7 +168,7 @@ describe("off the Events page", () => {
 
 describe("on the Events page", () => {
   it("says nothing — the video is already showing it", () => {
-    pathname = "/camera-events";
+    pathname = "/events";
     frames = [frame()];
     run();
     expect(toast.custom).not.toHaveBeenCalled();
@@ -177,7 +177,7 @@ describe("on the Events page", () => {
   it("does not toast it LATER either, once the operator navigates away", () => {
     // The buffer replays on the next surface. An event they already watched must
     // not chase them across the console.
-    pathname = "/camera-events";
+    pathname = "/events";
     const one = frame({ event_id: "ev-seen" });
     frames = [one];
     const { rerender } = renderHook(() => useEventNotifier(), { wrapper });

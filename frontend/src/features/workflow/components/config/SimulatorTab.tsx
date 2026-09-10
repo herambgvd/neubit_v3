@@ -359,7 +359,7 @@ function ResultPanel({ result }: { result: SimulateEventResponse }) {
           <ul className="space-y-1">
             {createdIds.map((id) => (
               <li key={id}>
-                <Link href={`/events/${id}`} className="inline-flex items-center gap-1.5 text-sm text-nb-ink hover:underline font-mono">
+                <Link href={`/alarms/${id}`} className="inline-flex items-center gap-1.5 text-sm text-nb-ink hover:underline font-mono">
                   <Icon icon="heroicons-outline:arrow-top-right-on-square" className="text-sm" /> {id}
                 </Link>
               </li>

@@ -32,7 +32,7 @@ import { useEstateCameras } from "./useEstateCameras";
 import { useVmsEventStream } from "./useVmsEventStream";
 
 /** The monitoring surface: on it, video replaces the toast. */
-export const EVENTS_ROUTE = "/camera-events";
+export const EVENTS_ROUTE = "/events";
 
 /** Remembered per browser, because whether the corner is allowed to interrupt is
  *  an operator's preference, not a session's. */

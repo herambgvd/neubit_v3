@@ -1,1 +1,1 @@
-export { default } from "@/features/workflow/IncidentList";
+export { default } from "@/features/vms/CameraEvents";

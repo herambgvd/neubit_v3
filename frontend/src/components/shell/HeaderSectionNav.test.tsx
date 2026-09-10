@@ -34,7 +34,7 @@ describe("the section badge", () => {
   });
 
   it("renders nothing on a route with no section nav", () => {
-    pathname = "/events";
+    pathname = "/alarms";
     const { container } = render(<HeaderSectionNav />);
     expect(container).toBeEmptyDOMElement();
   });

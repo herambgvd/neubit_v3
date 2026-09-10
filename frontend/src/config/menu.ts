@@ -51,7 +51,7 @@ export const menuItems: NavItem[] = [
   // reports: motion, tamper, video loss. The two names carry that difference; the
   // old pair ("Incidents" vs "Camera events") made the second sound like a subset
   // of the first, which it is not. Route stays /events.
-  { title: "Incidents", icon: "heroicons:calendar-days", link: "/events", perm: "workflow.instance.read" },
+  { title: "Incidents", icon: "heroicons:calendar-days", link: "/alarms", perm: "workflow.instance.read" },
   // Hidden for now (coming later) — uncomment to restore in the top nav.
   // { title: "Network", icon: "heroicons:server-stack", link: "/network", disabled: true, module: "nms" },
   // { title: "Octosense", icon: "heroicons:rss", link: "/octosense", disabled: true, module: "octosense" },
@@ -132,8 +132,8 @@ export const streamTabs: NavItem[] = [
   // NO EVENTS TAB. Events is its own Surveillance card, not a sub-view of playing
   // footage back: it is where the REASON to play something back arrives. Leaving it
   // in this strip said the opposite — that an operator gets to the estate's live
-  // device feed by first opening Playback. The route keeps its path
-  // (/camera-events), which is what the alarm and popup deep links carry.
+  // device feed by first opening Playback. It lives at /events — the plain name
+  // for the plain thing — with workflow's alarm console at /alarms.
   // NO REPORTS TAB. The VMS's own report console (uptime, coverage, storage,
   // event counts, and a scheduler that mailed them) is gone: reporting is
   // DashForge's, surfaced through the registered dashboards under Building

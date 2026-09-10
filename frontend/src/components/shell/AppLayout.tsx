@@ -101,7 +101,7 @@ export default function AppLayout({ children }: { children?: ReactNode }) {
   // radial-navy backdrop + masthead should reach the pane edges (no page padding);
   // the board/map scrolls internally. Kept scrollable (not overflow-hidden) so long
   // alarm lists page normally.
-  const eventsFull = pathname === "/events";
+  const eventsFull = pathname === "/alarms";
 
   // CONTAINED pages (device inventory + access control): the PAGE must not scroll —
   // the toolbar stays fixed and only the content card scrolls internally. So <main>
@@ -119,7 +119,7 @@ export default function AppLayout({ children }: { children?: ReactNode }) {
     // Events is a triage surface: the evidence panels and the table's toolbar must
     // stay put and the ROWS scroll inside the table. Scrolling the whole page moved
     // the video the operator was watching off the top of the screen.
-    pathname === "/camera-events" ||
+    pathname === "/events" ||
     // Config master/detail surfaces — same bounded, fill-the-pane layout as the device
     // pages (list-aside + detail card, no page scroll). Keeps all mgmt screens consistent.
     pathname === "/sites" ||

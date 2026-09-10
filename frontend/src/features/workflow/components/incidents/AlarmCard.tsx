@@ -128,7 +128,7 @@ export default function AlarmCard({
         </label>
       )}
 
-      <Link href={`/events/${id}`} className="flex min-w-0 flex-1 flex-col gap-2.5 px-4 py-3.5">
+      <Link href={`/alarms/${id}`} className="flex min-w-0 flex-1 flex-col gap-2.5 px-4 py-3.5">
         {/* Top row: glyph + title + NEW + priority */}
         <div className="flex items-start gap-3">
           <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${s.ring} ${s.soft} ${s.text}`}>

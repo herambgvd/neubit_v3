@@ -29,7 +29,7 @@ export default function EventPayloadInspector({ payload, eventType, incident = n
   const isCamera = incident?.event_source === CAMERA_SOURCE;
   const cameraId = asStr(payload?.payload?.camera_id) || null;
   const cameraHref = isCamera
-    ? `/camera-events${cameraId ? `?camera=${encodeURIComponent(cameraId)}` : ""}`
+    ? `/events${cameraId ? `?camera=${encodeURIComponent(cameraId)}` : ""}`
     : null;
 
   return (

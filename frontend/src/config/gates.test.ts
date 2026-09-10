@@ -100,7 +100,7 @@ describe("the Surveillance launcher", () => {
   it("reaches Events from the launcher, not from inside Playback", () => {
     // It rode the Streaming sub-tab strip, which said the estate's live device
     // feed was a sub-view of playing footage back.
-    expect(streamTabs.map((t) => t.link)).not.toContain("/camera-events");
-    expect(tiles("surv").map((t) => t.href)).toContain("/camera-events");
+    expect(streamTabs.map((t) => t.link)).not.toContain("/events");
+    expect(tiles("surv").map((t) => t.href)).toContain("/events");
   });
 });

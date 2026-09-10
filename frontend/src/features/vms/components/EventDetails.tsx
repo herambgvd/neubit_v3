@@ -174,7 +174,7 @@ export default function EventDetails({
         )}
         {incidentId && (
           <Link
-            href={`/events/${encodeURIComponent(incidentId)}`}
+            href={`/alarms/${encodeURIComponent(incidentId)}`}
             className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-[11.5px] text-amber-300 transition hover:bg-amber-500/20"
           >
             <Icon icon="heroicons-outline:bell-alert" className="text-xs" /> Incident
