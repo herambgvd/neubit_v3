@@ -53,8 +53,11 @@ export default function AlarmNow({
   const hasPicture = !!incident && !!camera;
 
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card">
-      <div className={`relative min-h-0 flex-1 ${hasPicture ? "bg-black" : ""}`}>
+    <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card">
+      {/* The video keeps 16:9 and the card is as tall as that plus its footer.
+          Stretching it to fill a column just painted a black band under the
+          picture — which was most of what the first build showed. */}
+      <div className={`relative aspect-video w-full ${hasPicture ? "bg-black" : ""}`}>
         <EvidencePicture incident={incident} camera={camera} kind={kind} onFootage={onFootage} />
 
         {/* WHICH PICTURE, over the picture itself — one click, and it stays where

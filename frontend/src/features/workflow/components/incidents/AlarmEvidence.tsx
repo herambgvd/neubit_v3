@@ -198,7 +198,11 @@ export default function AlarmEvidenceCard({
           </button>
         )}
       </header>
-      <div className={`relative min-h-0 w-full flex-1 ${incident && camera ? "bg-black" : ""}`}>
+      {/* ASPECT, not fill. A 16:9 stream inside a taller cell paints the
+          difference black, and the page ends up mostly black band. Let the video
+          say how tall it is and give the leftover height to something with
+          content in it. */}
+      <div className={`relative aspect-video w-full ${incident && camera ? "bg-black" : ""}`}>
         <EvidencePicture
           incident={incident}
           camera={camera}

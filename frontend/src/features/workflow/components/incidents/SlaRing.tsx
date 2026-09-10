@@ -81,8 +81,8 @@ export default function SlaRing({ incident, now: injected }: SlaRingProps) {
       <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">Time left</span>
       <div className="flex min-h-0 flex-1 items-center justify-center">
         <svg
-          width="118"
-          height="118"
+          width="104"
+          height="104"
           viewBox="0 0 112 112"
           role="img"
           aria-label={sla ? `${big} ${sub}` : "No time limit on this alarm"}
@@ -126,7 +126,7 @@ export default function SlaRing({ incident, now: injected }: SlaRingProps) {
         </svg>
       </div>
       {sla && (
-        <p className="text-center text-[11px] text-muted">
+        <p className="mt-1 text-center text-[11px] text-muted">
           due {new Date(sla.deadline).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </p>
       )}

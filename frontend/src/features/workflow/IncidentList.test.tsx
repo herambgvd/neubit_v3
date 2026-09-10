@@ -399,3 +399,104 @@ describe("which picture gets the big cell", () => {
     expect(await screen.findByRole("button", { name: /show live large/i })).toBeInTheDocument();
   });
 });
+
+
+describe("the page is not mostly empty space", () => {
+  /**
+   * The first bento stretched every cell to fill the pane. A 16:9 stream in a
+   * taller cell paints the difference black, so most of the console was a band
+   * under the picture; three counters floated in a card six times their height;
+   * and the right column still ran out before the rail did.
+   *
+   * The fix is that the pictures keep their own shape and the cards that can use
+   * more room take what is left — so this pins the shape, and pins that the space
+   * goes to something with content in it.
+   */
+  it("gives the video its own aspect instead of a fill", async () => {
+    stubAll();
+    const { container } = renderWithProviders(<IncidentList />);
+    await screen.findByTestId("recording");
+
+    const frames = [...container.querySelectorAll(".aspect-video")];
+    // Both pictures — the big cell and the small one.
+    expect(frames.length).toBeGreaterThanOrEqual(2);
+    // And none of them is also told to fill its column, which is what produced
+    // the band.
+    expect(frames.some((f) => f.classList.contains("flex-1"))).toBe(false);
+  });
+
+  it("fills the leftover height with the facts, not with nothing", async () => {
+    stubAll();
+    renderWithProviders(<IncidentList />);
+
+    // The right column's tail is a real card about this alarm — waited on by the
+    // CONTENT, since the card's own heading renders before the queue lands.
+    expect(await screen.findByText("Origin")).toBeInTheDocument();
+    expect(screen.getByText("Details")).toBeInTheDocument();
+    expect(screen.getAllByText(/rule matched a camera event/i)).not.toHaveLength(0);
+  });
+
+  it("shows what has been done to the alarm, and the note somebody wrote", async () => {
+    // The timeline exists on every incident and was visible nowhere. It is the
+    // answer a second operator arrives needing — has anyone looked at this — and
+    // it is the only reason making somebody write a note was worth anything.
+    stubAll({
+      "GET /workflow/instances": {
+        items: [
+          incident({
+            status: "active",
+            current_state_name: "Investigating",
+            timeline: [
+              {
+                transition_id: "tr1",
+                transition_name: "Start investigating",
+                from_state_id: "st1",
+                from_state_name: "Open",
+                to_state_id: "st2",
+                to_state_name: "Investigating",
+                executed_by: "u-1",
+                executed_by_name: "Heramb",
+                notes: "two people at Gate 2",
+                form_data: null,
+                form_labels: null,
+                executed_at: iso(12),
+              },
+            ],
+          }),
+        ],
+        total: 1,
+      },
+    });
+    renderWithProviders(<IncidentList />);
+
+    expect(await screen.findByText("Start investigating")).toBeInTheDocument();
+    expect(screen.getByText(/two people at Gate 2/)).toBeInTheDocument();
+    expect(screen.getByText(/Heramb · now Investigating/)).toBeInTheDocument();
+    // And the entry that is always true but never in the timeline.
+    expect(screen.getByText("Raised")).toBeInTheDocument();
+  });
+
+  it("says an alarm was escalated by a person, when it was", async () => {
+    // The envelope the escalate dialog sends carries raised_by: "operator" — an
+    // operator reading the queue should not have to guess whether a rule or a
+    // colleague put this in front of them.
+    stubAll({
+      "GET /workflow/instances": {
+        items: [
+          incident({
+            trigger_data: {
+              source: "vision",
+              raised_by: "operator",
+              payload: { camera_id: "fed-cam-1", event_id: "ev-1", occurred_at: iso(30) },
+            },
+          }),
+        ],
+        total: 1,
+      },
+    });
+    renderWithProviders(<IncidentList />);
+
+    // Said in both places it matters: the facts card, and the trail's first line.
+    expect(await screen.findAllByText(/escalated by an operator/i)).not.toHaveLength(0);
+  });
+});

@@ -51,6 +51,8 @@ import type { IncidentView } from "./components/incidents/ViewToggle";
 import AlarmRail from "./components/incidents/AlarmRail";
 import AlarmNow from "./components/incidents/AlarmNow";
 import AlarmEvidenceCard, { type EvidenceKind } from "./components/incidents/AlarmEvidence";
+import AlarmFacts from "./components/incidents/AlarmFacts";
+import AlarmTrail from "./components/incidents/AlarmTrail";
 import SlaRing from "./components/incidents/SlaRing";
 import ProcedureSteps from "./components/incidents/ProcedureSteps";
 import IncidentMap from "./components/incidents/IncidentMap";
@@ -58,7 +60,6 @@ import AssignModal from "./components/detail/AssignModal";
 import { useIncidentStream } from "./hooks/useIncidentStream";
 import {
   incAssignedId,
-  incAssigneeName,
   incCameraId,
   incId,
   isOpen,
@@ -211,32 +212,6 @@ export default function WorkflowPage() {
   }, [byStatus, instances, status, priority, siteId, sopId, q]);
 
   const slaBreaching = useMemo(() => instances.filter((it) => isSlaBreaching(it)).length, [instances]);
-
-  // Closed since local midnight — the shift's own answer to "are we keeping up".
-  // Counts the loaded page, like the two above it, and the tile says so.
-  const closedToday = useMemo(() => {
-    const midnight = new Date();
-    midnight.setHours(0, 0, 0, 0);
-    return instances.filter((it) => {
-      const at = it.closed_at || (isOpen(it.status) ? null : it.updated_at);
-      return !!at && new Date(at).getTime() >= midnight.getTime();
-    }).length;
-  }, [instances]);
-
-  // Who is carrying what, from the OPEN alarms on this page. Sorted heaviest
-  // first, because the question this answers is who to hand the next one to.
-  const ownerLoad = useMemo(() => {
-    const by = new Map<string, number>();
-    for (const it of instances) {
-      if (!isOpen(it.status)) continue;
-      const name = incAssigneeName(it);
-      if (!name) continue;
-      by.set(name, (by.get(name) || 0) + 1);
-    }
-    return [...by.entries()]
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count);
-  }, [instances]);
   const unassigned = useMemo(
     () => instances.filter((it) => isOpen(it.status) && !incAssignedId(it)).length,
     [instances],
@@ -657,12 +632,14 @@ export default function WorkflowPage() {
             <IncidentMap incidents={instances} sites={sitesList} siteName={siteName} sopName={sopName} />
           </div>
         ) : (
-          // THE BENTO. Deliberately asymmetric: the picture is the biggest thing
-          // on the screen, because looking is why an operator is here. The three
-          // small cells answer the questions that follow it — how long, what next,
-          // and is it still happening.
-          <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] xl:grid-rows-[minmax(0,1.35fr)_minmax(0,1fr)]">
-            <div className="min-h-[18rem] xl:row-span-2 xl:min-h-0">
+          // THE BENTO, sized by its CONTENT. The first build stretched every cell
+          // to fill the pane, which gave a 16:9 stream a black band under it and
+          // left three counters floating in a card six times their height. Now the
+          // pictures keep their own shape and the two cards that can genuinely use
+          // more room — the procedure and the facts — take what is left.
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] xl:overflow-hidden">
+            {/* EVIDENCE + THE WORK, down the left. */}
+            <div className="flex min-h-0 flex-col gap-3">
               <AlarmNow
                 incident={selected}
                 camera={selectedCamera}
@@ -676,28 +653,37 @@ export default function WorkflowPage() {
                 onAssign={(it) => setAssignFor(it)}
                 takePending={quick.isPending}
               />
+              <div className="min-h-[9rem] xl:min-h-0 xl:flex-1">
+                <ProcedureSteps incident={selected} />
+              </div>
             </div>
 
-            <div className="grid min-h-[10rem] grid-cols-2 gap-3 xl:min-h-0">
-              <SlaRing incident={selected} />
-              <ShiftLoad
-                overdue={slaBreaching}
-                unassigned={unassigned}
-                closedToday={closedToday}
-                owners={ownerLoad}
-              />
-            </div>
-
-            <div className="grid min-h-[14rem] grid-cols-1 gap-3 md:grid-cols-2 xl:min-h-0">
-              <ProcedureSteps incident={selected} />
-              {/* THE OTHER PICTURE. Whatever the big cell is not showing, so the
-                  operator always has both without a mode nobody can see. */}
-              <AlarmEvidenceCard
-                incident={selected}
-                camera={selectedCamera}
-                kind={evidence === "recording" ? "live" : "recording"}
-                onPromote={() => pickEvidence(evidence === "recording" ? "live" : "recording")}
-              />
+            {/* THE NUMBERS, THE OTHER PICTURE, AND THE FACTS, down the right. */}
+            <div className="flex min-h-0 flex-col gap-3">
+              {/* The clock, and what has been DONE to this alarm. There was a
+                  counters card here; it repeated the chips already in the top
+                  bar, and a console that says the same number twice makes an
+                  operator check which one is right. */}
+              <div className="grid shrink-0 grid-cols-2 gap-3">
+                <SlaRing incident={selected} />
+                <AlarmTrail incident={selected} />
+              </div>
+              <div className="shrink-0">
+                <AlarmEvidenceCard
+                  incident={selected}
+                  camera={selectedCamera}
+                  kind={evidence === "recording" ? "live" : "recording"}
+                  onPromote={() => pickEvidence(evidence === "recording" ? "live" : "recording")}
+                />
+              </div>
+              <div className="min-h-[8rem] xl:min-h-0 xl:flex-1">
+                <AlarmFacts
+                  incident={selected}
+                  sopName={sopName}
+                  siteName={siteName}
+                  cameraName={selectedCamera?.name ?? null}
+                />
+              </div>
             </div>
           </div>
         )}
@@ -717,54 +703,6 @@ export default function WorkflowPage() {
         />
       )}
     </div>
-  );
-}
-
-/** The shift, in three numbers and a roll call. Every one of them counts THE
- *  LOADED PAGE — none of it is in /stats — and the tile says so rather than
- *  looking deployment-wide. */
-function ShiftLoad({
-  overdue,
-  unassigned,
-  closedToday,
-  owners,
-}: {
-  overdue: number;
-  unassigned: number;
-  closedToday: number;
-  owners: { name: string; count: number }[];
-}) {
-  return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card p-3">
-      <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted">
-        This page
-      </span>
-      <div className="mt-2 grid gap-1.5">
-        <Kpi value={overdue} label="overdue" tone={overdue ? "bad" : "flat"} />
-        <Kpi value={unassigned} label="unassigned" tone={unassigned ? "warn" : "flat"} />
-        <Kpi value={closedToday} label="closed today" tone="flat" />
-      </div>
-      {owners.length > 0 && (
-        <div className="mt-2 grid min-h-0 flex-1 content-start gap-1 overflow-y-auto border-t border-card-border pt-2">
-          {owners.map((o) => (
-            <span key={o.name} className="flex items-center gap-2 text-[11.5px] text-muted">
-              <span className="truncate text-foreground">{o.name}</span>
-              <span className="ml-auto font-mono tabular-nums">{o.count}</span>
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Kpi({ value, label, tone }: { value: number; label: string; tone: "bad" | "warn" | "flat" }) {
-  const cls = tone === "bad" ? "text-red-400" : tone === "warn" ? "text-amber-400" : "text-foreground";
-  return (
-    <span className="flex items-baseline gap-2">
-      <b className={`font-mono text-[22px] font-semibold tabular-nums ${cls}`}>{value}</b>
-      <span className="text-[11.5px] text-muted">{label}</span>
-    </span>
   );
 }
 
