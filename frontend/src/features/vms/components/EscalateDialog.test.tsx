@@ -23,7 +23,12 @@ import { renderWithProviders } from "@/test/render";
 import { stubApi, type ApiStub } from "@/test/apiStub";
 import { normalizeVmsEvent, type NormalizedVmsEvent } from "../eventLib";
 import type { SopPublic } from "@/features/workflow/types";
-import EscalateDialog, { escalationEnvelope, rankSops } from "./EscalateDialog";
+import EscalateDialog, {
+  automationRule,
+  escalationEnvelope,
+  existingRuleFor,
+  rankSops,
+} from "./EscalateDialog";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 
@@ -60,10 +65,32 @@ const sop = (over: Partial<SopPublic> = {}): SopPublic => ({
   ...over,
 });
 
+const trigger = (over: Record<string, unknown> = {}) => ({
+  trigger_id: `t-${Math.random().toString(36).slice(2)}`,
+  name: "Auto: Tamper",
+  description: null,
+  sop_id: "s1",
+  event_source: "vision",
+  event_type: "tamper",
+  conditions: [],
+  dedup: {},
+  priority: "medium",
+  auto_assign: null,
+  assign_users: [],
+  enabled: true,
+  last_fired_at: null,
+  fire_count: 0,
+  created_at: "2026-09-01T00:00:00Z",
+  updated_at: "2026-09-01T00:00:00Z",
+  ...over,
+});
+
 function stubWith(sops: unknown[], over: Record<string, unknown> = {}): ApiStub {
   return stubApi({
     "GET /workflow/sops": { items: sops, total: sops.length },
+    "GET /workflow/triggers": { items: [], total: 0 },
     "POST /workflow/instances": { instance_id: "inc-1", name: "Tamper · Channel 2" },
+    "POST /workflow/triggers": trigger(),
     "POST /workflow/sops/starters": { items: [sop()], created: 4, skipped: [] },
     ...over,
   });
@@ -152,5 +179,85 @@ describe("a system with no procedures", () => {
     expect(screen.queryByRole("button", { name: /install the starter/i })).toBeNull();
     expect(screen.getByText(/ask an administrator/i)).toBeInTheDocument();
     allowed = true;
+  });
+});
+
+
+describe("making it automatic", () => {
+  /**
+   * The correlation engine has been listening the whole time; what it lacks is a
+   * rule. This is where rules come from — a person who has just decided, about a
+   * real event — instead of a configuration session nobody books.
+   */
+  it("offers the rule once the alarm exists, not before", async () => {
+    stubWith([sop({ sop_id: "s1" })]);
+    open();
+
+    await screen.findByText("General alarm");
+    expect(screen.queryByText(/do this by itself/i)).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: /raise alarm/i }));
+    expect(await screen.findByText(/do this by itself/i)).toBeInTheDocument();
+  });
+
+  it("scopes the rule to one camera, or to the estate", () => {
+    const s = sop({ sop_id: "s1", priority: "high" });
+    const one = automationRule(EVENT, s, "camera", "Channel 2");
+    expect(one.event_type).toBe("tamper");
+    expect(one.conditions).toEqual([{ field: "payload.camera_id", operator: "eq", value: "cam-9" }]);
+    expect(one.priority).toBe("high");
+    expect(one.name).toContain("Channel 2");
+
+    const all = automationRule(EVENT, s, "estate", "Channel 2");
+    expect(all.conditions).toEqual([]);
+    // A burst must not become forty incidents.
+    expect(all.dedup?.window_seconds).toBe(3600);
+  });
+
+  it("creates the rule the operator chose", async () => {
+    const stub = stubWith([sop({ sop_id: "s1" })]);
+    open();
+
+    await screen.findByText("General alarm");
+    await userEvent.click(screen.getByRole("button", { name: /raise alarm/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /only channel 2/i }));
+
+    await waitFor(() => expect(stub.matching("POST /workflow/triggers")).toHaveLength(1));
+    const body = stub.body("POST /workflow/triggers") as Record<string, unknown>;
+    expect(body.sop_id).toBe("s1");
+    expect(body.event_type).toBe("tamper");
+    expect(body.conditions).toEqual([
+      { field: "payload.camera_id", operator: "eq", value: "cam-9" },
+    ]);
+  });
+
+  it("says so instead when a rule already covers this event", async () => {
+    stubWith([sop({ sop_id: "s1" })], {
+      "GET /workflow/triggers": { items: [trigger({ name: "Auto: Tamper (any camera)" })], total: 1 },
+    });
+    open();
+
+    await screen.findByText("General alarm");
+    await userEvent.click(screen.getByRole("button", { name: /raise alarm/i }));
+
+    expect(await screen.findByText(/already happens automatically/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /every camera/i })).toBeNull();
+  });
+
+  it("does not count a rule for a different camera as coverage", () => {
+    const other = trigger({
+      conditions: [{ field: "payload.camera_id", operator: "eq", value: "cam-OTHER" }],
+    });
+    expect(existingRuleFor([other] as never, EVENT)).toBeNull();
+
+    const mine = trigger({
+      conditions: [{ field: "payload.camera_id", operator: "eq", value: "cam-9" }],
+    });
+    expect(existingRuleFor([mine] as never, EVENT)).not.toBeNull();
+  });
+
+  it("ignores a rule somebody switched off", () => {
+    const off = trigger({ enabled: false });
+    expect(existingRuleFor([off] as never, EVENT)).toBeNull();
   });
 });

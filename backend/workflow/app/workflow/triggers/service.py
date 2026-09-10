@@ -254,6 +254,7 @@ class SimulatorService:
     async def simulate(self, body, *, actor) -> dict:
         from ..correlation.engine import (
             build_incident_from_sop,
+            candidate_event_types,
             extract_alert_code,
             find_alert_format,
             initial_state,
@@ -277,11 +278,19 @@ class SimulatorService:
         skipped: list[dict] = []
         created_ids: list[str] = []
 
-        # ── Trigger matching (same predicate as CorrelationEngine) ──────
+        # ── Trigger matching (the engine's own predicate) ───────────────
+        #
+        # It used to compare a trigger's event_type against `body.event_type`
+        # ALONE, while the engine matches the transport type OR the payload's
+        # semantic one. A camera event arrives as `vms.camera.tamper` carrying
+        # `payload.event_type = "tamper"`, so a working rule written as "tamper"
+        # reported NO MATCH here — and an operator testing a rule that fires in
+        # production would go and change it.
         stmt = scoped(select(Trigger).where(Trigger.enabled.is_(True)), Trigger, self.scope)
+        candidates = candidate_event_types(envelope)
         triggers = [
             t for t in (await self.db.execute(stmt)).scalars().all()
-            if not t.event_type or t.event_type == body.event_type
+            if not t.event_type or t.event_type in candidates
         ]
         for trig in triggers:
             if not matches_conditions(envelope, trig.conditions or []):

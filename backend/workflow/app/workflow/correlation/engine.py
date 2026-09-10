@@ -198,6 +198,29 @@ async def build_incident_from_sop(
     return instance
 
 
+def candidate_event_types(envelope: dict[str, Any]) -> set[str]:
+    """Every name a trigger may legitimately be written against for this event.
+
+    The bus derives ``type`` from the SUBJECT — a camera tamper arrives as
+    ``vms.camera.tamper`` — while the payload names the bare semantic type,
+    ``tamper``. An operator writes whichever one they saw, and both are correct,
+    so both match.
+
+    Shared with the simulator on purpose: a rule tester that answers a different
+    question from the engine tells an operator their working rule is broken, and
+    they go and "fix" it.
+    """
+    transport = envelope.get("type") or envelope.get("event_type")
+    payload = envelope.get("payload") if isinstance(envelope.get("payload"), dict) else {}
+    semantic = payload.get("event_type") if isinstance(payload, dict) else None
+    out: set[str] = set()
+    if transport:
+        out.add(str(transport))
+    if semantic is not None and str(semantic).strip():
+        out.add(str(semantic).strip())
+    return out
+
+
 class CorrelationEngine:
     """JetStream-durable consumer that turns domain events into incidents.
 
@@ -257,11 +280,8 @@ class CorrelationEngine:
         if "site_id" not in envelope and isinstance(payload, dict):
             envelope = {**envelope, "site_id": payload.get("site_id")}
 
-        semantic_type = payload.get("event_type") if isinstance(payload, dict) else None
-        candidates = {str(transport_type)}
-        if semantic_type:
-            candidates.add(str(semantic_type))
-        event_type = str(semantic_type or transport_type)  # for logging
+        candidates = candidate_event_types(envelope)
+        event_type = event_identity(envelope) or str(transport_type)  # for logging
 
         async with self._sm() as session:
             triggers = await self._matching_triggers(session, tenant_id, candidates)

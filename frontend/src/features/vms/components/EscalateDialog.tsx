@@ -31,7 +31,7 @@ import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { workflow as wfApi } from "@/features/workflow/api";
-import type { SopPublic } from "@/features/workflow/types";
+import type { CreateTriggerRequest, SopPublic, TriggerPublic } from "@/features/workflow/types";
 import { eventTypeLabel, fmtDate, fmtTime, sevPreset, type NormalizedVmsEvent } from "../eventLib";
 
 export interface EscalateDialogProps {
@@ -90,6 +90,76 @@ export function sopMatches(sop: SopPublic, eventType: string | null | undefined)
   return !!t && (sop.trigger_event_types || []).some((e) => String(e).toLowerCase() === t);
 }
 
+/** How wide a rule reaches: this one camera, or every camera on the estate. */
+export type AutomationScope = "camera" | "estate";
+
+/** The camera-id field a condition addresses, as the correlation engine walks it
+ *  (a dotted path into the published envelope). */
+export const CAMERA_FIELD = "payload.camera_id";
+
+/** At most one alarm per hour for the same thing, so a burst of motion from one
+ *  camera is one incident and not forty. */
+export const AUTOMATION_WINDOW_SECONDS = 3600;
+
+/** The rule an operator gets when they say "do this next time".
+ *
+ *  It matches on the event's own type: the bus publishes `type` as
+ *  `vms.camera.<event_type>` AND `payload.event_type` as the bare type, and the
+ *  correlation engine matches a trigger against either — so "tamper" is the
+ *  value that reads correctly in the rules list and still fires.
+ *
+ *  Scope is the whole difference between the two answers an operator can give,
+ *  and it is a CONDITION, not a different kind of rule: one camera adds
+ *  `payload.camera_id eq <id>`, the estate adds nothing. */
+export function automationRule(
+  event: NormalizedVmsEvent,
+  sop: SopPublic,
+  scope: AutomationScope,
+  cameraLabel: string,
+): CreateTriggerRequest {
+  const type = event.event_type || "";
+  const perCamera = scope === "camera" && !!event.camera_id;
+  return {
+    name: perCamera
+      ? `Auto: ${eventTypeLabel(type)} on ${cameraLabel}`
+      : `Auto: ${eventTypeLabel(type)} (any camera)`,
+    description: "Created from an escalated event — raise this alarm automatically.",
+    sop_id: sop.sop_id,
+    event_source: "vision",
+    event_type: type,
+    conditions: perCamera
+      ? [{ field: CAMERA_FIELD, operator: "eq", value: event.camera_id as string }]
+      : [],
+    dedup: perCamera
+      ? { strategy: "per_field", key_field: CAMERA_FIELD, window_seconds: AUTOMATION_WINDOW_SECONDS }
+      : { strategy: "per_event_type", key_field: null, window_seconds: AUTOMATION_WINDOW_SECONDS },
+    priority: sop.priority,
+    enabled: true,
+  };
+}
+
+/** Is this event already handled by a rule? A second rule for the same type and
+ *  camera would raise two alarms for one event, which is how an operator learns
+ *  to distrust the queue. */
+export function existingRuleFor(
+  triggers: TriggerPublic[],
+  event: NormalizedVmsEvent,
+): TriggerPublic | null {
+  const type = String(event.event_type || "").toLowerCase();
+  const cam = event.camera_id || null;
+  return (
+    triggers.find((t) => {
+      if (!t.enabled) return false;
+      const tType = String(t.event_type || "").toLowerCase();
+      if (tType && tType !== type && tType !== `vms.camera.${type}`) return false;
+      const camConds = (t.conditions || []).filter((c) => c.field === CAMERA_FIELD);
+      // No camera condition = every camera, which covers this one too.
+      if (camConds.length === 0) return true;
+      return camConds.some((c) => c.value === cam);
+    }) || null
+  );
+}
+
 export default function EscalateDialog({
   open,
   onClose,
@@ -103,6 +173,11 @@ export default function EscalateDialog({
   const { can } = useAuth();
   const [sopId, setSopId] = useState("");
   const [note, setNote] = useState("");
+  // TWO STEPS, ONE DIALOG. The alarm is raised on the first; the second asks
+  // whether it should happen by itself next time. It is a second step rather than
+  // a toast because the answer has three options, and because the moment an
+  // operator has just decided this event matters is the only moment they know.
+  const [raised, setRaised] = useState<{ id: string; name: string } | null>(null);
 
   // Only while the dialog is open: an operator who never escalates should not be
   // fetching the playbook list on every visit to the Events page.
@@ -123,8 +198,42 @@ export default function EscalateDialog({
   }, [open, ranked]);
 
   useEffect(() => {
-    if (!open) setNote("");
+    if (!open) {
+      setNote("");
+      setRaised(null);
+    }
   }, [open]);
+
+  const triggersQ = useQuery({
+    queryKey: ["wf-triggers", "escalate"],
+    queryFn: () => wfApi.triggers.list({ limit: 200 }),
+    enabled: open && !!raised,
+    retry: false,
+  });
+  const triggers = useMemo<TriggerPublic[]>(
+    () => (triggersQ.data ? asItems(triggersQ.data) : []),
+    [triggersQ.data],
+  );
+  const alreadyAutomatic = useMemo(
+    () => (raised ? existingRuleFor(triggers, event) : null),
+    [raised, triggers, event],
+  );
+
+  const automate = useMutation({
+    mutationFn: (scope: AutomationScope) => {
+      const chosen = sops.find((s) => s.sop_id === sopId);
+      if (!chosen) throw new Error("no procedure selected");
+      return wfApi.triggers.create(
+        automationRule(event, chosen, scope, cameraName || event.camera_name || "this camera"),
+      );
+    },
+    onSuccess: (t) => {
+      toast.success("Rule created", { description: t.name });
+      qc.invalidateQueries({ queryKey: ["wf-triggers"] });
+      onClose();
+    },
+    onError: (e) => toast.error(apiError(e, "Could not create the rule")),
+  });
 
   const install = useMutation({
     mutationFn: () => wfApi.sops.installStarters(),
@@ -156,7 +265,9 @@ export default function EscalateDialog({
       qc.invalidateQueries({ queryKey: ["wf-instances"] });
       qc.invalidateQueries({ queryKey: ["wf-incidents-by-camera-event"] });
       onCreated?.(inc.instance_id);
-      onClose();
+      // The alarm exists either way; the second step is an offer, never a gate.
+      if (canAutomate) setRaised({ id: inc.instance_id, name: inc.name || "Alarm" });
+      else onClose();
     },
     onError: (e) => toast.error(apiError(e, "Could not raise the alarm")),
   });
@@ -165,38 +276,112 @@ export default function EscalateDialog({
   const loading = sopsQ.isLoading;
   const empty = !loading && sops.length === 0;
   const canInstall = can("workflow.sop.create");
+  const canAutomate = can("workflow.trigger.create");
 
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title="Escalate to an alarm"
-      subtitle="Pick the procedure to run. Its priority and time limit come with it."
+      title={raised ? "Alarm raised" : "Escalate to an alarm"}
+      subtitle={
+        raised
+          ? "It is on the Alarms board now."
+          : "Pick the procedure to run. Its priority and time limit come with it."
+      }
       footer={
-        <div className="flex items-center gap-2">
+        raised ? (
           <button
             type="button"
             onClick={onClose}
             className="rounded-md border border-card-border px-3 py-1.5 text-[12px] text-muted transition hover:bg-hover hover:text-foreground"
           >
-            Cancel
+            Done
           </button>
-          <button
-            type="button"
-            onClick={() => create.mutate()}
-            disabled={!sopId || create.isPending}
-            className="inline-flex items-center gap-1.5 rounded-md border border-orange-500/50 bg-orange-500/15 px-3 py-1.5 text-[12px] font-medium text-orange-200 transition hover:bg-orange-500/25 disabled:opacity-50"
-          >
-            {create.isPending ? (
-              <Icon icon="svg-spinners:180-ring" className="text-sm" />
-            ) : (
-              <Icon icon="heroicons-outline:arrow-trending-up" className="text-sm" />
-            )}
-            Raise alarm
-          </button>
-        </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md border border-card-border px-3 py-1.5 text-[12px] text-muted transition hover:bg-hover hover:text-foreground"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => create.mutate()}
+              disabled={!sopId || create.isPending}
+              className="inline-flex items-center gap-1.5 rounded-md border border-orange-500/50 bg-orange-500/15 px-3 py-1.5 text-[12px] font-medium text-orange-200 transition hover:bg-orange-500/25 disabled:opacity-50"
+            >
+              {create.isPending ? (
+                <Icon icon="svg-spinners:180-ring" className="text-sm" />
+              ) : (
+                <Icon icon="heroicons-outline:arrow-trending-up" className="text-sm" />
+              )}
+              Raise alarm
+            </button>
+          </div>
+        )
       }
     >
+      {raised ? (
+        <div className="space-y-3">
+          <p className="flex items-center gap-2 text-[12.5px] text-foreground">
+            <Icon icon="heroicons-outline:check-circle" className="text-base text-emerald-400" />
+            <span className="truncate">{raised.name}</span>
+          </p>
+
+          {/* THE SECOND HALF OF AUTOMATION. The correlation engine has been
+              listening the whole time; what it lacks is a rule. This is where
+              rules come from — a person who has just decided, about a real event,
+              rather than a configuration session nobody books. */}
+          {alreadyAutomatic ? (
+            <div className="rounded-lg border border-card-border bg-hover/40 p-3">
+              <p className="text-[12px] text-foreground">This already happens automatically</p>
+              <p className="mt-1 text-[11.5px] text-muted">
+                The rule <b className="text-foreground">{alreadyAutomatic.name}</b> covers events
+                like this one, so the next will raise its own alarm.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3">
+              <p className="text-[12.5px] font-medium text-blue-200">Do this by itself next time?</p>
+              <p className="mt-1 text-[11.5px] text-blue-200/80">
+                A rule raises the same alarm without waiting for anyone — at most one
+                an hour, so a burst is one alarm and not forty.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {event.camera_id && (
+                  <button
+                    type="button"
+                    onClick={() => automate.mutate("camera")}
+                    disabled={automate.isPending}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/40 bg-blue-500/15 px-2.5 py-1 text-[11.5px] font-medium text-blue-100 transition hover:bg-blue-500/25 disabled:opacity-50"
+                  >
+                    <Icon icon="heroicons-outline:video-camera" className="text-xs" />
+                    Only {cameraName || event.camera_name || "this camera"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => automate.mutate("estate")}
+                  disabled={automate.isPending}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/40 bg-blue-500/15 px-2.5 py-1 text-[11.5px] font-medium text-blue-100 transition hover:bg-blue-500/25 disabled:opacity-50"
+                >
+                  <Icon icon="heroicons-outline:building-office-2" className="text-xs" />
+                  Every camera
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="inline-flex items-center rounded-md border border-card-border px-2.5 py-1 text-[11.5px] text-muted transition hover:bg-hover hover:text-foreground"
+                >
+                  Not now
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="space-y-3">
         {/* WHAT IS BEING ESCALATED. An operator who arrived from a corner toast
             has not read the row; this is the last chance to see it. */}
@@ -322,6 +507,7 @@ export default function EscalateDialog({
           </p>
         )}
       </div>
+      )}
     </Modal>
   );
 }
