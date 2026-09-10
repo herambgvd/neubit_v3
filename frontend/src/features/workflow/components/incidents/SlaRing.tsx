@@ -63,7 +63,9 @@ export default function SlaRing({ incident, now: injected }: SlaRingProps) {
   // one: "nothing left" and "no clock at all" must not look the same.
   const dash = sla ? (sla.overdue ? CIRC : CIRC * (frac ?? 0)) : 0;
 
-  const big = sla ? sla.label.replace(/^Overdue /, "").replace(/^SLA /, "") : "—";
+  // Just the duration inside the ring: "3h 17m left" is wider than the hole and
+  // was drawn straight through the stroke. The words live under it.
+  const big = sla ? sla.label.replace(/^Overdue /, "").replace(/^SLA /, "").replace(/ left$/, "") : "—";
   const sub = !incident
     ? "no alarm selected"
     : !sla
@@ -106,7 +108,7 @@ export default function SlaRing({ incident, now: injected }: SlaRingProps) {
             fill="currentColor"
             className="fill-foreground"
             fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
-            fontSize={big.length > 6 ? 17 : 22}
+            fontSize={big.length > 7 ? 16 : big.length > 5 ? 19 : 22}
             fontWeight="600"
           >
             {big}

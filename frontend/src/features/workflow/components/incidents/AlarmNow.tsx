@@ -13,99 +13,77 @@
 import Link from "next/link";
 import { Icon } from "@iconify/react";
 
-import TilePlayback from "@/features/vms/components/TilePlayback";
 import type { EstateCamera } from "@/features/vms/types";
 import { fmtDateTime } from "@/lib/format";
 import type { InstancePublic, NameMap } from "../../types";
+import { EvidencePicture, type EvidenceKind } from "./AlarmEvidence";
 import { incCameraId, incEventTime, incId, incSiteName, incTitle, isOpen, sev } from "./lib";
-
-/** Seen beginning, and seen becoming — the same buffer the events console uses. */
-const PRE_ROLL_MS = 8_000;
-const POST_ROLL_MS = 60_000;
 
 export interface AlarmNowProps {
   incident: InstancePublic | null;
   camera: EstateCamera | null;
   siteName?: NameMap;
+  /** Which picture has the big cell — the parent owns it, because the small cell
+   *  shows the other one. */
+  kind: EvidenceKind;
+  onKindChange?: (kind: EvidenceKind) => void;
+  /** The recording says whether the window holds anything; the parent uses it to
+   *  hand the space to live rather than to a black rectangle. */
+  onFootage?: (present: boolean) => void;
   onTake?: (incident: InstancePublic) => void;
   onAssign?: (incident: InstancePublic) => void;
   takePending?: boolean;
-}
-
-function Blank({ icon, title, body }: { icon: string; title: string; body: string }) {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-      <Icon icon={icon} className="text-3xl text-muted opacity-40" />
-      <p className="text-[12.5px] text-foreground">{title}</p>
-      <p className="max-w-sm text-[11px] text-muted">{body}</p>
-    </div>
-  );
 }
 
 export default function AlarmNow({
   incident,
   camera,
   siteName = {},
+  kind,
+  onKindChange,
+  onFootage,
   onTake,
   onAssign,
   takePending = false,
 }: AlarmNowProps) {
-  if (!incident) {
-    return (
-      <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card">
-        <Blank
-          icon="heroicons-outline:cursor-arrow-rays"
-          title="No alarm selected"
-          body="Pick one from the queue and it takes this cell — its footage, its clock and its next step."
-        />
-      </section>
-    );
-  }
-
-  const s = sev(incident.priority);
-  const cameraId = incCameraId(incident);
-  const eventTime = incEventTime(incident);
-  const eventMs = eventTime ? new Date(eventTime).getTime() : NaN;
-  const open = isOpen(incident.status);
-  const playable = !!cameraId && !!camera && Number.isFinite(eventMs);
+  const s = incident ? sev(incident.priority) : null;
+  const cameraId = incident ? incCameraId(incident) : null;
+  const eventTime = incident ? incEventTime(incident) : null;
+  const open = !!incident && isOpen(incident.status);
+  const hasPicture = !!incident && !!camera;
 
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card">
-      <div className={`relative min-h-0 flex-1 ${playable ? "bg-black" : ""}`}>
-        {playable ? (
-          <TilePlayback
-            key={`${camera!.id}:${eventMs}`}
-            camera={camera!}
-            anchorMs={eventMs - PRE_ROLL_MS}
-            anchorSeq={eventMs}
-            windowToMs={eventMs + POST_ROLL_MS}
-            playing
-            muted
-            compact
-          />
-        ) : !cameraId ? (
-          <Blank
-            icon="heroicons-outline:document-text"
-            title="No camera on this alarm"
-            body="It was raised without a camera event behind it, so there is no footage to point at."
-          />
-        ) : !camera ? (
-          // NOT the same as "no footage": the recorder that owns this camera is
-          // not answering. Saying "nothing recorded" sends an operator looking for
-          // a fault in the wrong place.
-          <Blank
-            icon="heroicons-outline:signal-slash"
-            title="Camera not reachable from here"
-            body="The alarm names a camera this console cannot resolve — check the recorder is federated and online."
-          />
-        ) : (
-          <Blank
-            icon="heroicons-outline:clock"
-            title="No moment to play"
-            body="This alarm carries no event time, so there is no instant to open the recording at."
-          />
+      <div className={`relative min-h-0 flex-1 ${hasPicture ? "bg-black" : ""}`}>
+        <EvidencePicture incident={incident} camera={camera} kind={kind} onFootage={onFootage} />
+
+        {/* WHICH PICTURE, over the picture itself — one click, and it stays where
+            the operator's eye already is. */}
+        {hasPicture && onKindChange && (
+          <div className="absolute right-2 top-2 z-10 inline-flex overflow-hidden rounded-lg border border-card-border bg-[rgba(8,15,34,.82)] backdrop-blur-xs">
+            {(["recording", "live"] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => onKindChange(k)}
+                aria-pressed={kind === k}
+                className={`px-2.5 py-1 text-[11px] font-medium transition ${
+                  kind === k ? "bg-blue-500/20 text-blue-100" : "text-muted hover:text-foreground"
+                }`}
+              >
+                {k === "recording" ? "Recording" : "Live"}
+              </button>
+            ))}
+          </div>
         )}
       </div>
+
+      {!incident && (
+        <div className="shrink-0 border-t border-card-border px-3 py-2.5 text-[11.5px] text-muted">
+          Pick an alarm from the queue — it takes this cell, with its clock and its next step.
+        </div>
+      )}
+      {incident && s && (
 
       <div className="grid shrink-0 gap-2 border-t border-card-border px-3 py-2.5">
         <div className="flex flex-wrap items-center gap-2">
@@ -163,6 +141,7 @@ export default function AlarmNow({
           )}
         </div>
       </div>
+      )}
     </section>
   );
 }

@@ -18,7 +18,8 @@
  *      escalations, "No active alarms" beside a green shield says the estate is
  *      quiet when the truth is that nothing can raise one.
  */
-import { describe, expect, it, vi } from "vitest";
+import { useEffect } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -32,14 +33,32 @@ vi.mock("@/lib/auth", () => ({ useAuth: () => ({ can: () => true, hasModule: () 
 vi.mock("./hooks/useIncidentStream", () => ({ useIncidentStream: () => undefined }));
 // The recorded cell mints a node playback session and streams fMP4; this suite is
 // about WHICH moment it is anchored at.
+// The real tile mints a node session and streams fMP4. This stand-in reports
+// what the caller actually reacts to: whether the window held any footage.
+let footagePresent = true;
 vi.mock("@/features/vms/components/TilePlayback", () => ({
-  default: ({ camera, anchorMs }: { camera?: { name?: string }; anchorMs: number | null }) => (
-    <div data-testid="recording" data-camera={camera?.name} data-anchor={String(anchorMs)} />
-  ),
+  default: function TilePlaybackStub({
+    camera,
+    anchorMs,
+    onFootage,
+  }: {
+    camera?: { name?: string };
+    anchorMs: number | null;
+    onFootage?: (present: boolean) => void;
+  }) {
+    useEffect(() => {
+      onFootage?.(footagePresent);
+    }, [onFootage]);
+    return <div data-testid="recording" data-camera={camera?.name} data-anchor={String(anchorMs)} />;
+  },
 }));
-vi.mock("@/features/vms/components/EventLivePane", () => ({
-  default: ({ camera }: { camera?: { name?: string } | null }) => <div>live:{camera?.name || "none"}</div>,
+vi.mock("@/features/vms/components/LivePlayer", () => ({
+  default: ({ cameraName }: { cameraName?: string }) => <div>live:{cameraName}</div>,
 }));
+
+beforeEach(() => {
+  footagePresent = true;
+});
 
 const NOW = new Date();
 const iso = (minsAgo: number) => new Date(NOW.getTime() - minsAgo * 60_000).toISOString();
@@ -116,6 +135,7 @@ describe("the queue", () => {
 
     // The first alarm takes the big cell without being asked, so the bento is
     // never blank while the queue holds something.
+    // Both pictures are on screen at once: the recording large, live beside it.
     expect(await screen.findByTestId("recording")).toHaveAttribute("data-camera", "Channel 1");
     expect(screen.getByText("live:Channel 1")).toBeInTheDocument();
     // Its own title, in the cell rather than only in the rail.
@@ -142,7 +162,8 @@ describe("the queue", () => {
     });
     renderWithProviders(<IncidentList />);
 
-    expect(await screen.findByText(/no camera on this alarm/i)).toBeInTheDocument();
+    // Both cells say it — neither pretends to have a picture.
+    expect(await screen.findAllByText(/no camera on this alarm/i)).not.toHaveLength(0);
   });
 
   it("distinguishes a camera it cannot reach from one with no footage", async () => {
@@ -153,7 +174,7 @@ describe("the queue", () => {
     });
     renderWithProviders(<IncidentList />);
 
-    expect(await screen.findByText(/camera not reachable/i)).toBeInTheDocument();
+    expect(await screen.findAllByText(/camera not reachable/i)).not.toHaveLength(0);
   });
 });
 
@@ -185,7 +206,7 @@ describe("the counts in the top bar", () => {
     stubAll();
     renderWithProviders(<IncidentList />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /Critical$/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /^3 Critical$/ }));
     await vi.waitFor(() =>
       expect(
         stub
@@ -210,8 +231,11 @@ describe("an empty queue", () => {
     stubAll({ "GET /workflow/instances": { items: [], total: 0 } });
     renderWithProviders(<IncidentList />);
 
+    // The filters are folded away until asked for — five selects took more of the
+    // rail than the queue did.
+    await userEvent.click(await screen.findByRole("button", { name: /filters/i }));
     await userEvent.selectOptions(
-      await screen.findByRole("combobox", { name: /filter by priority/i }),
+      screen.getByRole("combobox", { name: /filter by priority/i }),
       "critical",
     );
 
@@ -232,7 +256,11 @@ describe("the bento", () => {
 
     // 90 of 120 minutes left on a 2h procedure.
     const ring = await screen.findByRole("img", { name: /1h 30m/i });
-    expect(ring).toBeInTheDocument();
+    // Inside the ring: the duration ALONE. "1h 30m left" is wider than the hole
+    // and was drawn straight through the stroke — the words belong under it.
+    const big = within(ring).getAllByText(/^\d/)[0];
+    expect(big.textContent).toBe("1h 30m");
+    expect(within(ring).getByText(/of 2h/)).toBeInTheDocument();
   });
 
   it("draws a full ring when the deadline has passed, not an empty one", async () => {
@@ -324,5 +352,50 @@ describe("the bento", () => {
       expect(stub.matching("PATCH /workflow/instances/i-1/transition")).toHaveLength(1),
     );
     expect(stub.body("PATCH /workflow/instances/i-1/transition")?.notes).toBe("lens wiped clean");
+  });
+});
+
+
+describe("which picture gets the big cell", () => {
+  /**
+   * The first build gave the recording the big cell unconditionally. On an estate
+   * where that camera was not being recorded, the largest thing on the console was
+   * a black rectangle reading "No footage at this time" while the live view — which
+   * had a picture — sat in the smallest tile on the page. Upside down.
+   */
+  it("keeps the recording large while there is footage", async () => {
+    stubAll();
+    renderWithProviders(<IncidentList />);
+
+    // The recording is the big cell; live is the small card beside it.
+    const big = await screen.findByTestId("recording");
+    expect(big).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /show live large/i })).toBeInTheDocument();
+  });
+
+  it("hands the space to live when the window holds nothing", async () => {
+    footagePresent = false;
+    stubAll();
+    renderWithProviders(<IncidentList />);
+
+    // Live has been promoted, so the small card is now the recording.
+    expect(await screen.findByRole("button", { name: /show the recording large/i })).toBeInTheDocument();
+    expect(screen.getByText("live:Channel 1")).toBeInTheDocument();
+  });
+
+  it("stops second-guessing an operator who chose", async () => {
+    // The window is empty, so live is promoted — and then the operator asks for
+    // the recording anyway (to see the gap, or because they know it fills in).
+    // The recording remounts and reports "empty" again; that must NOT yank the
+    // cell back to live, or the toggle is unusable on exactly the alarms where
+    // somebody would reach for it.
+    footagePresent = false;
+    stubAll();
+    renderWithProviders(<IncidentList />);
+    await screen.findByRole("button", { name: /show the recording large/i });
+
+    await userEvent.click(screen.getByRole("button", { name: "Recording" }));
+
+    expect(await screen.findByRole("button", { name: /show live large/i })).toBeInTheDocument();
   });
 });

@@ -216,10 +216,15 @@ export interface TilePlaybackProps {
   /** The master calls this when it finds NO footage at all, so the wall can skip
    *  the gap instead of sitting on a still frame with a clock that has stopped. */
   onReachedEnd?: (atMs: number) => void;
+  /** Fires when this tile learns whether the window holds footage. A caller with
+   *  somewhere better to put the space — a live view, say — can act on it rather
+   *  than leaving the biggest panel on the screen saying "no footage". */
+  onFootage?: (present: boolean) => void;
 }
 
 function TilePlayback({
   camera,
+  onFootage,
   anchorMs,
   anchorSeq,
   windowToMs,
@@ -656,6 +661,16 @@ function TilePlayback({
       openAt(ms + leadMs());
     });
   }, [master, clock, openAt]);
+
+  // Tell a caller what this window actually holds, so a panel with nothing to
+  // show is a decision rather than a black rectangle.
+  const onFootageRef = useRef(onFootage);
+  useEffect(() => {
+    onFootageRef.current = onFootage;
+  }, [onFootage]);
+  useEffect(() => {
+    onFootageRef.current?.(!noFootage);
+  }, [noFootage]);
 
   // Non-federated cameras record on the VMS, not on a node, and that path is not
   // wired here yet. Say so instead of showing a dead black cell.

@@ -39,7 +39,6 @@ import { apiError } from "@/lib/api";
 import { asItems, titleize } from "@/lib/format";
 import { sites as sitesApi } from "@/lib/api/sites";
 import type { SitePublic } from "@/lib/types";
-import EventLivePane from "@/features/vms/components/EventLivePane";
 import { useEstateCameras } from "@/features/vms/hooks/useEstateCameras";
 import type { EstateCamera } from "@/features/vms/types";
 import { workflow as wfApi } from "./api";
@@ -51,6 +50,7 @@ import ViewToggle from "./components/incidents/ViewToggle";
 import type { IncidentView } from "./components/incidents/ViewToggle";
 import AlarmRail from "./components/incidents/AlarmRail";
 import AlarmNow from "./components/incidents/AlarmNow";
+import AlarmEvidenceCard, { type EvidenceKind } from "./components/incidents/AlarmEvidence";
 import SlaRing from "./components/incidents/SlaRing";
 import ProcedureSteps from "./components/incidents/ProcedureSteps";
 import IncidentMap from "./components/incidents/IncidentMap";
@@ -244,6 +244,18 @@ export default function WorkflowPage() {
 
   // ── Selection: the evidence panes follow the row ─────────────────────────
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // WHICH PICTURE OWNS THE BIG CELL. The recording by default — it is what the
+  // alarm is about — but the moment a window turns out to hold no footage the
+  // space goes to live instead, unless the operator has said otherwise. A black
+  // rectangle reading "No footage" must never be the biggest thing on the screen
+  // while a working live view sits in the smallest tile.
+  const [evidence, setEvidence] = useState<EvidenceKind>("recording");
+  const [evidenceChosen, setEvidenceChosen] = useState(false);
+  const pickEvidence = (kind: EvidenceKind) => {
+    setEvidence(kind);
+    setEvidenceChosen(true);
+  };
+
   const selected = useMemo(() => {
     const byId = instances.find((it) => rowId(it) === selectedId);
     // Nothing chosen yet: the first row, so the panes are never blank while the
@@ -327,6 +339,12 @@ export default function WorkflowPage() {
   }, [sitesList]);
 
   const filtered = !!(q || status || priority || siteId || sopId || source);
+  const filterCount = [status, priority, siteId, sopId, source].filter(Boolean).length;
+  // Folded by default: five selects took more of the rail than the queue did.
+  // Opened by a filter already being on, so a narrowed queue never looks like an
+  // empty estate.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const showFilters = filtersOpen || filterCount > 0;
   const clearFilters = () => {
     setQInput("");
     setStatus("");
@@ -413,7 +431,13 @@ export default function WorkflowPage() {
       <AlarmRail
         rows={instances}
         selectedId={selected ? rowId(selected) : null}
-        onSelect={(it) => setSelectedId(rowId(it))}
+        onSelect={(it) => {
+          setSelectedId(rowId(it));
+          // A new alarm is a new question: go back to its recording and let the
+          // fallback decide again.
+          setEvidence("recording");
+          setEvidenceChosen(false);
+        }}
         checked={checked}
         onToggleChecked={toggle}
         sopName={sopName}
@@ -481,6 +505,27 @@ export default function WorkflowPage() {
                 className={`${sel} w-full pl-7`}
               />
             </label>
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((v) => !v)}
+              aria-expanded={showFilters}
+              className="inline-flex items-center gap-1.5 rounded-md border border-card-border px-2 py-1 text-[11px] text-muted transition hover:bg-hover hover:text-foreground"
+            >
+              <Icon icon="heroicons-outline:funnel" className="text-xs" />
+              Filters
+              {filterCount > 0 && (
+                <span className="rounded-full bg-blue-500/15 px-1.5 text-[10px] font-semibold text-blue-300">
+                  {filterCount}
+                </span>
+              )}
+              <Icon
+                icon={showFilters ? "heroicons-mini:chevron-up" : "heroicons-mini:chevron-down"}
+                className="ml-auto text-xs"
+              />
+            </button>
+
+            {showFilters && (
+            <>
             <div className="flex flex-wrap gap-1.5">
               <select
                 aria-label="Filter by state"
@@ -558,6 +603,8 @@ export default function WorkflowPage() {
                 <Icon icon="heroicons-outline:x-mark" className="text-xs" /> Clear filters
               </button>
             )}
+            </>
+            )}
           </>
         }
         footer={
@@ -595,7 +642,7 @@ export default function WorkflowPage() {
       />
 
       {/* ── THE ALARM BEING WORKED ─────────────────────────────────────── */}
-      <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3">
+      <div className="flex h-full min-h-0 flex-col gap-3">
         {checked.size > 0 && (
           <IncidentBulkBar
             count={checked.size}
@@ -604,10 +651,9 @@ export default function WorkflowPage() {
             onClear={clearSel}
           />
         )}
-        {checked.size === 0 && <span className="hidden" aria-hidden />}
 
         {view === "map" ? (
-          <div className="min-h-0 overflow-auto rounded-xl border border-card-border bg-card p-3">
+          <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-card-border bg-card p-3">
             <IncidentMap incidents={instances} sites={sitesList} siteName={siteName} sopName={sopName} />
           </div>
         ) : (
@@ -615,12 +661,17 @@ export default function WorkflowPage() {
           // on the screen, because looking is why an operator is here. The three
           // small cells answer the questions that follow it — how long, what next,
           // and is it still happening.
-          <div className="grid min-h-0 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] xl:grid-rows-[minmax(0,1.35fr)_minmax(0,1fr)]">
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] xl:grid-rows-[minmax(0,1.35fr)_minmax(0,1fr)]">
             <div className="min-h-[18rem] xl:row-span-2 xl:min-h-0">
               <AlarmNow
                 incident={selected}
                 camera={selectedCamera}
                 siteName={siteName}
+                kind={evidence}
+                onKindChange={pickEvidence}
+                onFootage={(present) => {
+                  if (!present && !evidenceChosen) setEvidence("live");
+                }}
                 onTake={(it) => quick.mutate({ id: rowId(it) })}
                 onAssign={(it) => setAssignFor(it)}
                 takePending={quick.isPending}
@@ -639,7 +690,14 @@ export default function WorkflowPage() {
 
             <div className="grid min-h-[14rem] grid-cols-1 gap-3 md:grid-cols-2 xl:min-h-0">
               <ProcedureSteps incident={selected} />
-              <EventLivePane camera={selectedCamera} />
+              {/* THE OTHER PICTURE. Whatever the big cell is not showing, so the
+                  operator always has both without a mode nobody can see. */}
+              <AlarmEvidenceCard
+                incident={selected}
+                camera={selectedCamera}
+                kind={evidence === "recording" ? "live" : "recording"}
+                onPromote={() => pickEvidence(evidence === "recording" ? "live" : "recording")}
+              />
             </div>
           </div>
         )}
