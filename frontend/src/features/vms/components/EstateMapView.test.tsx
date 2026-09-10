@@ -5,10 +5,12 @@
  * alarm map had. The fix is the same: the estate first, then the plan, then a
  * camera onto the wall.
  *
- * With one caveat this suite pins hardest: ONE SITE IS NOT AN ESTATE. Making a
- * single-site deployment click through a map of one pin is a tax, so the plan
- * opens directly there and the estate map is offered only when there is somewhere
- * else to go.
+ * The first build skipped the estate step when only one site was mappable, on the
+ * grounds that clicking through a map of one pin is a tax. On the deployment it
+ * shipped to, that shortcut landed on "No floor plan uploaded" — the single site
+ * has no plan image on any floor — so the map never appeared at all. A pin is
+ * worth seeing even when it is the only one: it says where the site is and how
+ * many of its cameras are dark, both true with nothing uploaded.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { screen } from "@testing-library/react";
@@ -93,15 +95,38 @@ describe("what a pin can say", () => {
 });
 
 describe("which screen opens", () => {
-  it("goes straight to the plan when the estate is one site", async () => {
+  it("opens on the estate even when it holds a single site", async () => {
+    // The pin is worth seeing: it says where the site is and how many cameras are
+    // dark, neither of which needs a floor plan to exist. Skipping to the plan
+    // sent this deployment to "No floor plan uploaded" instead.
     stubAll([site()]);
+    renderWithProviders(<EstateMapView />);
+    await sitesLoaded();
+
+    expect(await screen.findByTestId("gis")).toBeInTheDocument();
+    expect(screen.queryByTestId("floorplan")).toBeNull();
+  });
+
+  it("still goes straight to the plan on a ?site= deep link", async () => {
+    // The alarm map's drill-down lands here with the site already chosen; asking
+    // that operator to pick it again on a map would be the real tax.
+    window.history.replaceState(null, "", "/streaming?view=map&site=s1");
+    stubAll([site(), site({ site_id: "s2", name: "Depot" })]);
+    renderWithProviders(<EstateMapView />);
+    await sitesLoaded();
+
+    expect(await screen.findByTestId("floorplan")).toBeInTheDocument();
+  });
+
+  it("falls back to the plan when no site can be drawn at all", async () => {
+    // An estate with no coordinates anywhere gets the plan and its own guidance,
+    // not an empty world.
+    stubAll([site({ coordinates: null })]);
     renderWithProviders(<EstateMapView />);
     await sitesLoaded();
 
     expect(await screen.findByTestId("floorplan")).toBeInTheDocument();
     expect(screen.queryByTestId("gis")).toBeNull();
-    // And no way "up" is offered, because there is nowhere to go.
-    expect(screen.queryByRole("button", { name: /estate map/i })).toBeNull();
   });
 
   it("opens the estate when there is more than one site", async () => {

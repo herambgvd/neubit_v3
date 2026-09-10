@@ -9,10 +9,17 @@
 // (cameras, and how many are dark), then that site's floor plan, then a camera
 // onto the wall.
 //
-// ONE SITE IS NOT AN ESTATE. On a deployment with a single mappable site the extra
-// step is a tax, not a feature, so the plan opens directly and the estate map is a
-// button for when a second site exists. The screen adapts to the deployment rather
-// than making every deployment pay for the largest one.
+// IT ALWAYS OPENS ON THE ESTATE. The first build skipped straight to the plan when
+// there was only one mappable site — reasoning that clicking through a map of one
+// pin is a tax. On this deployment that shortcut landed on "No floor plan
+// uploaded", because the single site has four floors and no plan image on any of
+// them: a shortcut into a dead screen, and the map the operator asked for never
+// appeared at all.
+//
+// A site's pin is worth seeing even when it is the only one — it says where the
+// site is, how many cameras are there and how many are dark, all of which are true
+// without anybody having uploaded anything. The plan is one click in, and a
+// ?site= deep link still goes straight to it.
 import { useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
@@ -91,13 +98,14 @@ export default function EstateMapView({ cameras = [], onPick }: EstateMapViewPro
     return new URLSearchParams(window.location.search).get("site");
   }, []);
   const [inPlan, setInPlan] = useState<boolean>(() => !!deepLinked);
-  const single = pins.length === 1;
-  const showPlan = inPlan || single || pins.length === 0;
+  // No pins at all is the one case that cannot show a map: an estate with no
+  // coordinates anywhere gets the plan and its own guidance, not an empty world.
+  const showPlan = inPlan || pins.length === 0;
 
   if (showPlan) {
     return (
       <div className="flex h-full min-h-0 flex-col gap-2">
-        {pins.length > 1 && (
+        {pins.length > 0 && (
           <button
             type="button"
             onClick={() => setInPlan(false)}
