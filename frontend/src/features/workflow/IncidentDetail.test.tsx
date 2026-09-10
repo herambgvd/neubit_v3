@@ -167,11 +167,15 @@ describe("the case file", () => {
     expect(screen.getByText("Owner")).toBeInTheDocument();
     expect(screen.getByText("Deadline")).toBeInTheDocument();
 
-    // Then the document's sections, in the order a reader needs them.
+    // Then the document's sections. The three columns come first — what the
+    // camera saw, what this operator can do, what has already been done — and the
+    // two references an operator consults sit below them.
+    // Waited on the last one: the flow renders only once the SOP's states land.
+    await screen.findByRole("heading", { name: "Procedure flow" });
     const sections = screen
       .getAllByRole("heading", { level: 2 })
       .map((h) => h.textContent?.trim());
-    expect(sections).toEqual(["Evidence", "Procedure", "Log", "Close out", "Raw event"]);
+    expect(sections).toEqual(["Evidence", "Actions", "Log", "Procedure flow", "Raw event"]);
   });
 
   it("logs what was done, and the note somebody was made to write", async () => {
@@ -226,9 +230,10 @@ describe("the case file", () => {
     expect([...svg.querySelectorAll("text")].map((t) => t.textContent)).toContain("Escalated");
   });
 
-  it("puts a move that ENDS the case under Close out, not under Procedure", async () => {
-    // The two sections split the same list by where the move lands, so neither
-    // invents a button the other already owns.
+  it("keeps a move that ENDS the case apart from the ones that carry it on", async () => {
+    // One list from the server, split by where the move lands: closing an alarm
+    // is not the same kind of act as advancing it, and an operator reaching for
+    // "Resolve" should not find it in a row of ordinary next steps.
     stubAll({
       "GET /workflow/sops/s1/states": {
         items: [
@@ -244,11 +249,11 @@ describe("the case file", () => {
     });
     renderWithProviders(<IncidentDetail />);
 
-    // Waited on the BUTTON: the section's heading renders before the moves land.
+    // Waited on the BUTTON: the column renders before the moves land.
     const resolve = await screen.findByRole("button", { name: /Resolve/ });
-    const closeOut = screen.getByRole("heading", { name: "Close out" }).parentElement!;
+    const closeOut = screen.getByText("Close out").parentElement!;
     expect(closeOut).toContainElement(resolve);
-    // And the forward move is NOT down there with it.
+    // And the forward move is NOT in there with it.
     expect(within(closeOut).queryByRole("button", { name: "Move to review" })).toBeNull();
   });
 

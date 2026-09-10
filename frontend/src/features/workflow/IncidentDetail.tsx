@@ -399,7 +399,12 @@ export default function WorkflowDetailPage() {
           The exhibits are evidence, not a video wall: stacked in a narrow column
           they stay legible without taking the screen, and the procedure gets the
           width it actually needs for its flow. */}
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
+      {/* ── THREE COLUMNS: LOOK · ACT · READ ───────────────────────────────
+          What the camera saw, what this operator can do about it, and what has
+          already been done — a third of the screen each, so none of the three is
+          a footnote to the others. The flow diagram and the raw event sit BELOW:
+          both are reference an operator consults, not things they act on. */}
+      <div className="grid items-start gap-6 xl:grid-cols-3">
       <Section title="Evidence">
         {cameraId ? (
           <div className="grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-1">
@@ -440,20 +445,7 @@ export default function WorkflowDetailPage() {
         )}
       </Section>
 
-      <Section title="Procedure">
-        {/* THE FLOW ITSELF. A list can say which step an alarm is on; only the
-            graph says what leads where — which is the question an operator has
-            when the obvious next step is not the one they want. */}
-        {states.length > 0 && (
-          <StateMachine
-            title="How this procedure runs"
-            states={states}
-            transitions={transitions}
-            currentStateId={inst.current_state ?? undefined}
-            currentStateName={inst.current_state_name ?? undefined}
-          />
-        )}
-
+      <Section title="Actions">
         {steps.length === 0 ? (
           <p className="text-[13px] text-muted">
             {statesQ.isLoading
@@ -529,19 +521,55 @@ export default function WorkflowDetailPage() {
             ))}
             {forwardMoves.length === 0 && !movesQ.isLoading && closingMoves.length > 0 && (
               <span className="text-[11.5px] text-muted">
-                Nothing left but to close it — see below.
+                Nothing left but to close it.
               </span>
             )}
           </div>
         )}
+
+        {/* HOW IT ENDS, under the moves that get it there — closing is an action,
+            and it belongs in the column an operator acts from. */}
+        {isTerminal(inst.status) ? (
+          <div className="rounded-xl border border-card-border bg-card px-3.5 py-3">
+            <p className="text-[13px] text-foreground">
+              Closed {inst.closed_at ? fmtDateTime(inst.closed_at) : ""} as{" "}
+              <b>{inst.current_state_name || inst.status}</b>
+            </p>
+            {inst.outcome && <p className="mt-1 text-[12.5px] text-muted">{inst.outcome}</p>}
+          </div>
+        ) : (
+          <div className="grid gap-2 rounded-xl border border-dashed border-card-border px-3.5 py-3">
+            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">
+              Close out
+            </span>
+            <span className="text-[12.5px] text-muted">
+              Closing asks what happened, and that note is what this record is for.
+            </span>
+            <span className="flex flex-wrap gap-1.5">
+              {closingMoves.map((t) => (
+                <button
+                  key={t.transition_id}
+                  type="button"
+                  onClick={() => runMove(t)}
+                  disabled={doTransition.isPending}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-[11.5px] font-medium text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50"
+                >
+                  {t.label}
+                  {(t.requires_note || t.form_id) && (
+                    <Icon icon="heroicons-outline:pencil-square" className="text-[11px] opacity-70" />
+                  )}
+                </button>
+              ))}
+              {closingMoves.length === 0 && !movesQ.isLoading && (
+                <span className="text-[11.5px] text-muted">
+                  This procedure offers no way to close it from here.
+                </span>
+              )}
+            </span>
+          </div>
+        )}
       </Section>
 
-      </div>
-
-      {/* ── LOG beside CLOSE OUT ───────────────────────────────────────────
-          What was done, and how it ends. The two halves of the record a
-          handover or an audit actually reads. */}
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
       <Section title="Log">
         <div className="grid">
           <div className="grid grid-cols-[8.5rem_1fr] gap-3 border-b border-card-border/60 py-2 text-[13px]">
@@ -583,49 +611,24 @@ export default function WorkflowDetailPage() {
         </div>
       </Section>
 
-      {/* ── CLOSE OUT ──────────────────────────────────────────────────── */}
-      <Section title="Close out">
-        {isTerminal(inst.status) ? (
-          <div className="rounded-xl border border-card-border bg-card px-3.5 py-3">
-            <p className="text-[13px] text-foreground">
-              Closed {inst.closed_at ? fmtDateTime(inst.closed_at) : ""} as{" "}
-              <b>{inst.current_state_name || inst.status}</b>
-            </p>
-            {inst.outcome && <p className="mt-1 text-[12.5px] text-muted">{inst.outcome}</p>}
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-2.5 rounded-xl border border-dashed border-card-border px-3.5 py-3">
-            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Outcome</span>
-            <span className="text-[12.5px] text-muted">
-              Not closed yet — closing asks what happened, and that note is what this record is
-              for.
-            </span>
-            <span className="ml-auto flex flex-wrap gap-1.5">
-              {closingMoves.map((t) => (
-                <button
-                  key={t.transition_id}
-                  type="button"
-                  onClick={() => runMove(t)}
-                  disabled={doTransition.isPending}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-[11.5px] font-medium text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50"
-                >
-                  {t.label}
-                  {(t.requires_note || t.form_id) && (
-                    <Icon icon="heroicons-outline:pencil-square" className="text-[11px] opacity-70" />
-                  )}
-                </button>
-              ))}
-              {closingMoves.length === 0 && !movesQ.isLoading && (
-                <span className="text-[11.5px] text-muted">
-                  This procedure offers no way to close it from here.
-                </span>
-              )}
-            </span>
-          </div>
-        )}
-      </Section>
-
       </div>
+
+      {/* ── THE FLOW ───────────────────────────────────────────────────────
+          A list says which step an alarm is ON; only the graph says what leads
+          where — the question an operator has the moment the obvious next step is
+          not the one they want. Full width and below the columns, because it is a
+          drawing they consult rather than a control they use. */}
+      {states.length > 0 && (
+        <Section title="Procedure flow">
+          <StateMachine
+            title="How this procedure runs"
+            states={states}
+            transitions={transitions}
+            currentStateId={inst.current_state ?? undefined}
+            currentStateName={inst.current_state_name ?? undefined}
+          />
+        </Section>
+      )}
 
       {/* ── RAW EVENT ──────────────────────────────────────────────────── */}
       {inst.trigger_data && (
