@@ -33,8 +33,16 @@ describe("the section badge", () => {
     expect(screen.getByText("Pulse")).toBeInTheDocument();
   });
 
-  it("renders nothing on a route with no section nav", () => {
+  it("names Alarms in the top bar", () => {
+    // Same rule as Events and Pulse: the section names itself beside the brand,
+    // so the page below carries no heading of its own and no masthead row.
     pathname = "/alarms";
+    render(<HeaderSectionNav />);
+    expect(screen.getByText("Alarms")).toBeInTheDocument();
+  });
+
+  it("renders nothing on a route with no section nav", () => {
+    pathname = "/notifications";
     const { container } = render(<HeaderSectionNav />);
     expect(container).toBeEmptyDOMElement();
   });

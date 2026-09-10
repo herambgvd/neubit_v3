@@ -97,11 +97,6 @@ export default function AppLayout({ children }: { children?: ReactNode }) {
   // navy backdrop, no page padding) — it fills the bounded pane and scrolls internally.
   const home = pathname === "/home";
 
-  // Alarms (/events) is a full-bleed navy console like Home/Streaming: its own
-  // radial-navy backdrop + masthead should reach the pane edges (no page padding);
-  // the board/map scrolls internally. Kept scrollable (not overflow-hidden) so long
-  // alarm lists page normally.
-  const eventsFull = pathname === "/alarms";
 
   // CONTAINED pages (device inventory + access control): the PAGE must not scroll —
   // the toolbar stays fixed and only the content card scrolls internally. So <main>
@@ -120,6 +115,9 @@ export default function AppLayout({ children }: { children?: ReactNode }) {
     // stay put and the ROWS scroll inside the table. Scrolling the whole page moved
     // the video the operator was watching off the top of the screen.
     pathname === "/events" ||
+    // Alarms is the same triage shape: evidence pinned at the top, the queue
+    // scrolling inside its own table.
+    pathname === "/alarms" ||
     // Config master/detail surfaces — same bounded, fill-the-pane layout as the device
     // pages (list-aside + detail card, no page scroll). Keeps all mgmt screens consistent.
     pathname === "/sites" ||
@@ -153,9 +151,7 @@ export default function AppLayout({ children }: { children?: ReactNode }) {
 
   const mainClass = immersiveWall || home
     ? "flex-1 min-h-0 w-full overflow-hidden"
-    : eventsFull
-      ? "app-scroll flex-1 overflow-y-auto w-full"
-      : contained
+    : contained
         ? "flex-1 min-h-0 w-full overflow-hidden px-4 lg:px-5 py-3"
         : "app-scroll flex-1 overflow-y-auto w-full px-6 lg:px-8 py-6";
 

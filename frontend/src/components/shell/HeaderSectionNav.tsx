@@ -46,5 +46,8 @@ export default function HeaderSectionNav() {
   if (pathname === "/events") {
     return <SectionTabs tabs={[]} label="Events" icon="heroicons:bolt" />;
   }
+  if (pathname === "/alarms") {
+    return <SectionTabs tabs={[]} label="Alarms" icon="heroicons:bell-alert" />;
+  }
   return null;
 }
