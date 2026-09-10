@@ -52,6 +52,25 @@ async def create_sop(body: S.CreateSopRequest, svc: Annotated[SopService, Depend
     return S.SopPublic.from_row(await svc.create(body, actor=actor))
 
 
+@sop_router.post("/starters", response_model=S.InstallStartersResponse,
+                 status_code=status.HTTP_201_CREATED)
+async def install_starter_sops(svc: Annotated[SopService, Depends(_sop_svc)],
+                               actor: Principal = Depends(require_permission("workflow.sop.create"))):
+    """Install the starter playbooks this tenant is missing.
+
+    Idempotent: re-running installs only what is absent, so it is safe to offer as
+    a button an operator can press twice. Declared above the by-id routes to keep
+    the literal path ahead of the parameterised ones — nothing POSTs to
+    ``/{sop_id}`` today, so this is convention rather than a live collision.
+    """
+    created, skipped = await svc.install_starters(actor=actor)
+    return S.InstallStartersResponse(
+        items=[S.SopPublic.from_row(r) for r in created],
+        created=len(created),
+        skipped=skipped,
+    )
+
+
 @sop_router.get("/{sop_id}", response_model=S.SopPublic,
                 dependencies=[Depends(require_permission("workflow.sop.read"))])
 async def get_sop(sop_id: str, svc: Annotated[SopService, Depends(_sop_svc)]):

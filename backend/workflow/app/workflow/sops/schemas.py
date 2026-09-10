@@ -80,6 +80,18 @@ class SopPublic(BaseModel):
         )
 
 
+class InstallStartersResponse(BaseModel):
+    """What an install actually did — created, and what was already there.
+
+    Both halves are reported because "nothing happened" has two meanings on this
+    route: every starter was already installed (fine), and the tenant deleted them
+    on purpose and has just got them back (also fine, but they should see it).
+    """
+    items: list[SopPublic] = Field(default_factory=list)
+    created: int
+    skipped: list[str] = Field(default_factory=list)
+
+
 class SopListResponse(BaseModel):
     items: list[SopPublic]
     total: int

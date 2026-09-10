@@ -20,6 +20,14 @@ from ..core.actor import actor_id as _actor_id
 from ..core.primitives import utcnow
 from ..runtime.events import emit
 from .models import SOP, State, Transition
+from .starters import (
+    STARTERS,
+    STARTER_TAG,
+    position_of,
+    slug_tag,
+    starter_states,
+    starter_transitions,
+)
 
 
 # ── SOP ────────────────────────────────────────────────────────────────
@@ -63,6 +71,102 @@ class SopService:
         await self.db.refresh(row)
         await emit(row.tenant_id, "sop", "created", {"sop_id": row.sop_id, "name": row.name})
         return row
+
+    async def install_starters(self, *, actor) -> tuple[list[SOP], list[str]]:
+        """Install the starter playbooks this tenant does not have yet.
+
+        Returns ``(created, skipped_slugs)``. Idempotent by the ``starter:<slug>``
+        tag rather than by name, so a tenant who RENAMED a starter still has it and
+        does not get a second copy — the name is theirs to change, the marker is
+        how the installer recognises its own work.
+
+        The whole install is ONE transaction. A half-installed playbook is worse
+        than none: a SOP whose initial state never landed cannot start an incident,
+        and it would sit in the picker looking exactly like one that can.
+        """
+        have = await self._starter_slugs()
+        created: list[SOP] = []
+        skipped: list[str] = []
+
+        for spec in STARTERS:
+            if spec.slug in have:
+                skipped.append(spec.slug)
+                continue
+
+            sop = SOP(
+                tenant_id=self.scope.tenant_id,
+                name=spec.name,
+                description=spec.description,
+                priority=spec.priority.value,
+                trigger_event_types=list(spec.event_types),
+                sla_hours=spec.sla_hours,
+                tags=[STARTER_TAG, slug_tag(spec.slug)],
+                escalation_rules=[],
+                is_active=True,
+                created_by=_actor_id(actor),
+                updated_by=_actor_id(actor),
+            )
+            self.db.add(sop)
+            await self.db.flush()  # sop_id
+
+            by_name: dict[str, State] = {}
+            for order, st in enumerate(starter_states()):
+                x, y = position_of(st.name)
+                row = State(
+                    tenant_id=self.scope.tenant_id,
+                    sop_id=sop.sop_id,
+                    name=st.name,
+                    description=st.description,
+                    color=st.color,
+                    position_x=x,
+                    position_y=y,
+                    is_initial=st.is_initial,
+                    is_terminal=st.is_terminal,
+                    is_cancellation=st.is_cancellation,
+                    order=order,
+                    created_by=_actor_id(actor),
+                    updated_by=_actor_id(actor),
+                )
+                self.db.add(row)
+                by_name[st.name] = row
+            await self.db.flush()  # state ids, for the edges below
+
+            # The pointer is DERIVED from the flag, the same way StateService does
+            # it — assigning it from the spec would be a second source of truth for
+            # which node starts the graph.
+            initial = next((r for r in by_name.values() if r.is_initial), None)
+            sop.initial_state = initial.state_id if initial else None
+
+            for tr in starter_transitions():
+                self.db.add(Transition(
+                    tenant_id=self.scope.tenant_id,
+                    sop_id=sop.sop_id,
+                    from_state_id=by_name[tr.from_state].state_id,
+                    to_state_id=by_name[tr.to_state].state_id,
+                    label=tr.label,
+                    requires_note=tr.requires_note,
+                    created_by=_actor_id(actor),
+                    updated_by=_actor_id(actor),
+                ))
+
+            created.append(sop)
+
+        await self.db.commit()
+        for sop in created:
+            await self.db.refresh(sop)
+            await emit(sop.tenant_id, "sop", "created", {"sop_id": sop.sop_id, "name": sop.name})
+        return created, skipped
+
+    async def _starter_slugs(self) -> set[str]:
+        """Which starter slugs this tenant already holds, by their marker tag."""
+        rows = (await self.db.execute(scoped(select(SOP), SOP, self.scope))).scalars().all()
+        marker = f"{STARTER_TAG}:"
+        return {
+            t[len(marker):]
+            for r in rows
+            for t in (r.tags or [])
+            if isinstance(t, str) and t.startswith(marker)
+        }
 
     async def list_(self, *, skip=0, limit=50, is_active=None, tag=None):
         stmt = scoped(select(SOP), SOP, self.scope)
