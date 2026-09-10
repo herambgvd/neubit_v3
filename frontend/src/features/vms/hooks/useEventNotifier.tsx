@@ -68,8 +68,6 @@ export function useEventNotifier({ enabled = true }: UseEventNotifierOptions = {
   // owns it. An event carries the NODE-SIDE camera id; without this the toast can
   // only print whatever name the frame happened to carry, or a uuid.
   const { cameras } = useEstateCameras();
-  const rosterRef = useRef(cameras);
-  rosterRef.current = cameras;
   // The stream runs even while muted or on the Events page: dropping the
   // connection would lose the de-dupe set with it, and every event since would
   // toast the moment the operator navigated away.
@@ -93,7 +91,7 @@ export function useEventNotifier({ enabled = true }: UseEventNotifierOptions = {
       if (!isAttentionSeverity(e.severity)) continue;
 
       const cam = e.camera_id
-        ? rosterRef.current.find(
+        ? cameras.find(
             (c) => c.id === e.camera_id || (c as { real_id?: string }).real_id === e.camera_id,
           )
         : undefined;
@@ -142,7 +140,7 @@ export function useEventNotifier({ enabled = true }: UseEventNotifierOptions = {
         { duration: e.severity === "critical" ? Infinity : 10_000 },
       );
     }
-  }, [events, onEventsPage, router, qc]);
+  }, [events, onEventsPage, router, qc, cameras]);
 }
 
 export default useEventNotifier;

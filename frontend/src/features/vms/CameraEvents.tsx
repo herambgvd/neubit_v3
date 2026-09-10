@@ -439,7 +439,7 @@ export default function CameraEventsPage() {
           into a black band. The row is bounded now and Details scrolls inside its
           own card, so the players keep their aspect ratio and the table comes up
           the screen. */}
-      <div className="grid shrink-0 grid-cols-1 gap-3 lg:h-[19rem] lg:grid-cols-3">
+      <div className="grid shrink-0 grid-cols-1 gap-3 [&>*]:min-h-[15rem] lg:h-[19rem] lg:grid-cols-3 lg:[&>*]:min-h-0">
         <EventMonitorPane
           event={selected}
           camera={monitorCamera}
@@ -471,8 +471,22 @@ export default function CameraEventsPage() {
             }}
           />
         ) : (
-          <div className="flex items-center justify-center rounded-xl border border-card-border bg-card p-6 text-center text-[12px] text-muted">
-            Pick an event to see what it is and what it needs.
+          // The same card as the other two, not a bare box: three panels that
+          // keep their shape while empty read as a console waiting, rather than as
+          // a screen half-loaded.
+          <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card">
+            <header className="flex shrink-0 items-center gap-2 border-b border-card-border px-3 py-2">
+              <Icon icon="heroicons-outline:information-circle" className="text-sm text-blue-500" />
+              <span className="text-[12px] font-semibold text-foreground">Details</span>
+            </header>
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
+              <Icon icon="heroicons-outline:cursor-arrow-rays" className="text-3xl text-muted opacity-40" />
+              <p className="text-[12.5px] text-foreground">Pick an event</p>
+              <p className="max-w-xs text-[11px] text-muted">
+                Its facts land here — what fired, how bad, which camera, and whether
+                anyone has taken it.
+              </p>
+            </div>
           </div>
         )}
         <EventLivePane camera={monitorCamera} />

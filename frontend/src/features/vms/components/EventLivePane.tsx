@@ -42,9 +42,16 @@ export default function EventLivePane({ camera }: EventLivePaneProps) {
   // a camera that is offline.
   const offline = camera?.status ? String(camera.status).toLowerCase() !== "online" : false;
 
+  // NOTHING SELECTED IS NOT A DEAD CAMERA. With no event the pane used to paint
+  // its full black video slab and write one grey line in the middle of it — which
+  // reads as a camera that has stopped, on the panel whose whole job is to say
+  // whether something is still going on. The black frame belongs to a stream;
+  // without one there is no frame, only a card saying why.
+  const empty = !camera;
+
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-card-border bg-card">
-      <header className="flex items-center gap-2 border-b border-card-border px-3 py-2">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card">
+      <header className="flex shrink-0 items-center gap-2 border-b border-card-border px-3 py-2">
         <Icon icon="heroicons:signal" className="text-sm text-emerald-400" />
         <span className="text-[12px] font-semibold text-foreground">Live view</span>
         {camera?.name && (
@@ -55,10 +62,15 @@ export default function EventLivePane({ camera }: EventLivePaneProps) {
       {/* min-h-0 + flex-1: the frame takes the height the row gives it and the
           video fits INSIDE, rather than the video's aspect ratio deciding how tall
           the row must be. */}
-      <div className="relative min-h-0 w-full flex-1 bg-black">
-        {!camera ? (
-          <div className="flex h-full items-center justify-center px-4 text-center text-[12px] text-muted">
-            No camera on this event.
+      <div className={`relative min-h-0 w-full flex-1 ${empty ? "" : "bg-black"}`}>
+        {empty ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+            <Icon icon="heroicons:signal" className="text-3xl text-muted opacity-40" />
+            <p className="text-[12.5px] text-foreground">Nothing to watch yet</p>
+            <p className="max-w-xs text-[11px] text-muted">
+              Pick an event and this pane shows that camera live — whether whatever
+              tripped it is still happening.
+            </p>
           </div>
         ) : source && !offline ? (
           <LivePlayer

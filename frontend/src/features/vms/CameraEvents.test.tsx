@@ -428,31 +428,46 @@ describe("putting an event down", () => {
   it("clears the selection, and the next alarm does not put it back", async () => {
     stubAll();
     const { rerender } = renderWithProviders(<CameraEventsPage />);
-    await screen.findByText("Details");
 
-    await userEvent.click(screen.getByRole("button", { name: /close event details/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /close event details/i }));
 
-    expect(screen.queryByText("Details")).toBeNull();
-    expect(await screen.findByText(/pick an event/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /close event details/i })).toBeNull();
+    expect(await screen.findByText("Pick an event")).toBeInTheDocument();
 
     // An alarm arrives while nothing is selected. Follow was switched off by the
     // close — being shown the next one is exactly what the operator declined.
     liveFrames = [event({ id: "after-close", event_id: "after-close", severity: "critical", occurred_at: TODAY })];
     rerender(<CameraEventsPage />);
 
-    expect(await screen.findAllByText(/pick an event/i)).not.toHaveLength(0);
+    expect(await screen.findByText("Pick an event")).toBeInTheDocument();
+  });
+
+  it("shows three waiting panels, not a dead camera", async () => {
+    // With nothing selected the Live pane used to paint its full black video slab
+    // with one grey line in it — on the panel whose job is to say whether the
+    // thing is still happening, that reads as a camera that stopped.
+    stubAll();
+    renderWithProviders(<CameraEventsPage />);
+    await userEvent.click(await screen.findByRole("button", { name: /close event details/i }));
+
+    expect(await screen.findByText(/no event selected/i)).toBeInTheDocument();
+    expect(screen.getByText("Pick an event")).toBeInTheDocument();
+    expect(screen.getByText(/nothing to watch yet/i)).toBeInTheDocument();
+    // The old copy said it as a fault of the event, beside a black frame.
+    expect(screen.queryByText(/no camera on this event/i)).toBeNull();
   });
 
   it("comes back the moment a row is clicked", async () => {
     stubAll();
     renderWithProviders(<CameraEventsPage />);
-    await screen.findByText("Details");
-    await userEvent.click(screen.getByRole("button", { name: /close event details/i }));
-    await screen.findByText(/pick an event/i);
+    await userEvent.click(await screen.findByRole("button", { name: /close event details/i }));
+    await screen.findByText("Pick an event");
 
     await userEvent.click(screen.getAllByRole("row")[1]);
 
-    expect(await screen.findByText("Details")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: /close event details/i }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -639,7 +654,10 @@ describe("the details column", () => {
     stubAll();
     renderWithProviders(<CameraEventsPage />);
 
-    const details = (await screen.findByText("Details")).closest("div")!.parentElement!;
+    // The empty placeholder is titled "Details" as well, so wait for something
+    // only the loaded card has.
+    const close = await screen.findByRole("button", { name: /close event details/i });
+    const details = close.closest("div")!.parentElement!;
     const labels = [...details.querySelectorAll("span")]
       .map((el) => el.textContent?.trim())
       .filter((t) => t === "Status" || t === "Event type" || t === "Severity");

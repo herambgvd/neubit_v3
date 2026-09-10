@@ -108,13 +108,15 @@ export default function EventMonitorPane({
 
   if (!event) {
     return (
-      <div className="flex h-full min-h-[22rem] flex-col rounded-xl border border-card-border bg-card">
-        <header className="flex items-center gap-2 border-b border-card-border px-3 py-2">
+      <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card">
+        {/* shrink-0, and the row below scrolls nothing: a 22rem minimum here used
+            to push this card past the bounded evidence row and over the table. */}
+        <header className="flex shrink-0 items-center gap-2 border-b border-card-border px-3 py-2">
           <Icon icon="heroicons:play-circle" className="text-sm text-blue-500" />
           <span className="text-[12px] font-semibold text-foreground">Monitor</span>
           <span className="ml-auto">{followToggle}</span>
         </header>
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
           <Icon icon="heroicons-outline:video-camera" className="text-3xl text-muted opacity-50" />
           <p className="text-[12.5px] text-foreground">No event selected</p>
           <p className="max-w-xs text-[11px] text-muted">

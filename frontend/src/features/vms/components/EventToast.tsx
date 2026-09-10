@@ -23,6 +23,7 @@
 //     alarm an operator recognises is closed from where they are standing.
 //
 // Nothing here is invented: a field the recorder did not send is simply absent.
+import { useState } from "react";
 import { Icon } from "@iconify/react";
 
 import { eventTypeLabel, fmtTime, sevPreset, typePreset, type NormalizedVmsEvent } from "../eventLib";
@@ -41,7 +42,7 @@ export interface EventToastProps {
   /** Stop the corner interrupting — the operator's own preference. */
   onMute?: () => void;
   onDismiss: () => void;
-  /** Injectable for tests; defaults to now. */
+  /** Injectable for tests; defaults to the moment the toast was raised. */
   now?: number;
 }
 
@@ -66,12 +67,15 @@ export default function EventToast({
   ackPending = false,
   onMute,
   onDismiss,
-  now = Date.now(),
+  now,
 }: EventToastProps) {
+  // Lazily, once: a Date.now() in the render body is a different answer every
+  // render, so "just now" could change while nothing about the alarm did.
+  const [raisedAt] = useState(() => Date.now());
   const sp = sevPreset(event.severity);
   const tp = typePreset(event.event_type);
   const iv = eventInterval(event);
-  const ago = agoLabel(event.occurred_at, now);
+  const ago = agoLabel(event.occurred_at, now ?? raisedAt);
 
   return (
     <div
