@@ -18,13 +18,22 @@ export interface SiteCardProps {
    *  what it knows rather than zeros, which would read as "nothing here". */
   ops?: SiteOps;
   onClose?: () => void;
+  /** Some consoles do not know about alarms — the video wall's map picks cameras.
+   *  Showing "Alarms 0" there would be a claim it cannot make. */
+  showAlarms?: boolean;
   /** What this map's card offers instead of the estate map's own two links.
    *  A pin on the ALARMS map must not send an operator to the video wall — the
    *  drill-down that makes sense there is this site's floor plan, in Alarms. */
   actions?: ReactNode;
 }
 
-export default function SiteCard({ site, ops, onClose, actions }: SiteCardProps) {
+export default function SiteCard({
+  site,
+  ops,
+  onClose,
+  actions,
+  showAlarms = true,
+}: SiteCardProps) {
   const tone = THREAT_PIN[site.threat_level] || THREAT_PIN.normal;
   return (
     <div className="relative min-w-[240px] max-w-[280px] space-y-2 rounded-lg border border-slate-200 bg-white p-2 text-slate-800">
@@ -58,11 +67,13 @@ export default function SiteCard({ site, ops, onClose, actions }: SiteCardProps)
         )}
       </div>
       {ops && (
-        <div className="grid grid-cols-3 gap-1 text-center">
+        <div className={`grid ${showAlarms ? "grid-cols-3" : "grid-cols-2"} gap-1 text-center`}>
           {[
             { label: "Cameras", value: ops.cameras, tone: "text-slate-800" },
             { label: "Offline", value: ops.offline, tone: ops.offline ? "text-amber-600" : "text-slate-400" },
-            { label: "Alarms", value: ops.alarms, tone: ops.alarms ? "text-red-600" : "text-slate-400" },
+            ...(showAlarms
+              ? [{ label: "Alarms", value: ops.alarms, tone: ops.alarms ? "text-red-600" : "text-slate-400" }]
+              : []),
           ].map((s) => (
             <div key={s.label} className="rounded-md border border-slate-200 py-1">
               <div className={`text-sm font-semibold ${s.tone}`}>{s.value}</div>

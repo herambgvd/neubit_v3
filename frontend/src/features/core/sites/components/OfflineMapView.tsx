@@ -153,6 +153,9 @@ export interface OfflineMapViewProps {
   /** Replace the popup card's actions — see SiteCard. The estate map keeps its
    *  own; a map embedded in another console usually wants different ones. */
   siteActions?: (site: SiteWithCoords) => React.ReactNode;
+  /** Passed to SiteCard: a console that does not know about alarms says nothing
+   *  rather than "0". */
+  showAlarms?: boolean;
 }
 
 export default function OfflineMapView({
@@ -166,6 +169,7 @@ export default function OfflineMapView({
   onSelect,
   onClose,
   siteActions,
+  showAlarms = true,
 }: OfflineMapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -514,6 +518,7 @@ export default function OfflineMapView({
             ops={ops?.get(selected.site_id)}
             onClose={onClose}
             actions={siteActions?.(selected)}
+            showAlarms={showAlarms}
           />,
           popupNode,
         )}

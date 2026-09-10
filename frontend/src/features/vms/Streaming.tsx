@@ -50,7 +50,7 @@ import {
 import CameraRail from "./components/CameraRail";
 import WallTile from "./components/WallTile";
 import WallToolbar, { QUALITY_LEVELS } from "./components/WallToolbar";
-import MapView from "./components/MapView";
+import EstateMapView from "./components/EstateMapView";
 import PlayoutBar from "./components/PlayoutBar";
 import SpotlightOverlay from "./components/SpotlightOverlay";
 import CameraQuickPicker from "./components/CameraQuickPicker";
@@ -929,7 +929,7 @@ export default function Streaming() {
                 site geometry / camera coordinates exist (honest empty state). */}
             {viewMode !== "grid" && (
               <div className={`relative min-h-0 p-1.5 ${viewMode === "split" ? "flex-1 border-l border-[rgba(150,180,245,.15)]" : "flex-1"}`}>
-                <MapView cameras={cameras} onPick={(cam: EstateCamera) => pickCamera(cam)} />
+                <EstateMapView cameras={cameras} onPick={(cam: EstateCamera) => pickCamera(cam)} />
               </div>
             )}
           </div>
