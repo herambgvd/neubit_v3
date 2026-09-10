@@ -185,9 +185,51 @@ describe("the case file", () => {
       "Actions",
       "Live view",
       "Log",
+      "Nearby cameras",
       "Procedure flow",
       "Raw event",
     ]);
+  });
+
+  it("offers the other cameras at the site, and puts one in the live pane", async () => {
+    // An intrusion rarely stays on the camera that reported it. Neighbours come
+    // from the FLOOR PLAN — same place, not same recorder, which can be three
+    // buildings.
+    stubAll({
+      "GET /vms/federation/cameras": {
+        items: [
+          { id: "fed-cam-1", name: "Channel 1", node_id: "n1", node_name: "recorder-a", status: "online" },
+          { id: "fed-cam-2", name: "Channel 2", node_id: "n1", node_name: "recorder-a", status: "online" },
+        ],
+        total: 2,
+      },
+      "GET /device-placements/index": {
+        items: [
+          { device_id: "fed:n1:fed-cam-1", device_type: "camera", site_id: "site-7", floor_id: "f1" },
+          { device_id: "fed:n1:fed-cam-2", device_type: "camera", site_id: "site-7", floor_id: "f1" },
+        ],
+        count: 2,
+      },
+    });
+    const { default: userEvent } = await import("@testing-library/user-event");
+    renderWithProviders(<IncidentDetail />);
+
+    const nearby = (await screen.findByRole("heading", { name: "Nearby cameras" })).parentElement!;
+    // The alarm's OWN camera is the subject of the page, not a neighbour.
+    expect(within(nearby).queryByRole("button", { name: /Channel 1/ })).toBeNull();
+
+    await userEvent.click(within(nearby).getByRole("button", { name: /Channel 2/ }));
+    // The live pane followed, and says whose picture it is now.
+    expect(await screen.findByText("Channel 2 — live")).toBeInTheDocument();
+  });
+
+  it("says a camera is unplaced rather than claiming it has no neighbours", async () => {
+    // Two different facts: nobody pinned this camera to a floor, versus it is the
+    // only camera there. The first is fixable and the message says how.
+    stubAll({ "GET /device-placements/index": { items: [], count: 0 } });
+    renderWithProviders(<IncidentDetail />);
+
+    expect(await screen.findByText(/not placed on a floor plan/i)).toBeInTheDocument();
   });
 
   it("shows both pictures, one at each end of the band", async () => {

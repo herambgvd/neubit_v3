@@ -26,11 +26,13 @@ import { toast } from "sonner";
 import { apiError } from "@/lib/api";
 import { asItems, fmtDateTime } from "@/lib/format";
 import { useEstateCameras } from "@/features/vms/hooks/useEstateCameras";
+import { useCameraSites } from "@/features/vms/hooks/useCameraSites";
 import type { EstateCamera } from "@/features/vms/types";
 import { workflow as wfApi } from "./api";
 import type { FormPublic, InstanceStatus, StatePublic, TransitionPublic } from "./types";
 import { EvidencePicture, RecordingWithTransport } from "./components/incidents/AlarmEvidence";
 import { originOf } from "./components/incidents/AlarmFacts";
+import NearbyCameras from "./components/incidents/NearbyCameras";
 import { currentStepIndex, orderedSteps } from "./components/incidents/ProcedureSteps";
 import {
   incCameraId,
@@ -143,6 +145,16 @@ export default function WorkflowDetailPage() {
     if (!camId) return null;
     return cameras.find((c) => c.id === camId || (c as { real_id?: string }).real_id === camId) ?? null;
   }, [inst, cameras]);
+
+  // THE CAMERAS AROUND IT. An intrusion rarely stays on the camera that reported
+  // it, and the case showed exactly one view. Neighbours come from the floor plan
+  // — same place, not same recorder — and picking one puts it in the live pane.
+  const { siteOf, camerasAt } = useCameraSites();
+  const alarmSite = inst?.site_id || siteOf(inst ? incCameraId(inst) : null);
+  const nearby = camerasAt(alarmSite);
+  const [liveCameraId, setLiveCameraId] = useState<string | null>(null);
+  const liveCamera =
+    (liveCameraId ? nearby.find((c) => c.id === liveCameraId) : null) ?? camera;
 
   const [assignOpen, setAssignOpen] = useState(false);
   const [formFor, setFormFor] = useState<TransitionPublic | null>(null);
@@ -560,11 +572,24 @@ export default function WorkflowDetailPage() {
       <Section title="Live view">
         {cameraId ? (
           <figure className="m-0 self-start overflow-hidden rounded-xl border border-card-border">
-            <div className={`relative aspect-video w-full ${camera ? "bg-black" : ""}`}>
-              <EvidencePicture incident={inst} camera={camera} kind="live" />
+            <div className={`relative aspect-video w-full ${liveCamera ? "bg-black" : ""}`}>
+              <EvidencePicture incident={inst} camera={liveCamera} kind="live" />
             </div>
-            <figcaption className="flex h-9 items-center border-t border-card-border px-3 text-[11px] text-muted">
-              <span className="truncate">What the same camera shows now</span>
+            <figcaption className="flex h-9 items-center gap-2 border-t border-card-border px-3 text-[11px] text-muted">
+              <span className="truncate">
+                {liveCamera && liveCamera.id !== camera?.id
+                  ? `${liveCamera.name} — live`
+                  : "What the same camera shows now"}
+              </span>
+              {liveCameraId && (
+                <button
+                  type="button"
+                  onClick={() => setLiveCameraId(null)}
+                  className="ml-auto shrink-0 rounded-md border border-card-border px-2 py-0.5 transition hover:bg-hover hover:text-foreground"
+                >
+                  Back to this alarm&apos;s camera
+                </button>
+              )}
             </figcaption>
           </figure>
         ) : (
@@ -616,6 +641,19 @@ export default function WorkflowDetailPage() {
         </div>
       </Section>
 
+
+      {cameraId && (
+        <Section title="Nearby cameras">
+          <NearbyCameras
+            atSite={nearby}
+            subject={camera}
+            activeId={liveCameraId}
+            onPick={(c: EstateCamera) => setLiveCameraId(c.id === camera?.id ? null : c.id)}
+            unplaced={!alarmSite}
+            siteName={incSiteName(inst, {}) || null}
+          />
+        </Section>
+      )}
 
       {/* ── THE FLOW ───────────────────────────────────────────────────────
           A list says which step an alarm is ON; only the graph says what leads

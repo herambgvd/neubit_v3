@@ -15,7 +15,7 @@
 // So: the big cell shows the recording when there IS footage and live when there
 // is not, the operator can override with one click, and whichever picture is not
 // in the big cell is the one in the small one. The space is never dead.
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
@@ -23,7 +23,8 @@ import LivePlayer from "@/features/vms/components/LivePlayer";
 import TilePlayback from "@/features/vms/components/TilePlayback";
 import { vms } from "@/features/vms/api";
 import { createClock } from "@/features/vms/hooks/useWallPlayback";
-import type { EstateCamera, LiveSessionSource, PlaybackRange } from "@/features/vms/types";
+import { useNodeLiveSource } from "@/features/vms/hooks/useNodeLiveSource";
+import type { EstateCamera, PlaybackRange } from "@/features/vms/types";
 import RecordingScrubber from "./RecordingScrubber";
 import type { InstancePublic } from "../../types";
 import { incCameraId, incEventTime } from "./lib";
@@ -76,19 +77,7 @@ export function EvidencePicture({
 }: EvidencePictureProps) {
   const nodeId = (camera as { node_id?: string } | null)?.node_id ?? null;
   const realId = (camera as { real_id?: string } | null)?.real_id ?? null;
-
-  const liveSource = useMemo<LiveSessionSource | null>(() => {
-    if (!nodeId || !realId) return null;
-    const mint = async (profile: string) => {
-      const s = await vms.federation.live(nodeId, realId, profile);
-      return { ...s, ready: true };
-    };
-    return {
-      start: (_camId, profile) => mint(profile),
-      renew: () => mint("sub"),
-      release: async () => {},
-    };
-  }, [nodeId, realId]);
+  const liveSource = useNodeLiveSource(camera);
 
   if (!incident) {
     return (
