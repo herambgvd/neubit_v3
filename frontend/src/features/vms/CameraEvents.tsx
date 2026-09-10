@@ -116,7 +116,7 @@ export default function CameraEventsPage() {
   // ESCALATION — the door from the ledger to the work. An event an operator
   // decides needs following up becomes an incident running a procedure, and this
   // page holds only the choice of WHICH event; the dialog holds the rest.
-  const [escalating, setEscalating] = useState<NormalizedVmsEvent | null>(null);
+  const [escalating, setEscalating] = useState<NormalizedVmsEvent[] | null>(null);
   const canEscalate = can("workflow.instance.create");
 
   // Cross-link → Incidents. A camera event that fired an SOP created a workflow
@@ -136,6 +136,15 @@ export default function CameraEventsPage() {
     for (const inc of linkedIncidentsQ.data ? asItems(linkedIncidentsQ.data) : []) {
       const key = inc.source_event_id;
       if (key && !m.has(key)) m.set(key, inc.instance_id);
+      // A BURST alarm claims every event it was raised from. Without this the
+      // other twenty-eight still offer "Escalate" and a second alarm gets raised
+      // for the thing somebody already took.
+      const ids = (inc.trigger_data?.payload as { event_ids?: unknown } | undefined)?.event_ids;
+      if (Array.isArray(ids)) {
+        for (const id of ids) {
+          if (typeof id === "string" && !m.has(id)) m.set(id, inc.instance_id);
+        }
+      }
     }
     return m;
   }, [linkedIncidentsQ.data]);
@@ -473,7 +482,7 @@ export default function CameraEventsPage() {
                 ? `/playback?camera=${encodeURIComponent(selected.camera_id)}&t=${encodeURIComponent(selected.occurred_at)}`
                 : null
             }
-            onEscalate={canEscalate ? () => setEscalating(selected) : undefined}
+            onEscalate={canEscalate ? () => setEscalating([selected]) : undefined}
             onClose={() => {
               setDismissed(true);
               setSelectedId(null);
@@ -517,6 +526,20 @@ export default function CameraEventsPage() {
           >
             <Icon icon="heroicons-outline:check" className="text-xs" /> Acknowledge selected
           </button>
+          {canEscalate && (
+            // ONE ALARM FOR A BURST. Twenty-nine motions from one camera are one
+            // thing that happened; twenty-nine alarms is a queue nobody reads.
+            <button
+              type="button"
+              onClick={() => {
+                const picked = events.filter((e) => checkedKeys.has(e.event_id || e.id || ""));
+                if (picked.length) setEscalating(picked);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-md border border-orange-500/40 bg-orange-500/10 px-2.5 py-1 text-[11.5px] text-orange-300 transition hover:bg-orange-500/20"
+            >
+              <Icon icon="heroicons-outline:arrow-trending-up" className="text-xs" /> Escalate as one alarm
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setCheckedKeys(new Set())}
@@ -679,19 +702,23 @@ export default function CameraEventsPage() {
       {escalating && (
         <EscalateDialog
           open
-          event={escalating}
-          cameraName={cameraName(escalating.camera_id)}
+          events={escalating}
+          cameraName={cameraName(escalating[0].camera_id)}
           recorderName={
-            (cameraById[escalating.camera_id || ""] as { node_name?: string } | undefined)?.node_name ?? null
+            (cameraById[escalating[0].camera_id || ""] as { node_name?: string } | undefined)?.node_name ?? null
           }
           nodeId={
-            (cameraById[escalating.camera_id || ""] as { node_id?: string } | undefined)?.node_id ?? null
+            (cameraById[escalating[0].camera_id || ""] as { node_id?: string } | undefined)?.node_id ?? null
           }
           onClose={() => setEscalating(null)}
           onCreated={() => {
-            // Escalating IS taking it: an event somebody is now working must not
-            // keep sitting in the count of what nobody has touched.
-            if (escalating.id && !escalating.acknowledged) ackMut.mutate(escalating.id);
+            // Escalating IS taking it: events somebody is now working must not
+            // keep sitting in the count of what nobody has touched. Every event in
+            // the burst, not only the one the alarm is anchored to.
+            for (const e of escalating) {
+              if (e.id && !e.acknowledged) ackMut.mutate(e.id);
+            }
+            setCheckedKeys(new Set());
           }}
         />
       )}

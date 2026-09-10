@@ -24,6 +24,7 @@ import { stubApi, type ApiStub } from "@/test/apiStub";
 import { normalizeVmsEvent, type NormalizedVmsEvent } from "../eventLib";
 import type { SopPublic } from "@/features/workflow/types";
 import EscalateDialog, {
+  anchorEvent,
   automationRule,
   escalationEnvelope,
   existingRuleFor,
@@ -98,12 +99,12 @@ function stubWith(sops: unknown[], over: Record<string, unknown> = {}): ApiStub 
 
 const open = (props: Record<string, unknown> = {}) =>
   renderWithProviders(
-    <EscalateDialog open onClose={() => {}} event={EVENT} cameraName="Channel 2" {...props} />,
+    <EscalateDialog open onClose={() => {}} events={[EVENT]} cameraName="Channel 2" {...props} />,
   );
 
 describe("the envelope it sends", () => {
   it("carries the source and the event id the backend reads", () => {
-    const env = escalationEnvelope(EVENT, {
+    const env = escalationEnvelope([EVENT], {
       cameraName: "Channel 2",
       recorderName: "recorder-a",
       nodeId: "n1",
@@ -259,5 +260,82 @@ describe("making it automatic", () => {
   it("ignores a rule somebody switched off", () => {
     const off = trigger({ enabled: false });
     expect(existingRuleFor([off] as never, EVENT)).toBeNull();
+  });
+});
+
+
+describe("a burst becomes one alarm", () => {
+  /**
+   * Twenty-nine motions from one camera are ONE thing that happened. Raising
+   * twenty-nine alarms makes a queue nobody reads, and acknowledging them one at
+   * a time is the work the console should be doing.
+   */
+  const at = (iso: string, id: string) =>
+    normalizeVmsEvent({
+      id,
+      event_id: id,
+      camera_id: "cam-9",
+      event_type: "motion",
+      severity: "alarm",
+      occurred_at: iso,
+      raw: {},
+      acknowledged: false,
+    }) as NormalizedVmsEvent;
+
+  const BURST = [
+    at("2026-09-10T04:50:00Z", "e-late"),
+    at("2026-09-10T04:40:00Z", "e-first"),
+    at("2026-09-10T04:45:00Z", "e-mid"),
+  ];
+
+  it("anchors on where the burst STARTED, not on what was clicked last", () => {
+    // The alarm card's playback opens at this instant. The beginning is the part
+    // worth watching; the newest is only where the operator happened to be.
+    expect(anchorEvent(BURST).event_id).toBe("e-first");
+  });
+
+  it("claims every event in the burst, so none of them can be escalated again", () => {
+    const env = escalationEnvelope(BURST) as { payload: Record<string, unknown> };
+    expect(env.payload.event_id).toBe("e-first");
+    expect(env.payload.event_ids).toEqual(["e-late", "e-first", "e-mid"]);
+    expect(env.payload.event_count).toBe(3);
+    expect(env.payload.last_occurred_at).toBe("2026-09-10T04:50:00Z");
+  });
+
+  it("says nothing about a burst when there is only one event", () => {
+    // A one-item list and a count of 1 is noise in every payload anyone reads.
+    const env = escalationEnvelope([EVENT]) as { payload: Record<string, unknown> };
+    expect(env.payload.event_ids).toBeUndefined();
+    expect(env.payload.event_count).toBeUndefined();
+  });
+
+  it("names the alarm for the whole selection", async () => {
+    const stub = stubWith([sop({ sop_id: "s1" })]);
+    renderWithProviders(
+      <EscalateDialog open onClose={() => {}} events={BURST} cameraName="Channel 1" />,
+    );
+
+    await screen.findByText("General alarm");
+    expect(screen.getByText("3 events")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /raise alarm/i }));
+
+    await waitFor(() => expect(stub.matching("POST /workflow/instances")).toHaveLength(1));
+    expect(stub.body("POST /workflow/instances")?.name).toBe("Motion · Channel 1 (3 events)");
+  });
+
+  it("warns when the selection is not one incident", async () => {
+    const mixed = [
+      BURST[0],
+      normalizeVmsEvent({
+        id: "other", event_id: "other", camera_id: "cam-OTHER", event_type: "tamper",
+        severity: "alarm", occurred_at: "2026-09-10T04:41:00Z", raw: {}, acknowledged: false,
+      }) as NormalizedVmsEvent,
+    ];
+    stubWith([sop({ sop_id: "s1" })]);
+    renderWithProviders(
+      <EscalateDialog open onClose={() => {}} events={mixed} cameraName="Channel 1" />,
+    );
+
+    expect(await screen.findByText(/mixed selection/i)).toBeInTheDocument();
   });
 });

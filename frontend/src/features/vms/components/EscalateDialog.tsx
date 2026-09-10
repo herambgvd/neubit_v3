@@ -37,7 +37,10 @@ import { eventTypeLabel, fmtDate, fmtTime, sevPreset, type NormalizedVmsEvent } 
 export interface EscalateDialogProps {
   open: boolean;
   onClose: () => void;
-  event: NormalizedVmsEvent;
+  /** One event, or a whole BURST of them. Twenty-nine motions from one camera are
+   *  one thing that happened, and they belong in one alarm — raising twenty-nine
+   *  is how a queue becomes unreadable. */
+  events: NormalizedVmsEvent[];
   cameraName?: string | null;
   recorderName?: string | null;
   /** The recorder-side node id, carried into the envelope so an incident can be
@@ -53,10 +56,20 @@ export interface EscalateDialogProps {
  *  link back from this event, and the camera + instant on the alarm card. A
  *  different shape still SAVES — it just arrives with all of that missing. */
 export function escalationEnvelope(
-  event: NormalizedVmsEvent,
+  events: NormalizedVmsEvent[],
   extras: { cameraName?: string | null; recorderName?: string | null; nodeId?: string | null } = {},
 ): Record<string, unknown> {
+  const event = anchorEvent(events);
   const eventId = event.event_id || event.id || null;
+  // Every event in the burst, so the Events page can show all of them as taken —
+  // otherwise the other twenty-eight still offer "Escalate" and a second alarm
+  // gets raised for the same thing.
+  const ids = events.map((e) => e.event_id || e.id).filter(Boolean) as string[];
+  const last = [...events]
+    .map((e) => e.occurred_at)
+    .filter(Boolean)
+    .sort()
+    .pop();
   return {
     source: "vision",
     // How it got here, said plainly: this incident exists because a person
@@ -71,6 +84,11 @@ export function escalationEnvelope(
       event_type: event.event_type ?? null,
       severity: event.severity ?? null,
       occurred_at: event.occurred_at ?? null,
+      // Only when there IS a burst: a single event carrying a one-item list and a
+      // count of 1 is noise in every payload an operator ever reads.
+      ...(ids.length > 1
+        ? { event_ids: ids, event_count: ids.length, last_occurred_at: last ?? null }
+        : {}),
     },
   };
 }
@@ -160,10 +178,32 @@ export function existingRuleFor(
   );
 }
 
+/** The event the alarm is ANCHORED to: the oldest in the selection.
+ *
+ *  For a burst, the useful instant is when it STARTED — that is where the alarm
+ *  card's playback opens, and what an operator wants to watch. The newest is what
+ *  they happened to be looking at when they decided; it is not where the story
+ *  begins. */
+export function anchorEvent(events: NormalizedVmsEvent[]): NormalizedVmsEvent {
+  return [...events].sort((a, b) =>
+    String(a.occurred_at || "").localeCompare(String(b.occurred_at || "")),
+  )[0];
+}
+
+/** What a selection IS, in one line an operator can check before committing. */
+export function burstSummary(
+  events: NormalizedVmsEvent[],
+  nameOf: (e: NormalizedVmsEvent) => string,
+): { types: string[]; cameras: string[]; mixed: boolean } {
+  const types = [...new Set(events.map((e) => e.event_type || "").filter(Boolean))];
+  const cameras = [...new Set(events.map(nameOf).filter(Boolean))];
+  return { types, cameras, mixed: types.length > 1 || cameras.length > 1 };
+}
+
 export default function EscalateDialog({
   open,
   onClose,
-  event,
+  events,
   cameraName = null,
   recorderName = null,
   nodeId = null,
@@ -171,6 +211,14 @@ export default function EscalateDialog({
 }: EscalateDialogProps) {
   const qc = useQueryClient();
   const { can } = useAuth();
+  // Everything below reads ONE event — the anchor — and the count only changes
+  // what is written on the alarm and which events get acknowledged.
+  const event = anchorEvent(events);
+  const many = events.length > 1;
+  const summary = useMemo(
+    () => burstSummary(events, (e) => (e.camera_id === event.camera_id ? cameraName || "" : "") || e.camera_name || e.camera_id || ""),
+    [events, event.camera_id, cameraName],
+  );
   const [sopId, setSopId] = useState("");
   const [note, setNote] = useState("");
   // TWO STEPS, ONE DIALOG. The alarm is raised on the first; the second asks
@@ -251,11 +299,14 @@ export default function EscalateDialog({
   const create = useMutation({
     mutationFn: () => {
       const chosen = sops.find((s) => s.sop_id === sopId);
+      const where = cameraName || event.camera_name || "camera";
       return wfApi.instances.create({
         sop_id: sopId,
-        name: `${eventTypeLabel(event.event_type)} · ${cameraName || event.camera_name || "camera"}`,
+        name: many
+          ? `${eventTypeLabel(event.event_type)} · ${where} (${events.length} events)`
+          : `${eventTypeLabel(event.event_type)} · ${where}`,
         description: note.trim() || chosen?.description || null,
-        trigger_data: escalationEnvelope(event, { cameraName, recorderName, nodeId }),
+        trigger_data: escalationEnvelope(events, { cameraName, recorderName, nodeId }),
         event_id: event.event_id || event.id || null,
         event_type: event.event_type || null,
       });
@@ -395,6 +446,11 @@ export default function EscalateDialog({
             >
               {sevPreset(event.severity).label}
             </span>
+            {many && (
+              <span className="rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-blue-300">
+                {events.length} events
+              </span>
+            )}
           </div>
           <p className="mt-1 text-[12px] text-foreground/90">
             {cameraName || event.camera_name || "Unnamed camera"}
@@ -402,7 +458,20 @@ export default function EscalateDialog({
           </p>
           <p className="mt-0.5 font-mono text-[11px] text-muted">
             {fmtTime(event.occurred_at)} · {fmtDate(event.occurred_at)}
+            {many && <span className="text-muted"> — first of {events.length}</span>}
           </p>
+          {many && (
+            // A selection is not always the tidy burst an operator pictured. Say
+            // what it actually spans BEFORE it becomes one alarm with one name.
+            <p className="mt-1 text-[11px] text-muted">
+              One alarm for all {events.length}
+              {summary.types.length > 1 && <> · {summary.types.length} event types</>}
+              {summary.cameras.length > 1 && <> · {summary.cameras.length} cameras</>}
+              {summary.mixed && (
+                <span className="text-amber-400"> — mixed selection, check it is one incident</span>
+              )}
+            </p>
+          )}
         </div>
 
         {loading && (

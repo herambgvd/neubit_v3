@@ -476,6 +476,75 @@ describe("escalating an event into an alarm", () => {
 });
 
 
+describe("a burst raises one alarm", () => {
+  const SOPS = {
+    "GET /workflow/sops": {
+      items: [
+        {
+          sop_id: "s1", name: "General alarm", description: null, initial_state: "st",
+          priority: "medium", trigger_event_types: [], sla_hours: 4, tags: [],
+          escalation_rules: [], version: 1, is_active: true,
+          created_at: TODAY, updated_at: TODAY,
+        },
+      ],
+      total: 1,
+    },
+    "GET /workflow/triggers": { items: [], total: 0 },
+    "POST /workflow/instances": { instance_id: "inc-b", name: "Motion · Channel 1 (2 events)" },
+  };
+
+  it("escalates the selection as one, and acknowledges all of it", async () => {
+    stubAll({
+      ...SOPS,
+      "GET /vms/events": {
+        items: [
+          event({ id: "b1", event_id: "b1" }),
+          event({ id: "b2", event_id: "b2" }),
+        ],
+        total: 2,
+      },
+    });
+    renderWithProviders(<CameraEventsPage />);
+
+    await userEvent.click(await screen.findByRole("checkbox", { name: /select all/i }));
+    await userEvent.click(screen.getByRole("button", { name: /escalate as one alarm/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /raise alarm/i }));
+
+    // ONE incident for the pair…
+    await waitFor(() => expect(stub.matching("POST /workflow/instances")).toHaveLength(1));
+    const env = stub.body("POST /workflow/instances")?.trigger_data as {
+      payload: { event_ids?: string[] };
+    };
+    expect(env.payload.event_ids).toEqual(["b1", "b2"]);
+    // …and both events taken, not just the one it is anchored to.
+    await waitFor(() => expect(stub.matching("POST /vms/events/*")).toHaveLength(2));
+  });
+
+  it("shows the alarm on every event it was raised from", async () => {
+    // Without this the other events in the burst still offer Escalate, and a
+    // second alarm gets raised for the thing somebody already took.
+    stubAll({
+      "GET /vms/events": { items: [event({ id: "b9", event_id: "b9" })], total: 1 },
+      "GET /workflow/instances": {
+        items: [
+          {
+            instance_id: "inc-7",
+            source_event_id: "b1",
+            name: "Motion",
+            trigger_data: { source: "vision", payload: { event_ids: ["b1", "b9"] } },
+          },
+        ],
+        total: 1,
+      },
+    });
+    renderWithProviders(<CameraEventsPage />);
+
+    const link = await screen.findByRole("link", { name: /open alarm/i });
+    expect(link).toHaveAttribute("href", "/alarms/inc-7");
+  });
+});
+
+
 describe("putting an event down", () => {
   /**
    * The triptych opens on an event the operator did not choose — the newest one,
