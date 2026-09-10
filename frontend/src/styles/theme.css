@@ -167,6 +167,43 @@
 .nb-ticker-hold:hover .nb-ticker,
 .nb-ticker-hold:focus-within .nb-ticker { animation-play-state: paused; }
 
+/* ── THE HOME BACKDROP'S LENS ────────────────────────────────────────────────
+   The launcher's backdrop already drew an aperture — concentric rings and six
+   blade strokes — and it sat perfectly still, which is the one thing a lens never
+   does. These give it the two motions a real one has, and nothing else:
+
+     * the IRIS breathes. A camera hunting focus opens and closes a fraction; the
+       rings scale by 3% over nine seconds, which reads at the edge of vision and
+       disappears the moment somebody looks straight at it.
+     * the BLADES turn. An iris rotates as it stops down, so the blade group makes
+       one slow revolution a minute — far too slow to chase, fast enough that the
+       screen is never quite the same twice.
+     * a SWEEP crosses the glass, once every twelve seconds, the way a coated lens
+       catches a light source moving past it.
+
+   Transform and opacity only, so every frame is on the compositor and the page
+   costs nothing to leave open on a wall for a shift. `transform-box: fill-box`
+   because an SVG group's default transform origin is the viewBox corner, which
+   would swing these around the top-left of the screen rather than spin them in
+   place. */
+@keyframes nb-iris-breathe {
+  0%, 100% { transform: scale(1); opacity: 1 }
+  50% { transform: scale(1.03); opacity: .82 }
+}
+@keyframes nb-iris-turn { to { transform: rotate(360deg) } }
+@keyframes nb-lens-sweep {
+  0% { transform: rotate(0deg); opacity: 0 }
+  8% { opacity: .5 }
+  36% { opacity: 0 }
+  100% { transform: rotate(220deg); opacity: 0 }
+}
+.nb-iris,
+.nb-iris-blades,
+.nb-lens-sweep { transform-box: fill-box; transform-origin: center; will-change: transform }
+.nb-iris { animation: nb-iris-breathe 9s ease-in-out infinite }
+.nb-iris-blades { animation: nb-iris-turn 60s linear infinite }
+.nb-lens-sweep { animation: nb-lens-sweep 12s ease-in-out infinite }
+
 /* prefers-reduced-motion. The `.react-grid-*` selectors below are dead with the
    rest of the builder's CSS (see the header above) — RGL is not installed. The
    `nb-*` rules in this block are LIVE and are the reason it stays.
@@ -185,6 +222,12 @@
   }
   .nb-skeleton,
   .nb-pulse { animation: none !important; }
+  /* The lens stops turning. The aperture itself stays drawn — it is part of the
+     picture, and this setting asks for less motion, not less page. */
+  .nb-iris,
+  .nb-iris-blades,
+  .nb-lens-sweep { animation: none !important; }
+  .nb-lens-sweep { opacity: 0 !important; }
   /* A stopped ticker must not become an unreadable pile: the track stops
      sliding AND the rail becomes scrollable, so every fault is still
      reachable by hand. Motion is what this setting asks to remove — not

@@ -42,7 +42,17 @@ interface TileProps extends LauncherTile {
   stats?: TileStats;
 }
 
-/* ── The NeuBit "soul" backdrop — aperture rings, plexus, horizon (decorative). */
+/* ── The NeuBit "soul" backdrop — aperture rings, plexus, horizon (decorative).
+ *
+ * The aperture MOVES. It was a still drawing of a lens, which is the one thing a
+ * lens is never doing: the iris breathes, the blades turn once a minute, and a
+ * sweep crosses the glass every twelve seconds like a light source passing a
+ * coating. All of it is transform and opacity (see `.nb-iris*` in theme.css), so
+ * a launcher left open on a wall all shift costs the compositor and nothing else,
+ * and every bit of it stops under prefers-reduced-motion.
+ *
+ * Deliberately slow. A backdrop that asks to be watched is a backdrop competing
+ * with the tiles it exists behind. */
 function Soul() {
   return (
     <svg
@@ -69,16 +79,26 @@ function Soul() {
         <circle r="430" strokeWidth="1" />
       </g>
       <g transform="translate(1210,350)" fill="none" stroke="#22d3ee" opacity=".16">
-        <circle r="48" strokeWidth="1.3" />
-        <circle r="88" strokeWidth="1" />
-        <circle r="134" strokeWidth="1" opacity=".65" />
-        <g stroke="#9fb9ec" opacity=".5" strokeLinecap="round">
+        <g className="nb-iris">
+          <circle r="48" strokeWidth="1.3" />
+          <circle r="88" strokeWidth="1" />
+          <circle r="134" strokeWidth="1" opacity=".65" />
+        </g>
+        {/* The blades. Six strokes at 60° — a real iris, and the reason the turn
+            reads as a lens rather than as a spinning circle: an unbroken ring
+            rotating is invisible, a broken one is not. */}
+        <g className="nb-iris-blades" stroke="#9fb9ec" opacity=".5" strokeLinecap="round">
           <path d="M0 -48 L27 -21" />
           <path d="M42 24 L15 42" />
           <path d="M-42 24 L-15 42" />
           <path d="M-42 -24 L-15 -42" />
           <path d="M42 -24 L15 -42" />
           <path d="M0 48 L-27 21" />
+        </g>
+        {/* The sweep: one arc of the outer ring, brightened and carried round. */}
+        <g className="nb-lens-sweep" stroke="#67e8f9" opacity="0" strokeLinecap="round">
+          <path d="M 0 -134 A 134 134 0 0 1 95 -95" strokeWidth="2" />
+          <path d="M 0 -88 A 88 88 0 0 1 62 -62" strokeWidth="1.4" opacity=".7" />
         </g>
       </g>
       <g stroke="#8fb0e8" fill="none" opacity=".12" strokeLinecap="round">
