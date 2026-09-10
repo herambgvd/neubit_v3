@@ -159,17 +159,38 @@ describe("the case file", () => {
     expect(screen.getAllByText(/Channel 1/).length).toBeGreaterThan(0);
   });
 
-  it("carries the whole record: the clock, the facts and the trail", async () => {
+  it("reads as a record: masthead facts, then the sections in order", async () => {
     renderWithProviders(<IncidentDetail />);
 
-    // The clock as a shape, the same as the queue screen.
-    expect(await screen.findByRole("img", { name: /30m/i })).toBeInTheDocument();
-    // The trail, with the note somebody was made to write.
-    expect(screen.getByText("Take it")).toBeInTheDocument();
+    // The four facts that identify a case, in the masthead.
+    expect(await screen.findByText("Where")).toBeInTheDocument();
+    expect(screen.getByText("Owner")).toBeInTheDocument();
+    expect(screen.getByText("Deadline")).toBeInTheDocument();
+
+    // Then the document's sections, in the order a reader needs them.
+    const sections = screen
+      .getAllByRole("heading", { level: 2 })
+      .map((h) => h.textContent?.trim());
+    expect(sections).toEqual(["Evidence", "Procedure", "Log", "Close out", "Raw event"]);
+  });
+
+  it("logs what was done, and the note somebody was made to write", async () => {
+    renderWithProviders(<IncidentDetail />);
+
+    expect(await screen.findByText("Take it")).toBeInTheDocument();
     expect(screen.getByText(/two people at Gate 2/)).toBeInTheDocument();
-    // And the facts.
-    expect(screen.getByText("Details")).toBeInTheDocument();
-    expect(screen.getByText("Origin")).toBeInTheDocument();
+    // The first line of any log is the one entry that is never in the timeline.
+    expect(screen.getByText(/^Raised/)).toBeInTheDocument();
+  });
+
+  it("keeps the raw event out of the way until it is asked for", async () => {
+    // It is the thing you go looking for, not the thing you read first.
+    const { default: userEvent } = await import("@testing-library/user-event");
+    renderWithProviders(<IncidentDetail />);
+
+    const reveal = await screen.findByRole("button", { name: /what the device sent/i });
+    await userEvent.click(reveal);
+    expect(screen.queryByRole("button", { name: /what the device sent/i })).toBeNull();
   });
 
   it("names the procedure and the version this alarm is running", async () => {
@@ -177,11 +198,10 @@ describe("the case file", () => {
     // reconstruction a week later has to know which.
     renderWithProviders(<IncidentDetail />);
 
-    // Named in the Procedure header, beside the version it is running.
+    // In the masthead, beside the procedure's name.
     const version = await screen.findByText("v2");
-    const header = version.parentElement as HTMLElement;
-    expect(header).toHaveTextContent("Procedure");
-    expect(header).toHaveTextContent("Intrusion");
+    const cell = version.closest("dd") as HTMLElement;
+    expect(cell).toHaveTextContent("Intrusion");
   });
 
   it("says an alarm could not be opened, rather than showing an empty case", async () => {
@@ -190,6 +210,32 @@ describe("the case file", () => {
 
     expect(await screen.findByText(/could not be opened/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /back to the queue/i })).toHaveAttribute("href", "/alarms");
+  });
+
+  it("puts a move that ENDS the case under Close out, not under Procedure", async () => {
+    // The two sections split the same list by where the move lands, so neither
+    // invents a button the other already owns.
+    stubAll({
+      "GET /workflow/sops/s1/states": {
+        items: [
+          { state_id: "st-open", name: "Open", order: 0 },
+          { state_id: "st-ack", name: "Acknowledged", order: 1 },
+          { state_id: "st-done", name: "Resolved", order: 2, is_terminal: true },
+        ],
+      },
+      "GET /workflow/instances/i1/available-transitions": [
+        TRANSITIONS[0],
+        { transition_id: "t9", sop_id: "s1", label: "Resolve", from_state_id: "st-open", to_state_id: "st-done", requires_note: true },
+      ],
+    });
+    renderWithProviders(<IncidentDetail />);
+
+    // Waited on the BUTTON: the section's heading renders before the moves land.
+    const resolve = await screen.findByRole("button", { name: /Resolve/ });
+    const closeOut = screen.getByRole("heading", { name: "Close out" }).parentElement!;
+    expect(closeOut).toContainElement(resolve);
+    // And the forward move is NOT down there with it.
+    expect(within(closeOut).queryByRole("button", { name: "Move to review" })).toBeNull();
   });
 
   it("collects the note a transition demands before making the move", async () => {

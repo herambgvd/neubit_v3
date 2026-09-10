@@ -1,18 +1,21 @@
 "use client";
 
-// ONE ALARM, IN FULL — the case file behind a row on /alarms.
+// ONE ALARM, AS THE RECORD OF IT — the case file behind a row on /alarms.
 //
-// The queue screen answers "what is happening and what do I do next". This page
-// answers the questions that outlive the shift: what exactly happened, what was
-// done about it, by whom, on what evidence, and what the device actually said.
-// It is where somebody reconstructs an incident a week later, and where the PDF
-// an investigation asks for comes from.
+// The queue screen answers "what now". This page answers what outlives the shift:
+// what happened, what was done about it, by whom, on what evidence. It is where
+// somebody reconstructs an incident a week later, and where the PDF an
+// investigation asks for comes from.
 //
-// So it carries everything the queue screen deliberately leaves out — the whole
-// state machine as a diagram rather than a list, the complete trail with its
-// notes, and the raw event envelope — while keeping the same language: the
-// picture is the biggest thing, the clock is a shape, and nothing on the page is
-// invented.
+// SO IT IS A DOCUMENT, not a dashboard. A masthead carrying the four facts that
+// identify the case, then plain sections in the order a reader needs them —
+// Evidence, Procedure, Log, Close out, and the raw event last. The first attempt
+// at this page was the queue's bento again with more fields in it, which is why
+// it read as a repeat rather than as the record.
+//
+// The shape is deliberate: what an operator reads here and what an investigator
+// receives as a PDF should be the same artefact, so the screen can hide nothing
+// the export would have to invent.
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -25,23 +28,47 @@ import { asItems, fmtDateTime } from "@/lib/format";
 import { useEstateCameras } from "@/features/vms/hooks/useEstateCameras";
 import type { EstateCamera } from "@/features/vms/types";
 import { workflow as wfApi } from "./api";
-import type {
-  FormPublic,
-  InstanceStatus,
-  StatePublic,
-  TransitionPublic,
-} from "./types";
-import { EvidencePicture, type EvidenceKind } from "./components/incidents/AlarmEvidence";
-import AlarmFacts from "./components/incidents/AlarmFacts";
-import AlarmTrail from "./components/incidents/AlarmTrail";
-import SlaRing from "./components/incidents/SlaRing";
-import { incCameraId, incEventTime, incTitle, isOpen, isTerminal, sev } from "./components/incidents/lib";
-import StateMachine from "./components/detail/StateMachine";
+import type { FormPublic, InstanceStatus, StatePublic, TransitionPublic } from "./types";
+import { EvidencePicture } from "./components/incidents/AlarmEvidence";
+import { originOf } from "./components/incidents/AlarmFacts";
+import { currentStepIndex, orderedSteps } from "./components/incidents/ProcedureSteps";
+import {
+  incCameraId,
+  incEventTime,
+  incSiteName,
+  incTitle,
+  isOpen,
+  isTerminal,
+  sev,
+  slaFor,
+} from "./components/incidents/lib";
 import EventPayloadInspector from "./components/detail/EventPayloadInspector";
 import AssignModal from "./components/detail/AssignModal";
 import TransitionFormModal from "./components/detail/TransitionFormModal";
 import ReasonModal from "./components/detail/ReasonModal";
 import type { ReasonAction } from "./components/detail/ReasonModal";
+
+const SLA_TONE: Record<string, string> = {
+  ok: "text-emerald-400",
+  warn: "text-amber-400",
+  breach: "text-red-400",
+  done: "text-muted",
+};
+
+/** A section of the record: a small caps heading with a rule running off it, then
+ *  the content. Plain typography rather than a card — a page of stacked cards
+ *  reads as a dashboard, and this is a document. */
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="grid gap-2.5">
+      <h2 className="flex items-center gap-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-foreground/80">
+        {title}
+        <span className="h-px flex-1 bg-card-border" aria-hidden />
+      </h2>
+      {children}
+    </section>
+  );
+}
 
 export default function WorkflowDetailPage() {
   const params = useParams();
@@ -69,9 +96,6 @@ export default function WorkflowDetailPage() {
     queryFn: () => wfApi.transitions.list(sopId),
     enabled: !!sopId,
   });
-  // The moves THIS alarm can make, from the server rather than derived here: a
-  // transition can carry conditions, and a button the backend would refuse is
-  // worse than no button.
   const movesQ = useQuery({
     queryKey: ["wf-available-transitions", id],
     queryFn: () => wfApi.instances.availableTransitions(id),
@@ -85,20 +109,30 @@ export default function WorkflowDetailPage() {
     () => (transitionsQ.data ? asItems(transitionsQ.data) : []),
     [transitionsQ.data],
   );
+  const formList = useMemo<FormPublic[]>(() => (formsQ.data ? asItems(formsQ.data) : []), [formsQ.data]);
+
   // WHAT THIS ALARM CAN DO NEXT, from the server — a transition can carry
   // conditions, and a button the backend would refuse is worse than no button.
-  //
-  // But a pane with NO moves is worse still: when that call fails, fall back to
-  // the structurally-legal ones (the SOP's transitions out of this state). The
-  // operator can still act, the server still guards, and the footer says which of
-  // the two answers it is showing.
+  // But a page with NO moves is worse still: when that call fails, fall back to
+  // the structurally-legal ones and say so.
   const movesUnavailable = movesQ.isError;
   const moves = useMemo<TransitionPublic[]>(() => {
     if (!movesUnavailable) return movesQ.data || [];
     const here = inst?.current_state;
     return transitions.filter((t) => !here || t.from_state_id === here);
   }, [movesUnavailable, movesQ.data, transitions, inst?.current_state]);
-  const formList = useMemo<FormPublic[]>(() => (formsQ.data ? asItems(formsQ.data) : []), [formsQ.data]);
+
+  // A move that ENDS the case belongs under Close out; the rest carry the
+  // procedure forward and belong under Procedure. Same list, split by where the
+  // move lands, so neither section invents a button the other already owns.
+  const endsCase = useMemo(() => {
+    const terminal = new Set(
+      states.filter((s) => s.is_terminal || s.is_cancellation).map((s) => s.state_id),
+    );
+    return (t: TransitionPublic) => terminal.has(t.to_state_id);
+  }, [states]);
+  const closingMoves = moves.filter(endsCase);
+  const forwardMoves = moves.filter((t) => !endsCase(t));
 
   // The camera as the ESTATE knows it — the alarm carries the node-side id the
   // recorder reported, and without the owning recorder there is no session to mint.
@@ -106,22 +140,14 @@ export default function WorkflowDetailPage() {
   const camera = useMemo<EstateCamera | null>(() => {
     const camId = inst ? incCameraId(inst) : null;
     if (!camId) return null;
-    return (
-      cameras.find((c) => c.id === camId || (c as { real_id?: string }).real_id === camId) ?? null
-    );
+    return cameras.find((c) => c.id === camId || (c as { real_id?: string }).real_id === camId) ?? null;
   }, [inst, cameras]);
-
-  const [evidence, setEvidence] = useState<EvidenceKind>("recording");
-  const [evidenceChosen, setEvidenceChosen] = useState(false);
-  const pickEvidence = (kind: EvidenceKind) => {
-    setEvidence(kind);
-    setEvidenceChosen(true);
-  };
 
   const [assignOpen, setAssignOpen] = useState(false);
   const [formFor, setFormFor] = useState<TransitionPublic | null>(null);
   const [noteFor, setNoteFor] = useState<TransitionPublic | null>(null);
   const [reasonAction, setReasonAction] = useState<ReasonAction | null>(null);
+  const [rawOpen, setRawOpen] = useState(false);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["wf-instance", id] });
@@ -131,8 +157,11 @@ export default function WorkflowDetailPage() {
   };
 
   const doTransition = useMutation({
-    mutationFn: (body: { transition_id: string; notes?: string | null; form_data?: Record<string, unknown> | null }) =>
-      wfApi.instances.transition(id, body),
+    mutationFn: (body: {
+      transition_id: string;
+      notes?: string | null;
+      form_data?: Record<string, unknown> | null;
+    }) => wfApi.instances.transition(id, body),
     onSuccess: () => {
       toast.success("Alarm moved on");
       setFormFor(null);
@@ -220,241 +249,375 @@ export default function WorkflowDetailPage() {
   }
 
   const s = sev(inst.priority);
+  const sla = slaFor(inst);
   const open = isOpen(inst.status);
   const cameraId = incCameraId(inst);
   const eventTime = incEventTime(inst);
-  const hasPicture = !!camera;
+  const steps = orderedSteps(states);
+  const at = currentStepIndex(steps, inst);
+  const trail = [...(inst.timeline || [])].sort((a, b) =>
+    String(a.executed_at || "").localeCompare(String(b.executed_at || "")),
+  );
 
   return (
-    <div className="mx-auto grid max-w-[110rem] gap-3 pb-8">
-      {/* ── THE HEADER LINE ────────────────────────────────────────────────
-          Everything that identifies the alarm, and the moves that are not part of
-          the procedure. No masthead card: this page is the case, not a form. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Link
-          href="/alarms"
-          title="Back to the queue"
-          aria-label="Back to the queue"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-card-border text-muted transition hover:bg-hover hover:text-foreground"
-        >
-          <Icon icon="heroicons-outline:arrow-left" className="text-sm" />
-        </Link>
-        <span className={`h-5 w-[3px] shrink-0 rounded-full ${s.band}`} aria-hidden />
-        <h1 className="min-w-0 truncate text-[17px] font-semibold text-foreground">{incTitle(inst)}</h1>
-        <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${s.soft} ${s.text}`}>
-          {s.label}
-        </span>
-        <span className="rounded-full bg-hover px-1.5 py-0.5 text-[10px] text-foreground">
-          {inst.current_state_name || inst.status}
-        </span>
-        <span className="font-mono text-[11px] text-muted">raised {fmtDateTime(inst.created_at)}</span>
+    <article className="mx-auto grid max-w-[68rem] gap-6 pb-10">
+      {/* ── MASTHEAD ───────────────────────────────────────────────────────
+          Who this case is, and the moves that are not part of the procedure. A
+          document's title block, not a toolbar card. */}
+      <header className="grid gap-3 border-b-2 border-card-border pb-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/alarms"
+            title="Back to the queue"
+            aria-label="Back to the queue"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-card-border text-muted transition hover:bg-hover hover:text-foreground"
+          >
+            <Icon icon="heroicons-outline:arrow-left" className="text-xs" />
+          </Link>
+          <span className={`h-6 w-[3px] shrink-0 rounded-full ${s.band}`} aria-hidden />
+          <h1 className="min-w-0 truncate text-[22px] font-semibold tracking-[-0.01em] text-foreground">
+            {incTitle(inst)}
+          </h1>
+          <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${s.soft} ${s.text}`}>
+            {s.label}
+          </span>
+          <span className="rounded-full bg-hover px-1.5 py-0.5 text-[10px] text-foreground">
+            {inst.current_state_name || inst.status}
+          </span>
+          <span className="font-mono text-[11px] text-muted">
+            case {id.slice(0, 8)} · raised {fmtDateTime(inst.created_at)}
+          </span>
 
-        <div className="ml-auto flex flex-wrap items-center gap-1.5">
-          {open && inst.status === "pending" && (
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            {open && inst.status === "pending" && (
+              <button
+                type="button"
+                onClick={() => statusMut.mutate({ status: "active" })}
+                disabled={statusMut.isPending}
+                className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-[11.5px] font-medium text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50"
+              >
+                <Icon icon="heroicons-outline:check" className="text-xs" /> Take it
+              </button>
+            )}
+            {open && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setAssignOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-card-border px-2.5 py-1.5 text-[11.5px] text-muted transition hover:bg-hover hover:text-foreground"
+                >
+                  <Icon icon="heroicons-outline:user-plus" className="text-xs" />
+                  {inst.assigned_to ? "Reassign" : "Assign"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setReasonAction({
+                      title: "Escalate this alarm",
+                      verb: "Escalate",
+                      run: (reason) => escalateMut.mutate(reason),
+                    })
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-[11.5px] text-amber-300 transition hover:bg-amber-500/20"
+                >
+                  <Icon icon="heroicons-outline:arrow-trending-up" className="text-xs" /> Escalate
+                </button>
+              </>
+            )}
             <button
               type="button"
-              onClick={() => statusMut.mutate({ status: "active" })}
-              disabled={statusMut.isPending}
-              className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-[11.5px] font-medium text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50"
+              onClick={exportPdf}
+              disabled={pdfPending}
+              title="Export this case as a PDF"
+              className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/40 bg-blue-500/10 px-2.5 py-1.5 text-[11.5px] text-blue-200 transition hover:bg-blue-500/20 disabled:opacity-50"
             >
-              <Icon icon="heroicons-outline:check" className="text-xs" /> Take it
+              <Icon
+                icon={pdfPending ? "svg-spinners:180-ring" : "heroicons-outline:document-arrow-down"}
+                className="text-xs"
+              />
+              Export PDF
             </button>
-          )}
-          {open && (
-            <>
-              <button
-                type="button"
-                onClick={() => setAssignOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-md border border-card-border px-2.5 py-1.5 text-[11.5px] text-muted transition hover:bg-hover hover:text-foreground"
-              >
-                <Icon icon="heroicons-outline:user-plus" className="text-xs" />
-                {inst.assigned_to ? "Reassign" : "Assign"}
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setReasonAction({
-                    title: "Escalate this alarm",
-                    verb: "Escalate",
-                    run: (reason) => escalateMut.mutate(reason),
-                  })
-                }
-                className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-[11.5px] text-amber-300 transition hover:bg-amber-500/20"
-              >
-                <Icon icon="heroicons-outline:arrow-trending-up" className="text-xs" /> Escalate
-              </button>
-            </>
-          )}
-          <button
-            type="button"
-            onClick={exportPdf}
-            disabled={pdfPending}
-            title="Export this case as a PDF"
-            className="inline-flex items-center gap-1.5 rounded-md border border-card-border px-2.5 py-1.5 text-[11.5px] text-muted transition hover:bg-hover hover:text-foreground disabled:opacity-50"
-          >
-            <Icon
-              icon={pdfPending ? "svg-spinners:180-ring" : "heroicons-outline:document-arrow-down"}
-              className="text-xs"
-            />
-            PDF
-          </button>
-          <button
-            type="button"
-            onClick={() => instQ.refetch()}
-            title="Re-read this alarm"
-            aria-label="Refresh"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-card-border text-muted transition hover:bg-hover hover:text-foreground"
-          >
-            <Icon icon="heroicons-outline:arrow-path" className="text-xs" />
-          </button>
+            <button
+              type="button"
+              onClick={() => instQ.refetch()}
+              title="Re-read this alarm"
+              aria-label="Refresh"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-card-border text-muted transition hover:bg-hover hover:text-foreground"
+            >
+              <Icon icon="heroicons-outline:arrow-path" className="text-xs" />
+            </button>
+          </div>
         </div>
-      </div>
 
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
-        {/* ── THE EVIDENCE AND THE PROCEDURE ─────────────────────────────── */}
-        <div className="grid content-start gap-3">
-          <section className="overflow-hidden rounded-xl border border-card-border bg-card">
-            <div className={`relative aspect-video w-full ${hasPicture ? "bg-black" : ""}`}>
-              <EvidencePicture
-                incident={inst}
-                camera={camera}
-                kind={evidence}
-                onFootage={(present) => {
-                  if (!present && !evidenceChosen) setEvidence("live");
-                }}
-              />
-              {hasPicture && (
-                <div className="absolute right-2 top-2 z-10 inline-flex overflow-hidden rounded-lg border border-card-border bg-[rgba(8,15,34,.82)] backdrop-blur-xs">
-                  {(["recording", "live"] as const).map((k) => (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() => pickEvidence(k)}
-                      aria-pressed={evidence === k}
-                      className={`px-2.5 py-1 text-[11px] font-medium transition ${
-                        evidence === k ? "bg-blue-500/20 text-blue-100" : "text-muted hover:text-foreground"
-                      }`}
-                    >
-                      {k === "recording" ? "Recording" : "Live"}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center gap-2 border-t border-card-border px-3 py-2 text-[11.5px] text-muted">
-              <Icon icon="heroicons-outline:video-camera" className="text-xs" />
-              {camera?.name || (cameraId ? cameraId : "No camera behind this alarm")}
-              {eventTime && (
-                <span className="font-mono">
-                  · event at {fmtDateTime(eventTime)}
-                </span>
-              )}
-              {cameraId && eventTime && (
-                <Link
-                  href={`/playback?camera=${encodeURIComponent(cameraId)}&t=${encodeURIComponent(eventTime)}`}
-                  className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-card-border px-2 py-1 text-[11px] transition hover:bg-hover hover:text-foreground"
-                >
-                  <Icon icon="heroicons-outline:film" className="text-xs" /> Whole timeline
-                </Link>
-              )}
-            </div>
-          </section>
-
-          {/* THE PROCEDURE, as the graph it is. The queue screen shows the steps
-              as a list because that is all the room there is; here there is room
-              for the real shape, including the branches a list cannot draw. */}
-          <section className="overflow-hidden rounded-xl border border-card-border bg-card">
-            <header className="flex flex-wrap items-center gap-2 border-b border-card-border px-3 py-2">
-              <Icon icon="heroicons-outline:map" className="text-sm text-blue-500" />
-              <span className="text-[12px] font-semibold text-foreground">Procedure</span>
-              <span className="truncate text-[11.5px] text-muted">{inst.sop_name || "—"}</span>
-              {inst.sop_version ? (
-                <span className="rounded-full border border-card-border px-1.5 py-0.5 font-mono text-[10px] text-muted">
-                  v{inst.sop_version}
-                </span>
-              ) : null}
-            </header>
-
-            <div className="overflow-x-auto p-3">
-              <StateMachine
-                states={states}
-                transitions={transitions}
-                currentStateId={inst.current_state ?? undefined}
-                currentStateName={inst.current_state_name ?? undefined}
-              />
-            </div>
-
-            <footer className="flex flex-wrap items-center gap-1.5 border-t border-card-border px-3 py-2">
-              {isTerminal(inst.status) ? (
-                <span className="text-[11.5px] text-muted">
-                  Closed {inst.closed_at ? fmtDateTime(inst.closed_at) : ""}
-                  {inst.outcome ? ` · ${inst.outcome}` : ""}
-                </span>
-              ) : moves.length === 0 ? (
-                <span className="text-[11.5px] text-muted">
-                  {movesQ.isLoading
-                    ? "Reading the moves this procedure allows…"
-                    : "This procedure offers no move from here."}
+        {/* The four facts that identify a case, in one line of the document. */}
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+          <div>
+            <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Where</dt>
+            <dd className="mt-0.5 text-[14px] text-foreground">
+              {[incSiteName(inst, {}), camera?.name || cameraId].filter(Boolean).join(" · ") || "—"}
+            </dd>
+          </div>
+          <div>
+            <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Owner</dt>
+            <dd className="mt-0.5 text-[14px]">
+              {inst.assignment?.assigned_to_name || inst.assigned_to ? (
+                <span className="text-foreground">
+                  {inst.assignment?.assigned_to_name || inst.assigned_to}
                 </span>
               ) : (
+                <span className="text-amber-400">Unassigned</span>
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Procedure</dt>
+            <dd className="mt-0.5 text-[14px] text-foreground">
+              {inst.sop_name || "—"}
+              {inst.sop_version ? (
+                <span className="ml-1.5 font-mono text-[11px] text-muted">v{inst.sop_version}</span>
+              ) : null}
+            </dd>
+          </div>
+          <div>
+            <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Deadline</dt>
+            <dd className={`mt-0.5 text-[14px] ${sla ? SLA_TONE[sla.tone] : "text-muted"}`}>
+              {sla ? (
                 <>
-                {movesUnavailable && (
-                  // Said out loud: these are the procedure's moves, not a checked
-                  // list of what this alarm may do right now.
-                  <span className="w-full text-[11px] text-amber-400">
-                    Could not check which moves apply — showing every move this procedure
-                    allows from here.
+                  {new Date(sla.deadline).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  <span className="ml-1.5 font-mono text-[11.5px]">· {sla.label}</span>
+                </>
+              ) : (
+                "No time limit"
+              )}
+            </dd>
+          </div>
+        </dl>
+      </header>
+
+      {/* ── EVIDENCE ───────────────────────────────────────────────────── */}
+      <Section title="Evidence">
+        {cameraId ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <figure className="m-0 overflow-hidden rounded-xl border border-card-border">
+              <div className={`relative aspect-video w-full ${camera ? "bg-black" : ""}`}>
+                <EvidencePicture incident={inst} camera={camera} kind="recording" />
+              </div>
+              <figcaption className="flex items-center gap-2 border-t border-card-border px-3 py-2 text-[11px] text-muted">
+                What the recorder held when it fired
+                {eventTime && <span className="font-mono">· {fmtDateTime(eventTime)}</span>}
+                {camera && (
+                  <Link
+                    href={`/playback?camera=${encodeURIComponent(cameraId)}${
+                      eventTime ? `&t=${encodeURIComponent(eventTime)}` : ""
+                    }`}
+                    className="ml-auto inline-flex items-center gap-1 rounded-md border border-card-border px-2 py-0.5 transition hover:bg-hover hover:text-foreground"
+                  >
+                    <Icon icon="heroicons-outline:film" className="text-xs" /> Timeline
+                  </Link>
+                )}
+              </figcaption>
+            </figure>
+
+            <figure className="m-0 overflow-hidden rounded-xl border border-card-border">
+              <div className={`relative aspect-video w-full ${camera ? "bg-black" : ""}`}>
+                <EvidencePicture incident={inst} camera={camera} kind="live" />
+              </div>
+              <figcaption className="border-t border-card-border px-3 py-2 text-[11px] text-muted">
+                What the same camera shows now
+              </figcaption>
+            </figure>
+          </div>
+        ) : (
+          <p className="text-[13px] text-muted">
+            No camera behind this one — it was raised without a camera event, so the record
+            holds no footage.
+          </p>
+        )}
+      </Section>
+
+      {/* ── PROCEDURE ──────────────────────────────────────────────────── */}
+      <Section title="Procedure">
+        {steps.length === 0 ? (
+          <p className="text-[13px] text-muted">
+            {statesQ.isLoading
+              ? "Reading the procedure…"
+              : "This procedure has no steps defined — it can be worked, but nothing here says how."}
+          </p>
+        ) : (
+          <ol className="grid gap-2">
+            {steps.map((st, i) => {
+              const done = at >= 0 && i < at;
+              const current = at === i;
+              return (
+                <li key={st.state_id} className="flex items-start gap-2.5 text-[13px]">
+                  <span
+                    className={`mt-[3px] grid h-[15px] w-[15px] shrink-0 place-items-center rounded border text-[9px] ${
+                      done
+                        ? "border-emerald-500 bg-emerald-500 text-background"
+                        : current
+                          ? "border-blue-400"
+                          : "border-card-border"
+                    }`}
+                  >
+                    {done ? "✓" : ""}
+                  </span>
+                  <span className="min-w-0">
+                    <span className={current ? "text-foreground" : done ? "text-muted" : "text-muted/80"}>
+                      {st.name}
+                    </span>
+                    {st.description && (current || !done) && (
+                      <span className="block text-[12px] text-muted">{st.description}</span>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+
+        {open && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {movesUnavailable && (
+              <span className="w-full text-[11.5px] text-amber-400">
+                Could not check which moves apply — showing every move this procedure allows
+                from here.
+              </span>
+            )}
+            {forwardMoves.map((t) => (
+              <button
+                key={t.transition_id}
+                type="button"
+                onClick={() => runMove(t)}
+                disabled={doTransition.isPending}
+                title={t.description || undefined}
+                className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/40 bg-blue-500/10 px-2.5 py-1.5 text-[11.5px] font-medium text-blue-200 transition hover:bg-blue-500/20 disabled:opacity-50"
+              >
+                {t.label}
+                {(t.requires_note || t.form_id) && (
+                  <Icon icon="heroicons-outline:pencil-square" className="text-[11px] opacity-70" />
+                )}
+              </button>
+            ))}
+            {forwardMoves.length === 0 && !movesQ.isLoading && closingMoves.length > 0 && (
+              <span className="text-[11.5px] text-muted">
+                Nothing left but to close it — see below.
+              </span>
+            )}
+          </div>
+        )}
+      </Section>
+
+      {/* ── LOG ────────────────────────────────────────────────────────── */}
+      <Section title="Log">
+        <div className="grid">
+          <div className="grid grid-cols-[8.5rem_1fr] gap-3 border-b border-card-border/60 py-2 text-[13px]">
+            <time className="font-mono text-[11.5px] text-muted">{fmtDateTime(inst.created_at)}</time>
+            <span className="text-foreground">
+              Raised
+              {inst.event_type ? ` · ${inst.event_type}` : ""}
+              {camera?.name ? ` on ${camera.name}` : ""}
+              <span className="block text-[12px] text-muted">{originOf(inst)}</span>
+            </span>
+          </div>
+          {trail.map((e, i) => (
+            <div
+              key={`${e.transition_id}-${e.executed_at}-${i}`}
+              className="grid grid-cols-[8.5rem_1fr] gap-3 border-b border-card-border/60 py-2 text-[13px] last:border-0"
+            >
+              <time className="font-mono text-[11.5px] text-muted">{fmtDateTime(e.executed_at)}</time>
+              <span className="text-foreground">
+                {e.transition_name || `${e.from_state_name} → ${e.to_state_name}`}
+                <span className="text-muted">
+                  {" — "}
+                  {e.executed_by_name || e.executed_by || "somebody"}
+                </span>
+                {e.notes && (
+                  // The reason a required note is worth requiring: it is the only
+                  // account of what actually happened.
+                  <span className="mt-1 block border-l-2 border-card-border pl-2.5 text-[12.5px] text-foreground/90">
+                    {e.notes}
                   </span>
                 )}
-                {moves.map((t) => (
-                  <button
-                    key={t.transition_id}
-                    type="button"
-                    onClick={() => runMove(t)}
-                    disabled={doTransition.isPending}
-                    title={t.description || undefined}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/40 bg-blue-500/10 px-2.5 py-1.5 text-[11.5px] font-medium text-blue-200 transition hover:bg-blue-500/20 disabled:opacity-50"
-                  >
-                    {t.label}
-                    {(t.requires_note || t.form_id) && (
-                      <Icon icon="heroicons-outline:pencil-square" className="text-[11px] opacity-70" />
-                    )}
-                  </button>
-                ))}
-                </>
-              )}
-            </footer>
-          </section>
-
-          {/* WHAT THE DEVICE ACTUALLY SAID. Last, and collapsible, because it is
-              the thing you go looking for rather than the thing you read first. */}
-          {inst.trigger_data && (
-            <EventPayloadInspector payload={inst.trigger_data} eventType={inst.event_type} incident={inst} />
+              </span>
+            </div>
+          ))}
+          {trail.length === 0 && (
+            <p className="py-2 text-[12.5px] text-muted">
+              Nothing has been done to it yet — it is waiting for somebody.
+            </p>
           )}
         </div>
+      </Section>
 
-        {/* ── THE RECORD ─────────────────────────────────────────────────── */}
-        <div className="grid content-start gap-3">
-          <div className="h-[13rem]">
-            <SlaRing incident={inst} />
+      {/* ── CLOSE OUT ──────────────────────────────────────────────────── */}
+      <Section title="Close out">
+        {isTerminal(inst.status) ? (
+          <div className="rounded-xl border border-card-border bg-card px-3.5 py-3">
+            <p className="text-[13px] text-foreground">
+              Closed {inst.closed_at ? fmtDateTime(inst.closed_at) : ""} as{" "}
+              <b>{inst.current_state_name || inst.status}</b>
+            </p>
+            {inst.outcome && <p className="mt-1 text-[12.5px] text-muted">{inst.outcome}</p>}
           </div>
-          <div className="min-h-[12rem]">
-            <AlarmFacts incident={inst} cameraName={camera?.name ?? null} />
+        ) : (
+          <div className="flex flex-wrap items-center gap-2.5 rounded-xl border border-dashed border-card-border px-3.5 py-3">
+            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Outcome</span>
+            <span className="text-[12.5px] text-muted">
+              Not closed yet — closing asks what happened, and that note is what this record is
+              for.
+            </span>
+            <span className="ml-auto flex flex-wrap gap-1.5">
+              {closingMoves.map((t) => (
+                <button
+                  key={t.transition_id}
+                  type="button"
+                  onClick={() => runMove(t)}
+                  disabled={doTransition.isPending}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-[11.5px] font-medium text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50"
+                >
+                  {t.label}
+                  {(t.requires_note || t.form_id) && (
+                    <Icon icon="heroicons-outline:pencil-square" className="text-[11px] opacity-70" />
+                  )}
+                </button>
+              ))}
+              {closingMoves.length === 0 && !movesQ.isLoading && (
+                <span className="text-[11.5px] text-muted">
+                  This procedure offers no way to close it from here.
+                </span>
+              )}
+            </span>
           </div>
-          <div className="min-h-[16rem]">
-            <AlarmTrail incident={inst} />
-          </div>
-        </div>
-      </div>
+        )}
+      </Section>
+
+      {/* ── RAW EVENT ──────────────────────────────────────────────────── */}
+      {inst.trigger_data && (
+        <Section title="Raw event">
+          {rawOpen ? (
+            <EventPayloadInspector
+              payload={inst.trigger_data}
+              eventType={inst.event_type}
+              incident={inst}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setRawOpen(true)}
+              className="justify-self-start rounded-md border border-card-border px-2.5 py-1.5 text-[11.5px] text-muted transition hover:bg-hover hover:text-foreground"
+            >
+              Show what the device sent
+            </button>
+          )}
+        </Section>
+      )}
 
       {noteFor && (
         <ReasonModal
           action={{ title: noteFor.label, verb: noteFor.label, run: () => {} }}
           pending={doTransition.isPending}
           onCancel={() => setNoteFor(null)}
-          onSubmit={(reason) =>
-            doTransition.mutate({ transition_id: noteFor.transition_id, notes: reason })
-          }
+          onSubmit={(reason) => doTransition.mutate({ transition_id: noteFor.transition_id, notes: reason })}
         />
       )}
 
@@ -487,6 +650,6 @@ export default function WorkflowDetailPage() {
         currentAssigneeId={inst.assigned_to ?? inst.assignment?.assigned_to ?? ""}
         onAssigned={invalidate}
       />
-    </div>
+    </article>
   );
 }
