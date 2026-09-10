@@ -411,15 +411,15 @@ export default function WorkflowDetailPage() {
             <div className={`relative aspect-video w-full ${camera ? "bg-black" : ""}`}>
               <EvidencePicture incident={inst} camera={camera} kind="recording" />
             </div>
-            <figcaption className="flex flex-wrap items-center gap-2 border-t border-card-border px-3 py-2 text-[11px] text-muted">
-              What the recorder held when it fired
-              {eventTime && <span className="font-mono">· {fmtDateTime(eventTime)}</span>}
+            <figcaption className="flex h-9 items-center gap-2 border-t border-card-border px-3 text-[11px] text-muted">
+              <span className="truncate">What the recorder held when it fired</span>
+              {eventTime && <span className="shrink-0 font-mono">· {fmtDateTime(eventTime)}</span>}
               {camera && (
                 <Link
                   href={`/playback?camera=${encodeURIComponent(cameraId)}${
                     eventTime ? `&t=${encodeURIComponent(eventTime)}` : ""
                   }`}
-                  className="ml-auto inline-flex items-center gap-1 rounded-md border border-card-border px-2 py-0.5 transition hover:bg-hover hover:text-foreground"
+                  className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md border border-card-border px-2 py-0.5 transition hover:bg-hover hover:text-foreground"
                 >
                   <Icon icon="heroicons-outline:film" className="text-xs" /> Timeline
                 </Link>
@@ -565,8 +565,8 @@ export default function WorkflowDetailPage() {
             <div className={`relative aspect-video w-full ${camera ? "bg-black" : ""}`}>
               <EvidencePicture incident={inst} camera={camera} kind="live" />
             </div>
-            <figcaption className="border-t border-card-border px-3 py-2 text-[11px] text-muted">
-              What the same camera shows now
+            <figcaption className="flex h-9 items-center border-t border-card-border px-3 text-[11px] text-muted">
+              <span className="truncate">What the same camera shows now</span>
             </figcaption>
           </figure>
         ) : (

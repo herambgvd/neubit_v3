@@ -199,6 +199,14 @@ describe("the case file", () => {
     // Neither column holds the other's picture.
     expect(within(evidence).queryByText(/^live:/)).toBeNull();
     expect(within(live).queryByTestId("recording")).toBeNull();
+
+    // And they are the SAME height: a 16:9 frame plus a fixed one-row caption on
+    // both sides. The recording's caption used to wrap to two lines on a narrow
+    // column, which left one card sitting lower than the other.
+    const caps = [evidence, live].map(
+      (col) => col.querySelector("figcaption") as HTMLElement,
+    );
+    expect(caps.every((c) => c.className.includes("h-9"))).toBe(true);
   });
 
   it("logs what was done, and the note somebody was made to write", async () => {
