@@ -139,6 +139,20 @@ export default function AlarmMap({
   return (
     <div className="grid h-full min-h-[24rem] gap-2">
       <div className="relative min-h-[20rem] flex-1 overflow-hidden rounded-xl border border-card-border">
+        {/* THE COUNT ON THE MAP, not a banner under it. The pins carry the alarms
+            they can; the ones no pin can carry are a chip in the corner rather
+            than a full-width amber notice — an operator should read the map, not
+            a paragraph about it. Still said, because a map that silently omits
+            part of the queue is worse than no map. */}
+        {unmappable.length > 0 && (
+          <span
+            title="Raised with no site, or at a site with no coordinates. They are in the queue."
+            className="absolute bottom-2 left-2 z-10 inline-flex items-center gap-1.5 rounded-full border border-card-border bg-[rgba(8,15,34,.85)] px-2.5 py-1 text-[11px] text-amber-300 backdrop-blur-xs"
+          >
+            <Icon icon="heroicons-outline:map-pin" className="text-[11px]" />
+            {unmappable.length} unplaced
+          </span>
+        )}
         <OfflineMapView
           center={{
             lat: Number(centre!.coordinates.latitude),
@@ -173,18 +187,7 @@ export default function AlarmMap({
         />
       </div>
 
-      {unmappable.length > 0 && (
-        <p className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11.5px] text-amber-200">
-          <Icon icon="heroicons-outline:information-circle" className="mt-0.5 shrink-0 text-sm" />
-          <span>
-            {unmappable.length} open alarm{unmappable.length === 1 ? "" : "s"} cannot be placed —
-            {unmappable.some((it) => !it.site_id)
-              ? " raised with no site, or "
-              : " "}
-            at a site with no coordinates. They are all in the queue beside this map.
-          </span>
-        </p>
-      )}
+
     </div>
   );
 }

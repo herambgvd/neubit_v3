@@ -31,6 +31,7 @@ import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { workflow as wfApi } from "@/features/workflow/api";
+import { useCameraSites } from "../hooks/useCameraSites";
 import type { CreateTriggerRequest, SopPublic, TriggerPublic } from "@/features/workflow/types";
 import { eventTypeLabel, fmtDate, fmtTime, sevPreset, type NormalizedVmsEvent } from "../eventLib";
 
@@ -211,6 +212,11 @@ export default function EscalateDialog({
 }: EscalateDialogProps) {
   const qc = useQueryClient();
   const { can } = useAuth();
+  // WHERE the alarm is, not just which camera. An incident with no site cannot be
+  // placed on the estate map and slips past every site-scoped filter — and the
+  // camera's own `site_id` is the RECORDER, so the answer has to come from where
+  // somebody actually pinned that camera.
+  const { siteOf } = useCameraSites();
   // Everything below reads ONE event — the anchor — and the count only changes
   // what is written on the alarm and which events get acknowledged.
   const event = anchorEvent(events);
@@ -302,6 +308,7 @@ export default function EscalateDialog({
       const where = cameraName || event.camera_name || "camera";
       return wfApi.instances.create({
         sop_id: sopId,
+        site_id: siteOf(event.camera_id),
         name: many
           ? `${eventTypeLabel(event.event_type)} · ${where} (${events.length} events)`
           : `${eventTypeLabel(event.event_type)} · ${where}`,

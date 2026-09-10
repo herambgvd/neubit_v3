@@ -77,8 +77,9 @@ describe("the map", () => {
     expect(props.ops.get("s1")?.alarms).toBe(2);
   });
 
-  it("says how many alarms it cannot place, instead of quietly dropping them", () => {
-    // A map that omits half the queue without saying so is worse than no map.
+  it("counts what it cannot place on the map, not in a banner under it", () => {
+    // A map that omits part of the queue without saying so is worse than no map —
+    // but the saying belongs on the map as a chip, not as a paragraph beneath it.
     render(
       <AlarmMap
         incidents={[inc(), inc({ site_id: null }), inc({ site_id: "elsewhere" })] as never}
@@ -86,7 +87,13 @@ describe("the map", () => {
       />,
     );
 
-    expect(screen.getByText(/2 open alarms cannot be placed/i)).toBeInTheDocument();
+    expect(screen.getByText("2 unplaced")).toBeInTheDocument();
+    expect(screen.queryByText(/cannot be placed —/i)).toBeNull();
+  });
+
+  it("says nothing at all when everything is on the map", () => {
+    render(<AlarmMap incidents={[inc()] as never} sites={[site()] as never} />);
+    expect(screen.queryByText(/unplaced/i)).toBeNull();
   });
 
   it("asks for coordinates rather than drawing an empty world", () => {

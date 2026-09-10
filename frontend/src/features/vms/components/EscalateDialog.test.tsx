@@ -88,6 +88,21 @@ const trigger = (over: Record<string, unknown> = {}) => ({
 
 function stubWith(sops: unknown[], over: Record<string, unknown> = {}): ApiStub {
   return stubApi({
+    "GET /vms/cameras": { items: [], total: 0 },
+    "GET /vms/federation/cameras": {
+      items: [
+        { id: "cam-9", name: "Channel 2", node_id: "n1", node_name: "recorder-a", status: "online" },
+      ],
+      total: 1,
+    },
+    // The estate's placement index: which floor of which site a camera is pinned
+    // to. `fed:n1:cam-9` is the id a placement is keyed on.
+    "GET /device-placements/index": {
+      items: [
+        { device_id: "fed:n1:cam-9", device_type: "camera", site_id: "site-7", floor_id: "f1" },
+      ],
+      count: 1,
+    },
     "GET /workflow/sops": { items: sops, total: sops.length },
     "GET /workflow/triggers": { items: [], total: 0 },
     "POST /workflow/instances": { instance_id: "inc-1", name: "Tamper · Channel 2" },
@@ -141,6 +156,35 @@ describe("choosing a procedure", () => {
 
     await waitFor(() => expect(stub.matching("POST /workflow/instances")).toHaveLength(1));
     expect(stub.body("POST /workflow/instances")?.sop_id).toBe("tamper-sop");
+  });
+
+  it("carries WHERE the alarm is, not only which camera", async () => {
+    // An incident with no site cannot be placed on the estate map and slips past
+    // every site-scoped filter. The camera's own site_id is the RECORDER, so the
+    // answer comes from where somebody actually pinned that camera.
+    const stub = stubWith([sop({ sop_id: "s1" })]);
+    open();
+
+    await screen.findByText("General alarm");
+    await userEvent.click(screen.getByRole("button", { name: /raise alarm/i }));
+
+    await waitFor(() => expect(stub.matching("POST /workflow/instances")).toHaveLength(1));
+    expect(stub.body("POST /workflow/instances")?.site_id).toBe("site-7");
+  });
+
+  it("leaves the site null when nobody has placed that camera", async () => {
+    // Null is a real answer. Guessing a site would put the alarm at a building it
+    // is not in, which is worse than an unplaced pin.
+    const stub = stubWith([sop({ sop_id: "s1" })], {
+      "GET /device-placements/index": { items: [], count: 0 },
+    });
+    open();
+
+    await screen.findByText("General alarm");
+    await userEvent.click(screen.getByRole("button", { name: /raise alarm/i }));
+
+    await waitFor(() => expect(stub.matching("POST /workflow/instances")).toHaveLength(1));
+    expect(stub.body("POST /workflow/instances")?.site_id).toBeNull();
   });
 
   it("sends the whole envelope with the incident", async () => {
