@@ -634,6 +634,8 @@ export default function WorkflowPage() {
               sites={sitesList}
               selectedSiteId={siteId}
               onSelectSite={(id) => setSiteId(id)}
+              siteName={siteName}
+              sopName={sopName}
             />
           </div>
         ) : (

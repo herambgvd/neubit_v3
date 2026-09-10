@@ -15,14 +15,15 @@
 //
 // The floor plan is still reachable, one step in, from the site card. It is the
 // second question, and it is asked after the first.
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { Icon } from "@iconify/react";
 
 import type { SitePublic } from "@/lib/types";
 import type { SiteWithCoords } from "@/features/core/sites/constants";
 import { EMPTY_OPS, type SiteOps } from "@/features/core/sites/estateRollup";
-import type { InstancePublic } from "../../types";
+import type { InstancePublic, NameMap } from "../../types";
+import IncidentMap from "./IncidentMap";
 import { incId, isOpen } from "./lib";
 
 // Loaded on demand, like the Sites console does it: MapLibre reaches for
@@ -45,6 +46,8 @@ export interface AlarmMapProps {
   sites: SitePublic[];
   selectedSiteId?: string;
   onSelectSite?: (siteId: string) => void;
+  siteName?: NameMap;
+  sopName?: NameMap;
 }
 
 /** A site is mappable when it carries real coordinates. Anything else cannot be
@@ -74,7 +77,14 @@ export default function AlarmMap({
   sites,
   selectedSiteId = "",
   onSelectSite,
+  siteName = {},
+  sopName = {},
 }: AlarmMapProps) {
+  // INSIDE Alarms, not off in the video wall. The pin's "Floor plan" used to be a
+  // link to /streaming?view=map — which left the console the operator was working
+  // in, and landed on a screen that says "No floor plan uploaded" for a level
+  // nothing was placed on. The plan is a view of THIS map now, with a way back.
+  const [planFor, setPlanFor] = useState<string>("");
   const mappable = useMemo(() => mappableSites(sites), [sites]);
   const ops = useMemo(() => alarmsBySite(incidents), [incidents]);
 
@@ -88,6 +98,30 @@ export default function AlarmMap({
 
   const selected = mappable.find((s) => s.site_id === selectedSiteId) ?? null;
   const centre = selected ?? mappable[0] ?? null;
+  const planSite = sites.find((s) => s.site_id === planFor) ?? null;
+
+  if (planSite) {
+    return (
+      <div className="grid h-full min-h-[24rem] content-start gap-2">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setPlanFor("")}
+            className="inline-flex items-center gap-1.5 rounded-md border border-card-border px-2 py-1 text-[11.5px] text-muted transition hover:bg-hover hover:text-foreground"
+          >
+            <Icon icon="heroicons-outline:arrow-left" className="text-xs" /> Back to the estate
+          </button>
+          <span className="text-[12px] text-foreground">{planSite.name}</span>
+        </div>
+        <IncidentMap
+          incidents={incidents.filter((it) => it.site_id === planSite.site_id)}
+          sites={[planSite]}
+          siteName={siteName}
+          sopName={sopName}
+        />
+      </div>
+    );
+  }
 
   if (mappable.length === 0) {
     return (
@@ -116,6 +150,26 @@ export default function AlarmMap({
           ops={ops}
           onSelect={(site) => onSelectSite?.(site.site_id)}
           onClose={() => onSelectSite?.("")}
+          siteActions={(site) => (
+            <>
+              <button
+                type="button"
+                onClick={() => setPlanFor(site.site_id)}
+                className="inline-flex items-center gap-1 rounded-sm border border-slate-300 px-2 py-1 text-[10px] font-medium text-slate-700 hover:bg-slate-100"
+              >
+                Floor plan
+                <Icon icon="heroicons-outline:map" className="text-[10px]" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onSelectSite?.(site.site_id)}
+                className="inline-flex items-center gap-1 rounded-sm border border-slate-300 px-2 py-1 text-[10px] font-medium text-slate-700 hover:bg-slate-100"
+              >
+                Alarms here
+                <Icon icon="heroicons-outline:funnel" className="text-[10px]" />
+              </button>
+            </>
+          )}
         />
       </div>
 

@@ -8,6 +8,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import AlarmMap, { alarmsBySite, mappableSites } from "./AlarmMap";
 
@@ -19,8 +20,17 @@ vi.mock("next/dynamic", () => ({
   default: () =>
     function StubBasemap(props: Record<string, unknown>) {
       seen.push(props);
-      return <div data-testid="gis" />;
+      const actions = props.siteActions as ((s: unknown) => React.ReactNode) | undefined;
+      return <div data-testid="gis">{actions?.({ site_id: "s1", name: "Aeon Tower" })}</div>;
     },
+}));
+
+// The floor plan is a different component with its own site/level pickers; this
+// suite is about WHERE the drill-down goes, not what it draws.
+vi.mock("./IncidentMap", () => ({
+  default: ({ sites }: { sites: { name: string }[] }) => (
+    <div data-testid="floorplan">{sites.map((s) => s.name).join(",")}</div>
+  ),
 }));
 
 const site = (over: Record<string, unknown> = {}) => ({
@@ -84,5 +94,34 @@ describe("the map", () => {
 
     expect(screen.getByText(/no site on the map yet/i)).toBeInTheDocument();
     expect(screen.queryByTestId("gis")).toBeNull();
+  });
+});
+
+
+describe("the drill-down", () => {
+  it("opens the floor plan INSIDE alarms, not in the video wall", async () => {
+    // The pin's card used to link to /streaming?view=map — which left the console
+    // the operator was working in, and landed on "No floor plan uploaded" for a
+    // level nothing had been placed on.
+    render(<AlarmMap incidents={[inc()] as never} sites={[site()] as never} />);
+
+    const plan = screen.getByRole("button", { name: /floor plan/i });
+    expect(plan).not.toHaveAttribute("href");
+
+    await userEvent.click(plan);
+    expect(screen.getByTestId("floorplan")).toHaveTextContent("Aeon Tower");
+    // And there is a way back to the estate — the old link had none.
+    expect(screen.getByRole("button", { name: /back to the estate/i })).toBeInTheDocument();
+  });
+
+  it("shows only that site's alarms on its plan", async () => {
+    render(
+      <AlarmMap
+        incidents={[inc(), inc({ site_id: "elsewhere" })] as never}
+        sites={[site()] as never}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /floor plan/i }));
+    expect(screen.getByTestId("floorplan")).toBeInTheDocument();
   });
 });

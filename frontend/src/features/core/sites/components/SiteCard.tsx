@@ -5,6 +5,7 @@
 // The title needs `!` — the app is locked to dark mode and the global
 // `h3 { …dark:text-slate-300 }` rule in _typography.scss outranks a plain class,
 // which washed the site name out to grey on the white popup.
+import type { ReactNode } from "react";
 import { Icon } from "@iconify/react";
 
 import type { SitePublic } from "@/lib/types";
@@ -17,9 +18,13 @@ export interface SiteCardProps {
    *  what it knows rather than zeros, which would read as "nothing here". */
   ops?: SiteOps;
   onClose?: () => void;
+  /** What this map's card offers instead of the estate map's own two links.
+   *  A pin on the ALARMS map must not send an operator to the video wall — the
+   *  drill-down that makes sense there is this site's floor plan, in Alarms. */
+  actions?: ReactNode;
 }
 
-export default function SiteCard({ site, ops, onClose }: SiteCardProps) {
+export default function SiteCard({ site, ops, onClose, actions }: SiteCardProps) {
   const tone = THREAT_PIN[site.threat_level] || THREAT_PIN.normal;
   return (
     <div className="relative min-w-[240px] max-w-[280px] space-y-2 rounded-lg border border-slate-200 bg-white p-2 text-slate-800">
@@ -67,6 +72,8 @@ export default function SiteCard({ site, ops, onClose }: SiteCardProps) {
         </div>
       )}
       <div className="flex flex-wrap gap-1">
+        {actions ?? (
+          <>
         {/* The drill-down the map existed without: an outdoor pin and the indoor
             floor plan were two maps with no way from one to the other. */}
         <a
@@ -85,6 +92,8 @@ export default function SiteCard({ site, ops, onClose }: SiteCardProps) {
           Configure
           <Icon icon="heroicons-outline:arrow-top-right-on-square" className="text-[10px]" />
         </a>
+          </>
+        )}
       </div>
     </div>
   );
