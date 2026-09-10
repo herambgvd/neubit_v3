@@ -418,6 +418,64 @@ describe("how long an event ran", () => {
 });
 
 
+describe("escalating an event into an alarm", () => {
+  /**
+   * The door between the two surfaces. An event that already raised an alarm
+   * offers the way TO it; one that has not offers the way to raise it — one slot,
+   * never both, or an operator raises a second alarm for the same event without
+   * being told the first exists.
+   */
+  it("offers Escalate on an event that has no alarm yet", async () => {
+    stubAll();
+    renderWithProviders(<CameraEventsPage />);
+
+    expect(await screen.findByRole("button", { name: /escalate/i })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /open alarm/i })).toBeNull();
+  });
+
+  it("offers the alarm instead, once one exists", async () => {
+    stubAll({
+      "GET /vms/events": { items: [event({ id: "row-9", event_id: "row-9" })], total: 1 },
+      "GET /workflow/instances": {
+        items: [{ instance_id: "inc-3", source_event_id: "row-9", name: "Tamper" }],
+        total: 1,
+      },
+    });
+    renderWithProviders(<CameraEventsPage />);
+
+    const link = await screen.findByRole("link", { name: /open alarm/i });
+    expect(link).toHaveAttribute("href", "/alarms/inc-3");
+    expect(screen.queryByRole("button", { name: /escalate/i })).toBeNull();
+  });
+
+  it("marks the event acknowledged when it becomes somebody's work", async () => {
+    // An event a person is now working must not keep sitting in the count of what
+    // nobody has touched.
+    stubAll({
+      "GET /vms/events": { items: [event({ id: "row-5", event_id: "row-5" })], total: 1 },
+      "GET /workflow/sops": {
+        items: [
+          {
+            sop_id: "s1", name: "General alarm", description: null, initial_state: "st",
+            priority: "medium", trigger_event_types: [], sla_hours: 4, tags: [],
+            escalation_rules: [], version: 1, is_active: true,
+            created_at: TODAY, updated_at: TODAY,
+          },
+        ],
+        total: 1,
+      },
+      "POST /workflow/instances": { instance_id: "inc-9", name: "General alarm" },
+    });
+    renderWithProviders(<CameraEventsPage />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /escalate/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /raise alarm/i }));
+
+    await waitFor(() => expect(stub.matching("POST /vms/events/*")).toHaveLength(1));
+  });
+});
+
+
 describe("putting an event down", () => {
   /**
    * The triptych opens on an event the operator did not choose — the newest one,

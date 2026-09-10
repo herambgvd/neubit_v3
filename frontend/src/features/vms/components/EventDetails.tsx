@@ -28,6 +28,9 @@ export interface EventDetailsProps {
   ackPending?: boolean;
   /** Playback deep link — for the whole timeline, when one clip is not enough. */
   investigateHref?: string | null;
+  /** Escalate into an alarm — absent when the operator cannot raise one, or when
+   *  this event already has one (the link below replaces it). */
+  onEscalate?: () => void;
   /** Let go of this event. The triptych holds a selection the operator did not
    *  always make (the newest event, or an alarm that took the canvas), so there
    *  has to be a way to put it down — otherwise the only way off an event is onto
@@ -64,6 +67,7 @@ export default function EventDetails({
   ackPending = false,
   investigateHref = null,
   onClose,
+  onEscalate,
 }: EventDetailsProps) {
   const iv = eventInterval(event);
   // Only an OPEN event needs a clock: its duration is still changing.
@@ -172,13 +176,28 @@ export default function EventDetails({
             Acknowledged
           </span>
         )}
-        {incidentId && (
+        {/* ONE SLOT, TWO STATES. An event that already raised an alarm offers the
+            way TO it; one that has not offers the way to raise it. Two buttons
+            here would let an operator raise a second alarm for the same event
+            without being told the first exists. */}
+        {incidentId ? (
           <Link
             href={`/alarms/${encodeURIComponent(incidentId)}`}
             className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-[11.5px] text-amber-300 transition hover:bg-amber-500/20"
           >
-            <Icon icon="heroicons-outline:bell-alert" className="text-xs" /> Incident
+            <Icon icon="heroicons-outline:bell-alert" className="text-xs" /> Open alarm
           </Link>
+        ) : (
+          onEscalate && (
+            <button
+              type="button"
+              onClick={onEscalate}
+              title="Raise an alarm from this event and run a procedure on it"
+              className="inline-flex items-center gap-1.5 rounded-md border border-orange-500/40 bg-orange-500/10 px-2.5 py-1.5 text-[11.5px] font-medium text-orange-300 transition hover:bg-orange-500/20"
+            >
+              <Icon icon="heroicons-outline:arrow-trending-up" className="text-xs" /> Escalate
+            </button>
+          )
         )}
         {investigateHref && (
           <Link

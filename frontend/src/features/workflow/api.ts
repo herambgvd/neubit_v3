@@ -29,6 +29,7 @@ import type {
   CreateAlertFormatRequest,
   CreateChannelRequest,
   CreateFormRequest,
+  CreateInstanceRequest,
   CreateSopRequest,
   CreateStateRequest,
   CreateTemplateRequest,
@@ -38,6 +39,7 @@ import type {
   InstancePublic,
   InstanceStatsResponse,
   InstanceStatus,
+  InstallStartersResponse,
   SetThreatLevelRequest,
   SimulateEventRequest,
   SimulateEventResponse,
@@ -93,7 +95,12 @@ function nested<Pub, Create, Update = Partial<Create>>(child: string) {
 }
 
 export const workflow = {
-  sops: resource<SopPublic, CreateSopRequest>("sops"),
+  sops: {
+    ...resource<SopPublic, CreateSopRequest>("sops"),
+    // POST /workflow/sops/starters — install the starter playbooks this tenant is
+    // missing. Idempotent, so it is safe behind a button somebody presses twice.
+    installStarters: () => unwrap(api.post<InstallStartersResponse>(`${WF}/sops/starters`, {})),
+  },
   states: nested<StatePublic, CreateStateRequest>("states"),
   transitions: nested<TransitionPublic, CreateTransitionRequest>("transitions"),
   triggers: {
@@ -136,6 +143,11 @@ export const workflow = {
     // Each incident row also carries derived `event_source` + `source_event_id`.
     list: (params: QueryParams = {}) =>
       unwrap(api.get<Paged<InstancePublic>>(`${WF}/instances${qs(params)}`)),
+    // POST /workflow/instances — an operator raising an incident by hand, which is
+    // what "escalate this event" is. The correlation engine uses the same table by
+    // a different door.
+    create: (body: CreateInstanceRequest) =>
+      unwrap(api.post<InstancePublic>(`${WF}/instances`, body)),
     get: (id: string) => unwrap(api.get<InstancePublic>(`${WF}/instances/${id}`)),
     stats: (params: QueryParams = {}) =>
       unwrap(api.get<InstanceStatsResponse>(`${WF}/instances/stats${qs(params)}`)),

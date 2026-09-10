@@ -21,6 +21,7 @@ import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import { workflow as wfApi } from "@/features/workflow/api";
 import { vms } from "./api";
+import { useAuth } from "@/lib/auth";
 import { useEstateCameras } from "./hooks/useEstateCameras";
 import { EVENT_TYPE_FILTERS, isAttentionSeverity } from "./constants";
 import { normalizeVmsEvent, type NormalizedVmsEvent } from "./eventLib";
@@ -30,11 +31,13 @@ import EventMonitorPane from "./components/EventMonitorPane";
 import EventDetails from "./components/EventDetails";
 import EventLivePane from "./components/EventLivePane";
 import EventTable from "./components/EventTable";
+import EscalateDialog from "./components/EscalateDialog";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
 export default function CameraEventsPage() {
   const qc = useQueryClient();
+  const { can } = useAuth();
   const [cameraId, setCameraId] = useState("");
   const [eventType, setEventType] = useState("");
   const [severity, setSeverity] = useState("");
@@ -109,6 +112,12 @@ export default function CameraEventsPage() {
     },
     onError: (e) => toast.error(apiError(e, "Failed to acknowledge")),
   });
+
+  // ESCALATION — the door from the ledger to the work. An event an operator
+  // decides needs following up becomes an incident running a procedure, and this
+  // page holds only the choice of WHICH event; the dialog holds the rest.
+  const [escalating, setEscalating] = useState<NormalizedVmsEvent | null>(null);
+  const canEscalate = can("workflow.instance.create");
 
   // Cross-link → Incidents. A camera event that fired an SOP created a workflow
   // Incident carrying that event's id in trigger_data.payload.event_id (surfaced as
@@ -464,6 +473,7 @@ export default function CameraEventsPage() {
                 ? `/playback?camera=${encodeURIComponent(selected.camera_id)}&t=${encodeURIComponent(selected.occurred_at)}`
                 : null
             }
+            onEscalate={canEscalate ? () => setEscalating(selected) : undefined}
             onClose={() => {
               setDismissed(true);
               setSelectedId(null);
@@ -664,6 +674,26 @@ export default function CameraEventsPage() {
           }
         />
         </div>
+      )}
+
+      {escalating && (
+        <EscalateDialog
+          open
+          event={escalating}
+          cameraName={cameraName(escalating.camera_id)}
+          recorderName={
+            (cameraById[escalating.camera_id || ""] as { node_name?: string } | undefined)?.node_name ?? null
+          }
+          nodeId={
+            (cameraById[escalating.camera_id || ""] as { node_id?: string } | undefined)?.node_id ?? null
+          }
+          onClose={() => setEscalating(null)}
+          onCreated={() => {
+            // Escalating IS taking it: an event somebody is now working must not
+            // keep sitting in the count of what nobody has touched.
+            if (escalating.id && !escalating.acknowledged) ackMut.mutate(escalating.id);
+          }}
+        />
       )}
     </div>
   );

@@ -66,6 +66,36 @@ export interface CreateSopRequest {
 
 export type UpdateSopRequest = Partial<CreateSopRequest>;
 
+/** What POST /workflow/sops/starters reports back. `skipped` names the starter
+ *  slugs this tenant already had — "nothing happened" has two meanings on that
+ *  route, and an operator pressing the button deserves to know which one. */
+export interface InstallStartersResponse {
+  items: SopPublic[];
+  created: number;
+  skipped: string[];
+}
+
+/** Raising an incident by hand — an operator escalating an event they are
+ *  looking at, rather than the correlation engine matching a trigger.
+ *
+ *  `trigger_data` is deliberately the SAME envelope shape the bus publishes
+ *  ({source, payload}), because the backend derives `event_source` and
+ *  `source_event_id` from it. Send a different shape and the incident still
+ *  saves — it just loses its camera, its link back to the event, and its place
+ *  in the Source filter. */
+export interface CreateInstanceRequest {
+  sop_id: string;
+  name?: string | null;
+  description?: string | null;
+  priority?: InstancePriority | null;
+  site_id?: string | null;
+  tags?: string[];
+  trigger_data?: Record<string, unknown> | null;
+  event_id?: string | null;
+  event_type?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
 export interface StatePublic {
   state_id: string;
   sop_id: string;
