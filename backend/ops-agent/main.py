@@ -547,21 +547,26 @@ async def db_import(request: Request) -> dict:
     # tenant secrets, the audit log — sat in the postgres container readable by
     # anything that could exec in, until the container was recreated. Two
     # concurrent restores also interleaved into the same file.
-    # A PRIVATE DIRECTORY, not a file in the shared one.
+    # STAGED SOMEWHERE PRIVATE, not in the shared temp directory.
     #
-    # /tmp is world-writable, and both halves of that matter. World-READABLE means
-    # a full control-DB dump — password hashes, encrypted tenant secrets, the audit
-    # log — is visible to anything that can exec into the container for as long as
-    # it exists. World-WRITABLE means another process can pre-create the path and
-    # have us write through its symlink.
+    # /tmp is world-WRITABLE as well as world-readable, and both halves matter: the
+    # first lets anything that can exec into the container read a full control-DB
+    # dump — password hashes, encrypted tenant secrets, the audit log — and the
+    # second lets another process pre-create the path so we write through its
+    # symlink. /var/lib/postgresql is no better; it is mode 1777 too.
     #
-    # So the dump goes inside a 0700 directory with an unpredictable name, created
-    # in the same archive: the directory is ours before the file exists, nobody
-    # else can enter it, and the tar carries both modes so there is no window
-    # between creating and locking them down. The file itself is 0600 as well —
-    # belt and braces, because the two protect against different mistakes.
+    # So the dump goes under /root, which the image already keeps at 0700, inside a
+    # 0700 directory of its own with an unpredictable name. The directory and its
+    # mode arrive in the same archive, so there is no moment where the path exists
+    # and is not yet locked down, and the file is 0600 as well — the two protect
+    # against different mistakes.
+    #
+    # This assumes the exec runs as root, which it does (no `user=` on exec_run, and
+    # the postgres image's default). If that ever changes the failure is loud rather
+    # than silent: put_archive returns falsy and the restore 502s before touching
+    # the database.
     stage = f"neubit_restore_{uuid.uuid4().hex}"
-    path = f"/tmp/{stage}/dump.sql"
+    path = f"/root/{stage}/dump.sql"
     tar_buf = io.BytesIO()
     with tarfile.open(fileobj=tar_buf, mode="w") as tar:
         d = tarfile.TarInfo(name=stage)
@@ -574,7 +579,7 @@ async def db_import(request: Request) -> dict:
         tar.addfile(info, io.BytesIO(sql))
     tar_buf.seek(0)
     try:
-        if not container.put_archive("/tmp", tar_buf.getvalue()):
+        if not container.put_archive("/root", tar_buf.getvalue()):
             raise HTTPException(status_code=502, detail="failed to stage SQL in container")
 
         # Apply the dump atomically: --single-transaction means any failure rolls
@@ -602,7 +607,7 @@ async def db_import(request: Request) -> dict:
     finally:
         # Always, including on failure — the staged file holds the whole dump.
         try:
-            container.exec_run(["rm", "-rf", f"/tmp/{stage}"])
+            container.exec_run(["rm", "-rf", f"/root/{stage}"])
         except APIError as exc:  # noqa: BLE001 — cleanup must not mask the result
             log.warning("could not remove staged dump %s: %s", path, exc)
     stdout, stderr = streams if isinstance(streams, tuple) else (streams, b"")

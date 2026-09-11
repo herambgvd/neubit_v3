@@ -40,6 +40,11 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CORE_IMAGE="${CORE_IMAGE:-neubit-v3-core:latest}"
 TEST_IMAGE="${TEST_IMAGE:-neubit-core-tests:latest}"
+# VE_DATABASE_URL is passed below because the kernel's Settings has no default for
+# it — a connection string in source is a credential in version control with a
+# password and a passwordless database without one. The suite runs on in-memory
+# SQLite and never opens this connection; it exists so importing the settings
+# succeeds, and it carries no credential pair for the same reason.
 DOCKER="${DOCKER:-docker}"
 
 if ! "$DOCKER" image inspect "$CORE_IMAGE" >/dev/null 2>&1; then
@@ -82,5 +87,6 @@ exec "$DOCKER" run --rm --network none \
   -e VE_KERNEL_PATH=/src/kernel \
   -e VE_REPO_ROOT=/repo \
   -e PYTHONDONTWRITEBYTECODE=1 \
+  -e VE_DATABASE_URL=postgresql+asyncpg://localhost:5432/neubit_control \
   "$TEST_IMAGE" \
   python -m pytest -p no:cacheprovider "$@"

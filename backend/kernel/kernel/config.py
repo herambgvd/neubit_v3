@@ -30,13 +30,18 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
 
     # --- Databases (this service's OWN db) ---------------------------------
-    # NO PASSWORD IN THE DEFAULT. This value exists so a developer can start a
-    # service against a local Postgres; every deployment sets VE_DATABASE_URL. A
-    # password baked in here is a credential in source control that nothing uses —
-    # and the day somebody DOES rely on it, the default has quietly become the
-    # production secret. Without one, libpq falls back to ~/.pgpass or a prompt,
-    # which is where a developer's own credential belongs.
-    database_url: str = "postgresql+asyncpg://neubit@localhost:5432/neubit"
+    # NO DEFAULT AT ALL. Not a convenience removed for a linter — a connection
+    # string in source is wrong in both available shapes: with a password it is a
+    # credential in version control, and without one it is a database reachable
+    # with no password. The first attempt at this traded the first complaint for
+    # the second, which is the tell that the default itself was the problem.
+    #
+    # Every deployment already sets VE_DATABASE_URL; every test runner passes one.
+    # So a service that refuses to start until it is TOLD which database it owns
+    # loses nothing and gains the property that it can never quietly connect
+    # somewhere nobody chose. A missing value fails at import with pydantic naming
+    # the field, which is as loud as this should be.
+    database_url: str
     # DB-per-tenant (ARCHITECTURE.md §10). Off: shared DB with tenant_id row
     # scoping, today's default. On: each tenant gets its own physical database
     # (``<base>_t_<tenant_hex>``), routed by the JWT tenant claim, created on

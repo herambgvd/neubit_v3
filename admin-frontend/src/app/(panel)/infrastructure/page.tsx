@@ -569,7 +569,18 @@ function LogsDrawer({ name, onClose }: { name: string; onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 animate-fade-in bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      {/* A <button>, because dismissing is an action — a div with an onClick is a
+          control nothing but a pointer can see. Out of the tab order and hidden
+          from assistive tech on purpose: the drawer already closes on Escape and
+          has its own close control, so a second announced "Close" would make a
+          screen-reader user choose between identical things. */}
+      <button
+        type="button"
+        aria-hidden="true"
+        tabIndex={-1}
+        className="absolute inset-0 animate-fade-in bg-black/70 backdrop-blur-sm"
+        onClick={onClose}
+      />
       <div className="animate-modal-in relative z-10 flex h-full w-full max-w-3xl flex-col border-l border-card-border bg-card shadow-2xl shadow-black/50">
         <div className="flex items-start justify-between gap-4 border-b border-card-border px-5 py-4">
           <div className="min-w-0">
