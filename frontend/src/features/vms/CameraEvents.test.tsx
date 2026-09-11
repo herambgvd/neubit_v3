@@ -356,13 +356,25 @@ describe("what is still happening", () => {
    * the day it began, identical to a motion blip. It is a STATUS now, in the
    * column an operator scans, counting up while they look at it.
    */
+  // A fixed DURATION ago, not a calendar hour. YESTERDAY is "yesterday at 22:00",
+  // which is a sound fixture for the day-grouping assertions and a time bomb for
+  // this one: after 22:00 each day it is more than 24h old, formatDuration
+  // switches to "1d 0h", and the /\d+h \d+m/ assertion below stops matching.
+  // It did, at 22:16, having passed all day.
+  const THIRTEEN_HOURS_AGO = new Date(Date.now() - 13 * 3_600_000).toISOString();
+
   const openEvent = (over: Record<string, unknown> = {}) =>
     event({
       severity: "critical",
       event_type: "connection_lost",
-      occurred_at: YESTERDAY,
-      created_at: YESTERDAY,
-      raw: { stateful: true, started_at: YESTERDAY, ended_at: null, payload: { reason: "connection refused" } },
+      occurred_at: THIRTEEN_HOURS_AGO,
+      created_at: THIRTEEN_HOURS_AGO,
+      raw: {
+        stateful: true,
+        started_at: THIRTEEN_HOURS_AGO,
+        ended_at: null,
+        payload: { reason: "connection refused" },
+      },
       ...over,
     });
 
