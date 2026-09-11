@@ -77,7 +77,7 @@ const TONE: Record<string, string> = {
   idle: "text-nb-faint",
 };
 
-export default function ArchiveSection({ node }: ArchiveSectionProps) {
+export default function ArchiveSection({ node }: Readonly<ArchiveSectionProps>) {
   const archiveQ = useQuery({
     queryKey: ["vms-node-archive", node.id],
     queryFn: () => vms.federation.storage.archive(node.id),
@@ -207,12 +207,12 @@ function Stat({
   value,
   sub,
   tone,
-}: {
+}: Readonly<{
   label: string;
   value: number;
   sub?: string;
   tone?: "warn";
-}) {
+}>) {
   return (
     <div className="rounded-[8px] border border-nb-line px-2.5 py-2">
       <span className="block text-[10.5px] uppercase tracking-[1px] text-nb-faint">{label}</span>

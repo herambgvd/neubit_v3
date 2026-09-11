@@ -14,8 +14,12 @@
  * wired. Those channels are named before the button rather than discovered after.
  */
 import { describe, expect, it } from "vitest";
+import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
-import { relayBehaviour, sharedChannels } from "./RelayModal";
+import { renderWithProviders } from "@/test/render";
+import { stubApi } from "@/test/apiStub";
+import RelayModal, { relayBehaviour, sharedChannels } from "./RelayModal";
 
 describe("what happens after the relay is driven", () => {
   it("says a monostable relay returns, and after how long", () => {
@@ -62,5 +66,71 @@ describe("what else the relay reaches", () => {
 
   it("drops blank names rather than showing an empty one", () => {
     expect(sharedChannels({ channel_names: ["", "Channel 1"] }, "Channel 2")).toEqual(["Channel 1"]);
+  });
+});
+
+/**
+ * AND ON THE SCREEN, where the consequences are.
+ *
+ * The two functions above decide what an operator is told; these check they are
+ * told it BEFORE the button, which is the whole difference between a warning and
+ * a post-mortem.
+ */
+const IO = {
+  device_host: "192.168.1.100",
+  channels_on_device: 3,
+  channel_names: ["Channel 1", "Channel 2", "Channel 5"],
+  relay_state_readable: false,
+  relay_state_detail:
+    "ONVIF provides no way to read a relay's present state; it is reported only as an event.",
+  device_io_supported: true,
+  digital_inputs: [],
+  relay_outputs: [{ token: "relay0", settings: { mode: "Bistable", idle_state: "closed" } }],
+};
+
+const ROUTE = "GET /vms/federation/nodes/n1/cameras/c1/io";
+
+function render(io: Record<string, unknown> = IO) {
+  stubApi({ [ROUTE]: () => io });
+  return renderWithProviders(
+    <RelayModal nodeId="n1" cameraId="c1" cameraName="Channel 2" onClose={() => {}} />,
+  );
+}
+
+describe("the relay dialog", () => {
+  it("names the other channels the device carries, before anything is pressed", async () => {
+    // One box, three channels. Driving a relay from Channel 2's page acts wherever
+    // the others are wired, and that has to be readable in advance.
+    render();
+    expect(await screen.findByText(/Channel 1, Channel 5 share these relays/)).toBeInTheDocument();
+  });
+
+  it("offers verbs, not a switch", async () => {
+    // There is no readable relay position, so a toggle would render one we made up.
+    render();
+    expect(await screen.findByRole("button", { name: "Set active" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Set inactive" })).toBeInTheDocument();
+    expect(screen.queryByRole("switch")).toBeNull();
+  });
+
+  it("carries the recorder's own sentence about why", async () => {
+    render();
+    expect(await screen.findByText(/no way to read a relay's present state/i)).toBeInTheDocument();
+  });
+
+  it("asks before it acts, and says what the drive reaches", async () => {
+    render();
+    await userEvent.click(await screen.findByRole("button", { name: "Set active" }));
+
+    expect(await screen.findByText(/Set relay relay0 active\?/)).toBeInTheDocument();
+    expect(screen.getByText(/192\.168\.1\.100/)).toBeInTheDocument();
+    // Twice on purpose: once on the row as a fact about the relay, once in the
+    // confirmation as a consequence of the thing about to happen.
+    expect(screen.getAllByText(/stays until it is set back/).length).toBeGreaterThan(1);
+  });
+
+  it("says a device offers no relays rather than showing an empty list", async () => {
+    render({ ...IO, relay_outputs: [], device_io_supported: false });
+    expect(await screen.findByText(/offers no Device I\/O service/i)).toBeInTheDocument();
   });
 });

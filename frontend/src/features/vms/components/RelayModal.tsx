@@ -62,7 +62,7 @@ export function sharedChannels(io: FederatedIo | undefined, cameraName: string):
   return names;
 }
 
-export default function RelayModal({ nodeId, cameraId, cameraName, onClose }: RelayModalProps) {
+export default function RelayModal({ nodeId, cameraId, cameraName, onClose }: Readonly<RelayModalProps>) {
   const qc = useQueryClient();
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
@@ -110,22 +110,20 @@ export default function RelayModal({ nodeId, cameraId, cameraName, onClose }: Re
       onConfirm: () => drive.mutate({ token: relay.token, state }),
     });
 
-  return (
-    <>
-      <Modal
-        open
-        onClose={onClose}
-        title="Device I/O"
-        subtitle={`Inputs and relays on the device behind ${cameraName}`}
-        footer={<Button variant="ghost" onClick={onClose}>Close</Button>}
-      >
-        {ioQ.isLoading ? (
-          <p className="py-6 text-center text-[12.5px] text-nb-faint">Reading the device…</p>
-        ) : ioQ.isError ? (
-          <p className="py-6 text-center text-[12.5px] text-nb-crit">
-            {apiError(ioQ.error, "The recorder could not read this device's I/O")}
-          </p>
-        ) : (
+  // Named above the JSX rather than chained inside it: three states, and the one a
+  // reader is usually looking for — what this shows when the device cannot be read
+  // — is the middle of the chain and the easiest to miss.
+  let body: React.ReactNode;
+  if (ioQ.isLoading) {
+    body = <p className="py-6 text-center text-[12.5px] text-nb-faint">Reading the device…</p>;
+  } else if (ioQ.isError) {
+    body = (
+      <p className="py-6 text-center text-[12.5px] text-nb-crit">
+        {apiError(ioQ.error, "The recorder could not read this device's I/O")}
+      </p>
+    );
+  } else {
+    body = (
           <div className="space-y-3">
             {shared.length > 0 && (
               <p className="rounded-[9px] border border-amber-500/30 bg-amber-500/8 px-3 py-2 text-[11.5px] text-amber-200">
@@ -191,7 +189,19 @@ export default function RelayModal({ nodeId, cameraId, cameraName, onClose }: Re
               </p>
             )}
           </div>
-        )}
+    );
+  }
+
+  return (
+    <>
+      <Modal
+        open
+        onClose={onClose}
+        title="Device I/O"
+        subtitle={`Inputs and relays on the device behind ${cameraName}`}
+        footer={<Button variant="ghost" onClick={onClose}>Close</Button>}
+      >
+        {body}
       </Modal>
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={drive.isPending} />
     </>

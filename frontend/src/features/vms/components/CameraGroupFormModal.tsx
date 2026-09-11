@@ -122,13 +122,19 @@ export default function CameraGroupFormModal({ open, group, cameras = [], onClos
 
   return createPortal(
     <div className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto p-4 py-[6vh]">
-      {/* Presentational: the mouse route out. Escape below is the keyboard one —
-          this modal rolls its own backdrop instead of using kit's <Modal>, and
-          took the click-away without the Escape that comes with it. */}
-      <div
-        role="presentation"
+      {/* A <button>, like every other backdrop in the console — dismissing is an
+          action. Out of the tab order and hidden from assistive tech because this
+          dialog has its own close control and Escape, so a second announced
+          "Close" would be two identical things to choose between. `disabled`
+          carries the in-flight save: the two dismissal routes must agree, or the
+          mouse can abandon a write the keyboard cannot. */}
+      <button
+        type="button"
+        aria-hidden="true"
+        tabIndex={-1}
+        disabled={save.isPending}
         className="absolute inset-0 bg-black/60 backdrop-blur-xs animate-fade-in"
-        onClick={() => (save.isPending ? null : onClose?.())}
+        onClick={() => onClose?.()}
       />
       <form
         onSubmit={submit}

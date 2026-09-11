@@ -48,7 +48,7 @@ export default function ScheduleTemplateModal({
   defaultWeek,
   onClose,
   onSaved,
-}: ScheduleTemplateModalProps) {
+}: Readonly<ScheduleTemplateModalProps>) {
   const isEdit = !!template;
   // Seeded once, from the template being edited. The caller MOUNTS this dialog when
   // it opens rather than keeping it around hidden, so there is nothing to reset —
@@ -85,6 +85,11 @@ export default function ScheduleTemplateModal({
     onError: (e) => setError(apiError(e)),
   });
 
+  // Three outcomes, one name. Chained inside the JSX this reads as a nested
+  // conditional the linter is right to flag and a reader has to unpick.
+  let saveLabel = isEdit ? "Rename" : "Create";
+  if (save.isPending) saveLabel = "Saving…";
+
   return (
     <Modal
       open
@@ -101,7 +106,7 @@ export default function ScheduleTemplateModal({
             Cancel
           </Button>
           <Button disabled={!name.trim() || save.isPending} onClick={() => save.mutate()}>
-            {save.isPending ? "Saving…" : isEdit ? "Rename" : "Create"}
+            {saveLabel}
           </Button>
         </>
       }

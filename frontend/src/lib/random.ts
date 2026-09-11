@@ -40,7 +40,9 @@ export function randomInt(max: number): number {
 export function randomFraction(): number {
   // 32 bits is more than enough for a jitter or a delay, and divides exactly.
   const [a, b, c, d] = bytes(4);
-  return ((a << 24) | (b << 16) | (c << 8) | d) / 0x1_0000_0000 + 0.5;
+  // 2 ** 32 rather than a hex literal: this is "the number of values 32 bits can
+  // hold", and that is what the expression should say.
+  return ((a << 24) | (b << 16) | (c << 8) | d) / 2 ** 32 + 0.5;
 }
 
 /** A short opaque id — for a draft row or an editor block that needs to be told

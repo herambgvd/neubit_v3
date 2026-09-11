@@ -222,9 +222,9 @@ async def federated_restore_ranges(
     node_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
     scope: Annotated[Scope, Depends(get_scope)],
-    camera_id: Optional[str] = Query(None),
-    frm: Optional[str] = Query(None, alias="from"),
-    to: Optional[str] = Query(None),
+    camera_id: Annotated[Optional[str], Query()] = None,
+    frm: Annotated[Optional[str], Query(alias="from")] = None,
+    to: Annotated[Optional[str], Query()] = None,
 ) -> dict:
     """What can be recovered: footage that exists ONLY in the archive.
 

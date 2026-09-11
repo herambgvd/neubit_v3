@@ -43,7 +43,23 @@ fi
 # deploy/ is mounted because one test is about the DEPLOYMENT, not the code:
 # access's healthcheck has to consume /readyz. That endpoint existed nowhere and
 # nothing consumed it, precisely because no test could see the compose file.
-exec "$DOCKER" run --rm --network none \
+# COVERAGE is opt-in (`--coverage`): measuring costs ~30% of the run, and the
+# everyday use of this script is "did I break anything". CI and the SonarQube scan
+# ask for it; a developer waiting on a red test does not. The report goes to a
+# WRITABLE mount of its own, because the source tree is mounted read-only on
+# purpose and that has to stay true.
+COV_ARGS=()
+COV_MOUNT=()
+if [[ "${1:-}" == "--coverage" ]]; then
+  shift
+  mkdir -p "$REPO/backend/ingest/coverage"
+  COV_MOUNT=(-v "$REPO/backend/ingest/coverage:/cov" -e COVERAGE_FILE=/cov/.coverage)
+  COV_ARGS=(--cov=app --cov-report=xml:/cov/coverage.xml --cov-report=term-missing:skip-covered)
+fi
+
+run_suite() {
+"$DOCKER" run --rm --network none \
+  ${COV_MOUNT[@]+"${COV_MOUNT[@]}"} \
   -v "$REPO/backend:/src:ro" \
   -v "$REPO/deploy:/repo/deploy:ro" \
   -e VE_REPO_ROOT=/repo \
@@ -54,4 +70,22 @@ exec "$DOCKER" run --rm --network none \
   -e VE_DATABASE_URL=sqlite+aiosqlite:///:memory: \
   -e VE_NATS_URL= \
   "$TEST_IMAGE" \
-  python -m pytest -p no:cacheprovider "$@"
+  python -m pytest -p no:cacheprovider ${COV_ARGS[@]+"${COV_ARGS[@]}"} "$@"
+}
+
+run_suite "$@"
+status=$?
+
+# The XML records the path coverage saw INSIDE the container. SonarQube resolves a
+# report's filenames against its <source>, and that path does not exist on the
+# scanner's filesystem — every file would be "not found" and the report silently
+# ignored. Rewriting it repo-relative is what makes the import land.
+if [[ -f "$REPO/backend/ingest/coverage/coverage.xml" ]] && [[ ${#COV_ARGS[@]} -gt 0 ]]; then
+  python3 - "$REPO/backend/ingest/coverage/coverage.xml" <<'PYFIX'
+import pathlib, re, sys
+f = pathlib.Path(sys.argv[1])
+f.write_text(re.sub(r"<source>.*?</source>", "<source>backend/ingest/app</source>", f.read_text(), count=1))
+PYFIX
+  echo "==> coverage: backend/ingest/coverage/coverage.xml"
+fi
+exit $status

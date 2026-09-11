@@ -74,6 +74,122 @@ export function railSummary(t: ScheduleTemplate): string {
   return h ? `${h}h scheduled per week` : "records nothing";
 }
 
+
+/** THE WEEK AND WHAT YOU CAN DO WITH IT — the painter, the tools, and the two
+ *  things that are only true about a painted week.
+ *
+ *  Split out of the screen because the screen was doing four separate jobs
+ *  (recorder choice, the template list, this, and the dialogs) and this one alone
+ *  carries three conditions worth reading in isolation: whether the operator may
+ *  write at all, whether the week does nothing, and whether there is an unsaved
+ *  paint. Nested inside the page they were three more branches in a function
+ *  nobody could hold in their head.
+ */
+function ScheduleWeek({
+  week,
+  dirty,
+  mayWrite,
+  tool,
+  setTool,
+  onPaint,
+  onDiscard,
+  onSave,
+  saving,
+  onApply,
+}: Readonly<{
+  week: Week;
+  dirty: boolean;
+  mayWrite: boolean;
+  tool: Slot;
+  setTool: (slot: Slot) => void;
+  onPaint: (week: Week) => void;
+  onDiscard: () => void;
+  onSave: () => void;
+  saving: boolean;
+  onApply: () => void;
+}>) {
+  const empty = isAllOff(week);
+  return (
+    <>
+      <WeekPainter week={week} tool={tool} onChange={mayWrite ? onPaint : undefined} />
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        {mayWrite &&
+          TOOLS.map((t) => (
+            <button
+              key={t.slot}
+              type="button"
+              onClick={() => setTool(t.slot)}
+              className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11.5px] transition ${
+                tool === t.slot
+                  ? "border-nb-cyan/45 bg-nb-cyan/10 text-nb-cyan"
+                  : "border-nb-line text-nb-muted hover:text-nb-text"
+              }`}
+            >
+              <span className={`h-2.5 w-2.5 rounded-[3px] ${t.dot}`} />
+              {t.label}
+            </button>
+          ))}
+        <span className="text-[11.5px] text-nb-faint">
+          {mayWrite
+            ? "Drag to paint. Starting on an hour that already has the tool erases it."
+            : "Read-only — changing a schedule needs config rights."}
+        </span>
+        <span className="ml-auto font-mono text-[11.5px] text-nb-soft">
+          {coveredHours(week)}h / week
+        </span>
+      </div>
+
+      {empty && (
+        <p className="mt-3 rounded-[9px] border border-amber-500/30 bg-amber-500/8 px-3 py-2 text-[11.5px] text-amber-200">
+          Nothing is scheduled. A camera on this would record only when somebody presses record —
+          and the recorder refuses to store a schedule this empty.
+        </p>
+      )}
+
+      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-nb-line pt-3">
+        <span className="text-[11.5px] text-nb-faint">
+          Applying copies this week onto a camera. Editing it afterwards does not reach back into
+          cameras already set — re-apply to push a new version.
+        </span>
+        {mayWrite && (
+          <div className="ml-auto flex items-center gap-2">
+            {dirty && (
+              <button
+                type="button"
+                onClick={onDiscard}
+                className="rounded-md border border-nb-line px-2.5 py-1.5 text-[12px] text-nb-muted transition hover:text-nb-text"
+              >
+                Discard
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={!dirty || empty || saving}
+              onClick={onSave}
+              className="rounded-md border border-nb-cyan/45 bg-nb-cyan/10 px-2.5 py-1.5 text-[12px] text-nb-cyan transition hover:bg-nb-cyan/20 disabled:opacity-40"
+            >
+              {saving ? "Saving…" : "Save week"}
+            </button>
+            <button
+              type="button"
+              // Applying the STORED week, so an unsaved paint cannot be pushed onto
+              // forty cameras and then lost on a refresh.
+              disabled={dirty}
+              title={dirty ? "Save the week before applying it" : undefined}
+              onClick={onApply}
+              className="rounded-md border border-nb-line px-2.5 py-1.5 text-[12px] text-nb-soft transition hover:text-nb-text disabled:opacity-40"
+            >
+              <Icon icon="heroicons-outline:arrow-right-circle" className="mr-1 inline text-xs" />
+              Apply to cameras…
+            </button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 export default function RecordingSchedules() {
   const qc = useQueryClient();
   const { can } = useAuth();
@@ -125,7 +241,7 @@ export default function RecordingSchedules() {
   // and making it about a parse failure is how a console says you are uncovered
   // when you are not.
   const stored = useMemo(() => docToWeek(selected?.schedule), [selected]);
-  const mine = draft && draft.id === effectiveId ? draft.week : null;
+  const mine = draft?.id === effectiveId ? draft.week : null;
   const week = mine ?? stored;
   const dirty = mine !== null;
 
@@ -287,87 +403,18 @@ export default function RecordingSchedules() {
                     new schedule painted here.
                   </div>
                 ) : (
-                  <>
-                    <WeekPainter
-                      week={week}
-                      tool={tool}
-                      onChange={mayWrite ? (next) => setDraft({ id: selected.id, week: next }) : undefined}
-                    />
-
-                    <div className="mt-3 flex flex-wrap items-center gap-3">
-                      {mayWrite &&
-                        TOOLS.map((t) => (
-                          <button
-                            key={t.slot}
-                            type="button"
-                            onClick={() => setTool(t.slot)}
-                            className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11.5px] transition ${
-                              tool === t.slot
-                                ? "border-nb-cyan/45 bg-nb-cyan/10 text-nb-cyan"
-                                : "border-nb-line text-nb-muted hover:text-nb-text"
-                            }`}
-                          >
-                            <span className={`h-2.5 w-2.5 rounded-[3px] ${t.dot}`} />
-                            {t.label}
-                          </button>
-                        ))}
-                      <span className="text-[11.5px] text-nb-faint">
-                        {mayWrite
-                          ? "Drag to paint. Starting on an hour that already has the tool erases it."
-                          : "Read-only — changing a schedule needs config rights."}
-                      </span>
-                      <span className="ml-auto font-mono text-[11.5px] text-nb-soft">
-                        {coveredHours(week)}h / week
-                      </span>
-                    </div>
-
-                    {isAllOff(week) && (
-                      <p className="mt-3 rounded-[9px] border border-amber-500/30 bg-amber-500/8 px-3 py-2 text-[11.5px] text-amber-200">
-                        Nothing is scheduled. A camera on this would record only when somebody
-                        presses record — and the recorder refuses to store a schedule this empty.
-                      </p>
-                    )}
-
-                    <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-nb-line pt-3">
-                      <span className="text-[11.5px] text-nb-faint">
-                        Applying copies this week onto a camera. Editing it afterwards does not
-                        reach back into cameras already set — re-apply to push a new version.
-                      </span>
-                      {mayWrite && (
-                        <div className="ml-auto flex items-center gap-2">
-                          {dirty && (
-                            <button
-                              type="button"
-                              onClick={() => setDraft(null)}
-                              className="rounded-md border border-nb-line px-2.5 py-1.5 text-[12px] text-nb-muted transition hover:text-nb-text"
-                            >
-                              Discard
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            disabled={!dirty || isAllOff(week) || save.isPending}
-                            onClick={() => save.mutate()}
-                            className="rounded-md border border-nb-cyan/45 bg-nb-cyan/10 px-2.5 py-1.5 text-[12px] text-nb-cyan transition hover:bg-nb-cyan/20 disabled:opacity-40"
-                          >
-                            {save.isPending ? "Saving…" : "Save week"}
-                          </button>
-                          <button
-                            type="button"
-                            // Applying the STORED week, so an unsaved paint cannot be
-                            // pushed onto forty cameras and then lost on a refresh.
-                            disabled={dirty}
-                            title={dirty ? "Save the week before applying it" : undefined}
-                            onClick={() => setApplyOpen(true)}
-                            className="rounded-md border border-nb-line px-2.5 py-1.5 text-[12px] text-nb-soft transition hover:text-nb-text disabled:opacity-40"
-                          >
-                            <Icon icon="heroicons-outline:arrow-right-circle" className="mr-1 inline text-xs" />
-                            Apply to cameras…
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </>
+                  <ScheduleWeek
+                    week={week}
+                    dirty={dirty}
+                    mayWrite={mayWrite}
+                    tool={tool}
+                    setTool={setTool}
+                    onPaint={(next) => setDraft({ id: selected.id, week: next })}
+                    onDiscard={() => setDraft(null)}
+                    onSave={() => save.mutate()}
+                    saving={save.isPending}
+                    onApply={() => setApplyOpen(true)}
+                  />
                 )}
               </div>
             </>

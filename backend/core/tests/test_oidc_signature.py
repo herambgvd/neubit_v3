@@ -39,8 +39,12 @@ def test_a_provider_with_no_jwks_is_refused_not_trusted():
     # No published key means no way to check the signature. The only safe answer is
     # to refuse the sign-in — falling back to an unverified decode is how this
     # module was wrong in the first place.
+    # The token is built OUTSIDE the raises block, so the assertion can only be
+    # satisfied by the call under test. Inside it, a failure in jwt.encode would
+    # also be an OidcError-shaped pass if the message happened to match.
+    token = jwt.encode({"email": "x@y.z"}, "k", algorithm="HS256")
     with pytest.raises(OidcError, match="jwks_uri"):
-        verify_id_token(jwt.encode({"email": "x@y.z"}, "k", algorithm="HS256"), {}, _Cfg)
+        verify_id_token(token, {}, _Cfg)
 
 
 class TestTheAlgorithmAllowList:

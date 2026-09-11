@@ -42,7 +42,16 @@ export function ignoresSchedule(cam: FederatedCamera): boolean {
   return !!mode && mode !== "schedule";
 }
 
-export default function ApplyScheduleModal({ nodeId, template, onClose }: ApplyScheduleModalProps) {
+const OUTCOME_TONE: Record<string, string> = {
+  applied: "text-emerald-400",
+  skipped: "text-nb-faint",
+};
+
+/** Anything the recorder reports that is not applied-or-skipped is a failure, and
+ *  reads as one. A status we have not seen before must not be styled as success. */
+const outcomeTone = (status: string) => OUTCOME_TONE[status] ?? "text-nb-crit";
+
+export default function ApplyScheduleModal({ nodeId, template, onClose }: Readonly<ApplyScheduleModalProps>) {
   // Mounted when it opens, so every run starts empty without an effect saying so.
   // A previous run's counts standing over a new selection is how somebody reads
   // last time's result as this time's.
@@ -80,6 +89,64 @@ export default function ApplyScheduleModal({ nodeId, template, onClose }: ApplyS
     });
 
   const idle = cameras.filter((c) => picked.has(c.id) && ignoresSchedule(c));
+  // The three states of the list, named rather than chained inside the JSX. A
+  // reader looking for "what does this show when there are no cameras" finds it
+  // here instead of counting colons.
+  let cameraList: React.ReactNode;
+  if (camsQ.isLoading) {
+    cameraList = <p className="py-6 text-center text-[12.5px] text-nb-faint">Loading cameras…</p>;
+  } else if (!cameras.length) {
+    cameraList = (
+      <p className="py-6 text-center text-[12.5px] text-nb-faint">
+        This recorder has no cameras to schedule.
+      </p>
+    );
+  } else {
+    cameraList = (
+      <div className="space-y-1">
+        {cameras.map((c) => {
+          const out = outcome.get(c.id);
+          return (
+            <label
+              key={c.id}
+              className="flex cursor-pointer items-center gap-2.5 rounded-[9px] px-2.5 py-2 hover:bg-nb-hover"
+            >
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-nb-blue"
+                checked={picked.has(c.id)}
+                disabled={!!result}
+                onChange={() => toggle(c.id)}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] text-nb-text">{c.name}</span>
+                {ignoresSchedule(c) && (
+                  <span className="block text-[11px] text-amber-300/90">
+                    in {c.recording?.mode} mode — it will hold this week without acting on it
+                  </span>
+                )}
+              </span>
+              {out && (
+                <span
+                  className={`shrink-0 text-[11.5px] ${outcomeTone(out.status)}`}
+                  title={out.reason}
+                >
+                  {out.status}
+                </span>
+              )}
+            </label>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // Built in steps rather than as one expression: "no cameras", "1 camera",
+  // "7 cameras" and "Applying…" are four different sentences, and reading them off
+  // a chain of colons is how the singular ends up on the plural.
+  const noun = picked.size === 1 ? "camera" : "cameras";
+  let applyLabel = `Apply to ${picked.size || "no"} ${noun}`;
+  if (apply.isPending) applyLabel = "Applying…";
   const outcome = new Map((result?.results ?? []).map((r) => [r.camera_id, r]));
 
   return (
@@ -97,63 +164,13 @@ export default function ApplyScheduleModal({ nodeId, template, onClose }: ApplyS
               Cancel
             </Button>
             <Button disabled={!picked.size || apply.isPending} onClick={() => apply.mutate()}>
-              {apply.isPending
-                ? "Applying…"
-                : `Apply to ${picked.size || "no"} ${picked.size === 1 ? "camera" : "cameras"}`}
+              {applyLabel}
             </Button>
           </>
         )
       }
     >
-      {camsQ.isLoading ? (
-        <p className="py-6 text-center text-[12.5px] text-nb-faint">Loading cameras…</p>
-      ) : !cameras.length ? (
-        <p className="py-6 text-center text-[12.5px] text-nb-faint">
-          This recorder has no cameras to schedule.
-        </p>
-      ) : (
-        <div className="space-y-1">
-          {cameras.map((c) => {
-            const out = outcome.get(c.id);
-            return (
-              <label
-                key={c.id}
-                className="flex cursor-pointer items-center gap-2.5 rounded-[9px] px-2.5 py-2 hover:bg-nb-hover"
-              >
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-nb-blue"
-                  checked={picked.has(c.id)}
-                  disabled={!!result}
-                  onChange={() => toggle(c.id)}
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] text-nb-text">{c.name}</span>
-                  {ignoresSchedule(c) && (
-                    <span className="block text-[11px] text-amber-300/90">
-                      in {c.recording?.mode} mode — it will hold this week without acting on it
-                    </span>
-                  )}
-                </span>
-                {out && (
-                  <span
-                    className={`shrink-0 text-[11.5px] ${
-                      out.status === "applied"
-                        ? "text-emerald-400"
-                        : out.status === "skipped"
-                          ? "text-nb-faint"
-                          : "text-nb-crit"
-                    }`}
-                    title={out.reason}
-                  >
-                    {out.status}
-                  </span>
-                )}
-              </label>
-            );
-          })}
-        </div>
-      )}
+      {cameraList}
 
       {!result && idle.length > 0 && (
         <p className="mt-3 rounded-[9px] border border-amber-500/30 bg-amber-500/8 px-3 py-2 text-[11.5px] text-amber-200">

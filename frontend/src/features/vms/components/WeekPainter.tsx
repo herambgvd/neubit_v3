@@ -62,7 +62,7 @@ export function applyStroke(week: Week, cells: [number, number][], value: Slot):
   return next;
 }
 
-export default function WeekPainter({ week, onChange, tool = "record" }: WeekPainterProps) {
+export default function WeekPainter({ week, onChange, tool = "record" }: Readonly<WeekPainterProps>) {
   const readOnly = !onChange;
   const [anchor, setAnchor] = useState<[number, number] | null>(null);
   const [hover, setHover] = useState<[number, number] | null>(null);
@@ -113,7 +113,10 @@ export default function WeekPainter({ week, onChange, tool = "record" }: WeekPai
             <div className="flex h-[22px] items-center text-[10.5px] text-nb-faint">{day}</div>
             {week[d].map((slot, h) => (
               <button
-                key={h}
+                // day+hour, not the array index: the index happens to be stable
+                // here because the row is always 24 long, and a key that is right
+                // by coincidence is one that breaks when the shape changes.
+                key={`${day}-${h}`}
                 type="button"
                 role="gridcell"
                 disabled={readOnly}

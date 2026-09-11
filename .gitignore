@@ -65,3 +65,9 @@ e2e/blob-report/
 e2e/.env
 e2e/.env.*
 !e2e/.env.example
+
+# --- Coverage reports (generated; Sonar reads them from the working tree) ---
+coverage/
+*.lcov
+.coverage
+.coverage.*

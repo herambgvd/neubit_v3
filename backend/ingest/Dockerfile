@@ -10,7 +10,9 @@ WORKDIR /app
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends curl \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd --system --gid 10001 neubit \
+ && useradd --system --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin neubit
 
 # Shared kernel first (its own layer), then the service. Install both editable so
 # the path dep resolves without a package index.
@@ -23,17 +25,17 @@ COPY ingest/migrations ./migrations
 COPY ingest/alembic.ini ./
 RUN uv pip install --system --no-cache -e "."
 
-# RUN AS A NON-ROOT USER.
+# RUN AS A NON-ROOT USER from here on.
 #
-# Everything above this line needs root: apt, uv installing into the system
-# interpreter, chmod on the entrypoint. Nothing below it does. Left as root, an RCE
-# in the app — or a container escape — starts as uid 0, and on a bind mount that is
-# uid 0 on the HOST.
+# Everything above needs root: apt, uv installing into the system interpreter,
+# chmod on the entrypoint. Nothing below does. Left as root, an RCE in the app — or
+# a container escape — starts as uid 0, and on a bind mount that is uid 0 on the
+# HOST.
 #
-# 10001 is fixed rather than left to useradd: one uid across the estate is easier
-# to reason about than seven, and it is the uid the volumes are chowned to.
-RUN groupadd --system --gid 10001 neubit \
- && useradd --system --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin neubit
+# The account is created in the OS-setup layer at the top rather than here, so this
+# file has one RUN per concern instead of a second one that only adds a user. 10001
+# is fixed rather than left to useradd: one uid across the estate is easier to
+# reason about than seven, and it is the uid the volumes are chowned to.
 USER neubit
 
 EXPOSE 8000

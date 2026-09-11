@@ -32,7 +32,7 @@ const FULL = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", 
 export type Week = Slot[][]; // 7 rows (Mon…Sun) × 24 hours
 
 export function emptyWeek(): Week {
-  return DAYS.map(() => Array<Slot>(24).fill("off"));
+  return DAYS.map(() => new Array<Slot>(24).fill("off"));
 }
 
 /** Our row index for a day key, or -1. Accepts "Mon", "monday", " MONDAY " — every
@@ -51,7 +51,12 @@ export function rowOf(key: string): number {
  *  normaliseSlot — inventing recording from a word nobody defined is the
  *  fabrication both sides exist to refuse. */
 export function slotOf(v: unknown): Slot {
-  switch (String(v ?? "").trim().toLowerCase()) {
+  // `typeof`, not String(v): a document with a nested object where a slot word
+  // belongs would stringify to "[object Object]", fall through to OFF and look
+  // like a deliberate "not scheduled". It is not — it is a shape we cannot read,
+  // and OFF is still the right answer, but arrived at on purpose.
+  if (typeof v !== "string") return "off";
+  switch (v.trim().toLowerCase()) {
     case "continuous":
     case "record":
     case "recording":
@@ -69,7 +74,8 @@ export function slotOf(v: unknown): Slot {
 
 /** "HH:MM" → minutes since midnight, or null. */
 export function hhmm(v: unknown): number | null {
-  const m = /^\s*(\d{1,2}):(\d{2})\s*$/.exec(String(v ?? ""));
+  if (typeof v !== "string") return null;
+  const m = /^\s*(\d{1,2}):(\d{2})\s*$/.exec(v);
   if (!m) return null;
   const h = Number(m[1]);
   const min = Number(m[2]);
@@ -96,21 +102,37 @@ function fromGrid(doc: ScheduleDocument): Week | null {
  *  belong to the SAME row — that is what the recorder's evalWindows does (it tests
  *  `nowMin >= start` and `nowMin < end` against the day's own rules), so drawing
  *  the tail on the next row would disagree with the machine that runs it. */
+/** The rows one day KEY applies to: a named day is its own row, "everyday" is all
+ *  seven, and anything else is not a day at all. */
+function rowsFor(key: string, week: Week): number[] | null {
+  const k = key.trim().toLowerCase();
+  const row = rowOf(k);
+  if (row >= 0) return [row];
+  if (k === "everyday") return week.map((_, i) => i);
+  return null;
+}
+
+/** One day's windows painted onto its rows, or false when the value is not a list
+ *  of readable {start, end} rules — in which case the WHOLE document is rejected
+ *  rather than half-drawn. */
+function paintWindows(week: Week, rows: number[], rules: unknown): boolean {
+  if (!Array.isArray(rules)) return false;
+  for (const w of rules) {
+    const start = hhmm((w as { start?: unknown })?.start);
+    const end = hhmm((w as { end?: unknown })?.end);
+    if (start === null || end === null) return false;
+    for (const r of rows) paint(week[r], start, end);
+  }
+  return true;
+}
+
 function fromWindows(doc: ScheduleDocument): Week | null {
   const week = emptyWeek();
   let seen = 0;
   for (const [key, val] of Object.entries(doc)) {
-    const k = key.trim().toLowerCase();
-    const row = rowOf(k);
-    if (row < 0 && k !== "everyday") return null;
-    if (!Array.isArray(val)) return null;
-    const rows = row < 0 ? week.map((_, i) => i) : [row];
-    for (const w of val) {
-      const start = hhmm((w as { start?: unknown })?.start);
-      const end = hhmm((w as { end?: unknown })?.end);
-      if (start === null || end === null) return null;
-      for (const r of rows) paint(week[r], start, end);
-    }
+    const rows = rowsFor(key, week);
+    if (!rows) return null;
+    if (!paintWindows(week, rows, val)) return null;
     seen += 1;
   }
   return seen ? week : null;

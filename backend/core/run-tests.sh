@@ -79,8 +79,25 @@ fi
 # deployment rather than the code: tests/test_health_probes.py checks that the
 # gateway routes /readyz and that core's healthcheck consumes it. Read-only, and
 # separate from /src so nothing on the import path changes.
-exec "$DOCKER" run --rm --network none \
+# COVERAGE is opt-in (`--coverage`), because measuring costs ~30% of the run and
+# the everyday use of this script is "did I break anything". CI and the SonarQube
+# scan ask for it; a developer waiting on a red test does not.
+#
+# The report goes to a WRITABLE mount of its own: /src is read-only on purpose, so
+# that a test run cannot modify the tree it is testing, and that has to stay true.
+COV_ARGS=()
+COV_MOUNT=()
+if [[ "${1:-}" == "--coverage" ]]; then
+  shift
+  mkdir -p "$REPO/backend/core/coverage"
+  COV_MOUNT=(-v "$REPO/backend/core/coverage:/cov" -e COVERAGE_FILE=/cov/.coverage)
+  COV_ARGS=(--cov=app --cov-report=xml:/cov/coverage.xml --cov-report=term-missing:skip-covered)
+fi
+
+run_suite() {
+"$DOCKER" run --rm --network none \
   -v "$REPO/backend:/src:ro" \
+  ${COV_MOUNT[@]+"${COV_MOUNT[@]}"} \
   -v "$REPO/gateway:/repo/gateway:ro" \
   -v "$REPO/deploy:/repo/deploy:ro" \
   -w /src/core \
@@ -89,4 +106,23 @@ exec "$DOCKER" run --rm --network none \
   -e PYTHONDONTWRITEBYTECODE=1 \
   -e VE_DATABASE_URL=postgresql+asyncpg://localhost:5432/neubit_control \
   "$TEST_IMAGE" \
-  python -m pytest -p no:cacheprovider "$@"
+  python -m pytest -p no:cacheprovider ${COV_ARGS[@]+"${COV_ARGS[@]}"} "$@"
+}
+
+run_suite "$@"
+status=$?
+
+# The XML records the path coverage saw INSIDE the container (/src/core/app).
+# SonarQube resolves a report's filenames against its <source>, and /src does not
+# exist on the scanner's filesystem — so every file would be "not found" and the
+# whole report silently ignored. Rewriting it to the repo-relative path is what
+# makes the import land.
+if [[ -f "$REPO/backend/core/coverage/coverage.xml" ]] && [[ ${#COV_ARGS[@]} -gt 0 ]]; then
+  python3 - "$REPO/backend/core/coverage/coverage.xml" <<'PYFIX'
+import pathlib, re, sys
+f = pathlib.Path(sys.argv[1])
+f.write_text(re.sub(r"<source>.*?</source>", "<source>backend/core/app</source>", f.read_text(), count=1))
+PYFIX
+  echo "==> coverage: backend/core/coverage/coverage.xml"
+fi
+exit $status

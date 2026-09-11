@@ -49,7 +49,7 @@ export function FloorUploadModal({ open, onClose, floor, onUploaded }: FloorUplo
     setFile(f);
   };
 
-  const onDrop = (e: DragEvent<HTMLDivElement>) => {
+  const onDrop = (e: DragEvent<HTMLElement>) => {
     e.preventDefault();
     setDragOver(false);
     onPick(e.dataTransfer.files?.[0]);
@@ -91,29 +91,20 @@ export function FloorUploadModal({ open, onClose, floor, onUploaded }: FloorUplo
       }
     >
       <p className="mb-3 text-xs text-muted">Accepted formats: {ACCEPT_DISPLAY}. Max 8 MB.</p>
-      {/* The file input below is display:none, which takes it out of the tab order
-          as well as out of sight — so without a keyboard route here there was no
-          way to upload a floor plan at all without a mouse. */}
-      <div
+      {/* A real <button>: the file input is display:none, which takes it out of the
+          tab order as well as out of sight, so without this there was no way to
+          upload a floor plan at all without a mouse. It is also the drop target —
+          drag handlers work on a button like any other element. */}
+      <button
+        type="button"
         onDragOver={(e) => {
           e.preventDefault();
           setDragOver(true);
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
-        role="button"
-        tabIndex={0}
-        aria-label="Choose a floor plan file"
         onClick={openPicker}
-        onKeyDown={(e) => {
-          // Inline rather than through a helper: passing a ref-reading closure to
-          // any function during render trips the compiler's ref rule, and the
-          // rule is worth more than the four lines it costs here.
-          if (e.key !== "Enter" && e.key !== " ") return;
-          e.preventDefault();
-          openPicker();
-        }}
-        className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-10 text-center transition ${
+        className={`flex w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-10 text-center transition ${
           dragOver ? "border-blue-500 bg-blue-500/10" : "border-card-border bg-hover/40 hover:bg-hover"
         }`}
       >
@@ -124,14 +115,19 @@ export function FloorUploadModal({ open, onClose, floor, onUploaded }: FloorUplo
         <div className="mt-1 text-xs text-muted">
           {file ? `${Math.round(file.size / 1024)} KB · ${file.type || "unknown"}` : ACCEPT_DISPLAY}
         </div>
-        <input
-          ref={inputRef}
-          type="file"
-          accept={ACCEPT}
-          className="hidden"
-          onChange={(e) => onPick(e.target.files?.[0])}
-        />
-      </div>
+      </button>
+      {/* OUTSIDE the button, not inside it: an <input> nested in a <button> is
+          invalid HTML, and it was the only reason this drop zone was a div with a
+          role bolted on. It is display:none — hence hidden from the tab order too,
+          which is why the button above exists rather than the input being the
+          control. */}
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ACCEPT}
+        className="hidden"
+        onChange={(e) => onPick(e.target.files?.[0])}
+      />
 
       {floor.floorplan_url && !file && (
         <div className="mt-4 rounded-md border border-card-border bg-hover/40 px-3 py-2 text-xs text-muted">

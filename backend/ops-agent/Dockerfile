@@ -12,7 +12,9 @@ WORKDIR /app
 
 # Deps first (layer cache), then source.
 COPY requirements.txt ./
-RUN uv pip install --system --no-cache -r requirements.txt
+RUN uv pip install --system --no-cache -r requirements.txt \
+ && groupadd --system --gid 10001 neubit \
+ && useradd --system --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin neubit
 
 COPY main.py ./
 
@@ -29,8 +31,6 @@ COPY main.py ./
 # narrower privilege than uid 0: this process can no longer write root-owned files,
 # change ownership, or install anything — it can talk to the daemon, which is the
 # whole job.
-RUN groupadd --system --gid 10001 neubit \
- && useradd --system --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin neubit
 USER neubit
 
 EXPOSE 9000

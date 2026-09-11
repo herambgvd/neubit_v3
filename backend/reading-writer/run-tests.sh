@@ -42,7 +42,23 @@ fi
 
 # The database URL is never connected to — every test here is pure — but kernel
 # settings refuse to load without one.
-exec "$DOCKER" run --rm --network none \
+# COVERAGE is opt-in (`--coverage`): measuring costs ~30% of the run, and the
+# everyday use of this script is "did I break anything". CI and the SonarQube scan
+# ask for it; a developer waiting on a red test does not. The report goes to a
+# WRITABLE mount of its own, because the source tree is mounted read-only on
+# purpose and that has to stay true.
+COV_ARGS=()
+COV_MOUNT=()
+if [[ "${1:-}" == "--coverage" ]]; then
+  shift
+  mkdir -p "$REPO/backend/reading-writer/coverage"
+  COV_MOUNT=(-v "$REPO/backend/reading-writer/coverage:/cov" -e COVERAGE_FILE=/cov/.coverage)
+  COV_ARGS=(--cov=app --cov-report=xml:/cov/coverage.xml --cov-report=term-missing:skip-covered)
+fi
+
+run_suite() {
+"$DOCKER" run --rm --network none \
+  ${COV_MOUNT[@]+"${COV_MOUNT[@]}"} \
   -v "$REPO/backend/reading-writer/app:/app/app:ro" \
   -v "$REPO/backend/reading-writer/tests:/app/tests:ro" \
   -v "$REPO/backend/reporting/reporting:/opt/reporting/reporting:ro" \
@@ -56,4 +72,22 @@ exec "$DOCKER" run --rm --network none \
   -e VE_DATABASE_URL=postgresql+asyncpg://localhost:5432/neubit_reporting \
   -e VE_NATS_URL= \
   "$TEST_IMAGE" \
-  python -m pytest -p no:cacheprovider "$@"
+  python -m pytest -p no:cacheprovider ${COV_ARGS[@]+"${COV_ARGS[@]}"} "$@"
+}
+
+run_suite "$@"
+status=$?
+
+# The XML records the path coverage saw INSIDE the container. SonarQube resolves a
+# report's filenames against its <source>, and that path does not exist on the
+# scanner's filesystem — every file would be "not found" and the report silently
+# ignored. Rewriting it repo-relative is what makes the import land.
+if [[ -f "$REPO/backend/reading-writer/coverage/coverage.xml" ]] && [[ ${#COV_ARGS[@]} -gt 0 ]]; then
+  python3 - "$REPO/backend/reading-writer/coverage/coverage.xml" <<'PYFIX'
+import pathlib, re, sys
+f = pathlib.Path(sys.argv[1])
+f.write_text(re.sub(r"<source>.*?</source>", "<source>backend/reading-writer/app</source>", f.read_text(), count=1))
+PYFIX
+  echo "==> coverage: backend/reading-writer/coverage/coverage.xml"
+fi
+exit $status

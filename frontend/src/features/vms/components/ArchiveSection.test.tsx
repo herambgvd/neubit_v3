@@ -13,6 +13,13 @@
 import { describe, expect, it } from "vitest";
 
 import { archiveVerdict, jobVerdict } from "./ArchiveSection";
+import { screen } from "@testing-library/react";
+
+import { renderWithProviders } from "@/test/render";
+import { stubApi } from "@/test/apiStub";
+import ArchiveSection from "./ArchiveSection";
+import type { FederationNode } from "../types";
+
 
 describe("what the archive is actually doing", () => {
   it("calls a running archive running", () => {
@@ -87,5 +94,98 @@ describe("how a restore went", () => {
 
   it("calls a failed job failed", () => {
     expect(jobVerdict({ id: "j", status: "failed", requested: 10, restored: 0, failed: 10 }).tone).toBe("bad");
+  });
+});
+
+/**
+ * AND THE SAME THINGS, ON THE SCREEN.
+ *
+ * The verdicts above are only worth anything if they reach an operator, so these
+ * render the panel against a stubbed recorder and read what it says.
+ */
+const NODE = { id: "n1", name: "recorder-a" } as FederationNode;
+
+function routes(over: Record<string, unknown> = {}) {
+  return {
+    "GET /vms/federation/nodes/n1/storage/archive": () => ({
+      enabled: true,
+      ready: false,
+      blocked_reason: "the destination NAS share is not mounted",
+      destination_name: "ReadyNAS",
+      stats: { archived_segments: 12, archived_bytes: 1024, local_only: 412, cold_only: 3 },
+    }),
+    "GET /vms/federation/nodes/n1/storage/restore/ranges": () => ({ items: [], total: 0 }),
+    "GET /vms/federation/nodes/n1/storage/restore/jobs": () => ({ items: [], total: 0 }),
+    ...over,
+  };
+}
+
+describe("the archive panel", () => {
+  it("shows the recorder's reason when the archive cannot run", async () => {
+    // "Enabled" is not "working". Without this sentence, 0 archived reads as
+    // "nothing needed archiving" instead of "nothing ever will".
+    stubApi(routes());
+    renderWithProviders(<ArchiveSection node={NODE} />);
+
+    expect(await screen.findByText(/destination NAS share is not mounted/i)).toBeInTheDocument();
+  });
+
+  it("names the segments that have only one copy", async () => {
+    stubApi(routes());
+    renderWithProviders(<ArchiveSection node={NODE} />);
+
+    expect(await screen.findByText("Local only")).toBeInTheDocument();
+    expect(screen.getByText("412")).toBeInTheDocument();
+    expect(screen.getByText("no second copy")).toBeInTheDocument();
+  });
+
+  it("lists what survives in the archive alone, and says it is not lost", async () => {
+    stubApi(
+      routes({
+        "GET /vms/federation/nodes/n1/storage/restore/ranges": () => ({
+          items: [{ segment_path: "/a.mp4", started_at: "2026-08-01T10:00:00Z", size_bytes: 2048 }],
+          total: 1,
+        }),
+      }),
+    );
+    renderWithProviders(<ArchiveSection node={NODE} />);
+
+    expect(await screen.findByText(/not on the timeline and they are not lost/i)).toBeInTheDocument();
+  });
+
+  it("calls a partial restore partial, not done", async () => {
+    stubApi(
+      routes({
+        "GET /vms/federation/nodes/n1/storage/restore/jobs": () => ({
+          items: [{ id: "j1", status: "done", requested: 50, restored: 40, failed: 10, created_at: "2026-08-01T10:00:00Z" }],
+          total: 1,
+        }),
+      }),
+    );
+    renderWithProviders(<ArchiveSection node={NODE} />);
+
+    expect(await screen.findByText("40 of 50 recovered")).toBeInTheDocument();
+  });
+
+  it("says restoring is the recorder's to do rather than hiding a missing button", async () => {
+    // The absence is the design — vms.storage.manage is not granted — so it is
+    // stated. A missing control with no explanation is a bug report waiting.
+    stubApi(routes());
+    renderWithProviders(<ArchiveSection node={NODE} />);
+
+    expect(await screen.findByText(/recorder's to do/i)).toBeInTheDocument();
+  });
+
+  it("reports a recorder it cannot read instead of an empty archive", async () => {
+    stubApi({
+      "GET /vms/federation/nodes/n1/storage/archive": () => {
+        throw new Error("unreachable");
+      },
+      "GET /vms/federation/nodes/n1/storage/restore/ranges": () => ({ items: [] }),
+      "GET /vms/federation/nodes/n1/storage/restore/jobs": () => ({ items: [] }),
+    });
+    renderWithProviders(<ArchiveSection node={NODE} />);
+
+    expect(await screen.findByText(/could not load the archive|unreachable/i)).toBeInTheDocument();
   });
 });
