@@ -37,7 +37,7 @@ export interface UserMultiSelectProps {
 
 /* Multi-select user picker with search — selected chips on top + searchable
  * list. 1:1 port of the v2 UserMultiSelect (also mirrored in TransitionModal). */
-export default function UserMultiSelect({ label, selectedIds, onToggle, onClear }: UserMultiSelectProps) {
+export default function UserMultiSelect({ label, selectedIds, onToggle, onClear }: Readonly<UserMultiSelectProps>) {
   const [query, setQuery] = useState("");
   const usersQ = useQuery({
     queryKey: ["auth-users-picker"],
@@ -54,6 +54,37 @@ export default function UserMultiSelect({ label, selectedIds, onToggle, onClear 
     );
   }, [allUsers, query]);
   const selectedUsers = useMemo(() => allUsers.filter((u) => selectedIds.includes(uid(u))), [allUsers, selectedIds]);
+
+  // The three states, named above the JSX. Chained inside it they are a nested
+  // conditional a reader has to unpick to answer "what does this show when the
+  // search matches nothing" — which is the question somebody actually has.
+  let rows: React.ReactNode;
+  if (usersQ.isLoading) {
+    rows = <div className="px-3 py-3 text-xs text-nb-faint">Loading…</div>;
+  } else if (filtered.length === 0) {
+    rows = <div className="px-3 py-3 text-xs text-nb-faint">No users match &quot;{query}&quot;.</div>;
+  } else {
+    rows = (
+            <ul className="divide-y divide-nb-line">
+              {filtered.map((u) => {
+                const checked = selectedIds.includes(uid(u));
+                return (
+                  <li key={uid(u)}>
+                    <label className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer text-xs ${checked ? "bg-[rgba(96,165,250,.10)]" : "hover:bg-[rgba(96,165,250,.1)]"}`}>
+                      <input type="checkbox" checked={checked} onChange={() => onToggle(uid(u))} className={checkboxClass} />
+                      <span className="flex-1 min-w-0">
+                        <span className="block font-medium text-nb-ink truncate">{display(u)}</span>
+                        {u.email && display(u) !== u.email && (
+                          <span className="block text-[10px] text-nb-faint truncate">{u.email}</span>
+                        )}
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+    );
+  }
 
   return (
     <div>
@@ -85,30 +116,7 @@ export default function UserMultiSelect({ label, selectedIds, onToggle, onClear 
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search users by name or email…" className="h-9 w-full bg-transparent pl-7 pr-3 text-xs text-nb-ink outline-hidden" />
         </label>
         <div className="max-h-40 overflow-y-auto">
-          {usersQ.isLoading ? (
-            <div className="px-3 py-3 text-xs text-nb-faint">Loading…</div>
-          ) : filtered.length === 0 ? (
-            <div className="px-3 py-3 text-xs text-nb-faint">No users match &quot;{query}&quot;.</div>
-          ) : (
-            <ul className="divide-y divide-nb-line">
-              {filtered.map((u) => {
-                const checked = selectedIds.includes(uid(u));
-                return (
-                  <li key={uid(u)}>
-                    <label className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer text-xs ${checked ? "bg-[rgba(96,165,250,.10)]" : "hover:bg-[rgba(96,165,250,.1)]"}`}>
-                      <input type="checkbox" checked={checked} onChange={() => onToggle(uid(u))} className={checkboxClass} />
-                      <span className="flex-1 min-w-0">
-                        <span className="block font-medium text-nb-ink truncate">{display(u)}</span>
-                        {u.email && display(u) !== u.email && (
-                          <span className="block text-[10px] text-nb-faint truncate">{u.email}</span>
-                        )}
-                      </span>
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+          {rows}
         </div>
       </div>
     </div>

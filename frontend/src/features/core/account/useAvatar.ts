@@ -24,9 +24,11 @@ export interface Avatar {
   remove: () => Promise<void>;
 }
 
-/** `reload` re-reads the session, because the photo is part of it and nothing
- *  else will notice it changed. */
-export function useAvatar(reload: () => Promise<unknown> | unknown): Avatar {
+/** `reload` re-reads the session, because the photo is part of it and nothing else
+ *  will notice it changed. Typed `void | Promise<void>`, not `Promise<unknown> |
+ *  unknown` — that union collapses to `unknown` and accepts anything at all,
+ *  including a caller who forgot the parentheses. */
+export function useAvatar(reload: () => void | Promise<void>): Avatar {
   const [busy, setBusy] = useState(false);
 
   async function run(work: () => Promise<unknown>, done: string) {

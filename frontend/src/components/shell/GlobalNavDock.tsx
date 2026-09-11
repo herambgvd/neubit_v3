@@ -184,6 +184,10 @@ function AccountMenu() {
   // Upload/remove and the busy flag live in one place — they were the same
   // twenty lines here and on the other screen.
   const avatar = useAvatar(reload);
+  // Three outcomes, one name. The wording differs from the account page's on
+  // purpose — this is a menu item, that is a form button — so it is not shared.
+  let photoLabel = user?.avatar_url ? "Change photo" : "Add photo";
+  if (avatar.busy) photoLabel = "Uploading…";
   const fileRef = useRef<HTMLInputElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
   const displayName = user?.full_name || user?.email;
@@ -249,7 +253,7 @@ function AccountMenu() {
             className="w-full flex items-center gap-2.5 px-4 py-2 text-[13px] text-muted hover:text-foreground hover:bg-hover transition disabled:opacity-50"
           >
             <Icon icon="heroicons-outline:camera" className="text-base shrink-0" />
-            {avatar.busy ? "Uploading…" : user?.avatar_url ? "Change photo" : "Add photo"}
+            {photoLabel}
           </button>
           {user?.avatar_url && (
             <button

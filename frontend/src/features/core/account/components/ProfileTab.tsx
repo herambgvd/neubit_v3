@@ -15,6 +15,8 @@ export default function ProfileTab() {
   // Upload/remove and the busy flag live in one place — they were the same
   // twenty lines here and on the other screen.
   const avatar = useAvatar(reload);
+  let photoLabel = user?.avatar_url ? "Change" : "Upload";
+  if (avatar.busy) photoLabel = "Uploading…";
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => setName(user?.full_name || ""), [user?.full_name]);
@@ -39,7 +41,7 @@ export default function ProfileTab() {
           <div className="flex items-center gap-2">
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={avatar.pick} />
             <Button variant="secondary" icon="heroicons-outline:camera" disabled={avatar.busy} onClick={() => fileRef.current?.click()}>
-              {avatar.busy ? "Uploading…" : user?.avatar_url ? "Change" : "Upload"}
+              {photoLabel}
             </Button>
             {user?.avatar_url && (
               <Button variant="ghost" icon="heroicons-outline:trash" disabled={avatar.busy} onClick={avatar.remove}>
