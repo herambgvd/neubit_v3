@@ -606,7 +606,12 @@ export function tourState(tour: FederatedTour): string {
   return String(tour.status?.state ?? "Idle");
 }
 
-function TourStrip({
+/** The tour list, exported so it can be rendered on its own. It is the one part
+ *  of this overlay that shows a mechanism the console does not control — the
+ *  camera's firmware does — and that distinction is carried entirely by its
+ *  wording and by which button it offers. Worth a test that does not need a PTZ
+ *  camera, a recorder and a live stream to reach it. */
+export function TourStrip({
   tours,
   canControl,
   onOperate,

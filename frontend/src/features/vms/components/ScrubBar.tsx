@@ -24,6 +24,37 @@ import { eventTypeLabel, sevPreset } from "../eventLib";
 import type { BookmarkPublic, EvidenceLockPublic, MotionHit, TimelineMarker } from "../types";
 import type { CoverageSpan } from "./playbackTypes";
 
+/** Where a key press should move the playhead, or null for a key this slider does
+ *  not claim — so the browser keeps Tab, and a shortcut somewhere above still fires.
+ *
+ *  A nudge is 1% of the VISIBLE window and a page is 10%, not a fixed number of
+ *  seconds: the same key has to do something sensible whether the operator is
+ *  looking at an hour or at a week, and a fixed step is imperceptible on one and
+ *  wild on the other.
+ *
+ *  Out here rather than inside the handler because this is the whole behaviour of
+ *  keyboard seeking, and it is worth being able to test it without a DOM. */
+export function seekTarget(
+  key: string,
+  { windowStart, span, current }: { windowStart: number; span: number; current: number },
+): number | null {
+  const step = span / 100;
+  const windowEnd = windowStart + span;
+  const MOVES: Record<string, number> = {
+    ArrowLeft: current - step,
+    ArrowRight: current + step,
+    PageUp: current - step * 10,
+    PageDown: current + step * 10,
+    Home: windowStart,
+    End: windowEnd,
+  };
+  const target = MOVES[key];
+  if (target === undefined) return null;
+  // Clamped, so holding an arrow at either end stops there instead of seeking
+  // past the footage the window is showing.
+  return Math.max(windowStart, Math.min(windowEnd, target));
+}
+
 const HOUR_MS = 3_600_000;
 
 // ── Shared timeline palette (single source of truth) ─────────────────────────
@@ -378,16 +409,10 @@ export default function ScrubBar({
         aria-disabled={disabled || undefined}
         onKeyDown={(e) => {
           if (disabled || current == null) return;
-          // A nudge is 1% of the visible window and a page is 10% — relative to
-          // what is on screen, so the same key does something sensible whether the
-          // operator is looking at an hour or at a week.
-          const step = span / 100;
-          const delta =
-            { ArrowLeft: -step, ArrowRight: step, PageUp: -step * 10, PageDown: step * 10 }[e.key] ??
-            (e.key === "Home" ? windowStart - current : e.key === "End" ? windowStart + span - current : null);
-          if (delta == null) return;
+          const target = seekTarget(e.key, { windowStart, span, current });
+          if (target == null) return;
           e.preventDefault();
-          onSeek?.(Math.max(windowStart, Math.min(windowStart + span, current + delta)));
+          onSeek?.(target);
         }}
         onMouseDown={onDown}
         onMouseMove={onMove}

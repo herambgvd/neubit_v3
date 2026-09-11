@@ -45,7 +45,11 @@ export function isEmail(value: string): boolean {
 }
 
 function isAscii(s: string): boolean {
-  for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) > 127) return false;
+  // `codePointAt`, not `charCodeAt`: an astral character (an emoji) is two UTF-16
+  // units, and `charCodeAt` reports each half separately. Both halves happen to be
+  // > 127 so the answer here is the same either way — but only by luck, and the
+  // next person to reuse this should get the character, not a surrogate.
+  for (const ch of s) if ((ch.codePointAt(0) ?? 0) > 127) return false;
   return true;
 }
 

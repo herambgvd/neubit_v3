@@ -83,6 +83,51 @@ def _transport_failure(exc: Exception) -> "NodeUnavailable":
     return NodeUnavailable(detail)
 
 
+async def _send(method: str, url: str, **kw) -> httpx.Response:
+    """One call to a recorder, and the ONE place a transport failure is translated.
+
+    This was written out 33 times — a `try`, a client, the call, and the same
+    `except httpx.HTTPError` raising the same thing. Thirty-three copies of an
+    error path is thirty-three chances for one of them to be subtly different, and
+    it had already happened once: `str(httpx.ReadTimeout())` is empty, so a whole
+    class of failure reported a sentence ending at the colon. Fixing that meant
+    finding every copy. Now there is one.
+
+    A fresh `AsyncClient` per call is kept deliberately. It is not the fast choice
+    and it is the correct one here: these calls go to a DIFFERENT recorder each
+    time, each with its own credential, and a shared pool would hand one node's
+    keep-alive connection to a call meant for another.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=kw.pop("timeout", _TIMEOUT)) as c:
+            return await c.request(method, url, **kw)
+    except httpx.HTTPError as e:
+        raise _transport_failure(e) from e
+
+
+def _raise_for_node(r: httpx.Response, *, detailed: bool = False) -> None:
+    """Turn a non-2xx from a recorder into the right exception, once.
+
+    The SPLIT is the point, and it decides what the operator is told to do:
+    401/403 is the node refusing THIS console (a credential that was never granted
+    the reach, or one frozen before the grant existed) and is fixed by re-enrolling
+    — a retry will refuse forever. Anything else is reported as the node being
+    unavailable, which is a thing worth retrying.
+
+    `detailed` asks the node's own error message to be read out of the body, for
+    the calls where it carries a sentence worth repeating.
+
+    This block stood in 31 functions. It is not the kind of code that drifts on
+    purpose; it is the kind where one copy gets a fix and the other thirty do not.
+    """
+    if r.status_code // 100 == 2:
+        return
+    if r.status_code in (401, 403):
+        raise _refusal(r.status_code, r.text)
+    body = _node_error_message(r, r.text[:160]) if detailed else r.text[:160]
+    raise NodeUnavailable(f"{r.status_code}: {body}")
+
+
 def _refusal(status_code: int, body: str) -> NodeRefused:
     """Build a NodeRefused from the node's own answer, keeping ITS sentence."""
     detail = (body or "").strip()
@@ -152,18 +197,12 @@ async def enroll_node_full(api_url: str, *, label: str | None = None) -> dict:
     surfaced ONCE here — the node never returns it again. Raises NodeUnavailable on
     failure (callers fall back to the shared JWT)."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/federation/enroll"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.post(
-                url,
-                headers={"Authorization": f"Bearer {mint_service_token()}"},
-                params={"label": label or federation_label()},
-            )
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("POST", 
+        url,
+        headers={"Authorization": f"Bearer {mint_service_token()}"},
+        params={"label": label or federation_label()},
+    )
+    _raise_for_node(r)
     payload = r.json() or {}
     if not payload.get("credential"):
         raise NodeUnavailable("enrolment returned no credential")
@@ -210,18 +249,12 @@ async def pair_node(api_url: str, code: str, *, label: str | None = None) -> dic
     register a node whose code was simply wrong.
     """
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/federation/pair"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.post(url, json={"code": code, "label": label or federation_label()})
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
+    r = await _send("POST", url, json={"code": code, "label": label or federation_label()})
     if r.status_code in (400, 401, 403, 429):
         raise NodePairingRejected(
             _node_error_message(r, "the recorder refused this pairing code")
         )
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    _raise_for_node(r)
     payload = r.json() or {}
     if not payload.get("credential"):
         raise NodePairingRejected("pairing returned no credential")
@@ -231,14 +264,8 @@ async def pair_node(api_url: str, code: str, *, label: str | None = None) -> dic
 async def list_estate_cameras(api_url: str, credential: str | None = None) -> list[dict]:
     """GET {api_url}/api/v1/nvr/estate/cameras → the node's own camera list."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/cameras"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.get(url, headers=_headers(credential), params={"limit": 500})
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("GET", url, headers=_headers(credential), params={"limit": 500})
+    _raise_for_node(r)
     return list((r.json() or {}).get("items") or [])
 
 
@@ -252,14 +279,8 @@ async def mint_estate_live(
     body = {}
     if profile:
         body["profile"] = profile
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.post(url, headers=_headers(credential), json=body)
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("POST", url, headers=_headers(credential), json=body)
+    _raise_for_node(r)
     return r.json() or {}
 
 
@@ -283,14 +304,8 @@ async def get_node_timeline(
         params["from"] = from_
     if to:
         params["to"] = to
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.get(url, headers=_headers(credential), params=params)
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("GET", url, headers=_headers(credential), params=params)
+    _raise_for_node(r)
     return r.json() or {}
 
 
@@ -315,14 +330,8 @@ async def list_node_recordings(
         params["from"] = from_
     if to:
         params["to"] = to
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.get(url, headers=_headers(credential), params=params)
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("GET", url, headers=_headers(credential), params=params)
+    _raise_for_node(r)
     return r.json() or {}
 
 
@@ -344,14 +353,8 @@ async def mint_node_playback(
         body["from"] = from_
     if to:
         body["to"] = to
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.post(url, headers=_headers(credential), json=body)
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("POST", url, headers=_headers(credential), json=body)
+    _raise_for_node(r)
     return r.json() or {}
 
 
@@ -364,56 +367,32 @@ async def mint_node_playback(
 async def get_node_storage_usage(api_url: str, *, credential: str | None = None) -> dict:
     """GET {api_url}/api/v1/nvr/estate/storage/usage → the node's own disk usage summary."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/storage/usage"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.get(url, headers=_headers(credential))
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("GET", url, headers=_headers(credential))
+    _raise_for_node(r)
     return r.json() or {}
 
 
 async def get_node_storage_raid(api_url: str, *, credential: str | None = None) -> dict:
     """GET {api_url}/api/v1/nvr/estate/storage/raid → the node's RAID array health."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/storage/raid"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.get(url, headers=_headers(credential))
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("GET", url, headers=_headers(credential))
+    _raise_for_node(r)
     return r.json() or {}
 
 
 async def list_node_pools(api_url: str, *, credential: str | None = None) -> dict:
     """GET {api_url}/api/v1/nvr/estate/storage/pools → the node's storage pools."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/storage/pools"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.get(url, headers=_headers(credential))
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("GET", url, headers=_headers(credential))
+    _raise_for_node(r)
     return r.json() or {}
 
 
 async def list_node_tier_rules(api_url: str, *, credential: str | None = None) -> dict:
     """GET {api_url}/api/v1/nvr/estate/storage/tier-rules → the node's tiering rules."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/storage/tier-rules"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.get(url, headers=_headers(credential))
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("GET", url, headers=_headers(credential))
+    _raise_for_node(r)
     return r.json() or {}
 
 
@@ -433,14 +412,8 @@ async def get_node_sysmon(api_url: str, *, credential: str | None = None) -> dic
     a value; nothing here is allowed to smooth that over.
     """
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/sysmon"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.get(url, headers=_headers(credential))
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("GET", url, headers=_headers(credential))
+    _raise_for_node(r)
     return r.json() or {}
 
 
@@ -458,14 +431,8 @@ async def isolate_node_camera(
     params = {"camera_id": camera_id}
     if profile:
         params["profile"] = profile
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.get(url, params=params, headers=_headers(credential))
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("GET", url, params=params, headers=_headers(credential))
+    _raise_for_node(r)
     return r.json() or {}
 
 
@@ -493,16 +460,10 @@ async def get_upstream_nvr_storage(
     available — the feature is still being built node-side); other non-2xx raise
     NodeUnavailable."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/nvrs/{nvr_id}/storage"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.get(url, headers=_headers(credential))
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
+    r = await _send("GET", url, headers=_headers(credential))
     if r.status_code == 404:
         return None
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    _raise_for_node(r)
     return r.json() or {}
 
 
@@ -517,14 +478,8 @@ async def list_node_credentials(api_url: str) -> list[dict]:
     federation credentials [{id,label,grants,created_at,last_used_at,revoked_at}].
     Service-JWT auth (settings.manage-gated). Raises NodeUnavailable on non-2xx."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/federation/credentials"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.get(url, headers={"Authorization": f"Bearer {mint_service_token()}"})
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("GET", url, headers={"Authorization": f"Bearer {mint_service_token()}"})
+    _raise_for_node(r)
     return list((r.json() or {}).get("items") or [])
 
 
@@ -532,14 +487,8 @@ async def revoke_node_credential(api_url: str, cred_id: str) -> None:
     """DELETE {api_url}/api/v1/nvr/estate/federation/credentials/{cred_id} → revoke one
     issued credential. Service-JWT auth (settings.manage-gated). NodeUnavailable on non-2xx."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/federation/credentials/{cred_id}"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.delete(url, headers={"Authorization": f"Bearer {mint_service_token()}"})
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("DELETE", url, headers={"Authorization": f"Bearer {mint_service_token()}"})
+    _raise_for_node(r)
 
 
 async def rename_node_credential(api_url: str, cred_id: str, label: str) -> None:
@@ -552,18 +501,12 @@ async def rename_node_credential(api_url: str, cred_id: str, label: str) -> None
     enrolment. NodeUnavailable (NodeRefused for a 401/403) on non-2xx.
     """
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/federation/credentials/{cred_id}"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.patch(
-                url,
-                headers={"Authorization": f"Bearer {mint_service_token()}"},
-                json={"label": label},
-            )
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("PATCH", 
+        url,
+        headers={"Authorization": f"Bearer {mint_service_token()}"},
+        json={"label": label},
+    )
+    _raise_for_node(r)
 
 
 # ── operate-THROUGH-node (Phase-3) — the only two mutations the VMS makes on a
@@ -599,14 +542,8 @@ async def ptz_node(
     if act not in _PTZ_ACTIONS:
         raise NodeUnavailable(f"unsupported ptz action: {action!r}")
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/cameras/{camera_id}/ptz/{act}"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.post(url, headers=_headers(credential), json=body or {})
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("POST", url, headers=_headers(credential), json=body or {})
+    _raise_for_node(r)
     return r.json() or {}
 
 
@@ -626,14 +563,8 @@ async def snapshot_node(
     non-2xx or a response carrying no decodable image."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/cameras/{camera_id}/snapshot"
     params: dict = {"refresh": "1"} if refresh else {}
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.get(url, headers=_headers(credential), params=params)
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("GET", url, headers=_headers(credential), params=params)
+    _raise_for_node(r)
     uri = ((r.json() or {}).get("image") or "").strip()
     if not uri.startswith("data:"):
         raise NodeUnavailable("node returned no snapshot image")
@@ -657,14 +588,8 @@ async def record_start_node(api_url: str, camera_id: str, *, credential: str | N
     """POST {api_url}/api/v1/nvr/estate/cameras/{id}/recording/start → the node starts
     recording its own camera. Empty body; returns { status }. NodeUnavailable on non-2xx."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/cameras/{camera_id}/recording/start"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.post(url, headers=_headers(credential), json={})
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("POST", url, headers=_headers(credential), json={})
+    _raise_for_node(r)
     return r.json() or {}
 
 
@@ -672,14 +597,8 @@ async def record_stop_node(api_url: str, camera_id: str, *, credential: str | No
     """POST {api_url}/api/v1/nvr/estate/cameras/{id}/recording/stop → the node stops
     recording its own camera. Empty body; returns { status }. NodeUnavailable on non-2xx."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/cameras/{camera_id}/recording/stop"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.post(url, headers=_headers(credential), json={})
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("POST", url, headers=_headers(credential), json={})
+    _raise_for_node(r)
     return r.json() or {}
 
 
@@ -687,14 +606,8 @@ async def reboot_camera_node(api_url: str, camera_id: str, *, credential: str | 
     """POST {api_url}/api/v1/nvr/estate/cameras/{id}/onvif/reboot → the node reboots its
     own camera via ONVIF. Empty body; returns { "rebooting": true }. NodeUnavailable on non-2xx."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/cameras/{camera_id}/onvif/reboot"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.post(url, headers=_headers(credential), json={})
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("POST", url, headers=_headers(credential), json={})
+    _raise_for_node(r)
     return r.json() or {}
 
 
@@ -720,14 +633,8 @@ async def create_export_node(
     pasted into a slide, where a detached signature does not travel."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/exports"
     body = {"camera_id": camera_id, "from": frm, "to": to, "watermark": bool(watermark)}
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.post(url, headers=_headers(credential), json=body)
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("POST", url, headers=_headers(credential), json=body)
+    _raise_for_node(r)
     return r.json() or {}
 
 
@@ -735,14 +642,8 @@ async def list_exports_node(api_url: str, camera_id: str, *, credential: str | N
     """GET {api_url}/api/v1/nvr/estate/exports?camera_id={id} → the node's export jobs for a
     camera. Returns { items: [...] }. NodeUnavailable on non-2xx."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/exports"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.get(url, headers=_headers(credential), params={"camera_id": camera_id})
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("GET", url, headers=_headers(credential), params={"camera_id": camera_id})
+    _raise_for_node(r)
     return r.json() or {}
 
 
@@ -750,14 +651,8 @@ async def get_export_node(api_url: str, export_id: str, *, credential: str | Non
     """GET {api_url}/api/v1/nvr/estate/exports/{export_id} → one export job's status.
     Returns { id, status, ... }. NodeUnavailable on non-2xx."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/exports/{export_id}"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.get(url, headers=_headers(credential))
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("GET", url, headers=_headers(credential))
+    _raise_for_node(r)
     return r.json() or {}
 
 
@@ -821,14 +716,8 @@ async def export_manifest_node(
     the canonical encoding of the document, so re-serialising it through a Python dict
     would invalidate it for the offline verifier this file exists to feed."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/exports/{export_id}/manifest"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.get(url, headers=_headers(credential))
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("GET", url, headers=_headers(credential))
+    _raise_for_node(r)
     media_type = (r.headers.get("content-type") or "application/json").split(";", 1)[0].strip()
     filename = f"export-{export_id}.manifest.json"
     disp = r.headers.get("content-disposition") or ""
@@ -847,14 +736,8 @@ async def download_export_node(
     memory and return (bytes, media_type, filename); filename is parsed from the node's
     Content-Disposition (falls back to ``export-{id}.mp4``). NodeUnavailable on non-2xx."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/exports/{export_id}/download"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.get(url, headers=_headers(credential))
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("GET", url, headers=_headers(credential))
+    _raise_for_node(r)
     media_type = (r.headers.get("content-type") or "video/mp4").split(";", 1)[0].strip() or "video/mp4"
     filename = f"export-{export_id}.mp4"
     disp = r.headers.get("content-disposition") or ""
@@ -873,14 +756,8 @@ async def evidence_hold_node(
     NodeUnavailable on non-2xx."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/cameras/{camera_id}/holds"
     body = {"from": frm, "to": to, "reason": reason}
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.post(url, headers=_headers(credential), json=body)
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("POST", url, headers=_headers(credential), json=body)
+    _raise_for_node(r)
     return r.json() or {}
 
 
@@ -891,14 +768,8 @@ async def evidence_release_node(
     the evidence hold on its own camera over [frm, to]. Returns the node's JSON.
     NodeUnavailable on non-2xx."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/cameras/{camera_id}/holds"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.delete(url, headers=_headers(credential), params={"from": frm, "to": to})
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("DELETE", url, headers=_headers(credential), params={"from": frm, "to": to})
+    _raise_for_node(r)
     return r.json() or {}
 
 
@@ -906,14 +777,8 @@ async def list_holds_node(api_url: str, camera_id: str, *, credential: str | Non
     """GET {api_url}/api/v1/nvr/estate/holds?camera_id={id} → the node's active evidence
     holds for a camera. Returns { items: [...] }. NodeUnavailable on non-2xx."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/holds"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.get(url, headers=_headers(credential), params={"camera_id": camera_id})
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
+    r = await _send("GET", url, headers=_headers(credential), params={"camera_id": camera_id})
+    _raise_for_node(r)
     return r.json() or {}
 
 
@@ -955,13 +820,7 @@ async def _node_json(
     the node returns 204 for a preset/tour/OSD/mask delete, which is a success, not a
     missing payload."""
     url = f"{api_url.rstrip('/')}{_ESTATE}{path}"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.request(
-                method, url, headers=_headers(credential), params=params, json=json_body
-            )
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
+    r = await _send(method, url, headers=_headers(credential), params=params, json=json_body)
     if r.status_code // 100 != 2:
         # EVERY 4xx is a refusal, not only 401/403. The node answered and said no —
         # a malformed schedule document, an id that is not there, a conflict — and
@@ -1283,14 +1142,8 @@ async def talk_uplink_node(
     url = f"{api_url.rstrip('/')}{_ESTATE}/cameras/{camera_id}/onvif/talk/uplink"
     headers = dict(_headers(credential))
     headers["Content-Type"] = "application/octet-stream"
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as c:
-            r = await c.post(url, headers=headers, content=body_stream)
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {_node_error_message(r, r.text[:160])}"))
+    r = await _send("POST", url, headers=headers, content=body_stream, timeout=timeout)
+    _raise_for_node(r, detailed=True)
     try:
         return r.json() or {}
     except ValueError as e:
@@ -1324,14 +1177,8 @@ async def motion_search_node(
     # A longer budget than _TIMEOUT: this decodes footage, and 8s is a control-call
     # timeout, not a search one. The node applies its own bounds and reports them.
     url = f"{api_url.rstrip('/')}{_ESTATE}/cameras/{camera_id}/motion-search"
-    try:
-        async with httpx.AsyncClient(timeout=120.0) as c:
-            r = await c.post(url, headers=_headers(credential), json=body or {})
-    except httpx.HTTPError as e:
-        raise _transport_failure(e) from e
-    if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
-                else NodeUnavailable(f"{r.status_code}: {_node_error_message(r, r.text[:160])}"))
+    r = await _send("POST", url, headers=_headers(credential), json=body or {}, timeout=120.0)
+    _raise_for_node(r, detailed=True)
     return r.json() or {}
 
 

@@ -102,14 +102,18 @@ _SECONDS = {
 # rebind would have silently replaced it, and the thing that stops an environment
 # variable reaching SQL would have been this looser pattern instead.
 #
-# `\d`, `[ \t]` and `[A-Za-z]` are disjoint, so there is nothing here for an engine
-# to re-split, and no `\b` is needed to make that true. Compiling once is the only
-# part of the original change worth keeping.
+# POSSESSIVE, and measured rather than assumed. The three classes are disjoint, so
+# backtracking can never turn a failure into a match — but the engine still tries:
+# on a run of digits with no unit after it, `\d+` gives back one character at a
+# time and each retry fails again, which is quadratic. 20,000 digits took 7.3s;
+# `++`/`*+` (Python 3.11, which is what these images run) took 0.92s, and both
+# return identical pairs for every interval the validator admits.
 #
-# This runs only on strings `_INTERVAL_RE` has already accepted, so every unit is a
-# full word separated by whitespace — which is why `_SECONDS` is keyed on words and
-# why a compact "1h30m" is not a case to handle here: it never gets this far.
-_QTY_UNIT_RE = re.compile(r"(\d+)[ \t]*([A-Za-z]+)")
+# It only ever sees strings `_INTERVAL_RE` has already accepted, so this is not a
+# reachable denial of service today — it is one input-validation change away from
+# being one, and the fix costs nothing. That also explains why `_SECONDS` is keyed
+# on whole words: a compact "1h30m" never gets this far.
+_QTY_UNIT_RE = re.compile(r"(\d++)[ \t]*+([A-Za-z]++)")
 
 
 def approx_seconds(interval: str) -> float:

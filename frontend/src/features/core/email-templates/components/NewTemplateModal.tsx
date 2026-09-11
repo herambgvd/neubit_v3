@@ -47,7 +47,7 @@ export default function NewTemplateModal({
   function submit() {
     setSubmitted(true);
     if (error) return;
-    onCreate(trimmed, subject.trim() || trimmed.replaceAll(/_/g, " "));
+    onCreate(trimmed, subject.trim() || trimmed.replaceAll("_", " "));
   }
 
   return (

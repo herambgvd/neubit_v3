@@ -6,7 +6,7 @@ export type DateInput = string | number | Date | null | undefined;
 
 // "fire_alarm" → "Fire Alarm"; null/"" → "—".
 export const titleize = (s: string | number | null | undefined): string =>
-  s ? String(s).replaceAll(/_/g, " ").replaceAll(/\b\w/g, (c) => c.toUpperCase()) : "—";
+  s ? String(s).replaceAll("_", " ").replaceAll(/\b\w/g, (c) => c.toUpperCase()) : "—";
 
 /** True only for `any` itself (the classic `0 extends 1 & T` probe). */
 type IsAny<T> = 0 extends 1 & T ? true : false;

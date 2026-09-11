@@ -853,7 +853,7 @@ function LivePlayer({
         a.download = `${cameraName || cameraId || "snapshot"}-${new Date()
           .toISOString()
           .slice(0, 19)
-          .replaceAll(/:/g, "-")}.png`;
+          .replaceAll(":", "-")}.png`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);

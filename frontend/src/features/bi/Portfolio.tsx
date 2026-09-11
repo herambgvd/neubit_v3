@@ -183,7 +183,7 @@ function SiteRow({ site, alertHours }: any) {
           .map((c: any) =>
             c.status === "ok"
               ? `${c.metric}: ${Math.round(c.value)}`
-              : `${c.metric}: ${String(c.status).replaceAll(/_/g, " ")}`,
+              : `${c.metric}: ${String(c.status).replaceAll("_", " ")}`,
           )
           .join(" · ")
       : site.score_reason;
