@@ -76,6 +76,11 @@ class Settings(BaseSettings):
     # --- App auth (the app's own users, NOT the license) -------------------
     jwt_secret: str = "change-me-in-prod"
     jwt_ttl_minutes: int = 60 * 12
+    # TOTP hash — sha1 (the RFC 6238 default every authenticator assumes), sha256
+    # or sha512. See auth/security.totp_algorithm for why the default is not
+    # simply the strongest: changing it invalidates every code already enrolled,
+    # and the apps that ignore the otpauth `algorithm` parameter do so silently.
+    totp_algorithm: str = "sha1"
     # TTL of the access token an API key is exchanged for. Much shorter than a
     # human's 12 hours because satellites verify statelessly and cannot learn a key
     # was revoked — this is the width of that residual window. Core itself refuses

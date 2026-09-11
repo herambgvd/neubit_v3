@@ -5,36 +5,18 @@ has already spooled parts over 1 MiB to a temp file by then — the heap was cap
 the disk was not.
 """
 
-from __future__ import annotations
 
 import httpx
 import pytest
 
-from app.app import create_base_app
 from app.core.request_limits import DEFAULT_MAX_BYTES, RequestSizeLimitMiddleware
-from app.db.base import get_db
+from conftest import api_client
 
 pytestmark = pytest.mark.asyncio
 
 
-@pytest.fixture
-def app(sessionmaker_):
-    application = create_base_app(title="test")
-
-    async def _override_db():
-        async with sessionmaker_() as session:
-            yield session
-
-    application.dependency_overrides[get_db] = _override_db
-    return application
-
-
-def _client(app) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
-
-
 async def test_a_declared_oversized_body_is_413(app):
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post("/api/v1/auth/login", content=b"x" * (DEFAULT_MAX_BYTES + 1))
     assert r.status_code == 413, r.text
     assert r.json()["error"]["code"] == "REQUEST_TOO_LARGE"
@@ -64,13 +46,13 @@ async def test_the_body_is_never_handed_to_the_app(app):
 
 async def test_an_ordinary_request_is_untouched(app):
     """Otherwise the guard is an outage, not a limit."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.get("/health")
     assert r.status_code == 200
 
 
 async def test_a_body_under_the_limit_reaches_the_app(app):
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post("/api/v1/auth/login", json={"email": "a@b.c", "password": "x"})
     # 401/422 — anything but 413 means the body got through.
     assert r.status_code != 413, r.text
@@ -110,6 +92,6 @@ async def test_a_streamed_body_with_no_content_length_is_still_capped(app):
         for _ in range((DEFAULT_MAX_BYTES // (64 * 1024)) + 2):
             yield b"x" * (64 * 1024)
 
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post("/api/v1/auth/login", content=_chunks())
     assert r.status_code == 413, r.text

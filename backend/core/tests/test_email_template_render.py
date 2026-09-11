@@ -6,46 +6,21 @@ is the first caller and it holds a SERVICE token (no `users` row), so these test
 drive both principals: a service token and a real operator.
 """
 
-from __future__ import annotations
 
 import time
 import uuid
 
-import httpx
 import jwt
 import pytest
 
-from app.app import create_base_app
-from app.auth.security import create_access_token
 from app.core.config import get_settings
-from app.db.base import get_db
 from app.messaging import template_store
 from app.tenancy.models import Tenant
-from conftest import make_role, make_user
+from conftest import api_client, bearer, make_role, make_user
 
 pytestmark = pytest.mark.asyncio
 
 PREFIX = "/api/v1"
-
-
-@pytest.fixture
-def app(sessionmaker_):
-    application = create_base_app(title="test")
-
-    async def _override_db():
-        async with sessionmaker_() as session:
-            yield session
-
-    application.dependency_overrides[get_db] = _override_db
-    return application
-
-
-def _client(app) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
-
-
-def _auth(user) -> dict:
-    return {"Authorization": f"Bearer {create_access_token(user, sid='test')}"}
 
 
 def _service_auth(tenant_id=None) -> dict:
@@ -80,7 +55,7 @@ async def test_service_token_renders_a_custom_template(app, db):
     await template_store.upsert_override(
         db, "gate_breach", "Gate: {{ title }}", "<p>{{ message }} ({{ severity }})</p>"
     )
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
             f"{PREFIX}/messaging/templates/gate_breach/render",
             headers=_service_auth(),
@@ -96,7 +71,7 @@ async def test_service_token_renders_a_custom_template(app, db):
 
 async def test_wrap_false_returns_the_bare_body(app, db):
     await template_store.upsert_override(db, "bare", "S", "<p>hi</p>")
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
             f"{PREFIX}/messaging/templates/bare/render",
             headers=_service_auth(),
@@ -112,7 +87,7 @@ async def test_body_tenant_selects_that_tenants_override(app, db):
     await template_store.upsert_override(
         db, "alert", "ACME {{ title }}", "<p>acme</p>", tenant_id=acme.id
     )
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
             f"{PREFIX}/messaging/templates/alert/render",
             headers=_service_auth(acme.id),
@@ -136,10 +111,10 @@ async def test_operator_tenant_wins_over_the_body_tenant(app, db):
     user = await make_user(db, "admin@acme.io", role)
     user.tenant_id = acme.id
     await db.commit()
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
             f"{PREFIX}/messaging/templates/alert/render",
-            headers=_auth(user),
+            headers=bearer(user),
             json={"context": {}, "tenant_id": str(other.id)},
         )
     assert r.status_code == 200
@@ -149,16 +124,16 @@ async def test_operator_tenant_wins_over_the_body_tenant(app, db):
 async def test_render_needs_settings_manage(app, db):
     role = await make_role(db, "Viewer", ["vms.live.view"])
     user = await make_user(db, "viewer@x.io", role)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
-            f"{PREFIX}/messaging/templates/alert/render", headers=_auth(user), json={}
+            f"{PREFIX}/messaging/templates/alert/render", headers=bearer(user), json={}
         )
     assert r.status_code == 403
 
 
 async def test_unknown_template_is_refused_not_empty(app, db):
     """A typo must fail loudly; an empty email is the worst possible success."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
             f"{PREFIX}/messaging/templates/{uuid.uuid4().hex}/render",
             headers=_service_auth(),
@@ -195,10 +170,10 @@ async def test_a_wildcard_admin_renders_their_own_custom_template(app, db):
     user.tenant_id = acme.id
     await db.commit()
 
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
             f"{PREFIX}/messaging/templates/gate_breach_wild/render",
-            headers=_auth(user),
+            headers=bearer(user),
             json={"context": {"title": "Forced", "message": "Door forced"}},
         )
     assert r.status_code == 200, r.text
@@ -217,10 +192,10 @@ async def test_a_wildcard_admins_override_of_a_builtin_is_the_one_that_renders(a
     user.tenant_id = acme.id
     await db.commit()
 
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
             f"{PREFIX}/messaging/templates/alert/render",
-            headers=_auth(user),
+            headers=bearer(user),
             json={"context": {"title": "x"}},
         )
     assert r.status_code == 200, r.text
@@ -230,7 +205,7 @@ async def test_a_wildcard_admins_override_of_a_builtin_is_the_one_that_renders(a
 async def test_a_superadmin_token_with_no_user_row_still_authorises(app, db):
     # The service path must keep working: no `users` row, `*` in the claims.
     await template_store.upsert_override(db, "svc_only", "S", "<p>hi</p>")
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
             f"{PREFIX}/messaging/templates/svc_only/render",
             headers=_service_auth(),

@@ -39,6 +39,7 @@ from kernel.auth import Scope, get_scope, require_permission
 from app.db import get_db
 from app.vms.federation import client as fed
 from app.vms.federation._common import (
+    _via,
     PERM_READ,
     _resolve_node,
     _tag,
@@ -65,11 +66,7 @@ async def list_schedule_templates(
     scope: Annotated[Scope, Depends(get_scope)],
 ) -> dict:
     """This recorder's named schedule library."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.list_schedule_templates(node.api_url, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.list_schedule_templates(n.api_url, credential=n.credential))
 
 
 @router.post(

@@ -12,7 +12,6 @@ the rule is about position: whatever is outermost is what stamps the header onto
 everything, including responses this test does not know about yet.
 """
 
-from __future__ import annotations
 
 from fastapi.middleware.cors import CORSMiddleware
 

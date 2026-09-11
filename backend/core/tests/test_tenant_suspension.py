@@ -14,41 +14,17 @@ someone remembers:
     live on one router before.
 """
 
-from __future__ import annotations
 
-import httpx
 import pytest
 import pytest_asyncio
 
-from app.app import create_base_app
 from app.auth.models import User
 from app.auth.security import create_access_token, hash_password
-from app.db.base import get_db
 from app.tenancy.models import Tenant
-from conftest import make_role
+from conftest import api_client, bearer, make_role
 
 pytestmark = pytest.mark.asyncio
 PREFIX = "/api/v1"
-
-
-@pytest.fixture
-def app(sessionmaker_):
-    application = create_base_app(title="test")
-
-    async def _override_db():
-        async with sessionmaker_() as session:
-            yield session
-
-    application.dependency_overrides[get_db] = _override_db
-    return application
-
-
-def _client(app) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
-
-
-def _auth(user) -> dict:
-    return {"Authorization": f"Bearer {create_access_token(user, sid='test')}"}
 
 
 @pytest_asyncio.fixture
@@ -81,8 +57,8 @@ EXEMPT = ["/features", "/auth/me"]
 
 @pytest.mark.parametrize("path", GUARDED)
 async def test_a_suspended_tenants_token_stops_working(app, world, db, path):
-    headers = _auth(world["user"])
-    async with _client(app) as c:
+    headers = bearer(world["user"])
+    async with api_client(app) as c:
         before = await c.get(f"{PREFIX}{path}", headers=headers)
         assert before.status_code == 200, f"{path} was not reachable to begin with: {before.text}"
 
@@ -100,8 +76,8 @@ async def test_the_user_can_still_be_told_they_are_suspended(app, world, db, pat
     nothing to render the message from, and the user unable to log out."""
     world["tenant"].status = "suspended"
     await db.commit()
-    async with _client(app) as c:
-        r = await c.get(f"{PREFIX}{path}", headers=_auth(world["user"]))
+    async with api_client(app) as c:
+        r = await c.get(f"{PREFIX}{path}", headers=bearer(world["user"]))
     assert r.status_code == 200, f"{path} -> {r.status_code}: {r.text}"
 
 
@@ -111,8 +87,8 @@ async def test_an_expired_licence_is_refused_and_grace_is_not(app, world, db):
     import datetime as dt
 
     tenant = world["tenant"]
-    headers = _auth(world["user"])
-    async with _client(app) as c:
+    headers = bearer(world["user"])
+    async with api_client(app) as c:
         tenant.license_expires_at = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=365)
         await db.commit()
         expired = await c.get(f"{PREFIX}/sites", headers=headers)
@@ -144,8 +120,8 @@ async def test_a_super_admin_is_not_locked_out_of_a_suspended_tenant(app, world,
     await db.refresh(sa, attribute_names=["role"])
     world["tenant"].status = "suspended"
     await db.commit()
-    async with _client(app) as c:
-        r = await c.get(f"{PREFIX}/sites", headers=_auth(sa))
+    async with api_client(app) as c:
+        r = await c.get(f"{PREFIX}/sites", headers=bearer(sa))
     assert r.status_code == 200, r.text
 
 
@@ -163,13 +139,13 @@ async def test_a_service_key_of_a_suspended_tenant_is_refused(app, world, db):
     )
     # The raw key is not a bearer token: it is exchanged at /auth/token for a JWT
     # carrying `act: "apikey"`. That token is what the guard has to understand.
-    async with _client(app) as c:
+    async with api_client(app) as c:
         exchanged = await c.post(f"{PREFIX}/auth/token", json={"api_key": raw})
     assert exchanged.status_code == 200, exchanged.text
     headers = {"Authorization": f"Bearer {exchanged.json()['access_token']}"}
     # /audit, not /sites: sites resolves its scope through `get_current_user`, which
     # refuses a service credential outright. /audit is a surface keys actually use.
-    async with _client(app) as c:
+    async with api_client(app) as c:
         before = await c.get(f"{PREFIX}/audit", headers=headers)
         assert before.status_code == 200, before.text
         world["tenant"].status = "suspended"

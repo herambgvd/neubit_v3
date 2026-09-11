@@ -231,21 +231,10 @@ class SiteFactsSync:
 
     async def stop(self) -> None:
         self._running = False
-        if self._task is not None:
-            self._task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await self._task
-            self._task = None
-        if self._nc is not None:
-            # Bounded drain, then close. A pull consumer has nothing buffered to
-            # flush — every message is acked as it is applied — so an unbounded
-            # `drain()` here can only ever make a shutdown hang, which on a
-            # reloading dev server looks like the service died.
-            with contextlib.suppress(Exception):
-                await asyncio.wait_for(self._nc.drain(), timeout=2.0)
-            with contextlib.suppress(Exception):
-                await self._nc.close()
-            self._nc = None
+        await stop_tasks(self._task)
+        self._task = None
+        await close_nats(self._nc)
+        self._nc = None
         self.stats.connected = False
 
     async def _run(self, nats_url: str) -> None:

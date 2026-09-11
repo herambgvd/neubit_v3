@@ -11,7 +11,6 @@ test of the path was a mock that could not sign. So these tests are about the
 three ways the check can be present and still be useless.
 """
 
-from __future__ import annotations
 
 import jwt
 import pytest

@@ -10,7 +10,6 @@ version defers `include_router`, so `app.routes` holds wrapper objects and a nai
 iteration sees 41 of the 216.
 """
 
-from __future__ import annotations
 
 import pytest
 from fastapi.routing import APIRoute

@@ -13,7 +13,6 @@ Two latent cross-tenant defects, neither reachable today:
     `.path` and the scan always finds nothing.
 """
 
-from __future__ import annotations
 
 import uuid
 

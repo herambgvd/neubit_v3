@@ -13,7 +13,6 @@ tests exercise the real algorithm. Injection substitutes the module attribute
 `ratelimit._limiter`, not a name another module already imported.
 """
 
-from __future__ import annotations
 
 import asyncio
 import logging

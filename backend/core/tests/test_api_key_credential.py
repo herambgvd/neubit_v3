@@ -10,7 +10,6 @@ carries, which path a 401 comes out of. A service-level test would pass with the
 interactive login path wide open to a key.
 """
 
-from __future__ import annotations
 
 import datetime as dt
 
@@ -18,14 +17,12 @@ import httpx
 import jwt
 import pytest
 
-from app.app import create_base_app
 from app.auth.models import ApiKey
 from app.auth.security import create_access_token, decode_token
 from app.auth.service import AuthService
 from app.core.audit import AuditLog
-from app.db.base import get_db
 from app.core.config import get_settings
-from conftest import make_role, make_user
+from conftest import api_client, bearer, make_role, make_user
 from sqlalchemy import select
 
 pytestmark = pytest.mark.asyncio
@@ -45,26 +42,6 @@ def _fresh_rate_limit_buckets():
     ratelimit._hits.clear()
 
 
-@pytest.fixture
-def app(sessionmaker_):
-    application = create_base_app(title="test")
-
-    async def _override_db():
-        async with sessionmaker_() as session:
-            yield session
-
-    application.dependency_overrides[get_db] = _override_db
-    return application
-
-
-def _client(app) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
-
-
-def _auth(user) -> dict:
-    return {"Authorization": f"Bearer {create_access_token(user, sid='test')}"}
-
-
 def _bearer(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
@@ -78,7 +55,7 @@ async def _admin(db):
 
 async def _mint(c, actor, **body) -> dict:
     body.setdefault("name", "DashForge BI reader")
-    r = await c.post(f"{PREFIX}/auth/api-keys", headers=_auth(actor), json=body)
+    r = await c.post(f"{PREFIX}/auth/api-keys", headers=bearer(actor), json=body)
     assert r.status_code == 201, r.text
     return r.json()
 
@@ -91,12 +68,12 @@ async def _exchange(c, raw: str) -> httpx.Response:
 async def test_secret_is_shown_once_and_stored_only_as_a_hash(app, db):
     """Creation is the only moment the secret exists outside the caller."""
     actor = await _admin(db)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         created = await _mint(c, actor, scopes=["bi.read"])
         raw = created["key"]
         assert raw.startswith("nbk_")
 
-        listed = await c.get(f"{PREFIX}/auth/api-keys", headers=_auth(actor))
+        listed = await c.get(f"{PREFIX}/auth/api-keys", headers=bearer(actor))
         assert listed.status_code == 200
         (row,) = listed.json()["items"]
         assert "key" not in row
@@ -120,15 +97,15 @@ async def test_a_key_cannot_hold_the_wildcard_by_any_route(app, db):
     """
     actor = await _admin(db)
     admin_role = await make_role(db, "Administrator-wild", ["*"])
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
-            f"{PREFIX}/auth/api-keys", headers=_auth(actor),
+            f"{PREFIX}/auth/api-keys", headers=bearer(actor),
             json={"name": "everything", "scopes": ["*"]},
         )
         assert r.status_code == 422 and "wildcard" in r.text
 
         r = await c.post(
-            f"{PREFIX}/auth/api-keys", headers=_auth(actor),
+            f"{PREFIX}/auth/api-keys", headers=bearer(actor),
             json={"name": "everything", "role_id": str(admin_role.id)},
         )
         assert r.status_code == 422 and "wildcard" in r.text
@@ -139,9 +116,9 @@ async def test_a_key_cannot_be_wider_than_its_creator(app, db):
     that does X, then use it."""
     role = await make_role(db, "BiKeyMaker", ["apikey.manage", "bi.read"])
     actor = await make_user(db, "narrow@x.io", role)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
-            f"{PREFIX}/auth/api-keys", headers=_auth(actor),
+            f"{PREFIX}/auth/api-keys", headers=bearer(actor),
             json={"name": "sneaky", "scopes": ["bi.read", "user.manage"]},
         )
         assert r.status_code == 422 and "user.manage" in r.text
@@ -154,9 +131,9 @@ async def test_a_scope_nothing_enforces_is_refused(app, db):
     """A key granting a permission no code checks reads as a restriction and is
     not one."""
     actor = await _admin(db)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
-            f"{PREFIX}/auth/api-keys", headers=_auth(actor),
+            f"{PREFIX}/auth/api-keys", headers=bearer(actor),
             json={"name": "typo", "scopes": ["bi.raed"]},
         )
         assert r.status_code == 422 and "bi.raed" in r.text
@@ -169,7 +146,7 @@ async def test_exchange_yields_an_ordinary_access_token_carrying_only_the_scopes
     change.
     """
     actor = await _admin(db)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         created = await _mint(c, actor, scopes=["bi.read"])
         r = await _exchange(c, created["key"])
         assert r.status_code == 200, r.text
@@ -198,7 +175,7 @@ async def test_no_refresh_token_is_issued(app, db):
     """A refresh token would be a second long-lived credential, outliving the
     revocation of the key that produced it."""
     actor = await _admin(db)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         created = await _mint(c, actor, scopes=["bi.read"])
         r = await _exchange(c, created["key"])
         assert "refresh_token" not in r.json()
@@ -219,7 +196,7 @@ async def test_every_bad_credential_fails_closed_and_identically(app, db, mangle
     """One status, one message. A caller must not be able to learn from the
     response which keys exist, which prefixes are real, or which were revoked."""
     actor = await _admin(db)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         created = await _mint(c, actor, scopes=["bi.read"])
         r = await _exchange(c, mangle(created["key"]))
         assert r.status_code == 401
@@ -228,7 +205,7 @@ async def test_every_bad_credential_fails_closed_and_identically(app, db, mangle
 
 async def test_an_expired_key_is_refused(app, db):
     actor = await _admin(db)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         created = await _mint(c, actor, scopes=["bi.read"])
         assert (await _exchange(c, created["key"])).status_code == 200
         key = (await db.execute(select(ApiKey))).scalar_one()
@@ -241,7 +218,7 @@ async def test_last_used_is_stamped_so_a_forgotten_key_is_visible(app, db):
     """"Issued 14 months ago, never used" is a credential to delete, and nothing
     else in the row can say it."""
     actor = await _admin(db)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         created = await _mint(c, actor, scopes=["bi.read"])
         key = (await db.execute(select(ApiKey))).scalar_one()
         assert key.last_used_at is None
@@ -257,7 +234,7 @@ async def test_a_key_cannot_sign_in_to_the_console(app, db):
     If this ever fails, somebody has taught ``get_current_user`` about API keys.
     """
     actor = await _admin(db)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         created = await _mint(c, actor, scopes=["bi.read", "user.manage"])
         token = (await _exchange(c, created["key"])).json()["access_token"]
         for path in ("/auth/me", "/auth/me/sessions", "/auth/me/2fa"):
@@ -270,7 +247,7 @@ async def test_a_key_is_confined_to_its_scopes_on_core_routes(app, db):
     under-privileged human gets."""
     actor = await _admin(db)
     role = await make_role(db, "Target", ["bi.read"])
-    async with _client(app) as c:
+    async with api_client(app) as c:
         created = await _mint(c, actor, scopes=["bi.read"])
         token = (await _exchange(c, created["key"])).json()["access_token"]
 
@@ -293,7 +270,7 @@ async def test_a_key_can_reach_what_it_is_scoped_for(app, db):
     """The other half: a scope that is held authorizes, or the facility is an
     elaborate way of refusing everything."""
     actor = await _admin(db)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         created = await _mint(c, actor, scopes=["audit.read", "apikey.manage"])
         token = (await _exchange(c, created["key"])).json()["access_token"]
         r = await c.get(f"{PREFIX}/audit", headers=_bearer(token))
@@ -313,7 +290,7 @@ async def test_a_token_carrying_an_unknown_credential_kind_is_refused(app, db):
         get_settings().jwt_secret,
         algorithm="HS256",
     )
-    async with _client(app) as c:
+    async with api_client(app) as c:
         # The control: the SAME claims re-signed the same way, with `act` left
         # alone, must be accepted. Without it a broken signature would make the
         # assertion below pass for the wrong reason — which is exactly what a
@@ -334,12 +311,12 @@ async def test_a_token_carrying_an_unknown_credential_kind_is_refused(app, db):
 async def test_revocation_is_immediate_and_touches_no_user_account(app, db):
     """Revoking disables one credential and nothing else — no person is disabled."""
     actor = await _admin(db)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         created = await _mint(c, actor, scopes=["audit.read"])
         token = (await _exchange(c, created["key"])).json()["access_token"]
         assert (await c.get(f"{PREFIX}/audit", headers=_bearer(token))).status_code == 200
 
-        r = await c.delete(f"{PREFIX}/auth/api-keys/{created['id']}", headers=_auth(actor))
+        r = await c.delete(f"{PREFIX}/auth/api-keys/{created['id']}", headers=bearer(actor))
         assert r.status_code == 204
 
         # An already-minted token stops working on core at once, because core
@@ -349,7 +326,7 @@ async def test_revocation_is_immediate_and_touches_no_user_account(app, db):
         assert (await _exchange(c, created["key"])).status_code == 401
 
         # The operator who created it is untouched.
-        assert (await c.get(f"{PREFIX}/auth/me", headers=_auth(actor))).status_code == 200
+        assert (await c.get(f"{PREFIX}/auth/me", headers=bearer(actor))).status_code == 200
 
     key = (await db.execute(select(ApiKey))).scalar_one()
     assert key.is_active is False and key.revoked_at is not None
@@ -359,7 +336,7 @@ async def test_revocation_is_immediate_and_touches_no_user_account(app, db):
 async def test_a_keys_action_is_not_recorded_as_a_persons(app, db):
     """A credential indistinguishable from a person in the trail solves nothing."""
     actor = await _admin(db)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         created = await _mint(c, actor, scopes=["apikey.manage", "bi.read"])
         token = (await _exchange(c, created["key"])).json()["access_token"]
         r = await c.post(
@@ -404,15 +381,15 @@ async def test_a_login_token_behaves_exactly_as_before(app, db):
     actor = await _admin(db)
     claims = decode_token(create_access_token(actor, sid="t"))
     assert "act" not in claims
-    async with _client(app) as c:
-        assert (await c.get(f"{PREFIX}/auth/me", headers=_auth(actor))).status_code == 200
-        assert (await c.get(f"{PREFIX}/auth/api-keys", headers=_auth(actor))).status_code == 200
+    async with api_client(app) as c:
+        assert (await c.get(f"{PREFIX}/auth/me", headers=bearer(actor))).status_code == 200
+        assert (await c.get(f"{PREFIX}/auth/api-keys", headers=bearer(actor))).status_code == 200
         # A permission the role does not hold is still 403, not 401:
         # require_permission resolves the actor first, then refuses on the permission.
         narrow = await make_user(
             db, "narrowest@x.io", await make_role(db, "NoAudit", ["user.read"])
         )
-        assert (await c.get(f"{PREFIX}/audit", headers=_auth(narrow))).status_code == 403
+        assert (await c.get(f"{PREFIX}/audit", headers=bearer(narrow))).status_code == 403
 
 
 async def test_service_method_refuses_a_key_with_no_scopes_at_all(db):

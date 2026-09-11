@@ -10,7 +10,6 @@ so every caller shares one bucket; and believing the leftmost forwarded hop lets
 caller pick its own address, and so its own bucket, per request.
 """
 
-from __future__ import annotations
 
 import pytest
 

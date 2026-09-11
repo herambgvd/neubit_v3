@@ -5,15 +5,12 @@ token-exchange + provisioning (mock IdP), and the four-eyes dual-auth flow. No
 network / Docker required — everything runs on the in-memory SQLite fixture.
 """
 
-from __future__ import annotations
 
-import uuid
 
 import pytest
 
 from app.core.secrets import decrypt_secret
 from app.security.ldap_client import FakeLdapClient, LdapEntry
-from app.security.models import DirectoryConfig, SsoConfig
 from app.security.schemas import (
     DirectoryConfigIn,
     DualAuthDecisionIn,

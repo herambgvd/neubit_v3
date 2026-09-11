@@ -12,7 +12,6 @@ different places, and collapsing them into "unauthorized" is how a misconfigured
 client gets debugged as a permissions problem.
 """
 
-from __future__ import annotations
 
 import datetime as dt
 

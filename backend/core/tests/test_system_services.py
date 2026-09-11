@@ -14,15 +14,10 @@ What is worth pinning:
   * A container with NO healthcheck is not unhealthy.
 """
 
-from __future__ import annotations
 
-import httpx
 import pytest
 
-from app.app import create_base_app
-from app.auth.security import create_access_token
-from app.db.base import get_db
-from conftest import make_role, make_user
+from conftest import api_client, bearer, make_role, make_user
 
 pytestmark = pytest.mark.asyncio
 
@@ -57,18 +52,6 @@ AGENT_ROWS = [
 
 
 @pytest.fixture
-def app(sessionmaker_):
-    application = create_base_app(title="test")
-
-    async def _override_db():
-        async with sessionmaker_() as session:
-            yield session
-
-    application.dependency_overrides[get_db] = _override_db
-    return application
-
-
-@pytest.fixture
 def agent(monkeypatch):
     """Stand in for the ops-agent. Records what core asked it for."""
     from app.infra import client as client_mod
@@ -88,14 +71,6 @@ def agent(monkeypatch):
     return calls
 
 
-def _client(app) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
-
-
-def _auth(user) -> dict:
-    return {"Authorization": f"Bearer {create_access_token(user, sid='test')}"}
-
-
 async def _user_with(db, perms: list[str], email: str):
     role = await make_role(db, f"Role-{email}", perms)
     return await make_user(db, email, role)
@@ -103,8 +78,8 @@ async def _user_with(db, perms: list[str], email: str):
 
 async def test_the_estate_is_listed_for_system_read(app, db, agent):
     user = await _user_with(db, ["system.read"], "ops@x.io")
-    async with _client(app) as c:
-        r = await c.get(f"{PREFIX}/system/services", headers=_auth(user))
+    async with api_client(app) as c:
+        r = await c.get(f"{PREFIX}/system/services", headers=bearer(user))
     assert r.status_code == 200, r.text
     rows = r.json()
     names = [row["name"] for row in rows]
@@ -120,8 +95,8 @@ async def test_the_estate_is_listed_for_system_read(app, db, agent):
 
 async def test_a_service_without_a_healthcheck_is_not_reported_unhealthy(app, db, agent):
     user = await _user_with(db, ["system.read"], "ops2@x.io")
-    async with _client(app) as c:
-        r = await c.get(f"{PREFIX}/system/services", headers=_auth(user))
+    async with api_client(app) as c:
+        r = await c.get(f"{PREFIX}/system/services", headers=bearer(user))
     nats = next(row for row in r.json() if row["name"] == "nats")
     assert nats["health"] is None
     assert nats["running"] is True
@@ -130,8 +105,8 @@ async def test_a_service_without_a_healthcheck_is_not_reported_unhealthy(app, db
 async def test_the_row_does_not_carry_the_image_or_container_id(app, db, agent):
     """A projection, not a pass-through — system.read is not a deployment read."""
     user = await _user_with(db, ["system.read"], "ops3@x.io")
-    async with _client(app) as c:
-        r = await c.get(f"{PREFIX}/system/services", headers=_auth(user))
+    async with api_client(app) as c:
+        r = await c.get(f"{PREFIX}/system/services", headers=bearer(user))
     for row in r.json():
         assert "image" not in row
         assert "id" not in row
@@ -140,13 +115,13 @@ async def test_the_row_does_not_carry_the_image_or_container_id(app, db, agent):
 async def test_logs_need_system_logs_not_system_read(app, db, agent):
     watcher = await _user_with(db, ["system.read"], "watch@x.io")
     reader = await _user_with(db, ["system.read", "system.logs"], "read@x.io")
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.get(
-            f"{PREFIX}/system/services/neubit-v3-core-1/logs", headers=_auth(watcher)
+            f"{PREFIX}/system/services/neubit-v3-core-1/logs", headers=bearer(watcher)
         )
         assert r.status_code == 403
         r = await c.get(
-            f"{PREFIX}/system/services/neubit-v3-core-1/logs", headers=_auth(reader)
+            f"{PREFIX}/system/services/neubit-v3-core-1/logs", headers=bearer(reader)
         )
     assert r.status_code == 200
     assert r.json()["lines"] == ["2026-01-01T00:00:01Z hello"]
@@ -154,11 +129,11 @@ async def test_logs_need_system_logs_not_system_read(app, db, agent):
 
 async def test_since_is_forwarded_so_a_follow_costs_only_new_lines(app, db, agent):
     reader = await _user_with(db, ["system.logs"], "read2@x.io")
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.get(
             f"{PREFIX}/system/services/neubit-v3-core-1/logs",
             params={"tail": 50, "since": 1750000000},
-            headers=_auth(reader),
+            headers=bearer(reader),
         )
     assert r.status_code == 200
     assert ("logs", "neubit-v3-core-1", 50, 1750000000) in agent
@@ -166,10 +141,10 @@ async def test_since_is_forwarded_so_a_follow_costs_only_new_lines(app, db, agen
 
 async def test_the_tail_is_clamped(app, db, agent):
     reader = await _user_with(db, ["system.logs"], "read3@x.io")
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.get(
             f"{PREFIX}/system/services/neubit-v3-core-1/logs",
-            params={"tail": 999999}, headers=_auth(reader),
+            params={"tail": 999999}, headers=bearer(reader),
         )
     assert r.status_code == 422
 
@@ -187,6 +162,6 @@ async def test_an_unreachable_agent_is_a_503_not_an_empty_estate(app, db, monkey
 
     monkeypatch.setattr(client_mod, "OpsAgentClient", DeadAgent)
     user = await _user_with(db, ["system.read"], "ops4@x.io")
-    async with _client(app) as c:
-        r = await c.get(f"{PREFIX}/system/services", headers=_auth(user))
+    async with api_client(app) as c:
+        r = await c.get(f"{PREFIX}/system/services", headers=bearer(user))
     assert r.status_code == 503

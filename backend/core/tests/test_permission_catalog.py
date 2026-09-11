@@ -12,13 +12,10 @@ Source and not an import, because core's image deliberately does not install the
 satellites (see conftest), and parsing stays true for a service that is not running.
 """
 
-from __future__ import annotations
 
 import ast
-import os
 import pathlib
 
-import pytest
 
 from app.auth.permissions import PERMISSIONS
 

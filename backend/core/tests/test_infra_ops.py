@@ -15,23 +15,19 @@ One test keeps the real client pointed at a closed port, because "unreachable
 becomes 503" is a property of the real transport handling.
 """
 
-from __future__ import annotations
 
 import importlib
 
-import httpx
 import pytest
 import pytest_asyncio
 from fastapi import HTTPException
 from sqlalchemy import select
 
-from app.app import create_base_app
 from app.auth.models import User
 from app.auth.security import create_access_token, hash_password
 from app.core.audit import AuditLog
-from app.db.base import get_db
 from app.tenancy.models import Tenant
-from conftest import make_role
+from conftest import api_client, bearer, make_role
 
 pytestmark = pytest.mark.asyncio
 PREFIX = "/api/v1"
@@ -99,26 +95,6 @@ def agent(monkeypatch):
     return RecordingAgent
 
 
-@pytest.fixture
-def app(sessionmaker_):
-    application = create_base_app(title="test")
-
-    async def _override_db():
-        async with sessionmaker_() as session:
-            yield session
-
-    application.dependency_overrides[get_db] = _override_db
-    return application
-
-
-def _client(app) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
-
-
-def _auth(user) -> dict:
-    return {"Authorization": f"Bearer {create_access_token(user, sid='test')}"}
-
-
 @pytest_asyncio.fixture
 async def world(db):
     sa_role = await make_role(db, "Platform", ["*"])
@@ -156,8 +132,8 @@ async def _audit_actions(db) -> list[str]:
 async def test_the_container_list_reaches_the_operator_as_the_agent_reported_it(app, world):
     """The console's whole infrastructure page is this payload, so a router that
     re-shaped it would drop whichever field the agent adds next."""
-    async with _client(app) as c:
-        r = await c.get(f"{INFRA}/containers", headers=_auth(world["sa"]))
+    async with api_client(app) as c:
+        r = await c.get(f"{INFRA}/containers", headers=bearer(world["sa"]))
     assert r.status_code == 200, r.text
     assert r.json() == [{"name": "core", "state": "running", "cpu": 3.1, "health": "healthy"}]
     assert RecordingAgent.calls == [("list_containers",)]
@@ -166,15 +142,15 @@ async def test_the_container_list_reaches_the_operator_as_the_agent_reported_it(
 async def test_a_log_tail_is_passed_through_and_bounded(app, world):
     """`tail` goes straight to a docker logs call on the host, so unbounded it pulls
     an entire log file through core's event loop."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         ok = await c.get(
-            f"{INFRA}/containers/core/logs", headers=_auth(world["sa"]), params={"tail": 500}
+            f"{INFRA}/containers/core/logs", headers=bearer(world["sa"]), params={"tail": 500}
         )
         too_many = await c.get(
-            f"{INFRA}/containers/core/logs", headers=_auth(world["sa"]), params={"tail": 500_000}
+            f"{INFRA}/containers/core/logs", headers=bearer(world["sa"]), params={"tail": 500_000}
         )
         zero = await c.get(
-            f"{INFRA}/containers/core/logs", headers=_auth(world["sa"]), params={"tail": 0}
+            f"{INFRA}/containers/core/logs", headers=bearer(world["sa"]), params={"tail": 0}
         )
     assert ok.status_code == 200 and ok.json()["lines"] == ["boot", "ready"]
     assert ("logs", "core", 500) in RecordingAgent.calls
@@ -186,10 +162,10 @@ async def test_reading_containers_and_the_host_is_not_written_to_the_audit_trail
     """An audit trail that records every page view buries the one restart that
     matters, so reads are deliberately not audited.
     """
-    async with _client(app) as c:
-        await c.get(f"{INFRA}/containers", headers=_auth(world["sa"]))
-        await c.get(f"{INFRA}/host", headers=_auth(world["sa"]))
-        await c.get(f"{INFRA}/containers/core/logs", headers=_auth(world["sa"]))
+    async with api_client(app) as c:
+        await c.get(f"{INFRA}/containers", headers=bearer(world["sa"]))
+        await c.get(f"{INFRA}/host", headers=bearer(world["sa"]))
+        await c.get(f"{INFRA}/containers/core/logs", headers=bearer(world["sa"]))
     assert await _audit_actions(world["db"]) == []
 
 
@@ -210,8 +186,8 @@ async def test_every_lifecycle_action_names_its_actor_in_the_audit_trail(
     attributable. An action that reaches the agent without an audit entry is, later,
     indistinguishable from one nobody took.
     """
-    async with _client(app) as c:
-        r = await c.request(verb, f"{INFRA}{path}", headers=_auth(world["sa"]), json=body)
+    async with api_client(app) as c:
+        r = await c.request(verb, f"{INFRA}{path}", headers=bearer(world["sa"]), json=body)
     assert r.status_code == 200, r.text
 
     rows = (await world["db"].execute(select(AuditLog))).scalars().all()
@@ -223,9 +199,9 @@ async def test_every_lifecycle_action_names_its_actor_in_the_audit_trail(
 async def test_a_scale_request_carries_the_replica_count_the_operator_asked_for(app, world):
     """Scale is a recorded intent for now — the agent answers ok=false until real
     worker services exist — so the recorded number is all there is."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
-            f"{INFRA}/services/worker/scale", headers=_auth(world["sa"]), json={"replicas": 4}
+            f"{INFRA}/services/worker/scale", headers=bearer(world["sa"]), json={"replicas": 4}
         )
     assert r.status_code == 200
     assert r.json()["ok"] is False
@@ -240,8 +216,8 @@ async def test_a_scale_request_carries_the_replica_count_the_operator_asked_for(
 async def test_a_database_export_comes_back_as_a_downloadable_sql_file(app, world):
     """The operator's backup, returned as a named attachment rather than JSON: a
     browser that renders a control-plane dump into a tab is showing credentials."""
-    async with _client(app) as c:
-        r = await c.get(f"{INFRA}/db/export", headers=_auth(world["sa"]))
+    async with api_client(app) as c:
+        r = await c.get(f"{INFRA}/db/export", headers=bearer(world["sa"]))
     assert r.status_code == 200
     assert r.content.startswith(b"-- neubit_control dump")
     assert r.headers["content-type"].startswith("application/sql")
@@ -256,10 +232,10 @@ async def test_a_database_restore_records_that_it_happened(app, world):
     its own transaction before handing off, or the restore waits on the request that
     asked for it, and then write the entry onto the rebuilt schema.
     """
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
             f"{INFRA}/db/import",
-            headers=_auth(world["sa"]),
+            headers=bearer(world["sa"]),
             files={"file": ("dump.sql", b"CREATE TABLE y();", "application/sql")},
         )
     assert r.status_code == 200, r.text
@@ -273,8 +249,8 @@ async def test_the_agents_own_refusal_reaches_the_operator_with_its_own_status(a
     """"No such container" is a 404 the operator can act on; flattening it to a 500
     turns a typo into an incident."""
     RecordingAgent.raises = HTTPException(status_code=404, detail="no such container: typo")
-    async with _client(app) as c:
-        r = await c.post(f"{INFRA}/containers/typo/restart", headers=_auth(world["sa"]))
+    async with api_client(app) as c:
+        r = await c.post(f"{INFRA}/containers/typo/restart", headers=bearer(world["sa"]))
     assert r.status_code == 404
     assert "typo" in r.text
     # And nothing that did not happen was written down.
@@ -294,8 +270,8 @@ async def test_an_unreachable_sidecar_is_reported_as_the_sidecar_being_down(app,
     monkeypatch.setenv("OPS_AGENT_URL", "http://127.0.0.1:9")
     monkeypatch.setattr(module, "_agent", lambda: OpsAgentClient(timeout=2.0))
 
-    async with _client(app) as c:
-        r = await c.get(f"{INFRA}/containers", headers=_auth(world["sa"]))
+    async with api_client(app) as c:
+        r = await c.get(f"{INFRA}/containers", headers=bearer(world["sa"]))
     assert r.status_code == 503, r.text
     assert "ops-agent" in r.text
 
@@ -305,7 +281,7 @@ async def test_a_tenant_admin_cannot_reach_the_agent_at_all(app, world):
     """Stated for the whole /admin table in test_admin_realm_boundary.py, repeated
     here because of what is behind this route: the refusal has to happen in core,
     before the forward. A 403 after the container restarted is not a refusal."""
-    async with _client(app) as c:
-        r = await c.post(f"{INFRA}/containers/core/stop", headers=_auth(world["tenant_admin"]))
+    async with api_client(app) as c:
+        r = await c.post(f"{INFRA}/containers/core/stop", headers=bearer(world["tenant_admin"]))
     assert r.status_code == 403
     assert RecordingAgent.calls == [], "core forwarded to the agent before refusing"

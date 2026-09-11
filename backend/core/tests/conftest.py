@@ -9,13 +9,12 @@ Run the suite with `./backend/core/run-tests.sh` from anywhere in the repo. A ba
 inside the running core container is missing the shared kernel one test needs.
 """
 
-from __future__ import annotations
 
 import os
 import sys
-import uuid
 from pathlib import Path
 
+import httpx
 import pytest
 import pytest_asyncio
 
@@ -154,3 +153,42 @@ async def make_user(
 @pytest_asyncio.fixture
 async def admin_role(db) -> Role:
     return await make_role(db, "Administrator-test", [WILDCARD])
+
+# ── the app under test, and the two helpers every suite wrote for itself ──────
+#
+# `app`, `_client` and `_auth` were defined — identically — in twenty-one of these
+# files. pytest already loads this module for all of them, so the copies bought
+# nothing and cost the usual thing: when the override changed, it changed in one
+# place and stayed wrong in twenty.
+#
+# The database override is the point of the fixture. Without it the app opens its
+# own engine against whatever VE_DATABASE_URL says, which in this suite is a
+# Postgres that is not there.
+
+
+@pytest.fixture
+def app(sessionmaker_):
+    """A fresh app per test, wired to the in-memory session maker."""
+    from app.app import create_base_app
+    from app.db.base import get_db
+
+    application = create_base_app(title="test")
+
+    async def _override_db():
+        async with sessionmaker_() as session:
+            yield session
+
+    application.dependency_overrides[get_db] = _override_db
+    return application
+
+
+def api_client(app) -> httpx.AsyncClient:
+    """An ASGI client for `app` — no socket, no server."""
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
+
+
+def bearer(user) -> dict:
+    """The Authorization header for a user, with the session id these tests use."""
+    from app.auth.security import create_access_token
+
+    return {"Authorization": f"Bearer {create_access_token(user, sid='test')}"}

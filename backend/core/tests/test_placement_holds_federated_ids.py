@@ -13,7 +13,6 @@ width is therefore what is asserted — that is the thing the migration changes 
 the thing Postgres enforces.
 """
 
-from __future__ import annotations
 
 from app.sites.device.models import DevicePlacement
 

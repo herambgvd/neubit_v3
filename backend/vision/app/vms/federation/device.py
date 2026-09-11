@@ -23,6 +23,7 @@ from kernel.auth import Scope, get_scope, require_permission
 from app.db import get_db
 from app.vms.federation import client as fed
 from app.vms.federation._common import (
+    _via,
     PERM_CAMERA_REBOOT,
     PERM_DEVICE_TUNE,
     PERM_EVIDENCE_HOLD,
@@ -103,11 +104,7 @@ async def federated_imaging_get(
     ``options_error`` is REPORTED, never swallowed — a dropped GetOptions is not the
     same fact as a device with nothing adjustable, and a UI that conflated them would
     present a reduced control set as the camera's real capability."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.get_imaging_node(node.api_url, camera_id, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.get_imaging_node(n.api_url, camera_id, credential=n.credential))
 
 
 @router.put(
@@ -125,11 +122,7 @@ async def federated_imaging_set(
     onvif.ImagingSettings (imaging.go setImaging) — a PARTIAL block is the normal way to
     change one setting, so it is relayed as given rather than merged here; the node
     validates required children before anything reaches the wire."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.set_imaging_node(node.api_url, camera_id, body or {}, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.set_imaging_node(n.api_url, camera_id, body or {}, credential=n.credential))
 
 
 @router.post(
@@ -147,11 +140,7 @@ async def federated_focus_move(
     { mode: relative|absolute|continuous, distance?, position?, speed?, timeout_ms? }.
     Returns { moved, mode, source_token }. The node bounds a continuous move with its
     own watchdog, so a dropped Stop cannot leave the lens travelling."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.focus_move_node(node.api_url, camera_id, body or {}, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.focus_move_node(n.api_url, camera_id, body or {}, credential=n.credential))
 
 
 @router.post(
@@ -165,11 +154,7 @@ async def federated_focus_stop(
     scope: Annotated[Scope, Depends(get_scope)],
 ) -> dict:
     """Stop a federated camera's focus move THROUGH its node. Returns { stopped }."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.focus_stop_node(node.api_url, camera_id, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.focus_stop_node(n.api_url, camera_id, credential=n.credential))
 
 
 # ── Video / Audio encoder tabs (onvifapi/video.go, audio.go) ──────────────────
@@ -191,11 +176,7 @@ async def federated_video_get(
     """A federated camera's video encoder configurations + options, via its node.
     video.go getVideo — carries ``media_service`` / ``media2_available`` on every shape
     including the refusals, so the console can always say which service it is showing."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.get_video_node(node.api_url, camera_id, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.get_video_node(n.api_url, camera_id, credential=n.credential))
 
 
 @router.get(
@@ -211,11 +192,7 @@ async def federated_audio_get(
     """A federated camera's audio encoder configurations + options, via its node.
     audio.go getAudio — ``scoped:false`` with a ``scope_reason`` is the device saying
     this channel's input could not be identified, not an error."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.get_audio_node(node.api_url, camera_id, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.get_audio_node(n.api_url, camera_id, credential=n.credential))
 
 
 @router.get(
@@ -230,11 +207,7 @@ async def federated_osd_list(
 ) -> dict:
     """A federated camera's live OSD overlays + what the device allows, via its node.
     overlay.go getOSD: { osds, config_token, options, options_error? }."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.list_osds_node(node.api_url, camera_id, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.list_osds_node(n.api_url, camera_id, credential=n.credential))
 
 
 @router.get(
@@ -251,11 +224,7 @@ async def federated_masks_list(
     getMasks — relayed WITH ``coordinate_space`` (ONVIF normalised: x,y in [-1,1],
     origin at frame centre, y UP), because a draw-on-frame UI that guesses the space
     puts the mask somewhere nobody chose."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.list_masks_node(node.api_url, camera_id, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.list_masks_node(n.api_url, camera_id, credential=n.credential))
 
 
 @router.get(
@@ -271,11 +240,7 @@ async def federated_backchannel(
     """Whether a federated camera can RECEIVE a talk-back stream, via its node
     (overlay.go getBackchannel). The read the console needs to enable or honestly
     DISABLE push-to-talk, rather than offering a button that cannot work."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.get_backchannel_node(node.api_url, camera_id, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.get_backchannel_node(n.api_url, camera_id, credential=n.credential))
 
 
 # ── camera-side ONVIF motion detection (onvifapi/motion.go) ───────────────────
@@ -298,11 +263,7 @@ async def federated_motion_get(
     motion.go getMotion: { supported, profile_token, columns, rows, sensitivity,
     active_cells?, zones?, reason? }. ``supported:false`` + ``reason`` is firmware
     answering honestly, and comes back 200, not an error."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.get_motion_node(node.api_url, camera_id, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.get_motion_node(n.api_url, camera_id, credential=n.credential))
 
 
 @router.get(
@@ -319,11 +280,7 @@ async def federated_io_get(
     ``scope:"device"`` is the contract: this describes the whole device, and
     ``channels_on_device`` / ``channel_names`` name the other channels a relay drive
     would affect."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.get_io_node(node.api_url, camera_id, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.get_io_node(n.api_url, camera_id, credential=n.credential))
 
 
 @router.post(
@@ -343,11 +300,7 @@ async def federated_relay_state(
     physical and outside the network; the node audits it on both outcomes. The reply's
     ``latching`` is three-valued — null means the device did not report its mode, NOT
     "there is a way back from this"."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.set_relay_state_node(node.api_url, camera_id, token, body or {}, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.set_relay_state_node(n.api_url, camera_id, token, body or {}, credential=n.credential))
 
 
 # ── PTZ: capability, device presets, host patrol, native tours ───────────────
@@ -370,11 +323,7 @@ async def federated_ptz_get(
     read the pad needs before it can offer anything: no ``node`` in the payload means
     no movable head bound to this channel, and ``detail`` says which of the two
     reasons it is."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.get_ptz_node(node.api_url, camera_id, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.get_ptz_node(n.api_url, camera_id, credential=n.credential))
 
 
 @router.get(
@@ -390,11 +339,7 @@ async def federated_presets_list(
     """A federated camera's DEVICE presets, via its node (ptz.go ptzListPresets).
     These are the camera's own presets — there is no VMS-side preset table to
     translate, which is the whole point of node ownership."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.list_ptz_presets_node(node.api_url, camera_id, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.list_ptz_presets_node(n.api_url, camera_id, credential=n.credential))
 
 
 @router.post(
@@ -412,11 +357,7 @@ async def federated_preset_save(
     ptzSavePreset { name, token? } — an empty token creates, a supplied token
     OVERWRITES that preset. Takes PERM_PTZ, not the config gate: this is the PTZ
     operator's own tool, and it is the same right the pad already carries."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.save_ptz_preset_node(node.api_url, camera_id, body or {}, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.save_ptz_preset_node(n.api_url, camera_id, body or {}, credential=n.credential))
 
 
 @router.post(
@@ -434,11 +375,7 @@ async def federated_preset_goto(
     """Recall a preset on a federated camera, via its node. ptz.go ptzGotoPreset —
     ``preset`` is the DEVICE token from the list route, and { speed?, zoom_speed? } is
     optional. Returns { moved, preset }."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.goto_ptz_preset_node(node.api_url, camera_id, preset, body or {}, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.goto_ptz_preset_node(n.api_url, camera_id, preset, body or {}, credential=n.credential))
 
 
 @router.delete(
@@ -455,11 +392,7 @@ async def federated_preset_delete(
     """Delete a preset from a federated camera's device, via its node. The node answers
     204, so this answers { node_id, node_name } — a body, because every other route
     here carries the node tag and a lone 204 would be the one shape a client special-cases."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.delete_ptz_preset_node(node.api_url, camera_id, preset, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.delete_ptz_preset_node(n.api_url, camera_id, preset, credential=n.credential))
 
 
 @router.get(
@@ -477,11 +410,7 @@ async def federated_patrol_get(
     patrol runs on the RECORDER, not on the camera, and the payload says so rather than
     letting a UI present it as a tour the camera holds. ``native_tours_supported``
     absent means unknown, not "no"."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.get_patrol_node(node.api_url, camera_id, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.get_patrol_node(n.api_url, camera_id, credential=n.credential))
 
 
 @router.put(
@@ -499,11 +428,7 @@ async def federated_patrol_set(
     patrolWriteReq — the node validates every stop against the DEVICE's live preset list,
     so a stop naming a preset the camera does not have is refused rather than driving
     the head somewhere nobody chose."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.set_patrol_node(node.api_url, camera_id, body or {}, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.set_patrol_node(n.api_url, camera_id, body or {}, credential=n.credential))
 
 
 @router.post(
@@ -519,11 +444,7 @@ async def federated_patrol_operate(
 ) -> dict:
     """Start or stop a federated camera's host-driven patrol, via its node
     { operation: "start"|"stop" }. Arming unattended motion: the node audits both."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.operate_patrol_node(node.api_url, camera_id, body or {}, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.operate_patrol_node(n.api_url, camera_id, body or {}, credential=n.credential))
 
 
 @router.get(
@@ -541,11 +462,7 @@ async def federated_tours_list(
     absent case ("we could not ask") is the only one worth a Retry. Relayed as the node
     sent it; collapsing it to a boolean is how a dropped packet becomes a permanent
     statement about somebody's hardware."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.list_ptz_tours_node(node.api_url, camera_id, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.list_ptz_tours_node(n.api_url, camera_id, credential=n.credential))
 
 
 @router.post(
@@ -563,11 +480,7 @@ async def federated_tour_create(
     Returns { token, populated, tour? }; the node's two-step create is deliberately not
     atomic and its error says so, so a ``populated:false`` reply means an empty tour
     exists on the device and the modify did not land."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.create_ptz_tour_node(node.api_url, camera_id, body or {}, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.create_ptz_tour_node(n.api_url, camera_id, body or {}, credential=n.credential))
 
 
 @router.put(
@@ -585,11 +498,7 @@ async def federated_tour_modify(
     """Rewrite one preset tour on a federated camera, via its node. tourReq overlays the
     DEVICE's own values (absent = leave alone) EXCEPT ``spots``, which replaces the list
     wholesale — a patrol is an ordered sequence and there is no per-spot patch."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.modify_ptz_tour_node(node.api_url, camera_id, tour, body or {}, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.modify_ptz_tour_node(n.api_url, camera_id, tour, body or {}, credential=n.credential))
 
 
 @router.delete(
@@ -604,11 +513,7 @@ async def federated_tour_delete(
     scope: Annotated[Scope, Depends(get_scope)],
 ) -> dict:
     """Remove a preset tour from a federated camera, via its node (204 → node tag)."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.delete_ptz_tour_node(node.api_url, camera_id, tour, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.delete_ptz_tour_node(n.api_url, camera_id, tour, credential=n.credential))
 
 
 @router.post(
@@ -627,11 +532,7 @@ async def federated_tour_operate(
     { operation }. The sharpest command in this file: every other one moves a head while
     somebody watches, this hands the head to the device and walks away — which is why
     the node audits every operate, including the ones that end motion."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.operate_ptz_tour_node(node.api_url, camera_id, tour, body or {}, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.operate_ptz_tour_node(n.api_url, camera_id, tour, body or {}, credential=n.credential))
 
 
 # ── push-to-talk (onvifapi/talk.go, talk_uplink.go) ───────────────────────────
@@ -656,11 +557,7 @@ async def federated_talk_begin(
     { talking, half_duplex, transport, support, started_at }. A node with no talk
     transport configured answers an honest 501, which arrives here as a 502 carrying
     the node's OWN sentence — "the path is not built", not a bare status code."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.talk_begin_node(node.api_url, camera_id, body or {}, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.talk_begin_node(n.api_url, camera_id, body or {}, credential=n.credential))
 
 
 @router.post(
@@ -717,8 +614,4 @@ async def federated_motion_search(
     empty hit list as "the footage is clear"). Nothing is written, moved or deleted, so
     evidence-locked footage is safe to search — which is why this is a playback READ
     gated on PERM_MOTION_SEARCH even though the verb is POST."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.motion_search_node(node.api_url, camera_id, body or {}, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.motion_search_node(n.api_url, camera_id, body or {}, credential=n.credential))

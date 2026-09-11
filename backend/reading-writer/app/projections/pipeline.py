@@ -82,6 +82,7 @@ from nats.errors import TimeoutError as NatsTimeoutError
 from nats.js.api import AckPolicy, ConsumerConfig
 from sqlalchemy import text
 
+from ..shutdown import stop_tasks
 from .config import ProjectorConfig
 from .db import projections_db as database
 from .ensure import SchemaRefused, ensure
@@ -267,11 +268,7 @@ class Worker:
     async def stop(self) -> None:
         self._running = False
         self.pm.running = False
-        for t in self._tasks:
-            t.cancel()
-        for t in self._tasks:
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await t
+        await stop_tasks(*self._tasks)
         self._tasks = []
 
     # ── fetcher ───────────────────────────────────────────────────────────────
@@ -545,11 +542,7 @@ class Projector:
 
     async def stop(self) -> None:
         self._running = False
-        for t in self._tasks:
-            t.cancel()
-        for t in self._tasks:
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await t
+        await stop_tasks(*self._tasks)
         self._tasks = []
         for w in list(self._workers.values()):
             await w.stop()

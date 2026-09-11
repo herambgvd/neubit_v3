@@ -14,21 +14,17 @@ Three properties, each of which has been wrong somewhere in this codebase:
 Jobs are inserted directly so the read paths do not depend on the create route.
 """
 
-from __future__ import annotations
 
 import uuid
 
-import httpx
 import pytest
 import pytest_asyncio
 
-from app.app import create_base_app
 from app.auth.models import User
 from app.auth.security import create_access_token, hash_password
-from app.db.base import get_db
 from app.reports.models import ReportJob
 from app.tenancy.models import Tenant
-from conftest import make_role
+from conftest import api_client, bearer, make_role
 
 pytestmark = pytest.mark.asyncio
 PREFIX = "/api/v1"
@@ -47,26 +43,6 @@ def writable_storage(tmp_path, monkeypatch):
     yield
     config.get_settings.cache_clear()
     storage.get_storage.cache_clear()
-
-
-@pytest.fixture
-def app(sessionmaker_):
-    application = create_base_app(title="test")
-
-    async def _override_db():
-        async with sessionmaker_() as session:
-            yield session
-
-    application.dependency_overrides[get_db] = _override_db
-    return application
-
-
-def _client(app) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
-
-
-def _auth(user) -> dict:
-    return {"Authorization": f"Bearer {create_access_token(user, sid='test')}"}
 
 
 @pytest_asyncio.fixture
@@ -126,9 +102,9 @@ async def _job(db, tenant_id, *, name="Nightly export", status="pending", key=No
 async def test_listing_reports_needs_the_read_permission(app, world):
     """Both legs: a 403-only test passes against a route that refuses everyone."""
     await _job(world["db"], world["ta"].id)
-    async with _client(app) as c:
-        refused = await c.get(REPORTS, headers=_auth(world["a_nothing"]))
-        allowed = await c.get(REPORTS, headers=_auth(world["a_readonly"]))
+    async with api_client(app) as c:
+        refused = await c.get(REPORTS, headers=bearer(world["a_nothing"]))
+        allowed = await c.get(REPORTS, headers=bearer(world["a_readonly"]))
     assert refused.status_code == 403, refused.text
     assert allowed.status_code == 200, allowed.text
     assert allowed.json()["total"] == 1
@@ -137,12 +113,12 @@ async def test_listing_reports_needs_the_read_permission(app, world):
 async def test_requesting_an_export_needs_more_than_permission_to_read_one(app, world):
     """Creating a job extracts data rather than looking at a list, so a "view
     reports" role must not be able to queue one."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         refused = await c.post(
-            REPORTS, headers=_auth(world["a_readonly"]), json={"name": "Q1", "format": "csv"}
+            REPORTS, headers=bearer(world["a_readonly"]), json={"name": "Q1", "format": "csv"}
         )
         allowed = await c.post(
-            REPORTS, headers=_auth(world["a"]), json={"name": "Q1", "format": "csv"}
+            REPORTS, headers=bearer(world["a"]), json={"name": "Q1", "format": "csv"}
         )
     assert refused.status_code == 403, refused.text
     assert allowed.status_code == 201, allowed.text
@@ -158,10 +134,10 @@ async def test_downloading_a_finished_report_needs_the_export_permission(app, wo
     permission and not about ownership.
     """
     job = await _job(world["db"], world["ta"].id, status="done", key="reports/acme-q1.csv")
-    async with _client(app) as c:
-        refused = await c.get(f"{REPORTS}/{job.id}/download", headers=_auth(world["a_readonly"]))
-        listed = await c.get(f"{REPORTS}/{job.id}", headers=_auth(world["a_readonly"]))
-        allowed = await c.get(f"{REPORTS}/{job.id}/download", headers=_auth(world["a"]))
+    async with api_client(app) as c:
+        refused = await c.get(f"{REPORTS}/{job.id}/download", headers=bearer(world["a_readonly"]))
+        listed = await c.get(f"{REPORTS}/{job.id}", headers=bearer(world["a_readonly"]))
+        allowed = await c.get(f"{REPORTS}/{job.id}/download", headers=bearer(world["a"]))
     assert refused.status_code == 403, refused.text
     # The same reader still sees the job itself: a narrower refusal, not a broken
     # route.
@@ -175,9 +151,9 @@ async def test_a_report_that_is_not_finished_has_nothing_to_download(app, world)
     422 says "not yet"."""
     pending = await _job(world["db"], world["ta"].id, status="pending")
     failed = await _job(world["db"], world["ta"].id, status="failed")
-    async with _client(app) as c:
-        p = await c.get(f"{REPORTS}/{pending.id}/download", headers=_auth(world["a"]))
-        f = await c.get(f"{REPORTS}/{failed.id}/download", headers=_auth(world["a"]))
+    async with api_client(app) as c:
+        p = await c.get(f"{REPORTS}/{pending.id}/download", headers=bearer(world["a"]))
+        f = await c.get(f"{REPORTS}/{failed.id}/download", headers=bearer(world["a"]))
     assert p.status_code == 422, p.text
     assert f.status_code == 422, f.text
 
@@ -185,9 +161,9 @@ async def test_a_report_that_is_not_finished_has_nothing_to_download(app, world)
 async def test_an_unsupported_export_format_is_refused_at_the_request(app, world):
     """The format decides the content type the file is served with, so an unvalidated
     one queues a job that fails hours later in the worker."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
-            REPORTS, headers=_auth(world["a"]), json={"name": "Q1", "format": "exe"}
+            REPORTS, headers=bearer(world["a"]), json={"name": "Q1", "format": "exe"}
         )
     assert r.status_code == 422, r.text
 
@@ -200,8 +176,8 @@ async def test_the_report_list_shows_only_the_callers_own_tenants_jobs(app, worl
     theirs = await _job(world["db"], world["tb"].id, name="Globex payroll")
     platform = await _job(world["db"], None, name="Platform usage")
 
-    async with _client(app) as c:
-        r = await c.get(REPORTS, headers=_auth(world["a"]))
+    async with api_client(app) as c:
+        r = await c.get(REPORTS, headers=bearer(world["a"]))
 
     assert r.status_code == 200, r.text
     assert [j["id"] for j in r.json()["items"]] == [str(mine.id)]
@@ -216,9 +192,9 @@ async def test_another_tenants_job_is_not_found_rather_than_forbidden(app, world
     somewhere else.
     """
     theirs = await _job(world["db"], world["tb"].id, status="done", key="reports/globex.csv")
-    async with _client(app) as c:
-        got = await c.get(f"{REPORTS}/{theirs.id}", headers=_auth(world["a"]))
-        downloaded = await c.get(f"{REPORTS}/{theirs.id}/download", headers=_auth(world["a"]))
+    async with api_client(app) as c:
+        got = await c.get(f"{REPORTS}/{theirs.id}", headers=bearer(world["a"]))
+        downloaded = await c.get(f"{REPORTS}/{theirs.id}/download", headers=bearer(world["a"]))
     assert got.status_code == 404, got.text
     assert downloaded.status_code == 404, downloaded.text
 
@@ -228,10 +204,10 @@ async def test_a_platform_job_is_out_of_reach_of_every_tenant(app, world):
     Reading NULL as "platform, readable by all" holds for the settings singleton and
     is a platform-to-tenant disclosure here."""
     platform = await _job(world["db"], None, status="done", key="reports/platform-usage.csv")
-    async with _client(app) as c:
-        got = await c.get(f"{REPORTS}/{platform.id}", headers=_auth(world["a"]))
-        downloaded = await c.get(f"{REPORTS}/{platform.id}/download", headers=_auth(world["a"]))
-        for_owner = await c.get(f"{REPORTS}/{platform.id}", headers=_auth(world["sa"]))
+    async with api_client(app) as c:
+        got = await c.get(f"{REPORTS}/{platform.id}", headers=bearer(world["a"]))
+        downloaded = await c.get(f"{REPORTS}/{platform.id}/download", headers=bearer(world["a"]))
+        for_owner = await c.get(f"{REPORTS}/{platform.id}", headers=bearer(world["sa"]))
     assert got.status_code == 404, got.text
     assert downloaded.status_code == 404, downloaded.text
     # Reachable by whoever it belongs to, so the 404s above are isolation rather
@@ -246,10 +222,10 @@ async def test_a_super_admin_sees_every_tenants_reports(app, world):
     b = await _job(world["db"], world["tb"].id)
     p = await _job(world["db"], None)
 
-    async with _client(app) as c:
-        listed = await c.get(REPORTS, headers=_auth(world["sa"]))
+    async with api_client(app) as c:
+        listed = await c.get(REPORTS, headers=bearer(world["sa"]))
         by_id = [
-            await c.get(f"{REPORTS}/{j.id}", headers=_auth(world["sa"])) for j in (a, b, p)
+            await c.get(f"{REPORTS}/{j.id}", headers=bearer(world["sa"])) for j in (a, b, p)
         ]
 
     assert {j["id"] for j in listed.json()["items"]} == {str(a.id), str(b.id), str(p.id)}
@@ -259,12 +235,12 @@ async def test_a_super_admin_sees_every_tenants_reports(app, world):
 async def test_a_created_job_is_stamped_with_the_requesters_tenant(app, world):
     """The stamp is what every isolation assertion above rests on: an unstamped job
     is a NULL row, invisible to the tenant that asked for it."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         created = await c.post(
-            REPORTS, headers=_auth(world["a"]), json={"name": "Q1", "format": "csv"}
+            REPORTS, headers=bearer(world["a"]), json={"name": "Q1", "format": "csv"}
         )
-        mine = await c.get(REPORTS, headers=_auth(world["a"]))
-        neighbour = await c.get(REPORTS, headers=_auth(world["b"]))
+        mine = await c.get(REPORTS, headers=bearer(world["a"]))
+        neighbour = await c.get(REPORTS, headers=bearer(world["b"]))
 
     job_id = created.json()["id"]
     assert [j["id"] for j in mine.json()["items"]] == [job_id]
@@ -275,8 +251,8 @@ async def test_an_id_that_exists_nowhere_is_the_same_404_as_one_that_exists_else
     """The refusal for a foreign row and the answer for a missing row must be
     indistinguishable, or the difference between them is the probe."""
     theirs = await _job(world["db"], world["tb"].id)
-    async with _client(app) as c:
-        missing = await c.get(f"{REPORTS}/{uuid.uuid4()}", headers=_auth(world["a"]))
-        foreign = await c.get(f"{REPORTS}/{theirs.id}", headers=_auth(world["a"]))
+    async with api_client(app) as c:
+        missing = await c.get(f"{REPORTS}/{uuid.uuid4()}", headers=bearer(world["a"]))
+        foreign = await c.get(f"{REPORTS}/{theirs.id}", headers=bearer(world["a"]))
     assert missing.status_code == foreign.status_code == 404
     assert missing.json() == foreign.json()

@@ -17,10 +17,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { toast } from "sonner";
+import { useEffect, useRef, useState } from "react";
+import { useAvatar } from "@/features/core/account/useAvatar";
 
-import { api, apiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Avatar } from "@/components/ui/kit";
 import MenuNavigator from "@/components/shell/MenuNavigator";
 import GlobalBrand from "@/components/shell/GlobalBrand";
@@ -181,7 +181,9 @@ function AccountMenu() {
   const router = useRouter();
   const pathname = usePathname();
   const [openUser, setOpenUser] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  // Upload/remove and the busy flag live in one place — they were the same
+  // twenty lines here and on the other screen.
+  const avatar = useAvatar(reload);
   const fileRef = useRef<HTMLInputElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
   const displayName = user?.full_name || user?.email;
@@ -206,40 +208,11 @@ function AccountMenu() {
   // Close it on navigation.
   useEffect(() => setOpenUser(false), [pathname]);
 
-  async function onPickAvatar(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // allow re-selecting the same file later
-    if (!file) return;
-    setUploading(true);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      await api.post("/auth/me/avatar", fd);
-      await reload();
-      toast.success("Photo updated");
-    } catch (err) {
-      toast.error(apiError(err));
-    } finally {
-      setUploading(false);
-    }
-  }
 
-  async function removeAvatar() {
-    setUploading(true);
-    try {
-      await api.delete("/auth/me/avatar");
-      await reload();
-      toast.success("Photo removed");
-    } catch (err) {
-      toast.error(apiError(err));
-    } finally {
-      setUploading(false);
-    }
-  }
 
   return (
     <div className="relative" ref={userRef}>
-      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPickAvatar} />
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={avatar.pick} />
       <button
         onClick={() => setOpenUser((o) => !o)}
         className="flex items-center gap-2 pl-1.5 pr-1"
@@ -271,17 +244,17 @@ function AccountMenu() {
           </Link>
           {/* No theme switch — the console is dark-only. */}
           <button
-            disabled={uploading}
+            disabled={avatar.busy}
             onClick={() => fileRef.current?.click()}
             className="w-full flex items-center gap-2.5 px-4 py-2 text-[13px] text-muted hover:text-foreground hover:bg-hover transition disabled:opacity-50"
           >
             <Icon icon="heroicons-outline:camera" className="text-base shrink-0" />
-            {uploading ? "Uploading…" : user?.avatar_url ? "Change photo" : "Add photo"}
+            {avatar.busy ? "Uploading…" : user?.avatar_url ? "Change photo" : "Add photo"}
           </button>
           {user?.avatar_url && (
             <button
-              disabled={uploading}
-              onClick={removeAvatar}
+              disabled={avatar.busy}
+              onClick={avatar.remove}
               className="w-full flex items-center gap-2.5 px-4 py-2 text-[13px] text-muted hover:text-foreground hover:bg-hover transition disabled:opacity-50"
             >
               <Icon icon="heroicons-outline:trash" className="text-base shrink-0" />

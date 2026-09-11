@@ -15,7 +15,6 @@ Two defects lived here, both silent:
      opposite failure, and unrecoverable.
 """
 
-from __future__ import annotations
 
 import datetime as dt
 import uuid

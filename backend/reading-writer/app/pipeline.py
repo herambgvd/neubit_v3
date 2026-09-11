@@ -84,6 +84,7 @@ from nats.js.api import (
 from reporting.db import database
 from sqlalchemy import text
 
+from .shutdown import stop_tasks
 from .config import WriterConfig
 from .envelope import Malformed, parse
 from .metrics import Metrics
@@ -188,11 +189,7 @@ class Pipeline:
 
     async def stop(self) -> None:
         self._running = False
-        for t in self._tasks:
-            t.cancel()
-        for t in self._tasks:
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await t
+        await stop_tasks(*self._tasks)
         self._tasks = []
         if self._nc is not None:
             with contextlib.suppress(Exception):

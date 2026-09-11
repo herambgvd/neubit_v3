@@ -7,7 +7,6 @@ form with nulls for the fields nobody touched, so `apply_patch` refuses per colu
 instead. Routers that guard each field with `if x is not None` are already safe.
 """
 
-from __future__ import annotations
 
 import pytest
 

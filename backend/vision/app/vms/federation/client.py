@@ -66,6 +66,23 @@ class NodeRefused(NodeUnavailable):
 _MISSING_PERM = re.compile(r"missing permission:\s*([a-z0-9_.]+)")
 
 
+def _transport_failure(exc: Exception) -> "NodeUnavailable":
+    """An httpx failure as something an operator can read.
+
+    `str(httpx.ReadTimeout())` is the EMPTY STRING, so the 33 call sites that
+    raised `NodeUnavailable(str(e))` produced "recorder unavailable: " — a sentence
+    that stops at the colon. A timeout is the commonest federated failure there is
+    (a recorder waiting on a camera that has gone), so the commonest message was
+    the one that said nothing.
+    """
+    detail = str(exc).strip()
+    if not detail:
+        # The class name is the fact when the instance carries no message:
+        # ReadTimeout, ConnectError, PoolTimeout each say something different.
+        detail = type(exc).__name__
+    return NodeUnavailable(detail)
+
+
 def _refusal(status_code: int, body: str) -> NodeRefused:
     """Build a NodeRefused from the node's own answer, keeping ITS sentence."""
     detail = (body or "").strip()
@@ -143,7 +160,7 @@ async def enroll_node_full(api_url: str, *, label: str | None = None) -> dict:
                 params={"label": label or federation_label()},
             )
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -197,7 +214,7 @@ async def pair_node(api_url: str, code: str, *, label: str | None = None) -> dic
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.post(url, json={"code": code, "label": label or federation_label()})
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code in (400, 401, 403, 429):
         raise NodePairingRejected(
             _node_error_message(r, "the recorder refused this pairing code")
@@ -218,7 +235,7 @@ async def list_estate_cameras(api_url: str, credential: str | None = None) -> li
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.get(url, headers=_headers(credential), params={"limit": 500})
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -239,7 +256,7 @@ async def mint_estate_live(
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.post(url, headers=_headers(credential), json=body)
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -270,7 +287,7 @@ async def get_node_timeline(
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.get(url, headers=_headers(credential), params=params)
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -302,7 +319,7 @@ async def list_node_recordings(
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.get(url, headers=_headers(credential), params=params)
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -331,7 +348,7 @@ async def mint_node_playback(
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.post(url, headers=_headers(credential), json=body)
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -351,7 +368,7 @@ async def get_node_storage_usage(api_url: str, *, credential: str | None = None)
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.get(url, headers=_headers(credential))
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -365,7 +382,7 @@ async def get_node_storage_raid(api_url: str, *, credential: str | None = None) 
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.get(url, headers=_headers(credential))
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -379,7 +396,7 @@ async def list_node_pools(api_url: str, *, credential: str | None = None) -> dic
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.get(url, headers=_headers(credential))
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -393,7 +410,7 @@ async def list_node_tier_rules(api_url: str, *, credential: str | None = None) -
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.get(url, headers=_headers(credential))
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -420,7 +437,7 @@ async def get_node_sysmon(api_url: str, *, credential: str | None = None) -> dic
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.get(url, headers=_headers(credential))
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -445,7 +462,7 @@ async def isolate_node_camera(
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.get(url, params=params, headers=_headers(credential))
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -480,7 +497,7 @@ async def get_upstream_nvr_storage(
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.get(url, headers=_headers(credential))
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code == 404:
         return None
     if r.status_code // 100 != 2:
@@ -504,7 +521,7 @@ async def list_node_credentials(api_url: str) -> list[dict]:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.get(url, headers={"Authorization": f"Bearer {mint_service_token()}"})
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -519,7 +536,7 @@ async def revoke_node_credential(api_url: str, cred_id: str) -> None:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.delete(url, headers={"Authorization": f"Bearer {mint_service_token()}"})
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -543,7 +560,7 @@ async def rename_node_credential(api_url: str, cred_id: str, label: str) -> None
                 json={"label": label},
             )
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -586,7 +603,7 @@ async def ptz_node(
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.post(url, headers=_headers(credential), json=body or {})
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -613,7 +630,7 @@ async def snapshot_node(
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.get(url, headers=_headers(credential), params=params)
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -644,7 +661,7 @@ async def record_start_node(api_url: str, camera_id: str, *, credential: str | N
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.post(url, headers=_headers(credential), json={})
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -659,7 +676,7 @@ async def record_stop_node(api_url: str, camera_id: str, *, credential: str | No
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.post(url, headers=_headers(credential), json={})
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -674,7 +691,7 @@ async def reboot_camera_node(api_url: str, camera_id: str, *, credential: str | 
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.post(url, headers=_headers(credential), json={})
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -707,7 +724,7 @@ async def create_export_node(
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.post(url, headers=_headers(credential), json=body)
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -722,7 +739,7 @@ async def list_exports_node(api_url: str, camera_id: str, *, credential: str | N
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.get(url, headers=_headers(credential), params={"camera_id": camera_id})
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -737,7 +754,7 @@ async def get_export_node(api_url: str, export_id: str, *, credential: str | Non
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.get(url, headers=_headers(credential))
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -808,7 +825,7 @@ async def export_manifest_node(
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.get(url, headers=_headers(credential))
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -834,7 +851,7 @@ async def download_export_node(
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.get(url, headers=_headers(credential))
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -860,7 +877,7 @@ async def evidence_hold_node(
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.post(url, headers=_headers(credential), json=body)
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -878,7 +895,7 @@ async def evidence_release_node(
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.delete(url, headers=_headers(credential), params={"from": frm, "to": to})
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -893,7 +910,7 @@ async def list_holds_node(api_url: str, camera_id: str, *, credential: str | Non
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
             r = await c.get(url, headers=_headers(credential), params={"camera_id": camera_id})
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {r.text[:160]}"))
@@ -944,7 +961,7 @@ async def _node_json(
                 method, url, headers=_headers(credential), params=params, json=json_body
             )
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         # EVERY 4xx is a refusal, not only 401/403. The node answered and said no —
         # a malformed schedule document, an id that is not there, a conflict — and
@@ -1270,7 +1287,7 @@ async def talk_uplink_node(
         async with httpx.AsyncClient(timeout=timeout) as c:
             r = await c.post(url, headers=headers, content=body_stream)
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {_node_error_message(r, r.text[:160])}"))
@@ -1311,7 +1328,7 @@ async def motion_search_node(
         async with httpx.AsyncClient(timeout=120.0) as c:
             r = await c.post(url, headers=_headers(credential), json=body or {})
     except httpx.HTTPError as e:
-        raise NodeUnavailable(str(e)) from e
+        raise _transport_failure(e) from e
     if r.status_code // 100 != 2:
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {_node_error_message(r, r.text[:160])}"))

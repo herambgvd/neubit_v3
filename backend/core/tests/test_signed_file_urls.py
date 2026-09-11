@@ -10,18 +10,15 @@ unexpired `?exp=&sig=`, while avatars and logos stay plain because a browser loa
 them from an `<img>` with no token. Both directions are asserted here.
 """
 
-from __future__ import annotations
 
 import time
 
-import httpx
 import pytest
 
-from app.app import create_base_app
 from app.auth.models import User
 from app.core import storage as storage_mod
 from app.core.storage import LocalStorage, sign_key, signature_is_valid
-from app.db.base import get_db
+from conftest import api_client
 
 pytestmark = pytest.mark.asyncio
 
@@ -36,22 +33,6 @@ def writable_storage(tmp_path, monkeypatch):
     yield
     config.get_settings.cache_clear()
     storage_mod.get_storage.cache_clear()
-
-
-@pytest.fixture
-def app(sessionmaker_):
-    application = create_base_app(title="test")
-
-    async def _override_db():
-        async with sessionmaker_() as session:
-            yield session
-
-    application.dependency_overrides[get_db] = _override_db
-    return application
-
-
-def _client(app) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
 
 
 # --- the signature itself ----------------------------------------------------
@@ -103,7 +84,7 @@ async def test_a_report_url_is_signed_and_an_avatar_url_is_not():
 async def test_serving_a_report_without_a_signature_is_404(app):
     storage = LocalStorage()
     await storage.put("reports/secret.csv", b"tenant,data\n1,2\n", "text/csv")
-    async with _client(app) as c:
+    async with api_client(app) as c:
         bare = await c.get("/files/reports/secret.csv")
         signed_url = await storage.url("reports/secret.csv")
         good = await c.get(signed_url)
@@ -119,7 +100,7 @@ async def test_serving_a_report_with_an_expired_signature_is_404(app):
     await storage.put("reports/old.csv", b"x", "text/csv")
     expired = int(time.time()) - 5
     url = f"/files/reports/old.csv?exp={expired}&sig={sign_key('reports/old.csv', expired)}"
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.get(url)
     assert r.status_code == 404, r.text
 
@@ -132,7 +113,7 @@ async def test_serving_a_report_with_another_files_signature_is_404(app):
     await storage.put("reports/theirs.csv", b"theirs", "text/csv")
     exp = int(time.time()) + 60
     stolen = f"/files/reports/theirs.csv?exp={exp}&sig={sign_key('reports/mine.csv', exp)}"
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.get(stolen)
     assert r.status_code == 404, r.text
 
@@ -142,7 +123,7 @@ async def test_an_avatar_is_still_served_with_no_signature(app):
     console's images while every assertion above still passes."""
     storage = LocalStorage()
     await storage.put("avatars/u.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 16, "image/png")
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.get("/files/avatars/u.png")
     assert r.status_code == 200, r.text
 

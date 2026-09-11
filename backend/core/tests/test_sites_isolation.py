@@ -8,44 +8,19 @@ and the resulting cross-tenant edge is republished on NATS to reporting and BI.
 Same harness as test_tenant_isolation.py: the full base app on in-memory SQLite.
 """
 
-from __future__ import annotations
 
-import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy import select
 
-from app.app import create_base_app
 from app.auth.models import User
 from app.auth.security import create_access_token, hash_password
-from app.db.base import get_db
-from app.sites.floor.models import Floor
 from app.sites.site.models import Site
 from app.tenancy.models import Tenant
-from conftest import make_role
+from conftest import api_client, bearer, make_role
 
 pytestmark = pytest.mark.asyncio
 PREFIX = "/api/v1"
-
-
-@pytest.fixture
-def app(sessionmaker_):
-    application = create_base_app(title="test")
-
-    async def _override_db():
-        async with sessionmaker_() as session:
-            yield session
-
-    application.dependency_overrides[get_db] = _override_db
-    return application
-
-
-def _client(app) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
-
-
-def _auth(user) -> dict:
-    return {"Authorization": f"Bearer {create_access_token(user, sid='test')}"}
 
 
 @pytest_asyncio.fixture
@@ -98,10 +73,10 @@ async def world(db):
 
 async def test_create_rejects_a_parent_in_another_tenant(app, world):
     """The check that already existed — kept as the control for the one that didn't."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
             f"{PREFIX}/sites",
-            headers=_auth(world["a_admin"]),
+            headers=bearer(world["a_admin"]),
             json={"name": "Child", "parent_id": str(world["b_site"].site_id)},
         )
     assert r.status_code == 409, r.text
@@ -112,10 +87,10 @@ async def test_update_rejects_a_parent_in_another_tenant(app, world, db):
     blind setattr that had already persisted the edge.
     """
     a_id = world["a_site"].site_id
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.patch(
             f"{PREFIX}/sites/{a_id}",
-            headers=_auth(world["a_admin"]),
+            headers=bearer(world["a_admin"]),
             json={"parent_id": str(world["b_site"].site_id)},
         )
     assert r.status_code == 409, r.text
@@ -129,15 +104,15 @@ async def test_update_still_allows_a_parent_in_the_same_tenant(app, world, db):
     against a version that refuses every parent.
     """
     a_id = world["a_site"].site_id
-    async with _client(app) as c:
+    async with api_client(app) as c:
         child = await c.post(
-            f"{PREFIX}/sites", headers=_auth(world["a_admin"]), json={"name": "A Annexe"}
+            f"{PREFIX}/sites", headers=bearer(world["a_admin"]), json={"name": "A Annexe"}
         )
         assert child.status_code in (200, 201), child.text
         child_id = child.json()["site_id"]
         r = await c.patch(
             f"{PREFIX}/sites/{child_id}",
-            headers=_auth(world["a_admin"]),
+            headers=bearer(world["a_admin"]),
             json={"parent_id": str(a_id)},
         )
     assert r.status_code == 200, r.text
@@ -147,12 +122,12 @@ async def test_update_still_allows_a_parent_in_the_same_tenant(app, world, db):
 async def test_a_tenant_cannot_read_or_write_a_platform_site(app, world, db):
     """NULL tenant_id is a tenancy, not a wildcard."""
     pid = world["platform_site"].site_id
-    async with _client(app) as c:
-        got = await c.get(f"{PREFIX}/sites/{pid}", headers=_auth(world["a_admin"]))
+    async with api_client(app) as c:
+        got = await c.get(f"{PREFIX}/sites/{pid}", headers=bearer(world["a_admin"]))
         patched = await c.patch(
-            f"{PREFIX}/sites/{pid}", headers=_auth(world["a_admin"]), json={"name": "Seized"}
+            f"{PREFIX}/sites/{pid}", headers=bearer(world["a_admin"]), json={"name": "Seized"}
         )
-        deleted = await c.delete(f"{PREFIX}/sites/{pid}", headers=_auth(world["a_admin"]))
+        deleted = await c.delete(f"{PREFIX}/sites/{pid}", headers=bearer(world["a_admin"]))
     assert got.status_code == 404, got.text
     assert patched.status_code == 404, patched.text
     assert deleted.status_code in (404, 405), deleted.text
@@ -162,14 +137,14 @@ async def test_a_tenant_cannot_read_or_write_a_platform_site(app, world, db):
 
 
 async def test_cross_tenant_site_by_id_is_404(app, world):
-    async with _client(app) as c:
-        r = await c.get(f"{PREFIX}/sites/{world['b_site'].site_id}", headers=_auth(world["a_admin"]))
+    async with api_client(app) as c:
+        r = await c.get(f"{PREFIX}/sites/{world['b_site'].site_id}", headers=bearer(world["a_admin"]))
     assert r.status_code == 404
 
 
 async def test_site_list_is_tenant_scoped(app, world):
-    async with _client(app) as c:
-        r = await c.get(f"{PREFIX}/sites", headers=_auth(world["a_admin"]))
+    async with api_client(app) as c:
+        r = await c.get(f"{PREFIX}/sites", headers=bearer(world["a_admin"]))
     assert r.status_code == 200
     body = r.json()
     names = {s["name"] for s in (body["items"] if isinstance(body, dict) else body)}

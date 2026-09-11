@@ -8,41 +8,17 @@ Runs the full base app against in-memory SQLite with get_db overridden — no
 Docker/Postgres — the same harness as test_security_endpoints.py.
 """
 
-from __future__ import annotations
 
-import httpx
 import pytest
 import pytest_asyncio
 
-from app.app import create_base_app
 from app.auth.models import User
 from app.auth.security import create_access_token, hash_password
-from app.db.base import get_db
 from app.tenancy.models import Tenant
-from conftest import make_role
+from conftest import api_client, bearer, make_role
 
 pytestmark = pytest.mark.asyncio
 PREFIX = "/api/v1"
-
-
-@pytest.fixture
-def app(sessionmaker_):
-    application = create_base_app(title="test")
-
-    async def _override_db():
-        async with sessionmaker_() as session:
-            yield session
-
-    application.dependency_overrides[get_db] = _override_db
-    return application
-
-
-def _client(app) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
-
-
-def _auth(user) -> dict:
-    return {"Authorization": f"Bearer {create_access_token(user, sid='test')}"}
 
 
 async def _tenant(db, name: str, slug: str) -> Tenant:
@@ -92,8 +68,8 @@ async def world(db):
 
 
 async def test_list_users_is_tenant_scoped(app, world):
-    async with _client(app) as c:
-        r = await c.get(f"{PREFIX}/auth/users", headers=_auth(world["a_admin"]))
+    async with api_client(app) as c:
+        r = await c.get(f"{PREFIX}/auth/users", headers=bearer(world["a_admin"]))
     assert r.status_code == 200
     emails = {u["email"] for u in r.json()["items"]}
     assert "a-admin@x.io" in emails
@@ -103,16 +79,16 @@ async def test_list_users_is_tenant_scoped(app, world):
 
 
 async def test_get_cross_tenant_user_is_404(app, world):
-    async with _client(app) as c:
-        r = await c.get(f"{PREFIX}/auth/users/{world['b_user'].id}", headers=_auth(world["a_admin"]))
+    async with api_client(app) as c:
+        r = await c.get(f"{PREFIX}/auth/users/{world['b_user'].id}", headers=bearer(world["a_admin"]))
     # NOT 403 — a tenant-admin must not be able to tell a foreign id even exists.
     assert r.status_code == 404
 
 
 async def test_superadmin_sees_every_tenant(app, world):
-    async with _client(app) as c:
-        one = await c.get(f"{PREFIX}/auth/users/{world['b_user'].id}", headers=_auth(world["sa"]))
-        listing = await c.get(f"{PREFIX}/auth/users", headers=_auth(world["sa"]))
+    async with api_client(app) as c:
+        one = await c.get(f"{PREFIX}/auth/users/{world['b_user'].id}", headers=bearer(world["sa"]))
+        listing = await c.get(f"{PREFIX}/auth/users", headers=bearer(world["sa"]))
     assert one.status_code == 200
     emails = {u["email"] for u in listing.json()["items"]}
     assert {"a-admin@x.io", "b-admin@x.io", "b-user@x.io"} <= emails
@@ -120,18 +96,18 @@ async def test_superadmin_sees_every_tenant(app, world):
 
 async def test_global_search_is_tenant_scoped(app, world):
     """The ⌘K global search must not leak another tenant's users."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         # A-admin searching for tenant-B's user gets nothing.
-        r = await c.get(f"{PREFIX}/search?q=b-user", headers=_auth(world["a_admin"]))
+        r = await c.get(f"{PREFIX}/search?q=b-user", headers=bearer(world["a_admin"]))
         assert r.status_code == 200
         leaked = {x["sublabel"] for x in r.json()["results"] if x["type"] == "user"}
         assert "b-user@x.io" not in leaked
         # Own-tenant search still returns own users.
-        r2 = await c.get(f"{PREFIX}/search?q=a-admin", headers=_auth(world["a_admin"]))
+        r2 = await c.get(f"{PREFIX}/search?q=a-admin", headers=bearer(world["a_admin"]))
         own = {x["sublabel"] for x in r2.json()["results"] if x["type"] == "user"}
         assert "a-admin@x.io" in own
         # Super-admin search sees every tenant.
-        r3 = await c.get(f"{PREFIX}/search?q=b-user", headers=_auth(world["sa"]))
+        r3 = await c.get(f"{PREFIX}/search?q=b-user", headers=bearer(world["sa"]))
         seen = {x["sublabel"] for x in r3.json()["results"] if x["type"] == "user"}
         assert "b-user@x.io" in seen
 
@@ -146,9 +122,9 @@ async def test_admin_api_requires_admin_realm(app, world):
     from app.core.config import get_settings
 
     sa = world["sa"]
-    async with _client(app) as c:
+    async with api_client(app) as c:
         # Correct realm (create_access_token stamps aud=neubit-admin for a super-admin).
-        ok = await c.get(f"{PREFIX}/admin/tenants", headers=_auth(sa))
+        ok = await c.get(f"{PREFIX}/admin/tenants", headers=bearer(sa))
         assert ok.status_code == 200
         # Same super-admin id, but a tenant-realm token → 403.
         now = dt.datetime.now(dt.timezone.utc)
@@ -179,10 +155,10 @@ async def test_user_create_is_forced_into_actor_tenant(app, world, db):
     """
     from sqlalchemy import select
 
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
             f"{PREFIX}/auth/users",
-            headers=_auth(world["a_admin"]),
+            headers=bearer(world["a_admin"]),
             json={
                 "email": "planted@x.io",
                 "full_name": "Planted User",
@@ -209,8 +185,8 @@ async def test_user_create_is_forced_into_actor_tenant(app, world, db):
 async def test_tenant_admin_cannot_fetch_the_platform_superadmin(app, world):
     """404, and for the same reason a foreign tenant's user is 404: a tenant-admin
     must not learn the super-admin's id exists, let alone read its row."""
-    async with _client(app) as c:
-        r = await c.get(f"{PREFIX}/auth/users/{world['sa'].id}", headers=_auth(world["a_admin"]))
+    async with api_client(app) as c:
+        r = await c.get(f"{PREFIX}/auth/users/{world['sa'].id}", headers=bearer(world["a_admin"]))
     assert r.status_code == 404, r.text
 
 
@@ -229,10 +205,10 @@ async def test_tenant_admin_cannot_reset_the_platform_superadmin_password(app, w
     original_hash = (
         await db.execute(select(User).where(User.id == sa_id))
     ).scalar_one().password_hash
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.patch(
             f"{PREFIX}/auth/users/{sa_id}",
-            headers=_auth(world["a_admin"]),
+            headers=bearer(world["a_admin"]),
             json={"password": "Attacker1!"},
         )
     assert r.status_code == 404, r.text
@@ -248,18 +224,18 @@ async def test_tenant_admin_cannot_delete_or_lock_the_platform_superadmin(app, w
     a super-admin first — if those are not 200, the urls are wrong.
     """
     sa_id = world["sa"].id
-    async with _client(app) as c:
+    async with api_client(app) as c:
         # Positive control: same url template, a target the super-admin may act on.
         # Not the super-admin itself — lock_user 422s on the caller's own account,
         # which would fail this control for an unrelated reason.
         for tmpl in ("lock", "reset-mfa"):
             ok = await c.post(
-                f"{PREFIX}/auth/users/{world['b_user'].id}/{tmpl}", headers=_auth(world["sa"])
+                f"{PREFIX}/auth/users/{world['b_user'].id}/{tmpl}", headers=bearer(world["sa"])
             )
             assert ok.status_code == 200, f"{tmpl} url is wrong: {ok.status_code} {ok.text}"
-        lock = await c.post(f"{PREFIX}/auth/users/{sa_id}/lock", headers=_auth(world["a_admin"]))
+        lock = await c.post(f"{PREFIX}/auth/users/{sa_id}/lock", headers=bearer(world["a_admin"]))
         mfa = await c.post(
-            f"{PREFIX}/auth/users/{sa_id}/reset-mfa", headers=_auth(world["a_admin"])
+            f"{PREFIX}/auth/users/{sa_id}/reset-mfa", headers=bearer(world["a_admin"])
         )
     assert lock.status_code == 404, lock.text
     assert mfa.status_code == 404, mfa.text
@@ -269,8 +245,8 @@ async def test_superadmin_still_reaches_platform_rows(app, world):
     """The guard must not be a blanket ban on NULL rows: a super-admin still owns
     them, and tightening owns() to `== scope.tenant_id` would lock everyone out
     while passing every test above."""
-    async with _client(app) as c:
-        r = await c.get(f"{PREFIX}/auth/users/{world['sa'].id}", headers=_auth(world["sa"]))
+    async with api_client(app) as c:
+        r = await c.get(f"{PREFIX}/auth/users/{world['sa'].id}", headers=bearer(world["sa"]))
     assert r.status_code == 200
     assert r.json()["email"] == "sa@x.io"
 
@@ -279,9 +255,9 @@ async def test_a_tenantless_non_superadmin_is_not_a_super_admin(app, world):
     """tenant_id NULL with is_superadmin False falls through hand-rolled filters of
     the form `if tenant_id is not None`, showing this principal the whole platform
     directory on nothing but user.read."""
-    async with _client(app) as c:
-        listing = await c.get(f"{PREFIX}/auth/users", headers=_auth(world["rootless"]))
-        export = await c.get(f"{PREFIX}/auth/users/export", headers=_auth(world["rootless"]))
+    async with api_client(app) as c:
+        listing = await c.get(f"{PREFIX}/auth/users", headers=bearer(world["rootless"]))
+        export = await c.get(f"{PREFIX}/auth/users/export", headers=bearer(world["rootless"]))
     assert listing.status_code == 200
     emails = {u["email"] for u in listing.json()["items"]}
     assert "a-admin@x.io" not in emails
@@ -295,9 +271,9 @@ async def test_a_tenantless_non_superadmin_is_not_a_super_admin(app, world):
 
 async def test_export_is_tenant_scoped(app, world):
     """The export must match the list it claims to mirror; both go through scoped()."""
-    async with _client(app) as c:
-        mine = await c.get(f"{PREFIX}/auth/users/export", headers=_auth(world["a_admin"]))
-        every = await c.get(f"{PREFIX}/auth/users/export", headers=_auth(world["sa"]))
+    async with api_client(app) as c:
+        mine = await c.get(f"{PREFIX}/auth/users/export", headers=bearer(world["a_admin"]))
+        every = await c.get(f"{PREFIX}/auth/users/export", headers=bearer(world["sa"]))
     assert mine.status_code == 200
     assert "a-admin@x.io" in mine.text
     assert "b-admin@x.io" not in mine.text

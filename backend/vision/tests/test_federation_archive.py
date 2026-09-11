@@ -158,3 +158,20 @@ async def test_another_tenants_recorder_is_absent_not_forbidden(app, node, recor
     assert r.status_code == 404, r.text
     # And nothing was asked of the recorder on another tenant's behalf.
     assert recorder.calls == []
+
+
+def test_a_timeout_says_what_happened_rather_than_trailing_off():
+    """`str(httpx.ReadTimeout())` is the EMPTY STRING.
+
+    Thirty-four call sites raised `NodeUnavailable(str(e))`, so the commonest
+    federated failure there is — a recorder waiting on a camera that has gone —
+    reported itself as "recorder unavailable: " and stopped at the colon. The
+    exception's CLASS is the fact when the instance carries no message, and
+    ReadTimeout, ConnectError and PoolTimeout each say something different.
+    """
+    from app.vms.federation.client import _transport_failure
+
+    assert str(_transport_failure(httpx.ReadTimeout(""))) == "ReadTimeout"
+    assert str(_transport_failure(httpx.ConnectError(""))) == "ConnectError"
+    # A message, when there is one, is better than the class name and is kept.
+    assert str(_transport_failure(httpx.ConnectError("connection refused"))) == "connection refused"

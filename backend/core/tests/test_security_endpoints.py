@@ -6,39 +6,14 @@ no Docker/Postgres/network. Proves the routes are reachable, permission-gated, a
 that the four-eyes + video-audit-ingest + config-CRUD + enforced-2FA flows work.
 """
 
-from __future__ import annotations
 
-import httpx
 import pytest
 
-from app.app import create_base_app
-from app.auth.security import create_access_token
-from app.db.base import get_db
-from conftest import make_role, make_user
+from conftest import api_client, bearer, make_role, make_user
 
 pytestmark = pytest.mark.asyncio
 
 PREFIX = "/api/v1"
-
-
-@pytest.fixture
-def app(sessionmaker_):
-    application = create_base_app(title="test")
-
-    async def _override_db():
-        async with sessionmaker_() as session:
-            yield session
-
-    application.dependency_overrides[get_db] = _override_db
-    return application
-
-
-def _client(app) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
-
-
-def _auth(user) -> dict:
-    return {"Authorization": f"Bearer {create_access_token(user, sid='test')}"}
 
 
 async def test_policy_crud_gated(app, db):
@@ -46,15 +21,15 @@ async def test_policy_crud_gated(app, db):
     viewer_role = await make_role(db, "Viewer", ["vms.live.view"])
     admin = await make_user(db, "sec@x.io", sec_role)
     viewer = await make_user(db, "view@x.io", viewer_role)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         # Viewer without security.manage is 403.
-        r = await c.get(f"{PREFIX}/security/policy", headers=_auth(viewer))
+        r = await c.get(f"{PREFIX}/security/policy", headers=bearer(viewer))
         assert r.status_code == 403
         # Sec admin can read + update.
-        r = await c.get(f"{PREFIX}/security/policy", headers=_auth(admin))
+        r = await c.get(f"{PREFIX}/security/policy", headers=bearer(admin))
         assert r.status_code == 200 and r.json()["require_2fa"] is False
         r = await c.put(
-            f"{PREFIX}/security/policy", headers=_auth(admin),
+            f"{PREFIX}/security/policy", headers=bearer(admin),
             json={"require_2fa": True, "require_2fa_roles": ["Ops"]},
         )
         assert r.status_code == 200 and r.json()["require_2fa"] is True
@@ -63,9 +38,9 @@ async def test_policy_crud_gated(app, db):
 async def test_directory_and_sso_crud_hide_secrets(app, db):
     sec_role = await make_role(db, "SecAdmin", ["security.manage"])
     admin = await make_user(db, "sec@x.io", sec_role)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.put(
-            f"{PREFIX}/security/directory", headers=_auth(admin),
+            f"{PREFIX}/security/directory", headers=bearer(admin),
             json={"server_uri": "ldaps://ad", "base_dn": "dc=c", "bind_dn": "cn=svc",
                   "bind_password": "secret", "group_role_map": {}},
         )
@@ -75,7 +50,7 @@ async def test_directory_and_sso_crud_hide_secrets(app, db):
         assert "bind_password" not in body  # secret never serialised out
 
         r = await c.put(
-            f"{PREFIX}/security/sso", headers=_auth(admin),
+            f"{PREFIX}/security/sso", headers=bearer(admin),
             json={"issuer": "https://idp", "client_id": "cid", "client_secret": "csec"},
         )
         assert r.status_code == 200
@@ -88,10 +63,10 @@ async def test_dual_auth_full_flow_over_http(app, db):
     appr_role = await make_role(db, "Approver", ["dualauth.approve"])
     requester = await make_user(db, "req@x.io", req_role)
     approver = await make_user(db, "app@x.io", appr_role)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         # 1. requester raises a four-eyes request
         r = await c.post(
-            f"{PREFIX}/security/dual-auth", headers=_auth(requester),
+            f"{PREFIX}/security/dual-auth", headers=bearer(requester),
             json={"action": "vms.export", "target_type": "camera", "target_id": "cam-1"},
         )
         assert r.status_code == 201
@@ -100,24 +75,24 @@ async def test_dual_auth_full_flow_over_http(app, db):
 
         # 2. requester cannot approve their own (and lacks the perm anyway → 403)
         r = await c.post(f"{PREFIX}/security/dual-auth/{req_id}/approve",
-                         headers=_auth(requester), json={})
+                         headers=bearer(requester), json={})
         assert r.status_code == 403
 
         # 3. a different privileged user approves
         r = await c.post(f"{PREFIX}/security/dual-auth/{req_id}/approve",
-                         headers=_auth(approver), json={"note": "ok"})
+                         headers=bearer(approver), json={"note": "ok"})
         assert r.status_code == 200 and r.json()["status"] == "approved"
 
         # 4. consume it right before the action; second consume fails
         r = await c.post(
             f"{PREFIX}/security/dual-auth/{req_id}/consume",
-            headers=_auth(requester),
+            headers=bearer(requester),
             params={"action": "vms.export", "target_id": "cam-1"},
         )
         assert r.status_code == 200 and r.json()["status"] == "consumed"
         r = await c.post(
             f"{PREFIX}/security/dual-auth/{req_id}/consume",
-            headers=_auth(requester),
+            headers=bearer(requester),
             params={"action": "vms.export", "target_id": "cam-1"},
         )
         assert r.status_code == 409  # already used
@@ -129,15 +104,15 @@ async def test_video_audit_ingest_writes_trail(app, db):
     audit_role = await make_role(db, "Auditor", ["audit.read"])
     svc_user = await make_user(db, "vision@svc.io", svc_role)
     auditor = await make_user(db, "audit@x.io", audit_role)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
-            f"{PREFIX}/security/audit/video", headers=_auth(svc_user),
+            f"{PREFIX}/security/audit/video", headers=bearer(svc_user),
             json={"action": "vms.playback", "target_type": "camera", "target_id": "cam-9",
                   "actor_email": "operator@x.io", "meta": {"range": "10:00-10:05"}},
         )
         assert r.status_code == 201
         # The auditor can see it in the audit log.
-        r = await c.get(f"{PREFIX}/audit", headers=_auth(auditor))
+        r = await c.get(f"{PREFIX}/audit", headers=bearer(auditor))
         assert r.status_code == 200
         actions = [e["action"] for e in r.json()["items"]]
         assert "vms.playback" in actions
@@ -146,9 +121,9 @@ async def test_video_audit_ingest_writes_trail(app, db):
 async def test_erasure_endpoint_scaffold(app, db):
     sec_role = await make_role(db, "SecAdmin", ["security.manage"])
     admin = await make_user(db, "sec@x.io", sec_role)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
-            f"{PREFIX}/security/erasure", headers=_auth(admin),
+            f"{PREFIX}/security/erasure", headers=bearer(admin),
             json={"subject_type": "person", "subject_id": "p-42", "reason": "DPDP request"},
         )
         assert r.status_code == 202
@@ -168,7 +143,7 @@ async def test_enforced_2fa_login_blocks_then_enrolls(app, db):
 
     await SecurityService(db).update_policy(scope_of(user), SecurityPolicyIn(require_2fa=True))
 
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(f"{PREFIX}/auth/login", json={"email": "ops@x.io", "password": "Passw0rd!"})
         assert r.status_code == 200
         body = r.json()
@@ -213,7 +188,7 @@ async def test_video_audit_ingest_accepts_a_service_token(app, db):
          "iat": now, "exp": now + 120},
         get_settings().jwt_secret, algorithm="HS256",
     )
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
             f"{PREFIX}/security/audit/video",
             headers={"Authorization": f"Bearer {token}"},

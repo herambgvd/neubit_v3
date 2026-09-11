@@ -15,49 +15,23 @@ dismissed are per-admin, or one operator clicking a critical licence alert away
 hides it from the whole team.
 """
 
-from __future__ import annotations
 
 import datetime as dt
 import uuid
 
-import httpx
 import pytest
 import pytest_asyncio
 
-from app.alerts.models import AlertState  # noqa: F401 — create_all
-from app.app import create_base_app
 from app.auth.models import User
 from app.auth.security import create_access_token, hash_password
-from app.billing.models import Invoice  # noqa: F401 — create_all
 from app.broadcasts.models import Broadcast
-from app.db.base import get_db
 from app.tenancy.models import Tenant
-from conftest import make_role
+from conftest import api_client, bearer, make_role
 
 pytestmark = pytest.mark.asyncio
 PREFIX = "/api/v1"
 ADMIN_BC = f"{PREFIX}/admin/broadcasts"
 ALERTS = f"{PREFIX}/admin/alerts"
-
-
-@pytest.fixture
-def app(sessionmaker_):
-    application = create_base_app(title="test")
-
-    async def _override_db():
-        async with sessionmaker_() as session:
-            yield session
-
-    application.dependency_overrides[get_db] = _override_db
-    return application
-
-
-def _client(app) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
-
-
-def _auth(user) -> dict:
-    return {"Authorization": f"Bearer {create_access_token(user, sid='test')}"}
 
 
 def _now() -> dt.datetime:
@@ -130,9 +104,9 @@ async def test_a_broadcast_aimed_at_one_tenant_is_invisible_to_another(app, worl
         world["db"], title="Acme only", target_type="tenants",
         target_tenant_ids=[str(world["ta"].id)],
     )
-    async with _client(app) as c:
-        for_a = await c.get(f"{PREFIX}/broadcasts/active", headers=_auth(world["a"]))
-        for_b = await c.get(f"{PREFIX}/broadcasts/active", headers=_auth(world["b"]))
+    async with api_client(app) as c:
+        for_a = await c.get(f"{PREFIX}/broadcasts/active", headers=bearer(world["a"]))
+        for_b = await c.get(f"{PREFIX}/broadcasts/active", headers=bearer(world["b"]))
     assert for_a.status_code == 200 and for_b.status_code == 200
     assert [b["id"] for b in for_a.json()] == [str(mine.id)]
     assert for_b.json() == []
@@ -147,7 +121,7 @@ async def test_a_targeted_broadcast_is_invisible_to_a_caller_with_no_token(app, 
         target_tenant_ids=[str(world["ta"].id)],
     )
     everyone = await _broadcast(world["db"], title="Platform notice", target_type="all")
-    async with _client(app) as c:
+    async with api_client(app) as c:
         anon = await c.get(f"{PREFIX}/broadcasts/active")
     assert anon.status_code == 200
     assert [b["id"] for b in anon.json()] == [str(everyone.id)]
@@ -162,8 +136,8 @@ async def test_an_expired_or_not_yet_started_broadcast_is_not_shown(app, world):
     live = await _broadcast(world["db"], title="now",
                             starts_at=_now() - dt.timedelta(hours=1),
                             ends_at=_now() + dt.timedelta(hours=1))
-    async with _client(app) as c:
-        r = await c.get(f"{PREFIX}/broadcasts/active", headers=_auth(world["a"]))
+    async with api_client(app) as c:
+        r = await c.get(f"{PREFIX}/broadcasts/active", headers=bearer(world["a"]))
     assert [b["id"] for b in r.json()] == [str(live.id)]
 
 
@@ -175,8 +149,8 @@ async def test_the_tenant_facing_read_does_not_expose_the_target_list(app, world
         world["db"], title="Two of you", target_type="tenants",
         target_tenant_ids=[str(world["ta"].id), str(world["tb"].id)],
     )
-    async with _client(app) as c:
-        r = await c.get(f"{PREFIX}/broadcasts/active", headers=_auth(world["a"]))
+    async with api_client(app) as c:
+        r = await c.get(f"{PREFIX}/broadcasts/active", headers=bearer(world["a"]))
     (item,) = r.json()
     assert "target_tenant_ids" not in item
     assert str(world["tb"].id) not in r.text
@@ -187,9 +161,9 @@ async def test_an_operator_can_publish_edit_and_retract_a_broadcast(app, world):
     """The happy path, so the refusals elsewhere cannot pass by the surface being
     dead. Retraction is the operational part: a wrong announcement has to be
     removable while people are reading it."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         created = await c.post(
-            ADMIN_BC, headers=_auth(world["sa"]),
+            ADMIN_BC, headers=bearer(world["sa"]),
             json={"title": "Upgrade", "body": "tonight", "severity": "warning",
                   "target_type": "tenants", "target_tenant_ids": [str(world["ta"].id)]},
         )
@@ -197,12 +171,12 @@ async def test_an_operator_can_publish_edit_and_retract_a_broadcast(app, world):
         bid = created.json()["id"]
 
         edited = await c.patch(
-            f"{ADMIN_BC}/{bid}", headers=_auth(world["sa"]), json={"body": "postponed"}
+            f"{ADMIN_BC}/{bid}", headers=bearer(world["sa"]), json={"body": "postponed"}
         )
-        seen_by_tenant = await c.get(f"{PREFIX}/broadcasts/active", headers=_auth(world["a"]))
-        removed = await c.delete(f"{ADMIN_BC}/{bid}", headers=_auth(world["sa"]))
-        gone = await c.get(f"{PREFIX}/broadcasts/active", headers=_auth(world["a"]))
-        listed = await c.get(ADMIN_BC, headers=_auth(world["sa"]))
+        seen_by_tenant = await c.get(f"{PREFIX}/broadcasts/active", headers=bearer(world["a"]))
+        removed = await c.delete(f"{ADMIN_BC}/{bid}", headers=bearer(world["sa"]))
+        gone = await c.get(f"{PREFIX}/broadcasts/active", headers=bearer(world["a"]))
+        listed = await c.get(ADMIN_BC, headers=bearer(world["sa"]))
 
     assert created.json()["target_tenant_ids"] == [str(world["ta"].id)]
     assert edited.status_code == 200 and edited.json()["body"] == "postponed"
@@ -216,13 +190,13 @@ async def test_a_severity_or_target_outside_the_vocabulary_is_refused(app, world
     """Severity drives how loudly the console renders a notice; `target_type` decides
     who sees it. The read filter matches "all" or an explicit id list, so an unknown
     target_type silently addresses nobody and the operator is never told."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         bad_sev = await c.post(
-            ADMIN_BC, headers=_auth(world["sa"]),
+            ADMIN_BC, headers=bearer(world["sa"]),
             json={"title": "x", "severity": "apocalyptic"},
         )
         bad_target = await c.post(
-            ADMIN_BC, headers=_auth(world["sa"]),
+            ADMIN_BC, headers=bearer(world["sa"]),
             json={"title": "x", "target_type": "everyone"},
         )
     assert bad_sev.status_code == 422, bad_sev.text
@@ -230,11 +204,11 @@ async def test_a_severity_or_target_outside_the_vocabulary_is_refused(app, world
 
 
 async def test_editing_a_broadcast_that_does_not_exist_is_a_404(app, world):
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.patch(
-            f"{ADMIN_BC}/{uuid.uuid4()}", headers=_auth(world["sa"]), json={"title": "x"}
+            f"{ADMIN_BC}/{uuid.uuid4()}", headers=bearer(world["sa"]), json={"title": "x"}
         )
-        d = await c.delete(f"{ADMIN_BC}/{uuid.uuid4()}", headers=_auth(world["sa"]))
+        d = await c.delete(f"{ADMIN_BC}/{uuid.uuid4()}", headers=bearer(world["sa"]))
     assert r.status_code == 404
     assert d.status_code == 404
 
@@ -243,15 +217,15 @@ async def test_editing_a_broadcast_that_does_not_exist_is_a_404(app, world):
 async def test_alerts_are_derived_from_the_state_they_describe(app, world):
     """The inbox holds no alert rows: it recomputes from tenants, invoices and
     subscriptions on every read. So changing the world must change the inbox."""
-    async with _client(app) as c:
-        before = await c.get(ALERTS, headers=_auth(world["sa"]))
+    async with api_client(app) as c:
+        before = await c.get(ALERTS, headers=bearer(world["sa"]))
         assert before.status_code == 200, before.text
         assert before.json()["items"] == []
 
         await c.post(
-            f"{PREFIX}/admin/tenants/{world['tb'].id}/suspend", headers=_auth(world["sa"])
+            f"{PREFIX}/admin/tenants/{world['tb'].id}/suspend", headers=bearer(world["sa"])
         )
-        after = await c.get(ALERTS, headers=_auth(world["sa"]))
+        after = await c.get(ALERTS, headers=bearer(world["sa"]))
 
     keys = [a["key"] for a in after.json()["items"]]
     assert f"suspended:{world['tb'].id}" in keys
@@ -261,17 +235,17 @@ async def test_alerts_are_derived_from_the_state_they_describe(app, world):
 async def test_one_admin_dismissing_an_alert_does_not_hide_it_from_the_others(app, world):
     """Read and dismiss state is per-admin on purpose: shared, the first operator to
     clear a critical licence alert clears it for everyone who has not seen it."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         await c.post(
-            f"{PREFIX}/admin/tenants/{world['tb'].id}/suspend", headers=_auth(world["sa"])
+            f"{PREFIX}/admin/tenants/{world['tb'].id}/suspend", headers=bearer(world["sa"])
         )
         key = f"suspended:{world['tb'].id}"
 
-        dismissed = await c.post(ALERTS + "/dismiss", headers=_auth(world["sa"]), json={"key": key})
+        dismissed = await c.post(ALERTS + "/dismiss", headers=bearer(world["sa"]), json={"key": key})
         assert dismissed.status_code == 204, dismissed.text
 
-        for_sa = await c.get(ALERTS, headers=_auth(world["sa"]))
-        for_sa2 = await c.get(ALERTS, headers=_auth(world["sa2"]))
+        for_sa = await c.get(ALERTS, headers=bearer(world["sa"]))
+        for_sa2 = await c.get(ALERTS, headers=bearer(world["sa2"]))
 
     assert key not in [a["key"] for a in for_sa.json()["items"]]
     assert key in [a["key"] for a in for_sa2.json()["items"]]
@@ -281,13 +255,13 @@ async def test_one_admin_dismissing_an_alert_does_not_hide_it_from_the_others(ap
 async def test_marking_read_clears_the_badge_without_hiding_the_alert(app, world):
     """Read drops the unread count, dismissed removes the row. Collapsing the two
     makes "I have seen this" delete the thing seen."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         await c.post(
-            f"{PREFIX}/admin/tenants/{world['tb'].id}/suspend", headers=_auth(world["sa"])
+            f"{PREFIX}/admin/tenants/{world['tb'].id}/suspend", headers=bearer(world["sa"])
         )
         key = f"suspended:{world['tb'].id}"
-        await c.post(ALERTS + "/read", headers=_auth(world["sa"]), json={"key": key})
-        after = await c.get(ALERTS, headers=_auth(world["sa"]))
+        await c.post(ALERTS + "/read", headers=bearer(world["sa"]), json={"key": key})
+        after = await c.get(ALERTS, headers=bearer(world["sa"]))
 
     (row,) = [a for a in after.json()["items"] if a["key"] == key]
     assert row["read"] is True
@@ -297,16 +271,16 @@ async def test_marking_read_clears_the_badge_without_hiding_the_alert(app, world
 async def test_read_all_covers_every_alert_currently_showing(app, world):
     """"Mark all read" has to zero the badge, including alerts the operator never
     opened individually."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         await c.post(
-            f"{PREFIX}/admin/tenants/{world['ta'].id}/suspend", headers=_auth(world["sa"])
+            f"{PREFIX}/admin/tenants/{world['ta'].id}/suspend", headers=bearer(world["sa"])
         )
         await c.post(
-            f"{PREFIX}/admin/tenants/{world['tb'].id}/suspend", headers=_auth(world["sa"])
+            f"{PREFIX}/admin/tenants/{world['tb'].id}/suspend", headers=bearer(world["sa"])
         )
-        before = await c.get(ALERTS, headers=_auth(world["sa"]))
-        done = await c.post(ALERTS + "/read-all", headers=_auth(world["sa"]))
-        after = await c.get(ALERTS, headers=_auth(world["sa"]))
+        before = await c.get(ALERTS, headers=bearer(world["sa"]))
+        done = await c.post(ALERTS + "/read-all", headers=bearer(world["sa"]))
+        after = await c.get(ALERTS, headers=bearer(world["sa"]))
 
     assert before.json()["unread"] == 2
     assert done.status_code == 204

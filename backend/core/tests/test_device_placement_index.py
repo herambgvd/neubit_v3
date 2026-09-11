@@ -9,41 +9,16 @@ Two things are worth pinning: the route must not be shadowed by `/{device_id}`
 is tenant-scoped like everything else in this module.
 """
 
-from __future__ import annotations
 
-import httpx
 import pytest
 
-from app.app import create_base_app
-from app.auth.security import create_access_token
-from app.db.base import get_db
 from app.sites.device.models import DevicePlacement
 from app.tenancy.models import Tenant
-from conftest import make_role, make_user
+from conftest import api_client, bearer, make_role, make_user
 
 pytestmark = pytest.mark.asyncio
 
 PREFIX = "/api/v1"
-
-
-@pytest.fixture
-def app(sessionmaker_):
-    application = create_base_app(title="test")
-
-    async def _override_db():
-        async with sessionmaker_() as session:
-            yield session
-
-    application.dependency_overrides[get_db] = _override_db
-    return application
-
-
-def _client(app) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
-
-
-def _auth(user) -> dict:
-    return {"Authorization": f"Bearer {create_access_token(user, sid='test')}"}
 
 
 async def _tenant(db, slug: str) -> Tenant:
@@ -78,8 +53,8 @@ async def test_the_index_lists_every_placement_in_the_tenant(app, db):
     user.tenant_id = acme.id
     await db.commit()
 
-    async with _client(app) as c:
-        r = await c.get(f"{PREFIX}/device-placements/index", headers=_auth(user))
+    async with api_client(app) as c:
+        r = await c.get(f"{PREFIX}/device-placements/index", headers=bearer(user))
     assert r.status_code == 200, r.text
     items = r.json()["items"]
     assert {i["device_id"] for i in items} == {"cam-1", "cam-2", "door-1"}
@@ -96,8 +71,8 @@ async def test_index_is_not_shadowed_by_the_device_id_route(app, db):
     as a missing placement — which reads on screen as an empty estate."""
     role = await make_role(db, "Ops2", ["devices.read"])
     user = await make_user(db, "ops2@x.io", role)
-    async with _client(app) as c:
-        r = await c.get(f"{PREFIX}/device-placements/index", headers=_auth(user))
+    async with api_client(app) as c:
+        r = await c.get(f"{PREFIX}/device-placements/index", headers=bearer(user))
     assert r.status_code == 200
     assert r.json() == {"items": [], "count": 0}
 
@@ -116,14 +91,14 @@ async def test_another_tenants_placements_are_not_in_the_index(app, db):
     user.tenant_id = acme.id
     await db.commit()
 
-    async with _client(app) as c:
-        r = await c.get(f"{PREFIX}/device-placements/index", headers=_auth(user))
+    async with api_client(app) as c:
+        r = await c.get(f"{PREFIX}/device-placements/index", headers=bearer(user))
     assert [i["device_id"] for i in r.json()["items"]] == ["mine"]
 
 
 async def test_the_index_needs_devices_read(app, db):
     role = await make_role(db, "NoDevices", ["sites.read"])
     user = await make_user(db, "nope@x.io", role)
-    async with _client(app) as c:
-        r = await c.get(f"{PREFIX}/device-placements/index", headers=_auth(user))
+    async with api_client(app) as c:
+        r = await c.get(f"{PREFIX}/device-placements/index", headers=bearer(user))
     assert r.status_code == 403

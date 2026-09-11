@@ -5,7 +5,6 @@ it back onto the Principal and exposes ``subjects()`` for role-subject ACL grant
 A legacy token (minted before the claim existed) must still decode with role_id=None.
 """
 
-from __future__ import annotations
 
 import datetime as dt
 

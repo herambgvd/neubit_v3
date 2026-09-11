@@ -13,20 +13,16 @@ Each row is (label, create-in-tenant, urls). For every resource we assert:
   * a super-admin reaches all of them, so "refuse everyone" cannot pass.
 """
 
-from __future__ import annotations
 
 import uuid
 
-import httpx
 import pytest
 import pytest_asyncio
 
-from app.app import create_base_app
 from app.auth.models import User
 from app.auth.security import create_access_token, hash_password
-from app.db.base import get_db
 from app.tenancy.models import Tenant
-from conftest import make_role
+from conftest import api_client, bearer, make_role
 
 pytestmark = pytest.mark.asyncio
 PREFIX = "/api/v1"
@@ -38,26 +34,6 @@ ALL_PERMS = [
     "zones.read", "zones.create", "zones.update", "zones.delete",
     "settings.manage", "branding.manage", "report.read", "report.create",
 ]
-
-
-@pytest.fixture
-def app(sessionmaker_):
-    application = create_base_app(title="test")
-
-    async def _override_db():
-        async with sessionmaker_() as session:
-            yield session
-
-    application.dependency_overrides[get_db] = _override_db
-    return application
-
-
-def _client(app) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
-
-
-def _auth(user) -> dict:
-    return {"Authorization": f"Bearer {create_access_token(user, sid='test')}"}
 
 
 @pytest_asyncio.fixture
@@ -153,10 +129,10 @@ RESOURCES = {
 @pytest.mark.parametrize("resource", sorted(RESOURCES))
 async def test_another_tenants_row_is_404_on_every_verb(app, world, resource):
     _id, _list_url, item_url = await RESOURCES[resource](world["db"], world["tb"].id)
-    async with _client(app) as c:
-        got = await c.get(f"{PREFIX}{item_url}", headers=_auth(world["a"]))
-        patched = await c.patch(f"{PREFIX}{item_url}", headers=_auth(world["a"]), json={})
-        deleted = await c.delete(f"{PREFIX}{item_url}", headers=_auth(world["a"]))
+    async with api_client(app) as c:
+        got = await c.get(f"{PREFIX}{item_url}", headers=bearer(world["a"]))
+        patched = await c.patch(f"{PREFIX}{item_url}", headers=bearer(world["a"]), json={})
+        deleted = await c.delete(f"{PREFIX}{item_url}", headers=bearer(world["a"]))
     # 404, never 403: a tenant must not be able to tell a foreign id exists.
     assert got.status_code == 404, f"{resource} GET -> {got.status_code}"
     assert patched.status_code in (404, 405, 422), f"{resource} PATCH -> {patched.status_code}"
@@ -169,9 +145,9 @@ async def test_a_platform_row_is_404_for_a_tenant(app, world, resource):
     listing while `owns()` admits them by id, making a platform row invisible in the
     list and writable by any tenant."""
     _id, _list_url, item_url = await RESOURCES[resource](world["db"], None)
-    async with _client(app) as c:
-        got = await c.get(f"{PREFIX}{item_url}", headers=_auth(world["a"]))
-        deleted = await c.delete(f"{PREFIX}{item_url}", headers=_auth(world["a"]))
+    async with api_client(app) as c:
+        got = await c.get(f"{PREFIX}{item_url}", headers=bearer(world["a"]))
+        deleted = await c.delete(f"{PREFIX}{item_url}", headers=bearer(world["a"]))
     assert got.status_code == 404, f"{resource} GET -> {got.status_code}"
     assert deleted.status_code in (404, 405), f"{resource} DELETE -> {deleted.status_code}"
 
@@ -181,8 +157,8 @@ async def test_a_listing_never_contains_another_tenants_row(app, world, resource
     mine_id, list_url, _ = await RESOURCES[resource](world["db"], world["ta"].id)
     theirs_id, _, _ = await RESOURCES[resource](world["db"], world["tb"].id)
     platform_id, _, _ = await RESOURCES[resource](world["db"], None)
-    async with _client(app) as c:
-        r = await c.get(f"{PREFIX}{list_url}", headers=_auth(world["a"]))
+    async with api_client(app) as c:
+        r = await c.get(f"{PREFIX}{list_url}", headers=bearer(world["a"]))
     assert r.status_code == 200, r.text
     body = r.text
     assert str(mine_id) in body, f"{resource}: own row missing from the listing"
@@ -196,9 +172,9 @@ async def test_a_super_admin_reaches_every_row(app, world, resource):
     everyone."""
     _id, _list_url, item_url = await RESOURCES[resource](world["db"], world["tb"].id)
     _pid, _, platform_url = await RESOURCES[resource](world["db"], None)
-    async with _client(app) as c:
-        theirs = await c.get(f"{PREFIX}{item_url}", headers=_auth(world["sa"]))
-        platform = await c.get(f"{PREFIX}{platform_url}", headers=_auth(world["sa"]))
+    async with api_client(app) as c:
+        theirs = await c.get(f"{PREFIX}{item_url}", headers=bearer(world["sa"]))
+        platform = await c.get(f"{PREFIX}{platform_url}", headers=bearer(world["sa"]))
     assert theirs.status_code == 200, theirs.text
     assert platform.status_code == 200, platform.text
 
@@ -211,18 +187,18 @@ async def test_a_super_admin_reaches_every_row(app, world, resource):
 
 
 async def test_branding_falls_back_to_the_platform_default_but_writes_its_own(app, world):
-    async with _client(app) as c:
+    async with api_client(app) as c:
         await c.put(
-            f"{PREFIX}/branding", headers=_auth(world["sa"]), json={"app_name": "Platform"}
+            f"{PREFIX}/branding", headers=bearer(world["sa"]), json={"app_name": "Platform"}
         )
-        inherited = await c.get(f"{PREFIX}/branding", headers=_auth(world["a"]))
+        inherited = await c.get(f"{PREFIX}/branding", headers=bearer(world["a"]))
         assert inherited.status_code == 200
         assert inherited.json()["app_name"] == "Platform"
 
-        await c.put(f"{PREFIX}/branding", headers=_auth(world["a"]), json={"app_name": "A Corp"})
-        mine = await c.get(f"{PREFIX}/branding", headers=_auth(world["a"]))
-        theirs = await c.get(f"{PREFIX}/branding", headers=_auth(world["b"]))
-        platform = await c.get(f"{PREFIX}/branding", headers=_auth(world["sa"]))
+        await c.put(f"{PREFIX}/branding", headers=bearer(world["a"]), json={"app_name": "A Corp"})
+        mine = await c.get(f"{PREFIX}/branding", headers=bearer(world["a"]))
+        theirs = await c.get(f"{PREFIX}/branding", headers=bearer(world["b"]))
+        platform = await c.get(f"{PREFIX}/branding", headers=bearer(world["sa"]))
     assert mine.json()["app_name"] == "A Corp"
     # A tenant's write must not have edited the shared row under everyone else.
     assert theirs.json()["app_name"] == "Platform"
@@ -230,18 +206,18 @@ async def test_branding_falls_back_to_the_platform_default_but_writes_its_own(ap
 
 
 async def test_settings_override_is_per_tenant(app, world):
-    async with _client(app) as c:
+    async with api_client(app) as c:
         await c.put(
             f"{PREFIX}/settings",
-            headers=_auth(world["sa"]),
+            headers=bearer(world["sa"]),
             json={"values": {"google_maps_default_zoom": 3}},
         )
         await c.put(
             f"{PREFIX}/settings",
-            headers=_auth(world["a"]),
+            headers=bearer(world["a"]),
             json={"values": {"google_maps_default_zoom": 11}},
         )
-        mine = await c.get(f"{PREFIX}/settings", headers=_auth(world["a"]))
-        theirs = await c.get(f"{PREFIX}/settings", headers=_auth(world["b"]))
+        mine = await c.get(f"{PREFIX}/settings", headers=bearer(world["a"]))
+        theirs = await c.get(f"{PREFIX}/settings", headers=bearer(world["b"]))
     assert mine.json()["values"]["google_maps_default_zoom"] == 11
     assert theirs.json()["values"]["google_maps_default_zoom"] == 3

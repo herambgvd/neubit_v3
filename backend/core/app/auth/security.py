@@ -154,18 +154,60 @@ def generate_totp_secret() -> str:
     return base64.b32encode(pysecrets.token_bytes(20)).decode().rstrip("=")
 
 
+# THE TOTP HASH IS A CHOICE, and the default is the one every authenticator makes.
+#
+# RFC 6238 §1.2 names HMAC-SHA-1 as the default and permits SHA-256 and SHA-512.
+# Every authenticator in circulation — Google Authenticator, Microsoft
+# Authenticator, Authy, 1Password — assumes SHA-1 unless the otpauth URI says
+# otherwise, and several ignore the `algorithm` parameter entirely. So SHA-1 stays
+# the default: changing it unilaterally invalidates every code already enrolled on
+# every user's phone, and on the apps that ignore the parameter it does so silently.
+#
+# It is a SETTING because a deployment that controls its own authenticators — or
+# one under a posture that refuses SHA-1 whatever the context — should not have to
+# patch this file. VE_TOTP_ALGORITHM=sha256 is the whole change, and the
+# provisioning URI already carries the algorithm to the app.
+#
+# On SHA-1 itself: the weakness is COLLISION resistance, which HMAC does not rest
+# on. NIST SP 800-107 Rev. 1 §5.3.4 says HMAC-SHA-1 remains acceptable, and there
+# is no practical attack on it. Nothing else here uses SHA-1 — passwords are
+# Argon2, tokens HS256, checksums SHA-256.
+_TOTP_ALGORITHMS = ("sha1", "sha256", "sha512")
+
+
+def totp_algorithm() -> str:
+    """The configured hash, lower-cased, or the RFC default when unset or unknown.
+
+    An unknown value falls back rather than raising: a typo in an environment
+    variable must not take authentication down, and a wrong algorithm would refuse
+    every code anyway — which is the same outage with a worse error message.
+    """
+    name = str(getattr(get_settings(), "totp_algorithm", "") or "sha1").strip().lower()
+    return name if name in _TOTP_ALGORITHMS else "sha1"
+
+
 def totp_provisioning_uri(secret_b32: str, account: str, issuer: str) -> str:
     """otpauth:// URI the client renders as a QR code for Google Authenticator etc."""
     label = urllib.parse.quote(f"{issuer}:{account}")
     query = urllib.parse.urlencode(
-        {"secret": secret_b32, "issuer": issuer, "algorithm": "SHA1", "digits": 6, "period": 30}
+        {
+            "secret": secret_b32,
+            "issuer": issuer,
+            # Upper-case, as the otpauth spec writes it.
+            "algorithm": totp_algorithm().upper(),
+            "digits": 6,
+            "period": 30,
+        }
     )
     return f"otpauth://totp/{label}?{query}"
 
 
-def _hotp(secret_b32: str, counter: int, digits: int = 6) -> str:
+def _hotp(secret_b32: str, counter: int, digits: int = 6, algorithm: str | None = None) -> str:
+    """RFC 4226 HOTP: HMAC over the counter, dynamically truncated to `digits`."""
     key = base64.b32decode(secret_b32 + "=" * (-len(secret_b32) % 8))
-    digest = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
+    # hashlib.new(name), because the algorithm is chosen at runtime — there is no
+    # fixed constructor to name when the caller decides which hash this is.
+    digest = hmac.new(key, struct.pack(">Q", counter), lambda d=b"": hashlib.new(algorithm or totp_algorithm(), d)).digest()
     offset = digest[-1] & 0x0F
     code = (struct.unpack(">I", digest[offset : offset + 4])[0] & 0x7FFFFFFF) % (10**digits)
     return str(code).zfill(digits)
@@ -177,8 +219,11 @@ def verify_totp(secret_b32: str, code: str, *, window: int = 1, period: int = 30
     if not code.isdigit() or len(code) != 6:
         return False
     counter = int(time.time() // period)
+    algorithm = totp_algorithm()
+    # compare_digest, not ==: a timing-variable comparison of a six-digit code is
+    # a small oracle, and it costs nothing to close.
     return any(
-        hmac.compare_digest(_hotp(secret_b32, counter + drift), code)
+        hmac.compare_digest(_hotp(secret_b32, counter + drift, algorithm=algorithm), code)
         for drift in range(-window, window + 1)
     )
 

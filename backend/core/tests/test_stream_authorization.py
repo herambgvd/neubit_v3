@@ -9,16 +9,13 @@ Cross-tenant leaks are not the concern here: the NATS subject is built from the
 caller's own tenant and fails closed to `tenant.__none__.…`.
 """
 
-from __future__ import annotations
 
-import httpx
 import pytest
 import pytest_asyncio
 
 from app.app import create_base_app
-from app.auth.security import create_access_token
 from app.db.base import get_db
-from conftest import make_role, make_user
+from conftest import api_client, bearer, make_role, make_user
 
 pytestmark = pytest.mark.asyncio
 PREFIX = "/api/v1"
@@ -49,14 +46,6 @@ def app(sessionmaker_, monkeypatch):
     return application
 
 
-def _client(app) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
-
-
-def _auth(user) -> dict:
-    return {"Authorization": f"Bearer {create_access_token(user, sid='test')}"}
-
-
 async def _status(app, path: str, headers: dict | None = None) -> int:
     """Status code of an SSE request, without ever waiting on the stream body.
 
@@ -68,7 +57,7 @@ async def _status(app, path: str, headers: dict | None = None) -> int:
     import asyncio
 
     async def _run() -> int:
-        async with _client(app) as c:
+        async with api_client(app) as c:
             async with c.stream("GET", f"{PREFIX}{path}", headers=headers or {}) as r:
                 return r.status_code
 
@@ -88,7 +77,7 @@ async def nobody(db):
 @pytest.mark.parametrize("path", sorted(STREAMS))
 async def test_a_user_with_no_permissions_is_refused(app, nobody, path, db):
     """403 — authenticated, not authorized. The stream must not open."""
-    assert await _status(app, path, _auth(nobody)) == 403, path
+    assert await _status(app, path, bearer(nobody)) == 403, path
 
 
 @pytest.mark.parametrize("perm", sorted(set(STREAMS.values())))
@@ -147,7 +136,7 @@ async def test_a_deactivated_user_cannot_open_a_stream(app, db):
     REST costs one response; on a stream it is an open pipe until the token expires."""
     role = await make_role(db, "WasAllowed", ["vms.camera.read"])
     user = await make_user(db, "gone@x.io", role)
-    token_headers = _auth(user)  # minted while the account was live
+    token_headers = bearer(user)  # minted while the account was live
     user.is_active = False
     await db.commit()
     assert await _status(app, "/realtime/vms-events", token_headers) == 401
@@ -182,7 +171,7 @@ async def test_a_suspended_tenant_cannot_open_a_stream(app, db):
     assert caught.value.detail["code"] == "TENANT_SUSPENDED"
 
     # And over HTTP, so the refusal is what a client actually sees.
-    assert await _status(app, "/realtime/vms-events", _auth(user)) == 403
+    assert await _status(app, "/realtime/vms-events", bearer(user)) == 403
 
 
 # --- the stream is re-checked while it is open -------------------------------

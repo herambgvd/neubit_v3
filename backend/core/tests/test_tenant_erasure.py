@@ -10,7 +10,6 @@ erased tables are emptied, retained tables keep their attribution, and the table
 column sweep can reach are reached.
 """
 
-from __future__ import annotations
 
 import importlib
 import pkgutil

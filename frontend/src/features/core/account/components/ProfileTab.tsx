@@ -1,8 +1,9 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useAvatar } from "../useAvatar";
 
 import { Avatar, Badge, Button, Card, Input } from "@/components/ui/kit";
 import { api, apiError } from "@/lib/api";
@@ -11,7 +12,9 @@ import { useAuth } from "@/lib/auth";
 export default function ProfileTab() {
   const { user, reload } = useAuth();
   const [name, setName] = useState(user?.full_name || "");
-  const [uploading, setUploading] = useState(false);
+  // Upload/remove and the busy flag live in one place — they were the same
+  // twenty lines here and on the other screen.
+  const avatar = useAvatar(reload);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => setName(user?.full_name || ""), [user?.full_name]);
@@ -25,35 +28,7 @@ export default function ProfileTab() {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  async function onPickAvatar(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setUploading(true);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      await api.post("/auth/me/avatar", fd);
-      await reload();
-      toast.success("Photo updated");
-    } catch (err) {
-      toast.error(apiError(err));
-    } finally {
-      setUploading(false);
-    }
-  }
-  async function removeAvatar() {
-    setUploading(true);
-    try {
-      await api.delete("/auth/me/avatar");
-      await reload();
-      toast.success("Photo removed");
-    } catch (err) {
-      toast.error(apiError(err));
-    } finally {
-      setUploading(false);
-    }
-  }
+
 
   return (
     <div className="grid gap-6 lg:grid-cols-3 items-start">
@@ -62,12 +37,12 @@ export default function ProfileTab() {
         <div className="flex flex-col items-center gap-4 py-2">
           <Avatar src={user?.avatar_url} name={user?.full_name || user?.email} size={96} />
           <div className="flex items-center gap-2">
-            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPickAvatar} />
-            <Button variant="secondary" icon="heroicons-outline:camera" disabled={uploading} onClick={() => fileRef.current?.click()}>
-              {uploading ? "Uploading…" : user?.avatar_url ? "Change" : "Upload"}
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={avatar.pick} />
+            <Button variant="secondary" icon="heroicons-outline:camera" disabled={avatar.busy} onClick={() => fileRef.current?.click()}>
+              {avatar.busy ? "Uploading…" : user?.avatar_url ? "Change" : "Upload"}
             </Button>
             {user?.avatar_url && (
-              <Button variant="ghost" icon="heroicons-outline:trash" disabled={uploading} onClick={removeAvatar}>
+              <Button variant="ghost" icon="heroicons-outline:trash" disabled={avatar.busy} onClick={avatar.remove}>
                 Remove
               </Button>
             )}

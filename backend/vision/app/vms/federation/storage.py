@@ -20,6 +20,7 @@ from kernel.auth import Scope, get_scope, require_permission
 from app.db import get_db
 from app.vms.federation import client as fed
 from app.vms.federation._common import (
+    _via,
     PERM_CAMERA_REBOOT,
     PERM_DEVICE_TUNE,
     PERM_EVIDENCE_HOLD,
@@ -151,11 +152,7 @@ async def federated_nvrs(
     proxy cameras; the estate view says which appliances exist and how they are
     doing. Their footage needs no route of its own — a channel IS a camera on the
     node, so it arrives in the camera list and plays through the camera routes."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.list_nvrs_node(node.api_url, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.list_nvrs_node(n.api_url, credential=n.credential))
 
 
 @router.get(
@@ -207,11 +204,7 @@ async def federated_archive(
 ) -> dict:
     """The recorder's archive posture: schedule, destination, last run, and how much
     footage is local-only (no durable copy yet) versus cold-only (archive only)."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.get_node_archive(node.api_url, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.get_node_archive(n.api_url, credential=n.credential))
 
 
 @router.get(
@@ -253,8 +246,4 @@ async def federated_restore_jobs(
     scope: Annotated[Scope, Depends(get_scope)],
 ) -> dict:
     """Recent restores and how they went, per segment."""
-    node = await _resolve_node(db, scope, node_id)
-    try:
-        return _tag(node, await fed.get_node_restore_jobs(node.api_url, credential=node.credential))
-    except fed.NodeUnavailable as e:
-        raise _unreachable(e)
+    return await _via(db, scope, node_id, lambda n: fed.get_node_restore_jobs(n.api_url, credential=n.credential))

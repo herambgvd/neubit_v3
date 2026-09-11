@@ -6,7 +6,6 @@ encrypted at rest and masked on the way out. And a write that carries the mask b
 rather than encrypt `"***"` over it.
 """
 
-from __future__ import annotations
 
 import pytest
 

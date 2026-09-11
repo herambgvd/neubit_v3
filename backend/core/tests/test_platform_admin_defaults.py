@@ -14,45 +14,21 @@ The audit view is here for the same reason — a cross-tenant read of a table wh
 per-tenant read is filtered, so the two must disagree deliberately.
 """
 
-from __future__ import annotations
 
 import uuid
 
-import httpx
 import pytest
 import pytest_asyncio
 
-from app.app import create_base_app
 from app.auth.models import User
 from app.auth.security import create_access_token, hash_password
 from app.core.audit import AuditLog
-from app.db.base import get_db
 from app.tenancy.models import Tenant
-from conftest import make_role
+from conftest import api_client, bearer, make_role
 
 pytestmark = pytest.mark.asyncio
 PREFIX = "/api/v1"
 PLATFORM = f"{PREFIX}/admin/platform"
-
-
-@pytest.fixture
-def app(sessionmaker_):
-    application = create_base_app(title="test")
-
-    async def _override_db():
-        async with sessionmaker_() as session:
-            yield session
-
-    application.dependency_overrides[get_db] = _override_db
-    return application
-
-
-def _client(app) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
-
-
-def _auth(user) -> dict:
-    return {"Authorization": f"Bearer {create_access_token(user, sid='test')}"}
 
 
 @pytest_asyncio.fixture
@@ -96,17 +72,17 @@ async def test_a_platform_setting_is_inherited_until_a_tenant_overrides_it(app, 
     """The point of the shared default: change it once and every tenant with no
     opinion follows, while a tenant that has one is left alone — otherwise a
     platform-wide edit silently resets customer configuration."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         await c.put(
-            f"{PREFIX}/settings", headers=_auth(world["b"]),
+            f"{PREFIX}/settings", headers=bearer(world["b"]),
             json={"values": {"google_maps_default_zoom": 15}},
         )
         patched = await c.patch(
-            f"{PLATFORM}/settings", headers=_auth(world["sa"]),
+            f"{PLATFORM}/settings", headers=bearer(world["sa"]),
             json={"values": {"google_maps_default_zoom": 4}},
         )
-        inheriting = await c.get(f"{PREFIX}/settings", headers=_auth(world["a"]))
-        overriding = await c.get(f"{PREFIX}/settings", headers=_auth(world["b"]))
+        inheriting = await c.get(f"{PREFIX}/settings", headers=bearer(world["a"]))
+        overriding = await c.get(f"{PREFIX}/settings", headers=bearer(world["b"]))
 
     assert patched.status_code == 200, patched.text
     assert patched.json()["values"]["google_maps_default_zoom"] == 4
@@ -117,17 +93,17 @@ async def test_a_platform_setting_is_inherited_until_a_tenant_overrides_it(app, 
 async def test_a_tenants_own_setting_never_lands_on_the_platform_default(app, world):
     """One tenant's write reaching the NULL row would reconfigure every other tenant,
     with nothing in the response to say so."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         await c.patch(
-            f"{PLATFORM}/settings", headers=_auth(world["sa"]),
+            f"{PLATFORM}/settings", headers=bearer(world["sa"]),
             json={"values": {"google_maps_default_zoom": 4}},
         )
         await c.put(
-            f"{PREFIX}/settings", headers=_auth(world["a"]),
+            f"{PREFIX}/settings", headers=bearer(world["a"]),
             json={"values": {"google_maps_default_zoom": 19}},
         )
-        default_now = await c.get(f"{PLATFORM}/settings", headers=_auth(world["sa"]))
-        other_tenant = await c.get(f"{PREFIX}/settings", headers=_auth(world["b"]))
+        default_now = await c.get(f"{PLATFORM}/settings", headers=bearer(world["sa"]))
+        other_tenant = await c.get(f"{PREFIX}/settings", headers=bearer(world["b"]))
 
     assert default_now.json()["values"]["google_maps_default_zoom"] == 4
     assert other_tenant.json()["values"]["google_maps_default_zoom"] == 4
@@ -136,8 +112,8 @@ async def test_a_tenants_own_setting_never_lands_on_the_platform_default(app, wo
 async def test_the_platform_settings_response_carries_the_catalog_it_is_edited_against(app, world):
     """The console renders the editor from `catalog`, not the values, so an empty
     catalog reads as "nothing to configure" rather than as a bug."""
-    async with _client(app) as c:
-        r = await c.get(f"{PLATFORM}/settings", headers=_auth(world["sa"]))
+    async with api_client(app) as c:
+        r = await c.get(f"{PLATFORM}/settings", headers=bearer(world["sa"]))
     assert r.status_code == 200
     assert r.json()["catalog"], "the settings catalog came back empty"
 
@@ -152,12 +128,12 @@ async def test_platform_branding_is_the_theme_a_tenant_falls_back_to(app, world)
     branding router is not in `_tenant_active_exempt()`. That is an app-wiring defect,
     and pinning it here would freeze it.
     """
-    async with _client(app) as c:
+    async with api_client(app) as c:
         patched = await c.patch(
-            f"{PLATFORM}/branding", headers=_auth(world["sa"]),
+            f"{PLATFORM}/branding", headers=bearer(world["sa"]),
             json={"app_name": "Neubit Platform"},
         )
-        as_tenant = await c.get(f"{PREFIX}/branding", headers=_auth(world["a"]))
+        as_tenant = await c.get(f"{PREFIX}/branding", headers=bearer(world["a"]))
 
     assert patched.status_code == 200, patched.text
     assert patched.json()["app_name"] == "Neubit Platform"
@@ -172,15 +148,15 @@ async def test_platform_branding_is_the_theme_a_tenant_falls_back_to(app, world)
 async def test_a_tenants_branding_is_its_own_and_the_default_survives_it(app, world):
     """Whitelabelling: one customer's logo on the login page or in another customer's
     console is the most visible failure available to this platform."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         await c.patch(
-            f"{PLATFORM}/branding", headers=_auth(world["sa"]), json={"app_name": "Platform"}
+            f"{PLATFORM}/branding", headers=bearer(world["sa"]), json={"app_name": "Platform"}
         )
-        await c.put(f"{PREFIX}/branding", headers=_auth(world["a"]), json={"app_name": "Acme"})
+        await c.put(f"{PREFIX}/branding", headers=bearer(world["a"]), json={"app_name": "Acme"})
 
-        mine = await c.get(f"{PREFIX}/branding", headers=_auth(world["a"]))
-        neighbour = await c.get(f"{PREFIX}/branding", headers=_auth(world["b"]))
-        default = await c.get(f"{PLATFORM}/branding", headers=_auth(world["sa"]))
+        mine = await c.get(f"{PREFIX}/branding", headers=bearer(world["a"]))
+        neighbour = await c.get(f"{PREFIX}/branding", headers=bearer(world["b"]))
+        default = await c.get(f"{PLATFORM}/branding", headers=bearer(world["sa"]))
 
     assert mine.json()["app_name"] == "Acme"
     assert neighbour.json()["app_name"] == "Platform"
@@ -208,8 +184,8 @@ async def test_the_admin_audit_view_spans_every_tenant_and_the_platform(app, wor
     await _entry(world["db"], world["tb"].id, "globex.thing")
     await _entry(world["db"], None, "platform.thing")
 
-    async with _client(app) as c:
-        r = await c.get(f"{PREFIX}/admin/audit", headers=_auth(world["sa"]))
+    async with api_client(app) as c:
+        r = await c.get(f"{PREFIX}/admin/audit", headers=bearer(world["sa"]))
 
     assert r.status_code == 200, r.text
     actions = {e["action"] for e in r.json()["items"]}
@@ -225,9 +201,9 @@ async def test_the_admin_audit_view_narrows_to_one_tenant_when_asked(app, world)
     await _entry(world["db"], world["tb"].id, "globex.one")
     await _entry(world["db"], None, "platform.one")
 
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.get(
-            f"{PREFIX}/admin/audit", headers=_auth(world["sa"]),
+            f"{PREFIX}/admin/audit", headers=bearer(world["sa"]),
             params={"tenant_id": str(world["ta"].id)},
         )
 
@@ -240,9 +216,9 @@ async def test_filtering_the_audit_view_to_a_tenant_that_does_not_exist_is_empty
     """Not an error: filtering by an offboarded id should show nothing, rather than a
     404 that reads as a broken page."""
     await _entry(world["db"], world["ta"].id, "acme.one")
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.get(
-            f"{PREFIX}/admin/audit", headers=_auth(world["sa"]),
+            f"{PREFIX}/admin/audit", headers=bearer(world["sa"]),
             params={"tenant_id": str(uuid.uuid4())},
         )
     assert r.status_code == 200

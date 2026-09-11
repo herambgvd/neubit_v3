@@ -6,32 +6,13 @@ and probes `/readyz` — written correctly and consumed by nothing is the failur
 file watches for.
 """
 
-from __future__ import annotations
 
-import httpx
 import pytest
 
-from app.app import create_base_app
 from app.core import health
-from app.db.base import get_db
+from conftest import api_client
 
 pytestmark = pytest.mark.asyncio
-
-
-@pytest.fixture
-def app(sessionmaker_):
-    application = create_base_app(title="test")
-
-    async def _override_db():
-        async with sessionmaker_() as session:
-            yield session
-
-    application.dependency_overrides[get_db] = _override_db
-    return application
-
-
-def _client(app) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
 
 
 async def test_ready_reports_503_and_names_the_broken_dependency(app, monkeypatch):
@@ -39,7 +20,7 @@ async def test_ready_reports_503_and_names_the_broken_dependency(app, monkeypatc
         raise RuntimeError("connection refused")
 
     monkeypatch.setattr(health, "_check_database", _broken)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.get("/readyz")
     assert r.status_code == 503
     body = r.json()
@@ -60,7 +41,7 @@ async def test_one_broken_dependency_does_not_hide_the_others(app, monkeypatch):
     monkeypatch.setattr(health, "_check_database", _broken)
     monkeypatch.setattr(health, "_check_redis", _fine)
     monkeypatch.setattr(health, "_check_storage", _fine)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         body = (await c.get("/readyz")).json()
     assert set(body["checks"]) == {"database", "redis", "storage"}
     assert body["checks"]["redis"] == "ok"
@@ -72,7 +53,7 @@ async def test_ready_is_200_when_everything_answers(app, monkeypatch):
 
     for name in ("_check_database", "_check_redis", "_check_storage"):
         monkeypatch.setattr(health, name, _fine)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.get("/readyz")
     assert r.status_code == 200
     assert r.json()["status"] == "ready"
@@ -87,7 +68,7 @@ async def test_health_is_liveness_and_says_nothing_about_dependencies(app, monke
         raise RuntimeError("down")
 
     monkeypatch.setattr(health, "_check_database", _broken)
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.get("/health")
     assert r.status_code == 200
     assert r.json() == {"status": "ok"}

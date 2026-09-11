@@ -71,6 +71,28 @@ async def _resolve_node(db: AsyncSession, scope: Scope, node_id: str) -> MediaNo
     return node
 
 
+async def _via(db: AsyncSession, scope: Scope, node_id: str, call):
+    """Resolve the node, make ONE call against it, and stamp the answer.
+
+    Every route on this surface does the same four things: find the recorder (404
+    if it is not the caller's), call it, turn a failure into the right status, and
+    say which recorder answered. Written out per route that is seven lines
+    repeated sixty-odd times — and the repetition is not the cost. The cost is that
+    each copy is a chance to get the ERROR MAPPING wrong, and one of them did: a
+    node's 4xx was reported as "recorder unavailable" until it was fixed in the one
+    place that had been written carefully.
+
+    `call` takes the node and returns the coroutine, so the credential and api_url
+    come from the row this function resolved rather than from anything the route
+    closed over.
+    """
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        return _tag(node, await call(node))
+    except fed.NodeUnavailable as e:
+        raise _unreachable(e)
+
+
 def _tag(node: MediaNode, payload):
     """Stamp the source node onto a node-issued payload, as every federated route does,
     so a client holding a merged multi-node view can always say which recorder answered.

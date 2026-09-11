@@ -15,47 +15,23 @@ Rows go in through the super-admin routes, because the create path is part of wh
 the console does with these.
 """
 
-from __future__ import annotations
 
 import uuid
 
-import httpx
 import pytest
 import pytest_asyncio
 
-from app.app import create_base_app
 from app.auth.models import User
 from app.auth.security import create_access_token, hash_password
-from app.db.base import get_db
 from app.device_brands.models import DeviceBrand
 from app.module_catalog.models import Module
 from app.tenancy.models import Tenant
-from conftest import make_role
+from conftest import api_client, bearer, make_role
 
 pytestmark = pytest.mark.asyncio
 PREFIX = "/api/v1"
 MODULES = f"{PREFIX}/admin/modules"
 BRANDS = f"{PREFIX}/admin/device-brands"
-
-
-@pytest.fixture
-def app(sessionmaker_):
-    application = create_base_app(title="test")
-
-    async def _override_db():
-        async with sessionmaker_() as session:
-            yield session
-
-    application.dependency_overrides[get_db] = _override_db
-    return application
-
-
-def _client(app) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
-
-
-def _auth(user) -> dict:
-    return {"Authorization": f"Bearer {create_access_token(user, sid='test')}"}
 
 
 @pytest_asyncio.fixture
@@ -105,9 +81,9 @@ async def test_any_signed_in_user_can_read_both_catalogs(app, world):
     world["db"].add(DeviceBrand(brand_id="hikvision", name="Hikvision", sdk_type="hikvision"))
     await world["db"].commit()
 
-    async with _client(app) as c:
-        modules = await c.get(MODULES, headers=_auth(world["viewer_b"]))
-        brands = await c.get(BRANDS, headers=_auth(world["viewer_b"]))
+    async with api_client(app) as c:
+        modules = await c.get(MODULES, headers=bearer(world["viewer_b"]))
+        brands = await c.get(BRANDS, headers=bearer(world["viewer_b"]))
 
     assert modules.status_code == 200, modules.text
     assert [m["key"] for m in modules.json()] == ["vms"]
@@ -134,10 +110,10 @@ async def test_a_tenant_admin_may_read_the_catalogs_but_never_write_them(app, wo
     The keys here become the feature flags every tenant's licence is written against,
     so a tenant that could add one could grant itself a capability nobody sold it.
     """
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.request(
             verb, url.replace("{id}", str(uuid.uuid4())),
-            headers=_auth(world["admin_a"]), json=body,
+            headers=bearer(world["admin_a"]), json=body,
         )
     assert r.status_code == 403, r.text
 
@@ -145,10 +121,10 @@ async def test_a_tenant_admin_may_read_the_catalogs_but_never_write_them(app, wo
 async def test_the_same_catalog_is_served_to_every_tenant(app, world):
     """The inverse of tenant isolation, and deliberate: these tables have no
     tenant_id, and a per-tenant view would hide module keys operators must grant."""
-    async with _client(app) as c:
-        await c.post(MODULES, headers=_auth(world["sa"]), json={"key": "anpr", "name": "ANPR"})
-        for_a = await c.get(MODULES, headers=_auth(world["admin_a"]))
-        for_b = await c.get(MODULES, headers=_auth(world["viewer_b"]))
+    async with api_client(app) as c:
+        await c.post(MODULES, headers=bearer(world["sa"]), json={"key": "anpr", "name": "ANPR"})
+        for_a = await c.get(MODULES, headers=bearer(world["admin_a"]))
+        for_b = await c.get(MODULES, headers=bearer(world["viewer_b"]))
     assert for_a.json() == for_b.json()
     assert [m["key"] for m in for_a.json()] == ["anpr"]
 
@@ -158,9 +134,9 @@ async def test_a_module_added_by_an_operator_is_never_a_system_module(app, world
     """`is_system` protects the modules the platform ships from being deleted, so the
     create route must not honour a client-supplied flag — that would let anyone mint
     an undeletable row."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         r = await c.post(
-            MODULES, headers=_auth(world["sa"]),
+            MODULES, headers=bearer(world["sa"]),
             json={"key": "anpr", "name": "ANPR", "category": "Video", "is_system": True},
         )
     assert r.status_code == 201, r.text
@@ -177,10 +153,10 @@ async def test_a_system_module_cannot_be_deleted(app, world):
     await world["db"].refresh(seeded)
     await world["db"].refresh(custom)
 
-    async with _client(app) as c:
-        protected = await c.delete(f"{MODULES}/{seeded.id}", headers=_auth(world["sa"]))
-        removable = await c.delete(f"{MODULES}/{custom.id}", headers=_auth(world["sa"]))
-        left = await c.get(MODULES, headers=_auth(world["sa"]))
+    async with api_client(app) as c:
+        protected = await c.delete(f"{MODULES}/{seeded.id}", headers=bearer(world["sa"]))
+        removable = await c.delete(f"{MODULES}/{custom.id}", headers=bearer(world["sa"]))
+        left = await c.get(MODULES, headers=bearer(world["sa"]))
 
     assert protected.status_code == 422, protected.text
     # Not a dead route: the same call on a non-system module works.
@@ -191,12 +167,12 @@ async def test_a_system_module_cannot_be_deleted(app, world):
 async def test_a_module_key_cannot_be_taken_twice(app, world):
     """The key is the feature flag, so two rows claiming one make "is this module
     enabled" ambiguous for every tenant."""
-    async with _client(app) as c:
-        await c.post(MODULES, headers=_auth(world["sa"]), json={"key": "anpr", "name": "ANPR"})
+    async with api_client(app) as c:
+        await c.post(MODULES, headers=bearer(world["sa"]), json={"key": "anpr", "name": "ANPR"})
         dup = await c.post(
-            MODULES, headers=_auth(world["sa"]), json={"key": "anpr", "name": "ANPR Again"}
+            MODULES, headers=bearer(world["sa"]), json={"key": "anpr", "name": "ANPR Again"}
         )
-        blank = await c.post(MODULES, headers=_auth(world["sa"]), json={"key": "  ", "name": "x"})
+        blank = await c.post(MODULES, headers=bearer(world["sa"]), json={"key": "  ", "name": "x"})
     assert dup.status_code == 409, dup.text
     assert blank.status_code == 422, blank.text
 
@@ -204,14 +180,14 @@ async def test_a_module_key_cannot_be_taken_twice(app, world):
 async def test_editing_a_module_changes_only_the_fields_that_were_sent(app, world):
     """PATCH semantics: an edit that nulled untouched fields would erase a module's
     description and category on every rename."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         created = await c.post(
-            MODULES, headers=_auth(world["sa"]),
+            MODULES, headers=bearer(world["sa"]),
             json={"key": "anpr", "name": "ANPR", "description": "plates",
                   "category": "Video", "default_enabled": True},
         )
         edited = await c.patch(
-            f"{MODULES}/{created.json()['id']}", headers=_auth(world["sa"]),
+            f"{MODULES}/{created.json()['id']}", headers=bearer(world["sa"]),
             json={"name": "Plate Recognition"},
         )
     assert edited.json()["name"] == "Plate Recognition"
@@ -222,12 +198,12 @@ async def test_editing_a_module_changes_only_the_fields_that_were_sent(app, worl
 
 
 async def test_a_module_that_does_not_exist_is_a_404_on_edit_and_on_delete(app, world):
-    async with _client(app) as c:
+    async with api_client(app) as c:
         missing = uuid.uuid4()
         patched = await c.patch(
-            f"{MODULES}/{missing}", headers=_auth(world["sa"]), json={"name": "x"}
+            f"{MODULES}/{missing}", headers=bearer(world["sa"]), json={"name": "x"}
         )
-        deleted = await c.delete(f"{MODULES}/{missing}", headers=_auth(world["sa"]))
+        deleted = await c.delete(f"{MODULES}/{missing}", headers=bearer(world["sa"]))
     assert patched.status_code == 404
     assert deleted.status_code == 404
 
@@ -237,15 +213,15 @@ async def test_a_device_brand_round_trips_its_protocol_and_capability_lists(app,
     """These lists drive what the add-device form offers — which protocol to speak,
     which capabilities to show — so dropping or flattening them misconfigures a real
     camera."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         created = await c.post(
-            BRANDS, headers=_auth(world["sa"]),
+            BRANDS, headers=bearer(world["sa"]),
             json={"brand_id": "hikvision", "name": "Hikvision", "sdk_type": "hikvision",
                   "protocols": ["onvif", "rtsp", "isapi"],
                   "capabilities": ["ptz", "events"], "onvif": True, "is_installed": False},
         )
         fetched = await c.get(
-            f"{BRANDS}/{created.json()['id']}", headers=_auth(world["viewer_b"])
+            f"{BRANDS}/{created.json()['id']}", headers=bearer(world["viewer_b"])
         )
     assert created.status_code == 201, created.text
     assert fetched.status_code == 200
@@ -257,12 +233,12 @@ async def test_a_device_brand_round_trips_its_protocol_and_capability_lists(app,
 async def test_a_brand_id_cannot_be_taken_twice(app, world):
     """brand_id selects the driver, so two rows claiming one is a coin flip over
     which SDK a camera is talked to with."""
-    async with _client(app) as c:
-        await c.post(BRANDS, headers=_auth(world["sa"]),
+    async with api_client(app) as c:
+        await c.post(BRANDS, headers=bearer(world["sa"]),
                      json={"brand_id": "dahua", "name": "Dahua"})
-        dup = await c.post(BRANDS, headers=_auth(world["sa"]),
+        dup = await c.post(BRANDS, headers=bearer(world["sa"]),
                            json={"brand_id": "dahua", "name": "Dahua Again"})
-        blank = await c.post(BRANDS, headers=_auth(world["sa"]),
+        blank = await c.post(BRANDS, headers=bearer(world["sa"]),
                              json={"brand_id": " ", "name": "x"})
     assert dup.status_code == 409, dup.text
     assert blank.status_code == 422, blank.text
@@ -272,14 +248,14 @@ async def test_marking_a_brands_driver_installed_is_a_partial_edit(app, world):
     """`is_installed` says this deployment has the SDK and is the field an operator
     toggles; flipping it must not disturb the protocol lists the form is built
     from."""
-    async with _client(app) as c:
+    async with api_client(app) as c:
         created = await c.post(
-            BRANDS, headers=_auth(world["sa"]),
+            BRANDS, headers=bearer(world["sa"]),
             json={"brand_id": "dahua", "name": "Dahua", "protocols": ["onvif", "rtsp"],
                   "capabilities": ["ptz"], "onvif": True},
         )
         edited = await c.patch(
-            f"{BRANDS}/{created.json()['id']}", headers=_auth(world["sa"]),
+            f"{BRANDS}/{created.json()['id']}", headers=bearer(world["sa"]),
             json={"is_installed": True},
         )
     assert edited.json()["is_installed"] is True
@@ -292,10 +268,10 @@ async def test_a_device_brand_that_does_not_exist_is_a_404_on_every_verb(app, wo
     """Including the read, which any signed-in user may call — the one 404 here an
     unprivileged caller can observe."""
     missing = uuid.uuid4()
-    async with _client(app) as c:
-        got = await c.get(f"{BRANDS}/{missing}", headers=_auth(world["viewer_b"]))
-        patched = await c.patch(f"{BRANDS}/{missing}", headers=_auth(world["sa"]), json={})
-        deleted = await c.delete(f"{BRANDS}/{missing}", headers=_auth(world["sa"]))
+    async with api_client(app) as c:
+        got = await c.get(f"{BRANDS}/{missing}", headers=bearer(world["viewer_b"]))
+        patched = await c.patch(f"{BRANDS}/{missing}", headers=bearer(world["sa"]), json={})
+        deleted = await c.delete(f"{BRANDS}/{missing}", headers=bearer(world["sa"]))
     assert got.status_code == 404
     assert patched.status_code == 404
     assert deleted.status_code == 404

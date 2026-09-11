@@ -18,7 +18,6 @@ Both directions are asserted: a 403-only test passes against a build that refuse
 everyone, which is an outage rather than a boundary.
 """
 
-from __future__ import annotations
 
 import re
 import uuid
@@ -32,12 +31,10 @@ import pytest_asyncio
 import app.alerts.models  # noqa: F401
 import app.billing.models  # noqa: F401
 import app.broadcasts.models  # noqa: F401
-from app.app import create_base_app
 from app.auth.models import User
 from app.auth.security import create_access_token, hash_password
-from app.db.base import get_db
 from app.tenancy.models import Tenant
-from conftest import make_role
+from conftest import api_client, bearer, make_role
 
 # Reused rather than re-derived: this FastAPI version defers `include_router`, so a
 # naive walk of `app.routes` sees a fraction of the surface with unprefixed paths.
@@ -69,26 +66,6 @@ def _ops_agent_is_local(monkeypatch):
     `--network none`. A closed loopback port makes them fail fast with 503 instead of
     stalling on a name lookup; only "not a 403" matters here."""
     monkeypatch.setenv("OPS_AGENT_URL", "http://127.0.0.1:9")
-
-
-@pytest.fixture
-def app(sessionmaker_):
-    application = create_base_app(title="test")
-
-    async def _override_db():
-        async with sessionmaker_() as session:
-            yield session
-
-    application.dependency_overrides[get_db] = _override_db
-    return application
-
-
-def _client(app) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
-
-
-def _auth(user) -> dict:
-    return {"Authorization": f"Bearer {create_access_token(user, sid='test')}"}
 
 
 def _admin_routes(app) -> list[tuple[str, str]]:
@@ -175,11 +152,11 @@ async def test_a_tenant_admin_is_refused_by_every_admin_route(app, actors):
     another tenant's billing, licences or containers.
     """
     reached = []
-    async with _client(app) as c:
+    async with api_client(app) as c:
         for method, path in _admin_routes(app):
             if (method, path) in TENANT_READABLE:
                 continue
-            r = await _call(c, method, _concrete(path), _auth(actors["tenant_admin"]))
+            r = await _call(c, method, _concrete(path), bearer(actors["tenant_admin"]))
             if r.status_code != 403:
                 reached.append(f"{method} {path} -> {r.status_code}")
     assert not reached, "a tenant admin was not refused by:\n  " + "\n  ".join(reached)
@@ -193,9 +170,9 @@ async def test_a_super_admin_is_refused_by_no_admin_route(app, actors):
     are 404 or 422, and the infra routes are 503 with no sidecar.
     """
     refused = []
-    async with _client(app) as c:
+    async with api_client(app) as c:
         for method, path in _admin_routes(app):
-            r = await _call(c, method, _concrete(path), _auth(actors["superadmin"]))
+            r = await _call(c, method, _concrete(path), bearer(actors["superadmin"]))
             if r.status_code in (401, 403):
                 refused.append(f"{method} {path} -> {r.status_code} {r.text[:120]}")
     assert not refused, "a super-admin was refused by:\n  " + "\n  ".join(refused)
@@ -205,7 +182,7 @@ async def test_an_unauthenticated_caller_is_refused_by_every_admin_route(app):
     """No /admin route may be reachable without a credential — including the two
     catalogs a tenant user may read, which still require a signed-in user."""
     reached = []
-    async with _client(app) as c:
+    async with api_client(app) as c:
         for method, path in _admin_routes(app):
             r = await _call(c, method, _concrete(path), {})
             if r.status_code not in (401, 403):
@@ -219,10 +196,10 @@ async def test_an_impersonation_token_cannot_re_enter_the_admin_api(app, actors,
     identity, and every audit entry written from it would name the wrong person.
     """
     tenant_id = actors["tenant"].id
-    async with _client(app) as c:
+    async with api_client(app) as c:
         minted = await c.post(
             f"{PREFIX}/admin/tenants/{tenant_id}/impersonate",
-            headers=_auth(actors["superadmin"]),
+            headers=bearer(actors["superadmin"]),
         )
         assert minted.status_code == 200, minted.text
         token = minted.json()["access_token"]

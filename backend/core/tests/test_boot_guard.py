@@ -22,7 +22,6 @@ the rule now. `test_whatever_the_env_example_ships_is_refused` reads the FILE
 rather than restating it, because restating it is precisely what failed.
 """
 
-from __future__ import annotations
 
 import logging
 import pathlib

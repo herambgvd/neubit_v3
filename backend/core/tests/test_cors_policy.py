@@ -19,7 +19,6 @@ that intent is kept: loopback, the three RFC 1918 ranges, `*.local`. What is gon
 is the public internet.
 """
 
-from __future__ import annotations
 
 import re
 

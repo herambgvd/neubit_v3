@@ -5,7 +5,6 @@ token_entitlements (what goes into the access token), and that
 create_access_token bakes features/limits into the JWT.
 """
 
-from __future__ import annotations
 
 import datetime as dt
 
