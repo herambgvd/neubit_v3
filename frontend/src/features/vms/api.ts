@@ -91,6 +91,10 @@ import type {
   NodeStoragePoolList,
   NodeStorageUsage,
   NodeTierRuleList,
+  FederatedIo,
+  FederatedTour,
+  FederatedTourList,
+  TourOperation,
   NodeArchive,
   NodeRestoreJobList,
   NodeRestoreRangeList,
@@ -390,6 +394,40 @@ export const vms = {
           `/vms/federation/nodes/${nodeId}/storage/restore/ranges${qs(opts)}`)),
       restoreJobs: (nodeId: string) =>
         unwrap(api.get<NodeRestoreJobList>(`/vms/federation/nodes/${nodeId}/storage/restore/jobs`)),
+    },
+
+    // ── preset tours — the camera's OWN patrol ────────────────────────────────
+    // Distinct from `patrol`, which the recorder holds and drives. A preset tour
+    // lives in the camera's firmware and keeps moving after the console is closed;
+    // that is the feature, and it is why the device's own `status.state` is the
+    // only honest answer to whether one is running.
+    //
+    // Operate only. Writing a tour is authorship on the device, gated node-side on
+    // camera.manage, which a federation credential deliberately does not carry.
+    tours: {
+      list: (nodeId: string, cameraId: string) =>
+        unwrap(api.get<FederatedTourList>(
+          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/ptz/tours`)),
+      operate: (nodeId: string, cameraId: string, tour: string, operation: TourOperation) =>
+        unwrap(api.post<FederatedTour>(
+          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/ptz/tours/${encodeURIComponent(tour)}/operate`,
+          { operation })),
+    },
+
+    // ── device I/O — the one federated call whose effect is PHYSICAL ──────────
+    // A relay opens a gate or sounds a siren. The read describes the DEVICE, not
+    // this camera: on a multi-channel encoder `channels_on_device` counts the
+    // other channels a drive would act on.
+    io: {
+      get: (nodeId: string, cameraId: string) =>
+        unwrap(api.get<FederatedIo>(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/io`)),
+      // "active" | "inactive". There is no toggle here on purpose — ONVIF gives no
+      // way to read where a relay currently sits, so a control that showed a
+      // position would be showing one we invented.
+      setRelay: (nodeId: string, cameraId: string, token: string, state: "active" | "inactive") =>
+        unwrap(api.post<FederatedIo>(
+          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/io/relays/${encodeURIComponent(token)}/state`,
+          { state })),
     },
 
     // ── recording schedules — the one CONFIG the VMS authors on a recorder ─────

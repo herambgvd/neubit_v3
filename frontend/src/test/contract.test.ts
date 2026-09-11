@@ -651,6 +651,23 @@ const PASSTHROUGH: Record<string, string> = {
   "features/vms/types.ts:ScheduleApplyOutcome": "one camera's outcome from the recorder's apply-to-many",
   "features/vms/types.ts:ScheduleApplyResult": "the recorder's per-camera apply report, proxied verbatim",
   "features/vms/types.ts:CameraRecordingConfig": "a camera's recording config as its recorder holds it",
+  // ── cold tier, device I/O and preset tours ─────────────────────────────────
+  // All read (or driven) through the recorder, all shaped by Go in the nvr repo —
+  // internal/store/types.go for the archive ledger, internal/onvif/io.go and
+  // ptz.go for what the DEVICE reports. There is no model here to compare with,
+  // and the facts that matter about them are guarded by name instead: the archive
+  // verdicts in `ArchiveSection.test.tsx`, a relay's three-valued mode in
+  // `RelayModal.test.tsx`, and the device-reported tour state in
+  // `PtzOverlay.test.tsx`.
+  "features/vms/types.ts:NodeArchive": "the recorder's archive posture, proxied verbatim",
+  "features/vms/types.ts:NodeRestoreRange": "one cold-only archive manifest entry from the recorder",
+  "features/vms/types.ts:NodeRestoreRangeList": "the recorder's cold-only ranges, proxied verbatim",
+  "features/vms/types.ts:NodeRestoreJob": "one restore job as the recorder records it",
+  "features/vms/types.ts:NodeRestoreJobList": "the recorder's restore jobs, proxied verbatim",
+  "features/vms/types.ts:FederatedRelay": "one relay output as the ONVIF device reports it",
+  "features/vms/types.ts:FederatedIo": "the device's inputs and relays, read through the recorder",
+  "features/vms/types.ts:FederatedTour": "a preset tour stored on the camera itself",
+  "features/vms/types.ts:FederatedTourList": "the camera's preset tours, proxied verbatim",
 };
 
 /**

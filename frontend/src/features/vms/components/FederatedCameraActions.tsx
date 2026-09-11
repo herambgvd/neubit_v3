@@ -22,6 +22,7 @@ import { apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { vms } from "../api";
 import type { EstateFederatedCamera, FederatedExportJob } from "../types";
+import RelayModal from "./RelayModal";
 
 export interface FederatedCameraActionsProps {
   camera: EstateFederatedCamera;
@@ -55,16 +56,22 @@ export default function FederatedCameraActions({ camera }: FederatedCameraAction
   const canReboot = can("vms.config.manage");
   const canHold = can("vms.recording.control");
   const canExport = can("vms.playback.view");
+  // Driving a relay is live-scene tuning, the same right as imaging and talk —
+  // and the same right the recorder's own credential carries for it. It is NOT
+  // config.manage: rewriting a relay's idle state is authorship and stays on the
+  // recorder; pulsing one is an operator acting on the building in front of them.
+  const canDriveIo = can("vms.camera.tune");
 
   const [recBusy, setRecBusy] = useState<RecordMode | null>(null); // "start" | "stop" | null
   const [confirmReboot, setConfirmReboot] = useState(false);
+  const [ioOpen, setIoOpen] = useState(false);
   const [rebooting, setRebooting] = useState(false);
   const [holdBusy, setHoldBusy] = useState(false); // quick "last 15 min"
   const [holdOpen, setHoldOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
 
   // Nothing to render if the operator holds none of the four perms.
-  if (!canRecord && !canReboot && !canHold && !canExport) return null;
+  if (!canRecord && !canReboot && !canHold && !canExport && !canDriveIo) return null;
 
   const record = async (mode: RecordMode) => {
     setRecBusy(mode);
@@ -201,7 +208,31 @@ export default function FederatedCameraActions({ camera }: FederatedCameraAction
             Export clip
           </button>
         )}
+
+        {/* The only action here whose effect is outside the network — a relay
+            opens a gate or sounds a siren. It opens a dialog rather than firing,
+            because what it reaches has to be read before it is pressed. */}
+        {canDriveIo && (
+          <button
+            type="button"
+            onClick={() => setIoOpen(true)}
+            title="Digital inputs and relay outputs on this camera's device"
+            className={BTN}
+          >
+            <Icon icon="heroicons-outline:bolt" className="text-xs" />
+            Device I/O
+          </button>
+        )}
       </div>
+
+      {ioOpen && (
+        <RelayModal
+          nodeId={node}
+          cameraId={cam}
+          cameraName={camera.name}
+          onClose={() => setIoOpen(false)}
+        />
+      )}
 
       <ConfirmDialog
         state={

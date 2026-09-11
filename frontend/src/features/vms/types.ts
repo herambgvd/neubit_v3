@@ -1252,6 +1252,77 @@ export interface NodeUpstreamNvrStorage extends Partial<NodeTagged> {
   [k: string]: unknown;
 }
 
+/* --- PTZ preset tours (federation) ----------------------------------------- */
+
+/** A preset tour stored ON THE CAMERA — the device's own patrol, distinct from the
+ *  recorder-held patrol the overlay already drives.
+ *
+ *  `status.state` is the device's, and it is the only honest answer to "is this
+ *  running": the tour keeps moving after the tab is closed, so a console that
+ *  remembered what it last started would be reporting its own history. */
+export interface FederatedTour {
+  token: string;
+  name?: string;
+  auto_start?: boolean | null;
+  status?: { state?: string; [k: string]: unknown } | null;
+  spots?: { preset_token?: string; stay_time_seconds?: number; [k: string]: unknown }[] | null;
+  [k: string]: unknown;
+}
+
+export interface FederatedTourList extends Partial<NodeTagged> {
+  items?: FederatedTour[] | null;
+  /** false when the camera has no tour support at all — different from having none. */
+  supported?: boolean;
+  [k: string]: unknown;
+}
+
+/** Start | Stop | Pause, as the device spells them. Passed through rather than
+ *  lower-cased: the recorder refuses a spelling it does not recognise instead of
+ *  guessing, and the wire value is what decides between starting a patrol and
+ *  ending one. */
+export type TourOperation = "Start" | "Stop" | "Pause";
+
+/* --- device I/O: digital inputs and relay outputs (federation) -------------- */
+
+/** One relay on the camera's DEVICE.
+ *
+ *  `settings.mode` is Bistable (stays where it is put) or Monostable (returns by
+ *  itself after `delay_seconds`). It is three-valued for a reason: null means the
+ *  device did not report its mode, NOT that there is a way back. */
+export interface FederatedRelay {
+  token: string;
+  settings?: {
+    mode?: string | null;
+    idle_state?: string | null;
+    delay_seconds?: number | null;
+    [k: string]: unknown;
+  } | null;
+  [k: string]: unknown;
+}
+
+/** `GET …/cameras/{id}/io` — the DEVICE's inputs and relays.
+ *
+ *  `scope: "device"` is the contract, and `channels_on_device` / `channel_names`
+ *  are the load-bearing part of it: on a multi-channel encoder, driving a relay
+ *  from one camera's page acts on every channel sharing that box.
+ *
+ *  `relay_state_readable` is false on every ONVIF device: the protocol offers no
+ *  way to read a relay's present state — it is only reported as an event. What a
+ *  console can show is how the relay is CONFIGURED, never where it sits. */
+export interface FederatedIo extends Partial<NodeTagged> {
+  scope?: string;
+  device_host?: string | null;
+  channels_on_device?: number;
+  channel_names?: string[] | null;
+  relay_state_readable?: boolean;
+  relay_state_detail?: string | null;
+  digital_input_detail?: string | null;
+  device_io_supported?: boolean;
+  digital_inputs?: { token?: string; [k: string]: unknown }[] | null;
+  relay_outputs?: FederatedRelay[] | null;
+  [k: string]: unknown;
+}
+
 /* --- archive + restore, the cold tier (federation, read-only) --------------- */
 
 /** `GET …/storage/archive` — the recorder's archive posture.

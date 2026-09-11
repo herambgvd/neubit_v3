@@ -31,7 +31,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import vms from "../api";
-import type { FederatedPatrol, FederatedPreset, PtzMoveBody } from "../types";
+import type { FederatedPatrol, FederatedPreset, FederatedTour, PtzMoveBody, TourOperation } from "../types";
 import PatrolEditorModal from "./PatrolEditorModal";
 
 const MOVE_SPEED = 0.6;
@@ -98,6 +98,20 @@ export default function PtzOverlay({ nodeId, cameraId, canControl }: PtzOverlayP
   const presetsSupported = presetsQ.data?.supported !== false;
   const patrol: FederatedPatrol | undefined = patrolQ.data;
   const patrolRunning = !!patrol?.enabled;
+
+  // The CAMERA's own tours, which are a different mechanism from the recorder's
+  // patrol above: a preset tour lives in the device's firmware and keeps moving
+  // after this tab closes. Both exist on the same camera and neither knows about
+  // the other, so they are shown as what they are rather than merged into one
+  // "patrol" that would lie about which is running.
+  const toursKey = ["vms", "federation", "tours", nodeId, cameraId];
+  const toursQ = useQuery({
+    queryKey: toursKey,
+    queryFn: () => vms.federation.tours.list(nodeId, cameraId),
+    retry: false,
+  });
+  const tours: FederatedTour[] = asItems(toursQ.data);
+  const touring = tours.some((t) => isTouring(t));
 
   // ── hold-to-move plumbing ───────────────────────────────────────────────
   // Each command branches on the node ids themselves (not `federated`) so the
@@ -222,6 +236,18 @@ export default function PtzOverlay({ nodeId, cameraId, canControl }: PtzOverlayP
     }
   };
 
+  const operateTour = async (tour: string, operation: TourOperation) => {
+    try {
+      await vms.federation.tours.operate(nodeId, cameraId, tour, operation);
+      // Re-read rather than assume: the DEVICE decides whether it started, and a
+      // tour we optimistically marked "Touring" would be this console reporting
+      // its own intention back to itself.
+      qc.invalidateQueries({ queryKey: toursKey });
+    } catch (e) {
+      toast.error(apiError(e, `Could not ${operation.toLowerCase()} the tour`));
+    }
+  };
+
   // ── patrol actions ──────────────────────────────────────────────────────
   // One host-driven patrol per camera, run by the recorder. Start/stop is the
   // whole operator surface; the stop list is edited in PatrolEditorModal.
@@ -340,6 +366,11 @@ export default function PtzOverlay({ nodeId, cameraId, canControl }: PtzOverlayP
           >
             <Icon icon="heroicons-outline:map" className="text-xs" />
             Patrol
+            {touring && !patrolRunning && (
+              <span className="rounded-sm bg-cyan-500/20 px-1 py-0.5 text-[9px] font-semibold uppercase text-cyan-300">
+                Tour
+              </span>
+            )}
             {patrolRunning && (
               <span className="rounded-sm bg-emerald-500/20 px-1 py-0.5 text-[9px] font-semibold uppercase text-emerald-300">
                 On
@@ -348,6 +379,9 @@ export default function PtzOverlay({ nodeId, cameraId, canControl }: PtzOverlayP
             <Icon icon="heroicons-mini:chevron-down" className={`text-xs transition ${showPatrol ? "rotate-180" : ""}`} />
           </button>
 
+          {showPatrol && tours.length > 0 && (
+            <TourStrip tours={tours} canControl={canControl} onOperate={operateTour} />
+          )}
           {showPatrol && (
             <PatrolPanel
               patrol={patrol}
@@ -543,5 +577,75 @@ function PanelButton({ icon, label, onClick, disabled }: PanelButtonProps) {
       <Icon icon={icon} className="text-xs" />
       {label}
     </button>
+  );
+}
+
+// ── the camera's OWN preset tours ────────────────────────────────────────────
+//
+// Separate from PatrolPanel above, and deliberately not merged with it. The
+// recorder's patrol is stepped by the recorder; a preset tour is stored in the
+// camera's firmware and keeps running after every console is closed. They can
+// both exist on one camera, and a single "patrol" control would have to pick one
+// to report — which is how an operator stops a patrol and watches the head carry
+// on moving.
+//
+// OPERATE ONLY. Writing a tour is authorship on the device (camera.manage), which
+// a federation credential does not carry, so there is no edit here and no button
+// that could only produce a refusal.
+
+/** The DEVICE's answer, not ours. A tour survives this tab, so anything we
+ *  remembered about starting one would be reporting our own history back. */
+export function isTouring(tour: FederatedTour): boolean {
+  return String(tour.status?.state ?? "").toLowerCase() === "touring";
+}
+
+/** What the device says it is doing, in its own vocabulary. Idle when it has not
+ *  said — the ONVIF states are Idle | Touring | Paused | Extended, and inventing a
+ *  fifth would be this console guessing. */
+export function tourState(tour: FederatedTour): string {
+  return String(tour.status?.state ?? "Idle");
+}
+
+function TourStrip({
+  tours,
+  canControl,
+  onOperate,
+}: {
+  tours: FederatedTour[];
+  canControl: boolean;
+  onOperate: (tour: string, operation: TourOperation) => void;
+}) {
+  return (
+    <div className="absolute bottom-full right-0 z-40 mb-2 w-64 rounded-xl border border-white/15 bg-[rgba(8,14,28,.96)] p-2.5 shadow-xl">
+      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[1.2px] text-white/50">
+        Camera tours
+      </p>
+      <ul className="space-y-1">
+        {tours.map((t) => {
+          const running = isTouring(t);
+          return (
+            <li key={t.token} className="flex items-center gap-2 text-[11.5px]">
+              <span className="min-w-0 flex-1 truncate text-white/85">
+                {t.name || t.token}
+                <span className="ml-1.5 text-white/40">{tourState(t)}</span>
+              </span>
+              {canControl && (
+                <button
+                  type="button"
+                  onClick={() => onOperate(t.token, running ? "Stop" : "Start")}
+                  className="shrink-0 rounded-md bg-white/10 px-2 py-0.5 text-[11px] text-white/85 transition hover:bg-white/20"
+                >
+                  {running ? "Stop" : "Start"}
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="mt-2 text-[10px] text-white/40">
+        Stored on the camera — these keep running after this window closes. Editing them is the
+        recorder&apos;s.
+      </p>
+    </div>
   );
 }
