@@ -9,12 +9,19 @@ where it can be argued with.
 
 ## What was fixed
 
-| | before | after |
+| | first scan | now |
 |---|---|---|
-| Bugs | 41 | 9 |
-| Vulnerabilities | 27 | 19 |
+| Bugs | 41 | **0** — reliability **A** |
+| Vulnerabilities | 27 | **1** |
+| Code smells | 2,625 | 2,640 — maintainability **A** |
 
-Everything remaining in those two columns is listed under **Answered** below.
+One finding remains, and it is the only one in the repo that cannot be fixed
+without breaking the product. It is documented below as a waiver.
+
+The second pass exists because a report goes to STQC, and "explained away" is a
+weaker answer than "gone". Of the 28 findings judged false positives after the
+first pass, 27 could be made to stop being findings without pretending anything —
+so they were, and several of those changes are improvements on their own merits.
 
 The fixes are in `35dcac8` and the commit that follows it. The ones worth naming:
 
@@ -39,7 +46,46 @@ The fixes are in `35dcac8` and the commit that follows it. The ones worth naming
 * **Ten controls a keyboard could not reach** — among them resetting a user's MFA
   and uploading a floor plan, whose file input is `display:none`.
 
-## Answered: why the remaining findings stay
+## The one waiver
+
+**`python:S4790` — SHA-1 in `core/app/auth/security.py`.**
+
+It is HMAC-SHA1 inside a TOTP implementation. RFC 6238 §1.2 specifies HMAC-SHA-1
+as the default, and every authenticator application in circulation — Google
+Authenticator, Microsoft Authenticator, Authy, 1Password — assumes it. Changing it
+would invalidate every code already enrolled on every user's phone.
+
+SHA-1's weakness is COLLISION resistance, which matters for signatures and
+certificates. HMAC does not rely on collision resistance; HMAC-SHA1 has no
+practical attack and is not deprecated for this use (NIST SP 800-107 Rev. 1 §5.3.4
+says so explicitly). The finding is a pattern match on the algorithm name, not on
+how it is used.
+
+Nothing else in the codebase uses SHA-1: password hashing is Argon2, tokens are
+HS256, and evidence checksums are SHA-256.
+
+## What the second pass changed rather than waived
+
+* **Every container is non-root**, ops-agent included. The socket is mode 0660, so
+  what it needs is the socket's GROUP, not uid 0 — supplied per-deployment because
+  that gid differs by host.
+* **One source of randomness.** `crypto.getRandomValues` and `secrets` throughout,
+  behind `lib/random`, which rejects modulo bias rather than taking `byte % n`.
+* **`$ref` validation became an ALLOW-LIST.** It listed the five schemes somebody
+  thought of to refuse; `data:`, `jar:`, `gopher:` and a bare relative path were
+  all permitted by omission. It now asks whether a ref is local, which is closed by
+  construction. Seven tests fail against the old block-list.
+* **The restore dump left /tmp** — world-writable as well as world-readable, so the
+  path could be pre-created and written through as a symlink.
+* **`database_url` lost its default entirely.** With a password it is a credential
+  in version control; without one it is a passwordless database. Getting the
+  opposite complaint for the opposite fix is the tell that the default was wrong.
+* **Backdrops became real buttons**, out of the tab order and hidden from assistive
+  tech where a dialog already has a named close control.
+
+## The first pass, for the record
+
+### Answered at the time — since fixed rather than waived
 
 These are not "ignore"; each has a reason, and the reason is the thing to
 re-examine if the code around it changes. The analysis token cannot mark issues in

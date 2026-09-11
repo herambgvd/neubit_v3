@@ -34,12 +34,28 @@ class ValidationResult:
     errors: list[str] = field(default_factory=list)
 
 
-#: `$ref` values that would send the validator out to the network. jsonschema 4.x
-#: resolves these through `referencing`, which WILL fetch on a host with egress —
-#: so a tenant who can save a webhook schema could make this service issue
-#: requests of their choosing, from inside the network. It has been safe here only
-#: because the test sandbox has no network, which is not a control.
-_REMOTE_REF_PREFIXES = ("http://", "https://", "//", "file:", "ftp:")
+#: A `$ref` that leaves the document sends the validator out to the network.
+#: jsonschema 4.x resolves refs through `referencing`, which WILL fetch on a host
+#: with egress — so a tenant who can save a webhook schema could make this
+#: service issue requests of their choosing, from inside the network. It has been
+#: safe here only because the test sandbox has no network, which is not a control.
+#:
+#: AN ALLOW-LIST, NOT A BLOCK-LIST, and the difference is the point. The first
+#: version listed the schemes to refuse — http, https, //, file, ftp — which
+#: refuses exactly the five somebody thought of. `data:`, `jar:`, `gopher:` and
+#: whatever `referencing` learns next were all permitted by omission. A local ref
+#: is "#" or "#/…" and nothing else, so saying THAT is both shorter and closed:
+#: anything unrecognised is refused rather than allowed.
+
+
+def _is_local_ref(ref: str) -> bool:
+    """A `$ref` that names somewhere inside this same document.
+
+    JSON Schema writes those as a fragment: bare "#" for the root, "#/..." for a
+    pointer into it. Everything else — a scheme, a bare path, a protocol-relative
+    "//host" — names somewhere the validator would have to go and fetch.
+    """
+    return ref.startswith("#")
 
 
 def _remote_refs(node: Any, found: list[str] | None = None) -> list[str]:
@@ -47,7 +63,7 @@ def _remote_refs(node: Any, found: list[str] | None = None) -> list[str]:
     found = [] if found is None else found
     if isinstance(node, dict):
         ref = node.get("$ref")
-        if isinstance(ref, str) and ref.lower().startswith(_REMOTE_REF_PREFIXES):
+        if isinstance(ref, str) and not _is_local_ref(ref.strip()):
             found.append(ref)
         for value in node.values():
             _remote_refs(value, found)

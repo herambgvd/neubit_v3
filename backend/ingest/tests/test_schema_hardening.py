@@ -52,6 +52,17 @@ def test_a_malformed_schema_is_an_error_not_a_crash(schema, label):
         "http://169.254.169.254/latest/meta-data/",
         "//example.com/schema.json",
         "file:///etc/passwd",
+        # The four above are what a block-list would have listed. These are the
+        # ones it would have missed — and the reason the check asks "is this
+        # local" instead of "is this one of the schemes we thought of".
+        "ftp://example.com/schema.json",
+        "data:application/json,{}",
+        "jar:file:///tmp/x.jar!/schema.json",
+        "gopher://example.com/1",
+        "schema.json",
+        "/etc/passwd",
+        "../sibling.json",
+        "HTTPS://EXAMPLE.COM/schema.json",
     ],
 )
 def test_a_ref_that_leaves_the_document_is_refused(ref):
@@ -117,3 +128,22 @@ def test_a_real_validation_failure_still_names_the_field():
     result = validate_payload({"a": 1}, schema)
     assert result.ok is False
     assert result.errors[0].startswith("a: "), result.errors
+
+
+@pytest.mark.parametrize("ref", ["#", "#/$defs/thing", "#/definitions/thing", "  #/$defs/thing  "])
+def test_a_local_ref_is_still_allowed(ref):
+    """The other half of an allow-list: closing the door must not close it on the
+    refs schemas legitimately use. A bare "#" is the document root; "#/..." is a
+    pointer into it. Both stay."""
+    from app.ingest.transform import _is_local_ref
+
+    assert _is_local_ref(ref.strip()) is True
+
+
+def test_the_check_is_an_allow_list_not_a_scheme_list():
+    """Stated as a property, because the failure mode of a block-list is silence:
+    it keeps passing while the world adds schemes it has never heard of."""
+    from app.ingest.transform import _is_local_ref
+
+    for made_up in ("weird-scheme://host/x", "x-custom:thing", "//host/x", "s3://bucket/key"):
+        assert _is_local_ref(made_up) is False, made_up
