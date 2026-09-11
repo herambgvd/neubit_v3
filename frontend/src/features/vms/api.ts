@@ -91,6 +91,11 @@ import type {
   NodeStoragePoolList,
   NodeStorageUsage,
   NodeTierRuleList,
+  CameraRecordingConfig,
+  ScheduleApplyResult,
+  ScheduleTemplate,
+  ScheduleTemplateBody,
+  ScheduleTemplateList,
   NodeUpstreamNvrStorage,
   PatternCreate,
   PatternListResponse,
@@ -369,6 +374,41 @@ export const vms = {
       tierRules: (nodeId: string) => unwrap(api.get<NodeTierRuleList>(`/vms/federation/nodes/${nodeId}/storage/tier-rules`)),
       upstreamNvr: (nodeId: string, nvrId: string) =>
         unwrap(api.get<NodeUpstreamNvrStorage>(`/vms/federation/nodes/${nodeId}/nvrs/${nvrId}/storage`)),
+    },
+
+    // ── recording schedules — the one CONFIG the VMS authors on a recorder ─────
+    // Everything else on this client operates a recorder; these write to it. The
+    // node's credential carries exactly one authorship grant and this is what it
+    // is for: "record 09:00-18:00 on weekdays" is weekly operator work that used
+    // to mean opening each recorder's own console.
+    schedules: {
+      list: (nodeId: string) =>
+        unwrap(api.get<ScheduleTemplateList>(`/vms/federation/nodes/${nodeId}/recording-schedule-templates`)),
+      create: (nodeId: string, body: ScheduleTemplateBody) =>
+        unwrap(api.post<ScheduleTemplate>(`/vms/federation/nodes/${nodeId}/recording-schedule-templates`, body)),
+      update: (nodeId: string, templateId: string, body: ScheduleTemplateBody) =>
+        unwrap(api.put<ScheduleTemplate>(
+          `/vms/federation/nodes/${nodeId}/recording-schedule-templates/${templateId}`, body)),
+      remove: (nodeId: string, templateId: string) =>
+        unwrap(api.delete<void>(
+          `/vms/federation/nodes/${nodeId}/recording-schedule-templates/${templateId}`)),
+      // Applying COPIES the document onto each camera. Editing the template later
+      // does NOT reach back into them — the recorder says so, and the screen must
+      // not imply a link that is not there.
+      apply: (nodeId: string, templateId: string, cameraIds: string[]) =>
+        unwrap(api.post<ScheduleApplyResult>(
+          `/vms/federation/nodes/${nodeId}/recording-schedule-templates/${templateId}/apply`,
+          { camera_ids: cameraIds })),
+      // One camera's own config, read and written through its recorder. The PUT is
+      // a PATCH: send only what is being changed. The same permission also gates
+      // retention_days on this endpoint, so a schedule edit that posted the whole
+      // object back would be deciding how long footage survives as a side effect.
+      camera: (nodeId: string, cameraId: string) =>
+        unwrap(api.get<CameraRecordingConfig>(
+          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/recording-config`)),
+      setCamera: (nodeId: string, cameraId: string, patch: Partial<CameraRecordingConfig>) =>
+        unwrap(api.put<CameraRecordingConfig>(
+          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/recording-config`, patch)),
     },
   },
 

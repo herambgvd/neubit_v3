@@ -129,6 +129,7 @@ export default function AppLayout({ children }: { children?: ReactNode }) {
     pathname === "/roles" ||
     pathname === "/tags" ||
     pathname === "/config/patterns" ||
+    pathname === "/config/recording-schedules" ||
     pathname === "/config/linkage" ||
     pathname === "/config/video-wall" ||
     pathname === "/system" ||

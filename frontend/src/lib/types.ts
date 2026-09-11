@@ -495,6 +495,19 @@ export interface FederatedCamera {
   status?: string;
   node_id: string;
   node_name: string;
+  /** The camera's recording config as its recorder holds it — it rides on the
+   *  estate list, so a screen that needs every camera's mode and week does not
+   *  have to ask the recorder once per channel.
+   *
+   *  `mode` is the field that decides whether a schedule runs at all: a camera in
+   *  `manual` has its week set and ignores it. Anything showing a schedule without
+   *  it is telling somebody they are covered when they may not be. */
+  recording?: {
+    mode?: string | null;
+    schedule?: Record<string, unknown> | null;
+    retention_days?: number | null;
+    [k: string]: unknown;
+  } | null;
   [k: string]: unknown;
 }
 

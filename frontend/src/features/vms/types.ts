@@ -1252,6 +1252,76 @@ export interface NodeUpstreamNvrStorage extends Partial<NodeTagged> {
   [k: string]: unknown;
 }
 
+/* --- recording schedules (federation) -------------------------------------- */
+
+/** The recorder's schedule document, in the WEEKLY GRID shape: a day key mapped to
+ *  24 hourly slots. The recorder accepts a second shape too (day windows with
+ *  start/end times); the painter writes this one because it is the only one that
+ *  can say "motion only between 22:00 and 06:00" per hour.
+ *
+ *  Typed loosely on purpose. This document is the RECORDER's, it validates it, and
+ *  a narrower type here would be this console asserting a shape it does not own —
+ *  and would refuse to render a valid schedule written by a sibling console. */
+export type ScheduleDocument = Record<string, unknown>;
+
+export interface ScheduleTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  schedule?: ScheduleDocument | null;
+  created_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  [k: string]: unknown;
+}
+
+export interface ScheduleTemplateList extends Partial<NodeTagged> {
+  items?: ScheduleTemplate[] | null;
+  total?: number;
+  [k: string]: unknown;
+}
+
+export interface ScheduleTemplateBody {
+  name: string;
+  description?: string;
+  schedule: ScheduleDocument;
+}
+
+/** `POST …/{id}/apply` — a PER-CAMERA outcome, never all-or-nothing. One camera the
+ *  credential may not touch does not cost the other thirty-nine, and the counts are
+ *  the only audit of a fan-out nobody watched. */
+export interface ScheduleApplyOutcome {
+  camera_id: string;
+  status: "applied" | "skipped" | "failed" | string;
+  reason?: string;
+}
+
+export interface ScheduleApplyResult extends Partial<NodeTagged> {
+  template_id?: string;
+  requested: number;
+  applied: number;
+  skipped: number;
+  failed: number;
+  results?: ScheduleApplyOutcome[] | null;
+}
+
+/** One camera's recording config as its recorder holds it.
+ *
+ *  `mode` is the field that decides whether the schedule runs at all: a camera in
+ *  `manual` has its week set and ignores it. Showing the schedule without the mode
+ *  is how a console tells somebody they are covered when they are not. */
+export interface CameraRecordingConfig extends Partial<NodeTagged> {
+  camera_id?: string;
+  mode?: string | null;
+  schedule?: ScheduleDocument | null;
+  retention_days?: number | null;
+  fps?: number | null;
+  record_substream?: boolean | null;
+  pre_buffer_seconds?: number | null;
+  post_buffer_seconds?: number | null;
+  [k: string]: unknown;
+}
+
 /* --- console-side derived shapes ------------------------------------------ */
 
 /** A federated camera as `useEstateCameras` folds it into the rail: the

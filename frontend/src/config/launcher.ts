@@ -323,6 +323,15 @@ export const LAUNCHER_MODES: LauncherMode[] = [
         tiles: [
           { icon: "heroicons:video-camera", label: "Devices", href: "/devices/cameras", tone: "blue", perm: "vms.camera.read", module: "vms" },
           { icon: "heroicons:circle-stack", label: "Storage", href: "/storage", tone: "blue", perm: "vms.camera.read", module: "vms" },
+          // WHEN a camera records, beside WHERE its footage lands. The recorder owns
+          // both; this is the one piece of its config the federation credential may
+          // author, because "record 09:00-18:00 on weekdays" is weekly operator work
+          // and it used to mean opening each recorder's own console.
+          //
+          // Gated on camera.read so an operator can SEE the estate's schedules; every
+          // write on the screen is behind vms.config.manage and its controls are
+          // absent without it.
+          { icon: "heroicons:calendar-days", label: "Recording Schedules", href: "/config/recording-schedules", tone: "blue", perm: "vms.camera.read", module: "vms" },
           { icon: "heroicons:bolt", label: "Linkage & Policies", href: "/config/linkage", tone: "att", perm: "vms.camera.read", module: "vms" },
           { icon: "heroicons:computer-desktop", label: "Wall Layouts", href: "/config/video-wall", tone: "blue", perm: "vms.wall.manage", module: "vms" },
           // Beside Wall Layouts on purpose: a wall layout is where tiles GO, a pattern

@@ -633,6 +633,24 @@ const PASSTHROUGH: Record<string, string> = {
   "features/vms/types.ts:NodeTierRule": "proxied verbatim from a remote recorder's storage API",
   "features/vms/types.ts:NodeTierRuleList": "proxied verbatim from a remote recorder's storage API",
   "features/vms/types.ts:NodeUpstreamNvrStorage": "proxied verbatim from a remote recorder's storage API",
+  // ── recording schedules ────────────────────────────────────────────────────
+  // The schedule library and a camera's recording config are the RECORDER's, and
+  // its DTOs are Go in another repo (internal/estate/schedules/dto.go,
+  // internal/estate/recording.go) — there is no Pydantic model here to compare
+  // against because vision proxies these bodies through untouched, deliberately:
+  // the PUT is a patch, and a shape declared here would be this console deciding
+  // what a partial write carries.
+  //
+  // What matters about them is guarded by name on both sides instead — the
+  // per-camera apply outcome and the verbatim body in
+  // `tests/test_federation_schedules.py`, the document shapes in
+  // `features/vms/components/weekSchedule.test.ts`.
+  "features/vms/types.ts:ScheduleTemplate": "the recorder's schedule template, proxied verbatim",
+  "features/vms/types.ts:ScheduleTemplateList": "the recorder's template library, proxied verbatim",
+  "features/vms/types.ts:ScheduleTemplateBody": "the create/update body the recorder validates, sent verbatim",
+  "features/vms/types.ts:ScheduleApplyOutcome": "one camera's outcome from the recorder's apply-to-many",
+  "features/vms/types.ts:ScheduleApplyResult": "the recorder's per-camera apply report, proxied verbatim",
+  "features/vms/types.ts:CameraRecordingConfig": "a camera's recording config as its recorder holds it",
 };
 
 /**
