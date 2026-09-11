@@ -89,6 +89,11 @@ export default function ApplyScheduleModal({ nodeId, template, onClose }: Readon
     });
 
   const idle = cameras.filter((c) => picked.has(c.id) && ignoresSchedule(c));
+  const noun = picked.size === 1 ? "camera" : "cameras";
+  let applyLabel = `Apply to ${picked.size || "no"} ${noun}`;
+  if (apply.isPending) applyLabel = "Applying…";
+  const outcome = new Map((result?.results ?? []).map((r) => [r.camera_id, r]));
+
   // The three states of the list, named rather than chained inside the JSX. A
   // reader looking for "what does this show when there are no cameras" finds it
   // here instead of counting colons.
@@ -144,10 +149,6 @@ export default function ApplyScheduleModal({ nodeId, template, onClose }: Readon
   // Built in steps rather than as one expression: "no cameras", "1 camera",
   // "7 cameras" and "Applying…" are four different sentences, and reading them off
   // a chain of colons is how the singular ends up on the plural.
-  const noun = picked.size === 1 ? "camera" : "cameras";
-  let applyLabel = `Apply to ${picked.size || "no"} ${noun}`;
-  if (apply.isPending) applyLabel = "Applying…";
-  const outcome = new Map((result?.results ?? []).map((r) => [r.camera_id, r]));
 
   return (
     <Modal
