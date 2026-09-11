@@ -243,15 +243,7 @@ def create_app(
         f"{prefix}/branding",
     )
 
-    # Middleware: LAST added is OUTERMOST → request logging wraps everything.
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origins,
-        allow_origin_regex=settings.cors_origin_regex,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # Middleware: LAST added is OUTERMOST.
     # On-prem/single-tenant only. The multi-tenant edition gates per tenant per
     # request instead, and sets VE_LICENSE_ENFORCE_GLOBAL=false.
     if settings.license_enforce_global:
@@ -265,10 +257,35 @@ def create_app(
     )
     app.add_middleware(MetricsMiddleware)
     app.add_middleware(RequestLoggingMiddleware)
-    # Added last, so it is the OUTERMOST middleware — the body has to be measured
-    # before anything reads it. Starlette's multipart parser spools parts over
-    # 1 MiB to disk, so a handler-side cap protects the heap and nothing else.
+    # Near-outermost — the body has to be measured before anything reads it.
+    # Starlette's multipart parser spools parts over 1 MiB to disk, so a
+    # handler-side cap protects the heap and nothing else.
     app.add_middleware(RequestSizeLimitMiddleware)
+
+    # CORS LAST, so it is the OUTERMOST middleware, and this is a correctness fix
+    # rather than a style preference.
+    #
+    # It used to be added FIRST, which made it the innermost — so every response
+    # produced by a middleware OUTSIDE it never passed back through it and carried
+    # no Access-Control-Allow-Origin. A cross-origin client hitting the rate limit
+    # (429), an expired licence (402) or the body cap (413) did not see any of
+    # those: the browser blocked the response and reported a CORS failure, which
+    # sends the reader to look at configuration instead of at the rate limit they
+    # actually hit. Same-origin traffic through the gateway never showed it, which
+    # is why it survived — but cors_origins exists precisely because other origins
+    # are expected (see docs/MOBILE_CLIENT_CONTRACT.md).
+    #
+    # Outermost also means a preflight OPTIONS is answered here, rather than being
+    # rate-limited and licence-checked on its way to an answer it was always going
+    # to get. The body cap is unaffected: CORS reads headers, never the body.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_origin_regex=settings.cors_origin_regex,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     register_error_handlers(app)
 
