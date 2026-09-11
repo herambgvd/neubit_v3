@@ -68,8 +68,8 @@ function splitDefault(rest: string): { type: string; hasDefault: boolean } {
 // `[ \t]`, not `\s`, either side of the colon: `\s*` and `.+` both match a space,
 // so a line with a long run after the colon has many parses and the engine walks
 // them. The narrower class leaves nothing to backtrack over.
-const FIELD = /^ {4}([A-Za-z_][A-Za-z0-9_]*)[ \t]*:[ \t]*(\S.*)$/;
-const CLASS = /^class[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]*(?:\(([^)]*)\))?[ \t]*:/;
+const FIELD = /^ {4}([A-Za-z_]\w*)[ \t]*:[ \t]*(\S.*)$/;
+const CLASS = /^class[ \t]+([A-Za-z_]\w*)[ \t]*(?:\(([^)]*)\)[ \t]*)?:/;
 
 /** Every model class in one Python file, keyed by class name. */
 export function parseModels(file: string): Map<string, PythonModel> {

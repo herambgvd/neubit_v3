@@ -773,7 +773,7 @@ export default function PlaybackPlayer({
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `${cameraName || cameraId || "snapshot"}-${readout(current).replace(/:/g, "-")}.png`;
+        a.download = `${cameraName || cameraId || "snapshot"}-${readout(current).replaceAll(/:/g, "-")}.png`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);

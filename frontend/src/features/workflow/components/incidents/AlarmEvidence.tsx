@@ -145,7 +145,7 @@ export function EvidencePicture({
   }
 
   const eventTime = incEventTime(incident);
-  const eventMs = eventTime ? new Date(eventTime).getTime() : NaN;
+  const eventMs = eventTime ? new Date(eventTime).getTime() : Number.NaN;
   if (!Number.isFinite(eventMs)) {
     return (
       <Blank
@@ -177,7 +177,7 @@ export function EvidencePicture({
 /** The window the case plays: a run-up before the event, and the minute after. */
 export function evidenceWindow(incident: InstancePublic): { fromMs: number; toMs: number; eventMs: number } | null {
   const at = incEventTime(incident);
-  const eventMs = at ? new Date(at).getTime() : NaN;
+  const eventMs = at ? new Date(at).getTime() : Number.NaN;
   if (!Number.isFinite(eventMs)) return null;
   return { fromMs: eventMs - PRE_ROLL_MS, toMs: eventMs + POST_ROLL_MS, eventMs };
 }

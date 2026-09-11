@@ -15,5 +15,5 @@ export const TEMPLATE_META: Record<string, { icon: string; desc: string }> = {
 };
 
 export function titleCase(name: string | null | undefined): string {
-  return (name || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return (name || "").replaceAll(/_/g, " ").replaceAll(/\b\w/g, (c) => c.toUpperCase());
 }

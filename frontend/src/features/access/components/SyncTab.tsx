@@ -186,7 +186,7 @@ function CountsCell({ counts }: { counts: Record<string, SyncCollectionCounts> }
         const c: Partial<SyncCollectionCounts> = typeof v === "object" && v !== null ? v : {};
         return (
           <div key={k} className="rounded-sm border border-card-border bg-hover px-2 py-1 text-[10px] leading-tight">
-            <div className="mb-0.5 font-semibold uppercase tracking-wider text-muted">{k.replace(/_/g, " ")}</div>
+            <div className="mb-0.5 font-semibold uppercase tracking-wider text-muted">{k.replaceAll(/_/g, " ")}</div>
             {typeof v === "object" && v !== null ? (
               <div className="flex gap-2">
                 <span className="text-green-500">+{c.created || 0}</span>

@@ -1046,7 +1046,7 @@ const TONE_CHIP: Record<TimelineTone, string> = {
 function metaFor(action: string): ActionMeta {
   return (
     ACTION_META[action] ?? {
-      label: humanizeKey(action).replace(/\./g, " "),
+      label: humanizeKey(action).replaceAll(/\./g, " "),
       tone: "default",
       Icon: Activity,
     }

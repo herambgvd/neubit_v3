@@ -248,7 +248,7 @@ export function AreaTrend({
   const [hover, setHover] = useState<number | null>(null);
   // A per-instance id for the <linearGradient>. useId is stable across renders
   // and unique per component instance, so two charts on a page cannot collide.
-  const gradId = `grad-${useId().replace(/:/g, "")}`;
+  const gradId = `grad-${useId().replaceAll(/:/g, "")}`;
 
   if (!data.length) return <div ref={wrapRef}><ChartEmpty /></div>;
 

@@ -30,7 +30,7 @@ export interface SlaRingProps {
 export function slaFraction(incident: InstancePublic, now: number): number | null {
   const sla = slaFor(incident, now);
   if (!sla) return null;
-  const raised = incident.created_at ? new Date(incident.created_at).getTime() : NaN;
+  const raised = incident.created_at ? new Date(incident.created_at).getTime() : Number.NaN;
   if (!Number.isFinite(raised)) return null;
   const span = sla.deadline - raised;
   if (span <= 0) return null;

@@ -72,7 +72,7 @@ export function newBlock(type: BlockType): Block {
  * in a mail client — while `{`/`}` are left alone.
  */
 export function escapeText(value: string): string {
-  return (value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return (value || "").replaceAll(/&/g, "&amp;").replaceAll(/</g, "&lt;").replaceAll(/>/g, "&gt;");
 }
 
 /** A URL fit for an href/src. Rejects anything that is not http(s) or a placeholder. */
@@ -92,7 +92,7 @@ function renderBlock(b: Block): string {
       return `<h${b.level || 2} style="margin:0 0 12px;font-size:${size};${align}">${escapeText(b.text || "")}</h${b.level || 2}>`;
     }
     case "text":
-      return `<p style="margin:0 0 12px;${align}">${escapeText(b.text || "").replace(/\n/g, "<br>")}</p>`;
+      return `<p style="margin:0 0 12px;${align}">${escapeText(b.text || "").replaceAll(/\n/g, "<br>")}</p>`;
     case "button": {
       const href = safeUrl(b.url || "");
       if (!href) return "";

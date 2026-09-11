@@ -94,7 +94,7 @@ export default function ZoneForm({ zone, onCancel, onSaved }: ZoneFormProps) {
           label="Zone type"
           value={zoneType}
           onChange={setZoneType}
-          options={ZONE_TYPES.map((t) => ({ value: t, label: t.replace(/_/g, " ") }))}
+          options={ZONE_TYPES.map((t) => ({ value: t, label: t.replaceAll(/_/g, " ") }))}
         />
         <FSelect<ThreatLevel>
           label="Threat level"

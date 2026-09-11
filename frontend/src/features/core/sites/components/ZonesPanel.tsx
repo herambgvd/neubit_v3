@@ -119,7 +119,7 @@ export default function ZonesPanel({ site }: { site: SitePublic }) {
                     <span className="text-sm font-semibold text-nb-ink">{z.name}</span>
                     {z.zone_type && (
                       <span className="text-[10px] rounded-full bg-blue-500/10 text-blue-500 px-1.5 py-0.5 font-medium capitalize">
-                        {z.zone_type.replace(/_/g, " ")}
+                        {z.zone_type.replaceAll(/_/g, " ")}
                       </span>
                     )}
                     <span className={`text-[10px] rounded-full border px-1.5 py-0.5 font-medium uppercase tracking-wide ${THREAT_PILL[z.threat_level] || THREAT_PILL.normal}`}>

@@ -96,11 +96,27 @@ _SECONDS = {
 }
 
 
+# `_QTY_UNIT_RE`, and the NAME is the point: the first attempt called this
+# `_INTERVAL_RE`, which already exists above as the VALIDATOR — the whitelist that
+# decides what may be interpolated into `INTERVAL '<value>'` in DDL. A module-level
+# rebind would have silently replaced it, and the thing that stops an environment
+# variable reaching SQL would have been this looser pattern instead.
+#
+# `\d`, `[ \t]` and `[A-Za-z]` are disjoint, so there is nothing here for an engine
+# to re-split, and no `\b` is needed to make that true. Compiling once is the only
+# part of the original change worth keeping.
+#
+# This runs only on strings `_INTERVAL_RE` has already accepted, so every unit is a
+# full word separated by whitespace — which is why `_SECONDS` is keyed on words and
+# why a compact "1h30m" is not a case to handle here: it never gets this far.
+_QTY_UNIT_RE = re.compile(r"(\d+)[ \t]*([A-Za-z]+)")
+
+
 def approx_seconds(interval: str) -> float:
     total = 0.0
-    # `[ \t]`, not `\s`: an interval is "90d" or "7 days" on one line, and the
-    # narrower class leaves the engine nothing to backtrack over.
-    for qty, unit in re.findall(r"(\d+)[ \t]*([A-Za-z]+)", interval):
+    # `[ \t]`, not `\s`: an interval is one line ("7 days", "1 hour 30 minutes"),
+    # and `\s` would also match the newlines that make a whitespace run ambiguous.
+    for qty, unit in _QTY_UNIT_RE.findall(interval):
         total += int(qty) * _SECONDS[unit.rstrip("s").lower()]
     return total
 

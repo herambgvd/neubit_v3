@@ -626,7 +626,7 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
         if (!blob) return;
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
-        const stamp = readout(clock).replace(/:/g, "-");
+        const stamp = readout(clock).replaceAll(/:/g, "-");
         a.href = url;
         a.download = `${activeSource?.name || "snapshot"}-${stamp}.png`;
         document.body.appendChild(a);

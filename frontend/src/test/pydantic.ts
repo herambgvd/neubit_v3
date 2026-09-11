@@ -75,8 +75,8 @@ function splitDefault(rest: string): { type: string; hasDefault: boolean } {
 // `[ \t]`, not `\s`, either side of the colon: `\s*` and `.+` both match a space,
 // so a line with a long run after the colon has many parses and the engine walks
 // them. The narrower class leaves nothing to backtrack over.
-const FIELD = /^ {4}([A-Za-z_][A-Za-z0-9_]*)[ \t]*:[ \t]*(\S.*)$/;
-const CLASS = /^class[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]*(?:\(([^)]*)\))?[ \t]*:/;
+const FIELD = /^ {4}([A-Za-z_]\w*)[ \t]*:[ \t]*(\S.*)$/;
+const CLASS = /^class[ \t]+([A-Za-z_]\w*)[ \t]*(?:\(([^)]*)\)[ \t]*)?:/;
 
 /** Every model class in one Python file, keyed by class name. */
 export function parseModels(file: string): Map<string, PythonModel> {
@@ -274,7 +274,7 @@ export function parseDictKeys(file: string, marker: string, open = "{"): string[
         // A string at depth 1 is a candidate key — keep it if a `:` follows.
         const close = text.indexOf(c, i + 1);
         if (close > 0) {
-          const after = text.slice(close + 1).match(/^[ \t\n]*(.)/);
+          const after = /^[ \t\n]*(.)/.exec(text.slice(close + 1));
           if (after && after[1] === ":") keys.push(text.slice(i + 1, close));
           i = close + 1;
           continue;
