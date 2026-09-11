@@ -306,7 +306,6 @@ function MapsForm({ initial }: { initial: Record<string, unknown> }) {
 interface BrandingValues {
   app_name: string;
   logo_url: string;
-  name_in_header: boolean;
 }
 
 function BrandingCard() {
@@ -334,7 +333,6 @@ function BrandingForm({ initial }: { initial: Branding }) {
   const [form, setForm] = useState<BrandingValues>(() => ({
     app_name: initial.app_name ?? "",
     logo_url: initial.logo_url ?? "",
-    name_in_header: !!initial.name_in_header,
   }));
 
   const uploadLogo = useMutation({
@@ -349,10 +347,7 @@ function BrandingForm({ initial }: { initial: Branding }) {
 
   const save = useMutation({
     mutationFn: () =>
-      adminApi.updatePlatformBranding({
-        app_name: form.app_name.trim(),
-        name_in_header: form.name_in_header,
-      }),
+      adminApi.updatePlatformBranding({ app_name: form.app_name.trim() }),
     onSuccess: () => {
       toast.success("Branding saved");
       qc.invalidateQueries({ queryKey: ["platform", "branding"] });
@@ -417,12 +412,6 @@ function BrandingForm({ initial }: { initial: Branding }) {
               </Button>
             </div>
           </Field>
-          <Toggle
-            label="Show name in header"
-            description="Display the app name alongside the logo."
-            checked={form.name_in_header}
-            onChange={set("name_in_header")}
-          />
       <div className="flex justify-end pt-1">
         <Button type="submit" loading={save.isPending}>
           Save

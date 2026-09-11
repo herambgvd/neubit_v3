@@ -198,11 +198,9 @@ export interface PlatformSettings {
 export interface Branding {
   id: string;
   app_name: string;
-  /** Resolved by the router at response time; null when no logo is uploaded. */
+  /** Resolved by the router at response time; null when nothing is uploaded. */
   logo_url: string | null;
-  primary_color: string;
-  accent_color: string;
-  name_in_header: boolean;
+  favicon_url: string | null;
 }
 
 /* --- billing (backend/core/app/billing/schemas.py) ------------------------- */

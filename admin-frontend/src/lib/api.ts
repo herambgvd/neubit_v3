@@ -413,7 +413,11 @@ export const adminApi = {
     return data;
   },
   async updatePlatformBranding(
-    body: Partial<Pick<Branding, "app_name" | "primary_color" | "accent_color" | "name_in_header">>
+    // app_name ONLY — that is the whole of UpdateBrandingIn. The colours and the
+    // header toggle were removed from the API (they governed nothing), and this
+    // type went on offering them: pydantic dropped them silently, so the console
+    // had a colour picker and a toggle that saved successfully and changed nothing.
+    body: Partial<Pick<Branding, "app_name">>
   ): Promise<Branding> {
     const { data } = await api.patch<Branding>("/admin/platform/branding", body);
     return data;

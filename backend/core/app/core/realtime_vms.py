@@ -38,15 +38,13 @@ from __future__ import annotations
 import asyncio
 import json
 
-import jwt
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 
-from ..auth.security import decode_token
 from .logging import get_logger
 from .shutdown import SSE_SHUTDOWN_FRAME, next_sse_frame
 from ..auth.permissions import CorePerm
-from .sse_auth import StreamGuard, authorize_stream
+from .sse_auth import StreamGuard, authorize_stream, principal_or_401
 
 log = get_logger("edge.realtime.vms")
 
@@ -58,50 +56,6 @@ KEEPALIVE_SECONDS = 20.0
 # SSE ``event:`` names the UI listens on.
 VMS_EVENT_NAME = "vms.event"
 VMS_POPUP_NAME = "vms.popup"
-
-
-def _extract_token(request: Request, token_qs: str | None) -> str | None:
-    """Pull the access token: ``?token=`` first (browser EventSource), then Bearer."""
-    if token_qs:
-        return token_qs
-    auth = request.headers.get("authorization") or request.headers.get("Authorization")
-    if auth and auth.lower().startswith("bearer "):
-        return auth[7:].strip() or None
-    return None
-
-
-def _principal_or_401(request: Request, token_qs: str | None) -> dict:
-    """Validate the access token (HS256, shared secret) → claims. Raise 401 otherwise.
-
-    Uses core's ``decode_token`` (same HS256 ``jwt_secret`` the satellite services'
-    ``kernel.verify_token`` uses — core is the token issuer, so it validates locally).
-    """
-    from fastapi import HTTPException, status
-
-    token = _extract_token(request, token_qs)
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "UNAUTHORIZED", "message": "SSE auth required"},
-        )
-    try:
-        claims = decode_token(token)  # verifies signature + expiry
-    except jwt.PyJWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "UNAUTHORIZED", "message": "invalid or expired token"},
-        )
-    if claims.get("type") != "access":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "UNAUTHORIZED", "message": "not an access token"},
-        )
-    if not claims.get("sub"):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "UNAUTHORIZED", "message": "token missing subject"},
-        )
-    return claims
 
 
 def _compact_event(envelope: dict) -> dict:
@@ -165,7 +119,7 @@ async def vms_events_stream(
     whose payload ``camera_id`` matches are forwarded (popups without a camera pass
     only when no ``camera_id`` filter is set).
     """
-    claims = _principal_or_401(request, token)
+    claims = principal_or_401(request, token)
     # Authentication is not authorization: these events are permission-gated on the
     # REST side, so the stream must be gated too.
     # authorize_stream re-reads the user and tenant from the database rather than

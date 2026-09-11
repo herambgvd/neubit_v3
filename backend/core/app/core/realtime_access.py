@@ -33,15 +33,13 @@ from __future__ import annotations
 import asyncio
 import json
 
-import jwt
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 
-from ..auth.security import decode_token
 from .logging import get_logger
 from .shutdown import SSE_SHUTDOWN_FRAME, next_sse_frame
 from ..auth.permissions import CorePerm
-from .sse_auth import StreamGuard, authorize_stream
+from .sse_auth import StreamGuard, authorize_stream, principal_or_401
 
 log = get_logger("edge.realtime.access")
 
@@ -52,51 +50,6 @@ KEEPALIVE_SECONDS = 20.0
 
 # SSE ``event:`` name the UI listens on for every access frame.
 ACCESS_EVENT_NAME = "access.event"
-
-
-def _extract_token(request: Request, token_qs: str | None) -> str | None:
-    """Pull the access token: ``?token=`` first (browser EventSource), then Bearer."""
-    if token_qs:
-        return token_qs
-    auth = request.headers.get("authorization") or request.headers.get("Authorization")
-    if auth and auth.lower().startswith("bearer "):
-        return auth[7:].strip() or None
-    return None
-
-
-def _principal_or_401(request: Request, token_qs: str | None) -> dict:
-    """Validate the access token (HS256, shared secret) → claims. Raise 401 otherwise.
-
-    Uses core's ``decode_token`` (same HS256 ``jwt_secret`` the satellite services'
-    ``kernel.verify_token`` uses — core is the token issuer, so it validates locally).
-    """
-    # Matches the platform's error envelope shape.
-    from fastapi import HTTPException, status
-
-    token = _extract_token(request, token_qs)
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "UNAUTHORIZED", "message": "SSE auth required"},
-        )
-    try:
-        claims = decode_token(token)  # verifies signature + expiry
-    except jwt.PyJWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "UNAUTHORIZED", "message": "invalid or expired token"},
-        )
-    if claims.get("type") != "access":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "UNAUTHORIZED", "message": "not an access token"},
-        )
-    if not claims.get("sub"):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "UNAUTHORIZED", "message": "token missing subject"},
-        )
-    return claims
 
 
 def _compact(envelope: dict) -> dict:
@@ -139,7 +92,7 @@ async def access_events_stream(
     cleans the subscription up on disconnect. When ``instance_id`` is given, only
     frames whose payload ``instance_id`` matches are forwarded.
     """
-    claims = _principal_or_401(request, token)
+    claims = principal_or_401(request, token)
     # Authentication is not authorization: door and cardholder events are
     # permission-gated on the REST side, so the stream must be gated too.
     # authorize_stream re-reads the user and tenant from the database rather than

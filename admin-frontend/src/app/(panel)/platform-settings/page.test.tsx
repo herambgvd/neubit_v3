@@ -17,9 +17,7 @@ const branding: Branding = {
   id: "b1",
   app_name: "Neubit",
   logo_url: null,
-  primary_color: "#000",
-  accent_color: "#06f",
-  name_in_header: true,
+  favicon_url: null,
 };
 
 beforeEach(() => {
