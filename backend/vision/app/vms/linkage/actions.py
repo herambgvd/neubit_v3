@@ -39,6 +39,29 @@ from . import core_templates
 
 log = logging.getLogger("vision.linkage.actions")
 
+# STRONG REFERENCES TO FIRE-AND-FORGET TASKS.
+#
+# asyncio.create_task hands back a task the event loop holds only WEAKLY. A task
+# nobody else keeps a reference to can be garbage-collected while it is still
+# awaiting — the documentation says so in as many words — and the failure is
+# silent: no exception, no log, the coroutine simply never resumes.
+#
+# Both fire-and-forget tasks below are UNDO steps. `_release` puts a relay back
+# after its hold, and a relay that is never put back is a gate left open or a
+# siren left sounding; `_revert` gives a wall cell back to whatever was on it.
+# Losing either leaves the building in the state an alarm put it in.
+#
+# Discarding on completion keeps the set from growing for the life of the process.
+_background: set[asyncio.Task] = set()
+
+
+def _spawn(coro) -> None:
+    """Run a coroutine detached, and keep it alive long enough to finish."""
+    task = asyncio.create_task(coro)
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+
+
 # A platform scope for the background executors (they authorize off the camera/event,
 # not a caller — the engine already resolved the tenant from the event envelope).
 
@@ -261,7 +284,7 @@ async def action_trigger_output(ctx: ActionContext, config: dict) -> ActionResul
             except Exception as exc:  # noqa: BLE001
                 log.info("relay auto-release failed for %s: %s", ctx.camera_id, exc)
 
-        asyncio.create_task(_release())
+        _spawn(_release())
         return ActionResult(
             "trigger_output", True, f"relay {relay_token}={state} (release in {release_after}s)"
         )
@@ -397,7 +420,7 @@ async def action_wall_display(ctx: ActionContext, config: dict) -> ActionResult:
                     wall_id, monitor_id, cell_index, exc,
                 )
 
-        asyncio.create_task(_revert())
+        _spawn(_revert())
         return ActionResult(
             "wall_display",
             True,

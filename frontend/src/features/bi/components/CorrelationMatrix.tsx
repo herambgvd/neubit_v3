@@ -73,7 +73,10 @@ export default function CorrelationMatrix({
   selected?: [string, string] | null;
   onSelect?: (a: string, b: string) => void;
 }) {
-  const key = (a: string, b: string) => [a, b].sort().join("|");
+  // Canonical key: the pair must hash the same either way round. Any consistent
+  // order does the job, so the comparator is here to say the choice was made
+  // rather than inherited from a default.
+  const key = (a: string, b: string) => [a, b].sort((x, y) => x.localeCompare(y)).join("|");
   const byKey = new Map(pairs.map((p) => [key(p.a, p.b), p]));
   const label = (s: CorrSeries) => `${s.device_tag ?? "?"} / ${s.point_tag ?? "?"}`;
   const selKey = selected ? key(selected[0], selected[1]) : null;

@@ -39,6 +39,7 @@ plain seconds timestamp is unambiguous until the year 5138, which is long enough
 
 from __future__ import annotations
 
+import math
 import datetime as dt
 import json
 import uuid
@@ -184,7 +185,7 @@ def parse(data: bytes, resolve_tenant) -> ParsedReading:
             num = float(v)
         except (TypeError, ValueError):
             raise Malformed("v_not_numeric") from None
-        if num != num or num in (float("inf"), float("-inf")):  # NaN / Inf
+        if not math.isfinite(num):  # NaN / Inf
             raise Malformed("v_not_finite")
 
     try:

@@ -66,10 +66,15 @@ export function escalationEnvelope(
   // otherwise the other twenty-eight still offer "Escalate" and a second alarm
   // gets raised for the same thing.
   const ids = events.map((e) => e.event_id || e.id).filter(Boolean) as string[];
+  // Sorted as TIME, not as text. These are ISO-8601 strings and a default sort
+  // compares them character by character, which is right only while every one has
+  // the same fractional precision. The recorder's do not: "…56.4Z" sorts after
+  // "…56.42Z" because 'Z' outranks '2'. In a burst that picks the wrong "last
+  // seen", which is the field an operator reads to decide if it is still running.
   const last = [...events]
     .map((e) => e.occurred_at)
     .filter(Boolean)
-    .sort()
+    .sort((a, b) => new Date(a!).getTime() - new Date(b!).getTime())
     .pop();
   return {
     source: "vision",

@@ -9,7 +9,7 @@
 //   • entityType  — e.g. "site" | "zone"
 //   • entityId    — the target entity's id
 //   • size        — "sm" (default) | "xs" chip sizing
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -28,6 +28,18 @@ export default function TagPicker({ entityType, entityId, size = "sm" }: TagPick
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Escape closes it. The click-away backdrop was the only way out, which is no
+  // way out at all for somebody on a keyboard: the popover opens, focus is inside
+  // it, and nothing dismisses it.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
 
   const attachedKey = ["tags-for", entityType, entityId];
   const attachedQ = useQuery({
@@ -107,7 +119,11 @@ export default function TagPicker({ entityType, entityId, size = "sm" }: TagPick
 
         {open && (
           <>
-            <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+            {/* Click-away only was the whole dismissal story, which leaves a keyboard
+            user with an open popover and nothing to press. The backdrop stays —
+            it is the mouse route — and is marked presentational, because Escape
+            (above) is the real one and this needs no tab stop of its own. */}
+        <div className="fixed inset-0 z-30" role="presentation" onClick={() => setOpen(false)} />
             <div className="absolute left-0 z-40 mt-1 w-56 rounded-lg border border-card-border bg-card shadow-xl p-1">
               {allQ.isLoading ? (
                 <div className="px-3 py-3 text-xs text-muted">Loading tags…</div>

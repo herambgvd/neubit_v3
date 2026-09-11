@@ -63,7 +63,11 @@ export function useLiveSession(
   // binding that is not initialised yet nor captures a stale closure. Assigned in
   // an effect (never during render) so the ref write stays a side effect.
   const scheduleRenewRef = useRef<((sess: LiveSessionLike) => void) | null>(null);
-  const startRef = useRef<(() => void) | null>(null);
+  // Typed as what it actually holds. `start` is async, and a ref declaring
+  // `() => void` quietly accepted it — so the call below looked synchronous while
+  // dropping a promise. It is safe to drop (start catches its own failures into
+  // `error` state), but the type should say so rather than hide it.
+  const startRef = useRef<(() => Promise<void>) | null>(null);
 
   const clearTimers = () => {
     if (renewTimerRef.current) {
@@ -96,7 +100,9 @@ export function useLiveSession(
         } catch {
           // Renew failed (session reaped server-side) — start a fresh one so
           // playback recovers rather than freezing on a stale token.
-          if (!disposedRef.current) startRef.current?.();
+          // `void`: deliberately not awaited — this is a recovery kicked off from
+          // a timer, and start reports its own failure through `error`.
+          if (!disposedRef.current) void startRef.current?.();
         }
       }, delay);
     },

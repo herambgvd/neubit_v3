@@ -1,7 +1,7 @@
 "use client";
 
 // Floorplan upload modal for the floor-plan editor. Ported from neubit_v2 → kit + tokens.
-import { useRef, useState, type DragEvent } from "react";
+import { useCallback, useRef, useState, type DragEvent } from "react";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
@@ -23,6 +23,7 @@ export interface FloorUploadModalProps {
 
 export function FloorUploadModal({ open, onClose, floor, onUploaded }: FloorUploadModalProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const openPicker = useCallback(() => inputRef.current?.click(), []);
   const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -90,6 +91,9 @@ export function FloorUploadModal({ open, onClose, floor, onUploaded }: FloorUplo
       }
     >
       <p className="mb-3 text-xs text-muted">Accepted formats: {ACCEPT_DISPLAY}. Max 8 MB.</p>
+      {/* The file input below is display:none, which takes it out of the tab order
+          as well as out of sight — so without a keyboard route here there was no
+          way to upload a floor plan at all without a mouse. */}
       <div
         onDragOver={(e) => {
           e.preventDefault();
@@ -97,7 +101,18 @@ export function FloorUploadModal({ open, onClose, floor, onUploaded }: FloorUplo
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
-        onClick={() => inputRef.current?.click()}
+        role="button"
+        tabIndex={0}
+        aria-label="Choose a floor plan file"
+        onClick={openPicker}
+        onKeyDown={(e) => {
+          // Inline rather than through a helper: passing a ref-reading closure to
+          // any function during render trips the compiler's ref rule, and the
+          // rule is worth more than the four lines it costs here.
+          if (e.key !== "Enter" && e.key !== " ") return;
+          e.preventDefault();
+          openPicker();
+        }}
         className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-10 text-center transition ${
           dragOver ? "border-blue-500 bg-blue-500/10" : "border-card-border bg-hover/40 hover:bg-hover"
         }`}

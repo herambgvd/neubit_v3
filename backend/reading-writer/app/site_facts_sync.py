@@ -46,6 +46,7 @@ WHAT IT DOES NOT DO
 
 from __future__ import annotations
 
+import math
 import asyncio
 import contextlib
 import datetime as dt
@@ -127,7 +128,7 @@ def _num(value) -> float | None:
         v = float(value)
     except (TypeError, ValueError):
         return None
-    return v if v == v else None  # NaN is not a fact
+    return v if math.isfinite(v) else None  # NaN and Inf are not facts
 
 
 def _when(value) -> dt.datetime | None:

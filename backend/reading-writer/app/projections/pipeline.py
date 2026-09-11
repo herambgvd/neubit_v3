@@ -585,7 +585,11 @@ class Projector:
                     )
                     warned = True
                 self.m.db_healthy = False
-            elif warned and stalled == 0.0:
+            # `write_started_mono is None` is the question — "is a write in flight" —
+            # and `stalled == 0.0` was a proxy for it that is also true for the first
+            # 50ms of a NEW write, because the duration is rounded to a tenth. So a
+            # stall could be declared over while the next write was still running.
+            elif warned and self.m.write_started_mono is None:
                 log.info("projection write completed after a stall — resuming")
                 warned = False
 

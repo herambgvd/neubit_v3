@@ -15,7 +15,7 @@ export interface ErrorViewProps {
 
 // Theme-aware error boundary. Shows a clear message + the underlying error, with
 // "Try again" (re-render the segment) and a route back to the dashboard.
-export default function Error({ error, reset }: ErrorViewProps) {
+export default function ErrorView({ error, reset }: ErrorViewProps) {
   useEffect(() => {
     console.error(error);
   }, [error]);

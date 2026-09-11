@@ -129,7 +129,7 @@ function JobRow({ job, open, onToggle }: JobRowProps) {
     <div className="px-2 py-2 text-xs">
       <button type="button" onClick={onToggle} className="flex w-full items-center gap-2 text-left">
         <Icon icon={open ? "heroicons-outline:chevron-down" : "heroicons-outline:chevron-right"} className="shrink-0 text-xs text-muted" />
-        <Icon icon={icon} className={`shrink-0 text-sm ${isRunning ? "" : ""}`} />
+        <Icon icon={icon} className="shrink-0 text-sm" />
         <span className="w-36 shrink-0 font-mono text-[10px] text-muted">{fmtDateTime(job.started_at)}</span>
         <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase ${tone}`}>{job.status || "—"}</span>
         <span className="text-muted">{job.trigger || "manual"}</span>

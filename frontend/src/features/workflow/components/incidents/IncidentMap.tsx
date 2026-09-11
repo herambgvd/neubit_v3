@@ -153,7 +153,11 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
         unplaced.push(...items);
         continue;
       }
-      // Top priority in the cluster drives the marker color.
+      // Top priority in the cluster drives the marker color. No seed, and none is
+      // possible: "highest priority" has no identity element, and a fabricated
+      // one would colour a cluster by a priority no alarm in it holds. `items` is
+      // non-empty by construction — a zone appears in byZone only because an
+      // alarm was pushed into it — which is what makes the seedless reduce safe.
       const top = items.reduce((a, b) => (prioWeight(b.priority) > prioWeight(a.priority) ? b : a));
       clusters.push({ zone, items, x: ctr[0], y: ctr[1], priority: top.priority });
     }

@@ -552,6 +552,12 @@ async def db_import(request: Request) -> dict:
     with tarfile.open(fileobj=tar_buf, mode="w") as tar:
         info = tarfile.TarInfo(name="neubit_restore.sql")
         info.size = len(sql)
+        # 0600. The name is already unpredictable and the file is removed in the
+        # finally below, but between those two moments it is a full control-DB dump
+        # — password hashes, encrypted tenant secrets, the audit log — sitting in a
+        # world-readable /tmp. tar carries the mode, so the file is never readable
+        # by anything else in the container even for that window.
+        info.mode = 0o600
         tar.addfile(info, io.BytesIO(sql))
     tar_buf.seek(0)
     try:

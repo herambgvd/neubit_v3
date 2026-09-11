@@ -16,5 +16,16 @@ RUN uv pip install --system --no-cache -r requirements.txt
 
 COPY main.py ./
 
+# THIS ONE STAYS ROOT, and that is the whole reason it exists as a separate image.
+#
+# ops-agent is the privileged infra sidecar: it holds /var/run/docker.sock and acts
+# on containers on the platform's behalf. Reaching that socket needs either root or
+# membership of the host's docker group — whose gid differs per host, so baking one
+# in would work on the machine it was built for and silently fail everywhere else.
+#
+# The containment is that this is the ONLY image with the socket and the only one
+# without a USER, which is why every other service was moved off root rather than
+# this being treated as normal.
+
 EXPOSE 9000
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "9000"]

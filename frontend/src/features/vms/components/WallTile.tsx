@@ -29,6 +29,7 @@
 // own stable `index` when invoking them.
 import { memo, useMemo, useRef, useState, type CSSProperties, type DragEvent } from "react";
 import { Icon } from "@iconify/react";
+import { asButton } from "@/lib/a11y";
 
 import { vms } from "../api";
 import LivePlayer, { PlayerBtn } from "./LivePlayer";
@@ -218,12 +219,14 @@ function WallTile({
   if (!cameraId) {
     const hinting = dropActive || railDragging;
     return (
+      // A drop target first, a control second — so the role and the tab stop are
+      // added rather than the element being replaced by a <button>.
       <div
         style={style}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
-        onClick={() => onPickHere?.(index)}
+        {...asButton(onPickHere ? () => onPickHere(index) : undefined, "Put a camera in this cell")}
         className={`group/empty relative flex min-h-0 cursor-pointer items-center justify-center overflow-hidden rounded-[11px] bg-black/90 transition ${
           dropActive
             ? "outline outline-2 outline-[#22d3ee]"
@@ -290,7 +293,7 @@ function WallTile({
       // whose coverage the timeline draws, and the one that leads a seek. There
       // was no single-click action on a filled tile before, so this costs nothing
       // and saves the operator hunting for a "which camera?" dropdown.
-      onClick={() => onFocus?.(index)}
+      {...asButton(onFocus ? () => onFocus(index) : undefined, "Focus this tile")}
       onDoubleClick={() => onSpotlight?.(index)}
       className={`group relative min-h-0 overflow-hidden rounded-[11px] bg-black transition ${
         dropActive

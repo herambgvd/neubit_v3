@@ -21,5 +21,19 @@ COPY migrate.sh ./
 RUN chmod +x /app/migrate.sh
 RUN uv pip install --system --no-cache -e ".[messaging,tasks,reports,system,storage,sites]"
 
+# RUN AS A NON-ROOT USER.
+#
+# Everything above this line needs root: apt, uv installing into the system
+# interpreter, chmod on the entrypoint. Nothing below it does. Left as root, an RCE
+# in the app — or a container escape — starts as uid 0, and on a bind mount that is
+# uid 0 on the HOST.
+#
+# 10001 is fixed rather than left to useradd: the named volume mounted here is
+# chowned to that uid once, outside the image, and the two have to keep matching.
+RUN groupadd --system --gid 10001 neubit \
+ && useradd --system --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin neubit
+RUN mkdir -p /app/data && chown -R 10001:10001 /app/data
+USER neubit
+
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

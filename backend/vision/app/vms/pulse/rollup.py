@@ -17,6 +17,7 @@ substituting a zero, and nothing here converts that back into a number.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 # A volume this full is worth an operator's attention before it starts recycling
@@ -34,7 +35,9 @@ def _num(value: Any) -> float | None:
         out = float(value)
     except (TypeError, ValueError):
         return None
-    return out if out == out and out not in (float("inf"), float("-inf")) else None
+    # isfinite covers NaN and both infinities in one question. `out == out` is the
+    # classic NaN test and reads as a tautology to everyone who has not met it.
+    return out if math.isfinite(out) else None
 
 
 def volume_used_pct(volume: dict) -> float | None:

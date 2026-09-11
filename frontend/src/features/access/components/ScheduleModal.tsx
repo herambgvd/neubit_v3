@@ -123,7 +123,9 @@ export default function ScheduleModal({ instanceId, schedule, onClose, onSuccess
   const addHoliday = () => {
     const v = newHoliday.trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return;
-    setHolidays((h) => Array.from(new Set<string>([...h, v])).sort());
+    // YYYY-MM-DD is fixed-width, so text order IS date order here — said
+    // explicitly because the next reader should not have to work that out.
+    setHolidays((h) => Array.from(new Set<string>([...h, v])).sort((a, b) => a.localeCompare(b)));
     setNewHoliday("");
   };
 
@@ -189,7 +191,17 @@ export default function ScheduleModal({ instanceId, schedule, onClose, onSuccess
                       <button
                         key={d.value}
                         type="button"
-                        onClick={() => updateWindow(i, { days: on ? w.days.filter((x) => x !== d.value) : [...w.days, d.value].sort() })}
+                        onClick={() =>
+                          updateWindow(i, {
+                            // Numeric: a default sort compares numbers as text, so
+                            // [2, 10] would come back [10, 2]. Weekdays never reach
+                            // two digits, which is exactly why this would have gone
+                            // unnoticed if the vocabulary ever changed.
+                            days: on
+                              ? w.days.filter((x) => x !== d.value)
+                              : [...w.days, d.value].sort((a, b) => a - b),
+                          })
+                        }
                         className={`rounded-sm px-2 py-1 text-[10px] font-medium uppercase ${
                           on ? "bg-foreground text-background" : "bg-hover text-muted hover:text-foreground"
                         }`}

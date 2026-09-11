@@ -5,6 +5,7 @@
 // badge, site name, base URL, last-sync relative time. Rethemed to v3 tokens.
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
+import { asButton } from "@/lib/a11y";
 
 import type { AccessInstancePublic } from "@/lib/types";
 import { fmtRelative } from "@/lib/format";
@@ -41,8 +42,10 @@ export default function InstanceListCard({
   }, [menuOpen]);
 
   return (
+    // A card that selects, so it is a button. Left as a div it had no tab stop,
+    // which meant an operator on a keyboard could not open an access controller.
     <div
-      onClick={() => onSelect(instance)}
+      {...asButton(() => onSelect(instance), `Open ${instance.name}`)}
       className={`group relative cursor-pointer rounded-lg border transition ${
         isSelected
           ? "border-foreground bg-hover"

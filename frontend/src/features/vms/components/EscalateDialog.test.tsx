@@ -343,7 +343,7 @@ describe("a burst becomes one alarm", () => {
     expect(env.payload.event_id).toBe("e-first");
     expect(env.payload.event_ids).toEqual(["e-late", "e-first", "e-mid"]);
     expect(env.payload.event_count).toBe(3);
-    expect(env.payload.last_occurred_at).toBe("2026-09-10T04:50:00Z");
+    expect((env.payload as Record<string, unknown>).last_occurred_at).toBe("2026-09-10T04:50:00Z");
   });
 
   it("says nothing about a burst when there is only one event", () => {
@@ -381,5 +381,38 @@ describe("a burst becomes one alarm", () => {
     );
 
     expect(await screen.findByText(/mixed selection/i)).toBeInTheDocument();
+  });
+});
+
+/**
+ * SORTING A TIMESTAMP AS TEXT WORKS UNTIL IT DOES NOT.
+ *
+ * ISO-8601 strings compare correctly character by character only while every one
+ * has the same shape. The recorder's do not: its fractional seconds are trimmed,
+ * so "…56.4Z" and "…56.42Z" differ in length — and 'Z' (90) outranks '2' (50),
+ * which puts the EARLIER instant last. That is the value carried as
+ * `last_occurred_at`, and the field an operator reads to decide whether a burst
+ * is still running.
+ */
+function ev(occurred_at: string, id: string) {
+  return { id, event_id: id, occurred_at, camera_id: "cam-1", event_type: "tamper", severity: "critical" } as never;
+}
+
+describe("the last time a burst was seen", () => {
+  it("picks the latest instant when the precisions differ", () => {
+    // Sorted as text, "…56.4Z" wins and the envelope reports an instant 20ms
+    // before the real last event.
+    const env = escalationEnvelope([ev("2026-09-11T10:00:56.4Z", "a"), ev("2026-09-11T10:00:56.42Z", "b")]);
+    expect((env.payload as Record<string, unknown>).last_occurred_at).toBe("2026-09-11T10:00:56.42Z");
+  });
+
+  it("still picks the latest when the precisions match", () => {
+    const env = escalationEnvelope([ev("2026-09-11T10:00:01Z", "a"), ev("2026-09-11T10:00:09Z", "b")]);
+    expect((env.payload as Record<string, unknown>).last_occurred_at).toBe("2026-09-11T10:00:09Z");
+  });
+
+  it("is unbothered by the order they arrive in", () => {
+    const env = escalationEnvelope([ev("2026-09-11T10:00:09Z", "b"), ev("2026-09-11T10:00:01Z", "a")]);
+    expect((env.payload as Record<string, unknown>).last_occurred_at).toBe("2026-09-11T10:00:09Z");
   });
 });

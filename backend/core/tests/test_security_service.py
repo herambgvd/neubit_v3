@@ -134,6 +134,8 @@ class _MockIdp:
         return _MockResp({
             "authorization_endpoint": "https://idp/auth",
             "token_endpoint": "https://idp/token",
+            "jwks_uri": "https://idp/jwks",
+            "issuer": "https://idp",
         })
 
     async def post(self, url, data):
@@ -143,10 +145,24 @@ class _MockIdp:
 def _unsigned_jwt(claims: dict) -> str:
     import jwt
 
-    # The IdP's signature is not what this test is about — the SSO path verifies
-    # against the provider's JWKS, which the mock replaces. Long enough only to
-    # keep PyJWT from warning about an under-length HMAC key.
+    # The IdP's signature is not what these tests are about, and a mock cannot sign
+    # with a key it does not have. Long enough only to keep PyJWT from warning
+    # about an under-length HMAC key.
     return jwt.encode(claims, "unused-idp-signing-key-for-this-mock", algorithm="HS256")
+
+
+def _decode_unverified(id_token: str, _discovery: dict, _config) -> dict:
+    """The test's OWN decoder, passed in explicitly.
+
+    It exists because a mock IdP cannot sign, and it is a PARAMETER rather than a
+    global switch for exactly that reason: production gets real verification by
+    default, and a test that wants less has to say so on the line where it wants it.
+    The arrangement this replaced had signature checking off for everybody so that
+    this fixture would pass.
+    """
+    import jwt
+
+    return jwt.decode(id_token, options={"verify_signature": False})
 
 
 async def test_sso_exchange_provisions_and_maps_role(db):
@@ -163,7 +179,7 @@ async def test_sso_exchange_provisions_and_maps_role(db):
     )
     cfg = await svc.get_sso(scope_of(admin))
     id_token = _unsigned_jwt({"email": "dave@corp.io", "name": "Dave", "groups": ["ops"]})
-    user = await svc.sso_exchange(cfg, code="authcode", http=_MockIdp(id_token))
+    user = await svc.sso_exchange(cfg, code="authcode", http=_MockIdp(id_token), verify_id_token=_decode_unverified)
     assert user.email == "dave@corp.io"
     assert user.role_id == ops_role.id
     # Secret is stored encrypted.
@@ -183,7 +199,7 @@ async def test_sso_rejects_when_no_role_and_no_auto_provision(db):
     from app.core.errors import UnauthorizedError
 
     with pytest.raises(UnauthorizedError):
-        await svc.sso_exchange(cfg, code="c", http=_MockIdp(id_token))
+        await svc.sso_exchange(cfg, code="c", http=_MockIdp(id_token), verify_id_token=_decode_unverified)
 
 
 # --- Dual authorization (four-eyes) -----------------------------------------

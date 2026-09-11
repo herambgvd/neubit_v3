@@ -84,6 +84,21 @@ export default function CameraGroupFormModal({ open, group, cameras = [], onClos
     onError: (e) => toast.error(apiError(e, "Save failed")),
   });
 
+  // Escape closes it, matching kit's <Modal>. This one rolls its own backdrop, so
+  // it took the click-away and left a keyboard user inside a dialog with no way
+  // out. A save in flight holds it open, exactly as the backdrop click does —
+  // the two dismissal routes must agree or Escape becomes the way to abandon a
+  // write that is already running.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !save.isPending) onClose?.();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose, save.isPending]);
+
+
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const next: GroupFormErrors = {};
@@ -107,7 +122,11 @@ export default function CameraGroupFormModal({ open, group, cameras = [], onClos
 
   return createPortal(
     <div className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto p-4 py-[6vh]">
+      {/* Presentational: the mouse route out. Escape below is the keyboard one —
+          this modal rolls its own backdrop instead of using kit's <Modal>, and
+          took the click-away without the Escape that comes with it. */}
       <div
+        role="presentation"
         className="absolute inset-0 bg-black/60 backdrop-blur-xs animate-fade-in"
         onClick={() => (save.isPending ? null : onClose?.())}
       />

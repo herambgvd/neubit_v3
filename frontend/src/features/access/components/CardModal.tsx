@@ -274,9 +274,18 @@ function CardholderPicker({ selected, filtered, loading, search, open, onSearch,
               filtered.map((ch) => {
                 const sub = ch.employee_id ? `ID: ${ch.employee_id}` : `${String(ch.cardholder_id).slice(0, 18)}…`;
                 return (
-                  <li key={ch.cardholder_id} onClick={() => onSelect(ch)} className="flex cursor-pointer flex-col px-3 py-1.5 text-xs hover:bg-hover">
-                    <span className="font-medium text-foreground">{label(ch)}</span>
-                    <span className="text-muted/70">{sub}</span>
+                  // The row IS the control, so the button is the row rather than
+                  // something inside it — a list item with an onClick is a result
+                  // a keyboard cannot reach, which is most of what this picker is for.
+                  <li key={ch.cardholder_id}>
+                    <button
+                      type="button"
+                      onClick={() => onSelect(ch)}
+                      className="flex w-full cursor-pointer flex-col px-3 py-1.5 text-left text-xs hover:bg-hover"
+                    >
+                      <span className="font-medium text-foreground">{label(ch)}</span>
+                      <span className="text-muted/70">{sub}</span>
+                    </button>
                   </li>
                 );
               })}

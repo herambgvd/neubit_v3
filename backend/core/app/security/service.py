@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from typing import Any, Callable
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -319,11 +320,17 @@ class SecurityService:
         await self.db.commit()
 
     async def sso_exchange(
-        self, cfg: SsoConfig, code: str, http: HttpLike | None = None
+        self,
+        cfg: SsoConfig,
+        code: str,
+        http: HttpLike | None = None,
+        verify_id_token: Callable[[str, dict, Any], dict] | None = None,
     ) -> User:
         """Complete the OIDC auth-code flow → provision/match a core user.
 
-        ``http`` is injectable — tests pass a mock IdP; production uses httpx.
+        ``http`` and ``verify_id_token`` are injectable — a test passes a mock IdP
+        and its own decoder, because a mock cannot sign. Both default to the real
+        thing, so forgetting one cannot quietly disable signature checking.
         Returns the resolved core User (the router then issues the core JWT).
         """
         http = http or HttpxAdapter()
@@ -331,7 +338,9 @@ class SecurityService:
         secret = (
             decrypt_secret_for(cfg.tenant_id, cfg.client_secret) if cfg.client_secret else None
         )
-        claims: OidcClaims = await exchange_code(http, discovery, cfg, code, secret)
+        claims: OidcClaims = await exchange_code(
+            http, discovery, cfg, code, secret, verify=verify_id_token
+        )
         return await self._provision_from_claims(claims, cfg)
 
     async def _provision_from_claims(self, claims: OidcClaims, cfg: SsoConfig) -> User:

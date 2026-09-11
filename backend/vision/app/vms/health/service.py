@@ -363,10 +363,14 @@ class HealthSampler:
 
     async def _loop(self) -> None:
         # Small settle before the first cycle (let NATS/DB finish warming up).
-        try:
-            await asyncio.sleep(min(10, sample_interval_sec()))
-        except asyncio.CancelledError:
-            return
+        #
+        # No CancelledError guard on either sleep. There used to be one that
+        # RETURNED, which ended the task as though its work had finished — a caller
+        # awaiting it could not tell a clean stop from a cancellation, and asyncio's
+        # contract is that CancelledError propagates. Catching it only to re-raise
+        # is the same as not catching it, so it is simply not caught. stop() is
+        # where it is absorbed, and that is correct there: stop() is the canceller.
+        await asyncio.sleep(min(10, sample_interval_sec()))
         backoff = sample_interval_sec()
         while self._running:
             try:
@@ -377,10 +381,7 @@ class HealthSampler:
             except Exception as exc:  # noqa: BLE001 — one bad cycle must not kill the loop
                 backoff = min(backoff * 2, 300)
                 log.warning("health sampler cycle error (%s) — backing off %ss", exc, backoff)
-            try:
-                await asyncio.sleep(backoff)
-            except asyncio.CancelledError:
-                return
+            await asyncio.sleep(backoff)
 
     async def run_cycle(self) -> int:
         """One full pass: sample every enabled camera + NVR, then purge. Returns the

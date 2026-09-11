@@ -25,4 +25,17 @@ COPY reporting/migrations ./migrations
 COPY reporting/alembic.ini ./
 RUN uv pip install --system --no-cache -e "."
 
+# RUN AS A NON-ROOT USER.
+#
+# Everything above this line needs root: apt, uv installing into the system
+# interpreter, chmod on the entrypoint. Nothing below it does. Left as root, an RCE
+# in the app — or a container escape — starts as uid 0, and on a bind mount that is
+# uid 0 on the HOST.
+#
+# 10001 is fixed rather than left to useradd: one uid across the estate is easier
+# to reason about than seven, and it is the uid the volumes are chowned to.
+RUN groupadd --system --gid 10001 neubit \
+ && useradd --system --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin neubit
+USER neubit
+
 CMD ["bash", "-c", "python -m reporting.ensure_db && alembic upgrade head && python -m reporting.apply"]

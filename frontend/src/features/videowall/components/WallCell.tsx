@@ -14,6 +14,7 @@
 // aesthetic so a sparse wall reads clean, not as a field of dashed drop boxes.
 import { useState, type DragEvent } from "react";
 import { Icon } from "@iconify/react";
+import { asButton } from "@/lib/a11y";
 
 import LivePlayer from "@/features/vms/components/LivePlayer";
 import type { EstateCamera } from "@/features/vms/types";
@@ -63,11 +64,14 @@ export default function WallCell({
   // ── Empty cell ─────────────────────────────────────────────────────────
   if (!cameraId) {
     return (
+      // Stays a div because it is a DROP TARGET as well as a control, and a
+      // <button> is not a drop surface. asButton supplies what it would otherwise
+      // be missing: a tab stop, the role, and Enter/Space.
       <div
         onDragOver={onDragOver}
         onDragLeave={() => setDropActive(false)}
         onDrop={onDrop}
-        onClick={control ? () => onPick?.() : undefined}
+        {...asButton(control ? () => onPick?.() : undefined, "Put a camera in this cell")}
         className={`group relative flex min-h-0 items-center justify-center overflow-hidden bg-[#05080f] transition ${
           control ? "cursor-pointer" : ""
         } ${

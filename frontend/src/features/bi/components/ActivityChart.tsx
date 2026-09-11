@@ -35,14 +35,19 @@ export default function ActivityChart({ rows = [] }: { rows: ActivityRow[] }) {
       m.set(cat, (m.get(cat) || 0) + r.samples);
       buckets.set(key, m);
     }
-    const order = [...buckets.keys()].sort();
+    // Time buckets, and they are ISO strings of one fixed shape — so text order is
+    // chronological order. Spelled out, because "sorted" on a chart axis is a
+    // claim about time.
+    const order = [...buckets.keys()].sort((a, b) => a.localeCompare(b));
     const cols = order.map((b) => {
       const m = buckets.get(b)!;
       const total = [...m.values()].reduce((a, x) => a + x, 0);
       return { bucket: b, parts: m, total };
     });
     const max = Math.max(...cols.map((c) => c.total), 1);
-    return { cols, max, cats: [...cats].sort() };
+    // Category NAMES, shown to a person — so locale order, which is what a reader
+    // expects of a legend and what a default sort does not give outside ASCII.
+    return { cols, max, cats: [...cats].sort((a, b) => a.localeCompare(b)) };
   }, [rows]);
 
   if (!model) {

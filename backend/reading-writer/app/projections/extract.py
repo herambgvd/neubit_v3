@@ -30,6 +30,7 @@ and counts it with its reason.
 
 from __future__ import annotations
 
+import math
 import datetime as dt
 import json
 import uuid
@@ -113,7 +114,7 @@ def _coerce(col: Column, value: Any) -> Any:
             raise Malformed(f"bad_number:{col.name}") from exc
         # NaN/Inf are not storable in a way anything downstream can chart, and
         # writing them as NULL would claim the publisher sent nothing.
-        if f != f or f in (float("inf"), float("-inf")):
+        if not math.isfinite(f):
             raise Malformed(f"bad_number:{col.name}")
         return f
     if t == "boolean":

@@ -177,7 +177,7 @@ export default function PlaceSearch({ onGo, near }: PlaceSearchProps) {
     if (coordinate || !searching) return [];
     // Addresses first when we have them. The gazetteer is the fallback, not a
     // second opinion — showing both would put "Gurugram" under the actual building.
-    if (hits?.length) return hits.map(fromHit);
+    if (hits?.length) return hits.map((hit, i) => fromHit(hit, i));
     // No addresses (or the service is down) — the city list is the fallback.
     return places ? searchPlaces(places, query).map(fromPlace) : [];
   }, [coordinate, searching, hits, places, query]);

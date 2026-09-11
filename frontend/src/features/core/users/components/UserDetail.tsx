@@ -176,17 +176,25 @@ export default function UserDetail({
         <Section icon="heroicons-outline:shield-check" note="IS 19319">Account security</Section>
         <Row label="Multi-factor (MFA)">
           <div className="flex items-center gap-2.5">
-            <span
+            {/* A real <button>, not a styled span. This resets a user's MFA, and on
+                a span there was no tab stop — so the action did not exist for
+                anyone not using a mouse. `disabled` carries the two cases where it
+                is inert (no rights, or nothing enrolled) instead of a dead
+                click handler that silently does nothing. */}
+            <button
+              type="button"
+              disabled={!canManage || !u.totp_enabled}
+              onClick={onResetMfa}
+              aria-label={u.totp_enabled ? "Reset multi-factor authentication" : "Multi-factor authentication is not enrolled"}
               className={`inline-flex h-[21px] w-[38px] items-center rounded-full border px-0.5 ${
                 u.totp_enabled
                   ? "justify-end border-[rgba(52,211,153,.6)] bg-[rgba(52,211,153,.2)]"
                   : "justify-start border-nb-line bg-[rgba(90,110,150,.15)]"
               } ${canManage && u.totp_enabled ? "cursor-pointer" : "cursor-default"}`}
-              onClick={() => canManage && u.totp_enabled && onResetMfa()}
               title={u.totp_enabled ? "Reset (disable) MFA" : "The user enrols MFA from their device"}
             >
               <span className={`h-4 w-4 rounded-full ${u.totp_enabled ? "bg-nb-good" : "bg-nb-faint"}`} />
-            </span>
+            </button>
             <span className="text-[11.5px] text-nb-faint">{u.totp_enabled ? "enrolled" : "not enrolled"}</span>
           </div>
         </Row>
