@@ -182,3 +182,79 @@ async def federated_upstream_nvr_storage(
         payload["node_id"] = str(node.id)
         payload["node_name"] = node.name
     return payload
+
+
+# ── archive + restore (cold tier) ────────────────────────────────────────────
+#
+# Retention deletes the LOCAL copy of footage the archive has already copied
+# somewhere durable. From the console that looks exactly like footage being gone —
+# an empty stretch of timeline — and it is not. These three reads are what tell the
+# difference.
+#
+# READ ONLY, and deliberately incomplete: starting a restore gates node-side on
+# vms.storage.manage, which this credential does not carry. The screen links out to
+# the recorder for that one act rather than offering a button that can only 502.
+
+
+@router.get(
+    "/nodes/{node_id}/storage/archive",
+    dependencies=[Depends(require_permission(PERM_PLAYBACK))],
+)
+async def federated_archive(
+    node_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> dict:
+    """The recorder's archive posture: schedule, destination, last run, and how much
+    footage is local-only (no durable copy yet) versus cold-only (archive only)."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        return _tag(node, await fed.get_node_archive(node.api_url, credential=node.credential))
+    except fed.NodeUnavailable as e:
+        raise _unreachable(e)
+
+
+@router.get(
+    "/nodes/{node_id}/storage/restore/ranges",
+    dependencies=[Depends(require_permission(PERM_PLAYBACK))],
+)
+async def federated_restore_ranges(
+    node_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+    camera_id: Optional[str] = Query(None),
+    frm: Optional[str] = Query(None, alias="from"),
+    to: Optional[str] = Query(None),
+) -> dict:
+    """What can be recovered: footage that exists ONLY in the archive.
+
+    `from` is the query name because it is the recorder's, and every other windowed
+    read on this surface already speaks it; `frm` is only the python spelling of a
+    reserved word."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        return _tag(
+            node,
+            await fed.get_node_restore_ranges(
+                node.api_url, camera_id=camera_id, frm=frm, to=to, credential=node.credential
+            ),
+        )
+    except fed.NodeUnavailable as e:
+        raise _unreachable(e)
+
+
+@router.get(
+    "/nodes/{node_id}/storage/restore/jobs",
+    dependencies=[Depends(require_permission(PERM_PLAYBACK))],
+)
+async def federated_restore_jobs(
+    node_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> dict:
+    """Recent restores and how they went, per segment."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        return _tag(node, await fed.get_node_restore_jobs(node.api_url, credential=node.credential))
+    except fed.NodeUnavailable as e:
+        raise _unreachable(e)

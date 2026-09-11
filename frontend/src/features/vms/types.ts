@@ -1252,6 +1252,86 @@ export interface NodeUpstreamNvrStorage extends Partial<NodeTagged> {
   [k: string]: unknown;
 }
 
+/* --- archive + restore, the cold tier (federation, read-only) --------------- */
+
+/** `GET …/storage/archive` — the recorder's archive posture.
+ *
+ *  `blocked_reason` is the field that earns this whole view: the recorder says
+ *  when the archive is configured and CANNOT run (destination unmounted, pool
+ *  offline). Without it, "0 archived" reads as "nothing needed archiving" when it
+ *  means "nothing will be". */
+export interface NodeArchive extends Partial<NodeTagged> {
+  enabled?: boolean;
+  ready?: boolean;
+  blocked_reason?: string | null;
+  destination_pool_id?: string | null;
+  destination_name?: string | null;
+  at_time?: string | null;
+  weekdays?: number[] | null;
+  min_age_hours?: number | null;
+  last_run_at?: string | null;
+  last_error?: string | null;
+  last_archived?: number | null;
+  last_bytes?: number | null;
+  next_run_at?: string | null;
+  /** archived / local-only / cold-only segment counts across the recorder. */
+  stats?: {
+    archived_segments?: number;
+    archived_bytes?: number;
+    local_segments?: number;
+    local_archived?: number;
+    local_only?: number;
+    cold_only?: number;
+    [k: string]: unknown;
+  } | null;
+  [k: string]: unknown;
+}
+
+/** One stretch of footage that exists ONLY in the archive — retention has taken
+ *  the local copy. This is the difference between a gap in the timeline and
+ *  footage that is gone. */
+export interface NodeRestoreRange {
+  segment_path?: string;
+  camera_id?: string | null;
+  started_at?: string | null;
+  size_bytes?: number | null;
+  dest_pool_id?: string | null;
+  archived_at?: string;
+  [k: string]: unknown;
+}
+
+export interface NodeRestoreRangeList extends Partial<NodeTagged> {
+  items?: NodeRestoreRange[] | null;
+  total?: number;
+  [k: string]: unknown;
+}
+
+/** One restore and how it went. All three counts are carried because a restore
+ *  that recovered 40 of 50 segments is neither a success nor a failure, and only
+ *  the counts say so. */
+export interface NodeRestoreJob {
+  id: string;
+  camera_id?: string | null;
+  range_from?: string | null;
+  range_to?: string | null;
+  status?: string;
+  requested?: number;
+  restored?: number;
+  failed?: number;
+  bytes?: number;
+  last_error?: string | null;
+  requested_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  [k: string]: unknown;
+}
+
+export interface NodeRestoreJobList extends Partial<NodeTagged> {
+  items?: NodeRestoreJob[] | null;
+  total?: number;
+  [k: string]: unknown;
+}
+
 /* --- recording schedules (federation) -------------------------------------- */
 
 /** The recorder's schedule document, in the WEEKLY GRID shape: a day key mapped to

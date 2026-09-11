@@ -26,6 +26,7 @@ import {
 import { apiError } from "@/lib/api";
 import { asItems, fmtBytes } from "@/lib/format";
 import { vms } from "./api";
+import ArchiveSection from "./components/ArchiveSection";
 import StatusBadge from "./components/StatusBadge";
 import type {
   FederationNode,
@@ -407,6 +408,12 @@ function NodeStorageDetail({ node, nvrs }: { node: FederationNode; nvrs: Upstrea
             ))}
           </ul>
         )}
+
+        {/* Archive + restore — the cold tier. Last of the storage sections because
+            it answers a question the others raise: the timeline is empty here, is
+            that footage gone? */}
+        <SectionLabel className="mt-4">Archive &amp; restore</SectionLabel>
+        <ArchiveSection node={node} />
 
         {/* Upstream 3rd-party NVR storage */}
         {nvrs.length > 0 && (

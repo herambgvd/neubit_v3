@@ -91,6 +91,9 @@ import type {
   NodeStoragePoolList,
   NodeStorageUsage,
   NodeTierRuleList,
+  NodeArchive,
+  NodeRestoreJobList,
+  NodeRestoreRangeList,
   CameraRecordingConfig,
   ScheduleApplyResult,
   ScheduleTemplate,
@@ -374,6 +377,19 @@ export const vms = {
       tierRules: (nodeId: string) => unwrap(api.get<NodeTierRuleList>(`/vms/federation/nodes/${nodeId}/storage/tier-rules`)),
       upstreamNvr: (nodeId: string, nvrId: string) =>
         unwrap(api.get<NodeUpstreamNvrStorage>(`/vms/federation/nodes/${nodeId}/nvrs/${nvrId}/storage`)),
+
+      // The cold tier. Read-only, and the missing write is the point: starting a
+      // restore and configuring the archive both gate node-side on
+      // vms.storage.manage, which the federation credential does not carry. The
+      // screen links out to the recorder for those rather than offering a button
+      // that can only fail.
+      archive: (nodeId: string) =>
+        unwrap(api.get<NodeArchive>(`/vms/federation/nodes/${nodeId}/storage/archive`)),
+      restoreRanges: (nodeId: string, opts: { camera_id?: string; from?: string; to?: string } = {}) =>
+        unwrap(api.get<NodeRestoreRangeList>(
+          `/vms/federation/nodes/${nodeId}/storage/restore/ranges${qs(opts)}`)),
+      restoreJobs: (nodeId: string) =>
+        unwrap(api.get<NodeRestoreJobList>(`/vms/federation/nodes/${nodeId}/storage/restore/jobs`)),
     },
 
     // ── recording schedules — the one CONFIG the VMS authors on a recorder ─────

@@ -1395,3 +1395,55 @@ async def put_camera_recording(
     return await _node_json(
         "PUT", api_url, f"/cameras/{camera_id}/recording", credential=credential, json_body=body
     )
+
+
+# ── archive + restore (cold tier), READ ONLY ────────────────────────────────
+#
+# The archive makes a durable second copy; retention later removes the LOCAL one,
+# leaving footage recoverable only from the archive. Three reads say what that
+# posture is, what is recoverable, and how past recoveries went.
+#
+# There is no write here, and the absence is the design. Starting a restore writes
+# footage back to local disk and re-indexes it; configuring the archive decides
+# where every future copy lands. Both gate node-side on ``vms.storage.manage``,
+# which the federation credential does not carry and is not going to — reading how
+# full a disk is and deciding where footage lives are not the same act. A route for
+# them here could only ever produce a refusal, so the console links out to the
+# recorder instead of offering a button that cannot work.
+
+
+async def get_node_archive(api_url: str, *, credential: str | None = None) -> dict:
+    """GET …/storage/archive → the archive schedule, its destination, when it last
+    ran and what it moved, plus the estate's archived/local-only/cold-only counts.
+
+    `blocked_reason` is the field worth surfacing: the recorder says when the
+    archive is configured but cannot run (no destination, pool offline), which is
+    the difference between "nothing archived yet" and "nothing will be."""
+    return await _node_json("GET", api_url, "/storage/archive", credential=credential)
+
+
+async def get_node_restore_ranges(
+    api_url: str,
+    *,
+    camera_id: str | None = None,
+    frm: str | None = None,
+    to: str | None = None,
+    credential: str | None = None,
+) -> dict:
+    """GET …/storage/restore/ranges → cold-ONLY manifest entries: footage that no
+    longer exists on local disk and survives in the archive alone. This is the
+    honest answer to "the timeline is empty here, is the footage gone" — and the
+    two answers are very different."""
+    return await _node_json(
+        "GET", api_url, "/storage/restore/ranges",
+        params={"camera_id": camera_id, "from": frm, "to": to},
+        credential=credential,
+    )
+
+
+async def get_node_restore_jobs(api_url: str, *, credential: str | None = None) -> dict:
+    """GET …/storage/restore/jobs → recent restores with their per-segment counts.
+
+    `requested`/`restored`/`failed` are all carried: a restore that recovered 40 of
+    50 segments is not a success and not a failure, and only the counts say so."""
+    return await _node_json("GET", api_url, "/storage/restore/jobs", credential=credential)
