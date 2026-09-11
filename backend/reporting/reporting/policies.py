@@ -51,7 +51,9 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
+from itertools import groupby
 
 # ── the objects we manage policies on ─────────────────────────────────────────
 RAW = "readings"
@@ -96,33 +98,45 @@ _SECONDS = {
 }
 
 
-# `_QTY_UNIT_RE`, and the NAME is the point: the first attempt called this
-# `_INTERVAL_RE`, which already exists above as the VALIDATOR — the whitelist that
-# decides what may be interpolated into `INTERVAL '<value>'` in DDL. A module-level
-# rebind would have silently replaced it, and the thing that stops an environment
-# variable reaching SQL would have been this looser pattern instead.
+# NO REGEX HERE, and that is the second attempt at this function.
 #
-# POSSESSIVE, and measured rather than assumed. The three classes are disjoint, so
-# backtracking can never turn a failure into a match — but the engine still tries:
-# on a run of digits with no unit after it, `\d+` gives back one character at a
-# time and each retry fails again, which is quadratic. 20,000 digits took 7.3s;
-# `++`/`*+` (Python 3.11, which is what these images run) took 0.92s, and both
-# return identical pairs for every interval the validator admits.
+# The first attempt was a compiled pattern named `_INTERVAL_RE` — which already
+# exists above as the VALIDATOR, the whitelist deciding what may be interpolated
+# into `INTERVAL '<value>'` in DDL. At module scope that name does not sit beside
+# the validator, it REPLACES it, and the thing standing between an environment
+# variable and a SQL literal would have become this much looser pattern.
 #
-# It only ever sees strings `_INTERVAL_RE` has already accepted, so this is not a
-# reachable denial of service today — it is one input-validation change away from
-# being one, and the fix costs nothing. That also explains why `_SECONDS` is keyed
-# on whole words: a compact "1h30m" never gets this far.
-_QTY_UNIT_RE = re.compile(r"(\d++)[ \t]*+([A-Za-z]++)")
+# Renaming fixed that, and left a pattern the analyser then called super-linear —
+# correctly: on a long run of digits with no unit after it, `\d+` gives back one
+# character at a time and every retry fails again. Measured at 20,000 digits it
+# was 7.3 seconds. Possessive quantifiers cut it to 0.92s and the analyser did
+# not recognise them.
+#
+# A single left-to-right pass has no backtracking to reason about at all, and it
+# is the honest shape of the problem: runs of digits and runs of everything else,
+# alternating. `groupby` does exactly that, once, in order.
+def _quantity_units(interval: str) -> Iterator[tuple[int, str]]:
+    """("1 hour 30 minutes") → (1, "hour"), (30, "minutes"). Linear, by construction."""
+    qty: str | None = None
+    for is_digit, chars in groupby(interval, str.isdigit):
+        run = "".join(chars)
+        if is_digit:
+            # Kept as text until there is a unit to pair it with. A bare run of
+            # digits with nothing after it is not a quantity of anything, and
+            # `int()` on a long enough one raises rather than being ignored.
+            qty = run
+        elif qty is not None:
+            # `.strip()` and not `.split()`: the validator has already guaranteed
+            # one unit word per quantity, and quietly taking the first word of
+            # something it rejected would hide a bad value instead of raising on it.
+            yield int(qty), run.strip()
+            qty = None
 
 
 def approx_seconds(interval: str) -> float:
-    total = 0.0
-    # `[ \t]`, not `\s`: an interval is one line ("7 days", "1 hour 30 minutes"),
-    # and `\s` would also match the newlines that make a whitespace run ambiguous.
-    for qty, unit in _QTY_UNIT_RE.findall(interval):
-        total += int(qty) * _SECONDS[unit.rstrip("s").lower()]
-    return total
+    """Roughly how many seconds an interval is. Only good enough to order two of
+    them — see the safety rail below — not to be a calendar."""
+    return sum(qty * _SECONDS[unit.rstrip("s").lower()] for qty, unit in _quantity_units(interval))
 
 
 @dataclass(frozen=True)
