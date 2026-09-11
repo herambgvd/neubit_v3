@@ -71,34 +71,44 @@ class TestWhereTheTokenComesFrom:
 
 class TestWhatItRefuses:
     def test_no_token_at_all(self):
+        req = _Req()
         with pytest.raises(HTTPException) as e:
-            principal_or_401(_Req(), None)
+            principal_or_401(req, None)
         assert e.value.status_code == 401
         assert "SSE auth required" in e.value.detail["message"]
 
     def test_a_token_it_did_not_sign(self):
+        # Built before the block, so the only call inside it is the one under test —
+        # otherwise a failure in jwt.encode would satisfy the assertion for the
+        # wrong reason.
         forged = jwt.encode({"sub": "x", "type": "access"}, "not-the-secret", algorithm="HS256")
+        req = _Req()
         with pytest.raises(HTTPException) as e:
-            principal_or_401(_Req(), forged)
+            principal_or_401(req, forged)
         assert "invalid or expired" in e.value.detail["message"]
 
     def test_an_expired_token(self):
         old = _token(exp=dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=1))
+        req = _Req()
         with pytest.raises(HTTPException) as e:
-            principal_or_401(_Req(), old)
+            principal_or_401(req, old)
         assert "invalid or expired" in e.value.detail["message"]
 
     def test_a_refresh_token_used_as_an_access_token(self):
         # Distinct from "invalid": the signature is ours and the token is live. It
         # is the wrong KIND, and saying so is what stops this being debugged as a
         # signing problem.
+        refresh = _token(type="refresh")
+        req = _Req()
         with pytest.raises(HTTPException) as e:
-            principal_or_401(_Req(), _token(type="refresh"))
+            principal_or_401(req, refresh)
         assert "not an access token" in e.value.detail["message"]
 
     def test_a_token_naming_nobody(self):
+        no_subject = _token(drop="sub")
+        req = _Req()
         with pytest.raises(HTTPException) as e:
-            principal_or_401(_Req(), _token(drop="sub"))
+            principal_or_401(req, no_subject)
         assert "missing subject" in e.value.detail["message"]
 
 
