@@ -12,6 +12,7 @@ import type { FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
+import { trimChars } from "@/lib/validate";
 
 import type { AxiosError } from "axios";
 
@@ -40,12 +41,10 @@ const SLUG_ERROR = "slug must be lowercase alphanumeric with -/_ (3-64 chars)";
 /** Name → a slug that satisfies SLUG_RE: lowercase, non-slug runs collapsed to a
  *  single "-", trimmed to an alphanumeric at both ends, capped at 64. */
 function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/-+/g, "-")
-    .slice(0, 64)
-    .replace(/^-+|-+$/g, "");
+  // `[^a-z0-9]+` already collapses runs, so the second replace was a no-op; the
+  // leading/trailing strip is a loop because an anchored `-+$` is the shape that
+  // backtracks.
+  return trimChars(name.toLowerCase().replace(/[^a-z0-9]+/g, "-"), "-").slice(0, 64);
 }
 
 /** The machine code from the uniform error envelope (`{ error: { code } }` —

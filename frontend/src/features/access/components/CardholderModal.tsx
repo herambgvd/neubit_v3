@@ -8,6 +8,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
+import { isEmail } from "@/lib/validate";
 
 import { Button, Modal } from "@/components/ui/kit";
 import { Field, FieldLabel } from "@/components/common";
@@ -149,7 +150,7 @@ export default function CardholderModal({ instanceId, cardholder, onClose, onSuc
   const validate = () => {
     const next: Record<string, string> = {};
     if (!form.last_name.trim()) next.last_name = "Required";
-    if (form.email && !/^\S+@\S+\.\S+$/.test(form.email)) next.email = "Invalid email";
+    if (form.email && !isEmail(form.email)) next.email = "Invalid email";
     setErrors(next);
     return Object.keys(next).length === 0;
   };

@@ -68,8 +68,8 @@ export default function ConditionsPreview({ conditions }: ConditionsPreviewProps
       {open && (
         <div className="grid grid-cols-1 gap-3 border-t border-nb-line p-3 md:grid-cols-2">
           <div>
-            <label className="text-[11px] font-medium uppercase tracking-wide text-nb-faint">Sample payload (JSON)</label>
-            <textarea
+            <label className="text-[11px] font-medium uppercase tracking-wide text-nb-faint" htmlFor="conditions-sample">Sample payload (JSON)</label>
+            <textarea id="conditions-sample"
               value={text}
               onChange={(e) => setText(e.target.value)}
               spellCheck={false}
@@ -78,7 +78,7 @@ export default function ConditionsPreview({ conditions }: ConditionsPreviewProps
             {parsed.err && <p className="mt-1 text-[11px] text-nb-crit">JSON error: {parsed.err}</p>}
           </div>
           <div className="min-w-0">
-            <label className="text-[11px] font-medium uppercase tracking-wide text-nb-faint">Result</label>
+            <span className="text-[11px] font-medium uppercase tracking-wide text-nb-faint">Result</span>
             {!result ? (
               <p className="mt-2 text-[11px] text-nb-faint/70">Fix the JSON to preview.</p>
             ) : (

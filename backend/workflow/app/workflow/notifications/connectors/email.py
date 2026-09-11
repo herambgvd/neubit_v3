@@ -86,5 +86,8 @@ def _plain_text(html: str) -> str:
     text = _html.unescape(text)
     # Collapse the blank runs the stripped block tags leave behind.
     text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n\s*\n\s*\n+", "\n\n", text)
+    # `[ \t]`, not `\s`: \s matches \n too, so `\n\s*\n\s*\n+` can parse one run of
+    # newlines in many ways and the engine tries them. A long stretch of blank
+    # lines in a forwarded email is enough to make that bite.
+    text = re.sub(r"(?:\n[ \t]*){3,}", "\n\n", text)
     return text.strip()

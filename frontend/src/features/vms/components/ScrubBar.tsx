@@ -360,8 +360,35 @@ export default function ScrubBar({
 
   return (
     <div className="select-none">
+      {/* A SLIDER, and it can be driven from the keyboard.
+          
+          It was a div with mouse handlers: seeking a recording — the single most
+          used control on a playback screen — existed only for a pointer. The ARIA
+          slider role plus arrow keys is the standard answer, and the values are
+          real ones (the window's own timestamps), so a screen reader announces
+          where in the recording the playhead is rather than a bare percentage. */}
       <div
         ref={trackRef}
+        role="slider"
+        tabIndex={disabled ? -1 : 0}
+        aria-label="Seek within the recording"
+        aria-valuemin={windowStart}
+        aria-valuemax={windowStart + span}
+        aria-valuenow={current ?? windowStart}
+        aria-disabled={disabled || undefined}
+        onKeyDown={(e) => {
+          if (disabled || current == null) return;
+          // A nudge is 1% of the visible window and a page is 10% — relative to
+          // what is on screen, so the same key does something sensible whether the
+          // operator is looking at an hour or at a week.
+          const step = span / 100;
+          const delta =
+            { ArrowLeft: -step, ArrowRight: step, PageUp: -step * 10, PageDown: step * 10 }[e.key] ??
+            (e.key === "Home" ? windowStart - current : e.key === "End" ? windowStart + span - current : null);
+          if (delta == null) return;
+          e.preventDefault();
+          onSeek?.(Math.max(windowStart, Math.min(windowStart + span, current + delta)));
+        }}
         onMouseDown={onDown}
         onMouseMove={onMove}
         onMouseLeave={() => setHover(null)}

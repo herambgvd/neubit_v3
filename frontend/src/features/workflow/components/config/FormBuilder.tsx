@@ -173,7 +173,7 @@ export default function FormBuilder({ form, onCancel, onSaved }: FormBuilderProp
 
       <div>
         <div className="flex items-center justify-between mb-1.5">
-          <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Fields</label>
+          <span className="text-xs font-medium uppercase tracking-wide text-nb-faint">Fields</span>
           <button type="button" onClick={addField} className="text-xs text-nb-blueb hover:underline">+ Add field</button>
         </div>
         {errors.fields && <p className="mb-2 text-xs text-nb-crit">{errors.fields}</p>}

@@ -34,7 +34,7 @@ export default function SiteScopeField({ sites, value, onChange, disabled }: Sit
   return (
     <div>
       <div className="mb-1.5 flex items-center justify-between">
-        <label className="text-xs font-medium text-nb-soft">Site access scope</label>
+        <span className="text-xs font-medium text-nb-soft">Site access scope</span>
         <span
           className={`rounded-[5px] border px-1.5 py-px font-mono text-[9px] uppercase tracking-[.5px] ${
             unrestricted

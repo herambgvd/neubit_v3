@@ -72,8 +72,11 @@ function splitDefault(rest: string): { type: string; hasDefault: boolean } {
   return { type: rest.trim(), hasDefault: false };
 }
 
-const FIELD = /^ {4}([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.+)$/;
-const CLASS = /^class\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(([^)]*)\))?\s*:/;
+// `[ \t]`, not `\s`, either side of the colon: `\s*` and `.+` both match a space,
+// so a line with a long run after the colon has many parses and the engine walks
+// them. The narrower class leaves nothing to backtrack over.
+const FIELD = /^ {4}([A-Za-z_][A-Za-z0-9_]*)[ \t]*:[ \t]*(\S.*)$/;
+const CLASS = /^class[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]*(?:\(([^)]*)\))?[ \t]*:/;
 
 /** Every model class in one Python file, keyed by class name. */
 export function parseModels(file: string): Map<string, PythonModel> {
@@ -255,10 +258,15 @@ export function parseDictKeys(file: string, marker: string, open = "{"): string[
   const keys: string[] = [];
   let depth = 0;
   let quote: string | null = null;
-  for (let i = start; i < text.length; i++) {
+  // A `while`, not a `for`: this scanner JUMPS — past a closing quote, and past the
+  // whole string it just read. A `for` header that promises `i++` while the body
+  // reassigns `i` describes a loop that is not the one running.
+  let i = start;
+  while (i < text.length) {
     const c = text[i]!;
     if (quote) {
       if (c === quote && text[i - 1] !== "\\") quote = null;
+      i += 1;
       continue;
     }
     if (c === '"' || c === "'") {
@@ -266,9 +274,9 @@ export function parseDictKeys(file: string, marker: string, open = "{"): string[
         // A string at depth 1 is a candidate key — keep it if a `:` follows.
         const close = text.indexOf(c, i + 1);
         if (close > 0) {
-          const after = text.slice(close + 1).match(/^\s*(.)/);
+          const after = text.slice(close + 1).match(/^[ \t\n]*(.)/);
           if (after && after[1] === ":") keys.push(text.slice(i + 1, close));
-          i = close;
+          i = close + 1;
           continue;
         }
       }
@@ -278,6 +286,7 @@ export function parseDictKeys(file: string, marker: string, open = "{"): string[
       depth--;
       if (depth === 0) break;
     }
+    i += 1;
   }
   if (keys.length === 0) throw new Error(`no keys in the dict after ${marker} in ${file}`);
   return keys;

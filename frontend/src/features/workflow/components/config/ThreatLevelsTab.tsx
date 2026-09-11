@@ -62,7 +62,7 @@ export default function ThreatLevelsTab() {
           options={[{ value: "", label: "Deployment-wide" }, ...sites.map((s) => ({ value: s.site_id, label: s.name }))]}
         />
         <div>
-          <label className="text-[10px] font-semibold uppercase tracking-[1.4px] text-nb-faint">Level</label>
+          <span className="text-[10px] font-semibold uppercase tracking-[1.4px] text-nb-faint">Level</span>
           <div className="mt-1 grid grid-cols-2 gap-2">
             {THREAT_LEVELS.map((lv) => (
               <button key={lv} type="button" onClick={() => setLevel(lv)} className={`rounded-lg border px-3 py-2 text-sm font-medium capitalize transition ${level === lv ? `${THREAT_COLOR[lv]} border-transparent` : "border-nb-line text-nb-faint hover:bg-[rgba(96,165,250,.06)]"}`}>{lv}</button>

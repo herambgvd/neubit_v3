@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { Icon } from "@iconify/react";
+import { isEmail } from "@/lib/validate";
 
 import { NbLabel, NbInput, NbSubmit, NbError, NbFieldError } from "./NeubitAuthShell";
 
@@ -75,7 +76,6 @@ function SsoButton({ label, Glyph, wide, onClick }: any) {
 /* The backend answers an empty payload with a generic "Request validation
    failed" — useless to an operator. Catch the obvious cases here instead and
    say which field is wrong, in that field's own words. */
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface LoginFieldErrors {
   email?: string;
@@ -86,7 +86,7 @@ function validate(email: string, password: string): LoginFieldErrors {
   const next: LoginFieldErrors = {};
   const trimmed = email.trim();
   if (!trimmed) next.email = "Work email is required.";
-  else if (!EMAIL_RE.test(trimmed)) next.email = "Enter a valid work email, e.g. you@company.com.";
+  else if (!isEmail(trimmed)) next.email = "Enter a valid work email, e.g. you@company.com.";
   if (!password) next.password = "Password is required.";
   return next;
 }

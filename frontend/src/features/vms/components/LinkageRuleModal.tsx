@@ -308,7 +308,9 @@ export default function LinkageRuleModal({ open, rule, onClose, onSave, saving =
             />
           </div>
           <div className="mt-2">
-            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">Active window</label>
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">
+              Active window
+            </span>
             <LinkageScheduleEditor value={form.schedule} onChange={(schedule) => patch({ schedule })} />
           </div>
         </Section>

@@ -6,6 +6,7 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { trimEnd } from "@/lib/validate";
 
 import { Button, Modal } from "@/components/ui/kit";
 import { Field } from "@/components/common";
@@ -21,11 +22,11 @@ function normalizeBaseUrl(value: string): string {
   if (!raw) return "";
   try {
     const u = new URL(raw);
-    if (u.hostname?.endsWith(".")) u.hostname = u.hostname.replace(/\.+$/, "");
-    u.pathname = u.pathname.replace(/\/+$/, "");
+    if (u.hostname?.endsWith(".")) u.hostname = trimEnd(u.hostname, ".");
+    u.pathname = trimEnd(u.pathname, "/");
     return u.toString().replace(/\/$/, "");
   } catch {
-    return raw.replace(/\/+$/, "");
+    return trimEnd(raw, "/");
   }
 }
 

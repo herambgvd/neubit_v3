@@ -146,7 +146,7 @@ export default function FormatForm({ format, sops, pending, onCancel, onSubmit }
 
       {/* Colour — swatches + custom picker (compact, below Field's control API) */}
       <div>
-        <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Colour</label>
+        <span className="text-xs font-medium uppercase tracking-wide text-nb-faint">Colour</span>
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
           {SWATCHES.map((c) => (
             <button

@@ -53,10 +53,20 @@ export default function CameraQuickPicker({ open, cameras = [], mountedIds, tile
   if (!open || typeof document === "undefined") return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/50 p-4 pt-[12vh]" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/50 p-4 pt-[12vh]">
+      {/* The dismiss surface is its own element behind the panel — as a handler on
+          the container it needed the panel to cancel it, which left two elements
+          a keyboard could not make sense of. Hidden from assistive tech: the
+          picker closes on Escape and this is the mouse route. */}
+      <button
+        type="button"
+        aria-hidden="true"
+        tabIndex={-1}
+        className="absolute inset-0 -z-10 cursor-default"
+        onMouseDown={onClose}
+      />
       <div
         className="w-full max-w-md overflow-hidden rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.95)] shadow-2xl backdrop-blur-xs"
-        onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-[rgba(160,150,245,.22)] px-3">
           <Icon icon="heroicons-outline:magnifying-glass" className="text-base text-[#7e93bf]" />

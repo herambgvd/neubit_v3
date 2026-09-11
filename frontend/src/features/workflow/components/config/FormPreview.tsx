@@ -10,6 +10,7 @@
 // default_value, options:[{value,label}], validation:{required, pattern} }).
 import { useMemo, useState } from "react";
 import { Icon } from "@iconify/react";
+import { trimChars } from "@/lib/validate";
 
 import { Button } from "@/components/ui/kit";
 import type { FormFieldSchema, FormFieldValue, FormValues } from "../../types";
@@ -20,7 +21,7 @@ import FormSubmitTestModal from "./FormSubmitTestModal";
 const FIELDS_WITH_OPTIONS = new Set<string>(["select", "radio", "multiselect"]);
 
 const slug = (s: string | null | undefined, i: number): string =>
-  ((s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || `field_${i + 1}`);
+  trimChars((s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "_"), "_") || `field_${i + 1}`;
 
 /** A renderer field whose `id` is always set (the preview keys inputs by it). */
 export type PreviewField = FormFieldSchema & { id: string };

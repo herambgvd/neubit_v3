@@ -104,7 +104,7 @@ export default function DecoderFormModal({
         <Input label="Name" value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Wall decoder A" autoFocus />
         <Select label="Brand" options={BRAND_OPTS} value={form.brand} onChange={(e) => set("brand", e.target.value)} />
         <div className="grid grid-cols-[1fr_120px] gap-3">
-          <Input label="Host / IP" value={form.host} onChange={(e) => set("host", e.target.value)} placeholder="192.168.1.50" />
+          <Input label="Host / IP" value={form.host} onChange={(e) => set("host", e.target.value)} placeholder="hostname or IP" />
           <Input label="Port" type="number" min={1} value={form.port} onChange={(e) => set("port", e.target.value)} />
         </div>
         <div className="grid grid-cols-2 gap-3">

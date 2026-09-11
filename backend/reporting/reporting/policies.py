@@ -98,7 +98,9 @@ _SECONDS = {
 
 def approx_seconds(interval: str) -> float:
     total = 0.0
-    for qty, unit in re.findall(r"(\d+)\s*([a-zA-Z]+)", interval):
+    # `[ \t]`, not `\s`: an interval is "90d" or "7 days" on one line, and the
+    # narrower class leaves the engine nothing to backtrack over.
+    for qty, unit in re.findall(r"(\d+)[ \t]*([A-Za-z]+)", interval):
         total += int(qty) * _SECONDS[unit.rstrip("s").lower()]
     return total
 

@@ -8,8 +8,9 @@
 // ASCII-only on purpose. A "no spaces, one @" pattern happily accepts
 // "mohit😀@example.com" — and so did the API, so emoji addresses were reaching the
 // user table. This is the same rule the backend now enforces (core/fields.AsciiEmail).
-const EMAIL_RE = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
 const PASSWORD_HINT = "At least 8 characters, with a letter and a number.";
+
+import { isEmail } from "@/lib/validate";
 
 export { PASSWORD_HINT };
 
@@ -53,7 +54,7 @@ export function emailError(value: string | null | undefined): string | undefined
   // Called out separately: "invalid address" next to a field that looks fine to the
   // eye is baffling when the only problem is a pasted emoji or accented character.
   if (!/^[\x20-\x7e]*$/.test(email)) return "Email can only contain plain letters, numbers and . _ % + - symbols.";
-  if (!EMAIL_RE.test(email)) return "Enter a valid email address, e.g. name@company.com.";
+  if (!isEmail(email)) return "Enter a valid email address, e.g. name@company.com.";
   return undefined;
 }
 

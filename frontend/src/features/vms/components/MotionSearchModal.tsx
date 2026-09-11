@@ -408,13 +408,13 @@ export default function MotionSearchModal({
         )}
 
         {/* Sensitivity */}
-        <label className="block">
+        <label className="block" htmlFor="motion-sensitivity">
           <span className="mb-1 flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">
             <span>Sensitivity</span>
             <span className="font-mono text-[#f2f6ff]">{sensitivity.toFixed(2)}</span>
           </span>
           <input
-            type="range"
+            id="motion-sensitivity" type="range"
             min={0}
             max={1}
             step={0.05}

@@ -218,7 +218,7 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
       {/* Conditions (AND) */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
-          <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Conditions (all must match)</label>
+          <span className="text-xs font-medium uppercase tracking-wide text-nb-faint">Conditions (all must match)</span>
           <button type="button" onClick={() => setConditions((cs) => [...cs, { path: "", op: "eq", value: "" }])} className="text-xs text-nb-blueb hover:underline">+ Add condition</button>
         </div>
         {conditions.length === 0 ? (
@@ -249,7 +249,7 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
 
       {/* Deduplication */}
       <div>
-        <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-nb-faint">Deduplication</label>
+        <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-nb-faint">Deduplication</span>
         <p className="mb-2 text-[11px] text-nb-faint/70">Within the window, events resolving to the same dedup key are suppressed — only the first raises an incident.</p>
         <div className="space-y-2">
           {DEDUP_STRATEGIES.map((s) => {

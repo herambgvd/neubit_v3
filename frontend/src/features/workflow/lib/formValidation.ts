@@ -12,6 +12,7 @@
 //   validation.pattern  → value must match the regex (text-ish fields only)
 
 import type { FormFieldSchema, FormFieldValue, FormValues } from "../types";
+import { isEmail } from "@/lib/validate";
 
 const isEmpty = (v: unknown): boolean =>
   v === undefined ||
@@ -41,7 +42,7 @@ export function validateField(field: FormFieldSchema, value: unknown): string | 
   }
 
   if (field.type === "email" && typeof value === "string") {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return "Must be a valid email";
+    if (!isEmail(value)) return "Must be a valid email";
   }
 
   if (OPTION_TYPES.has(field.type)) {

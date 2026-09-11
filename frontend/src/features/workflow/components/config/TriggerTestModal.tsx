@@ -104,8 +104,8 @@ export default function TriggerTestModal({ open, trigger, onClose }: TriggerTest
         </p>
 
         <div>
-          <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Event type</label>
-          <input
+          <label className="text-xs font-medium uppercase tracking-wide text-nb-faint" htmlFor="trigger-test-event-type">Event type</label>
+          <input id="trigger-test-event-type"
             value={eventType}
             onChange={(e) => setEventType(e.target.value)}
             placeholder="e.g. fire.alarm"
@@ -114,8 +114,8 @@ export default function TriggerTestModal({ open, trigger, onClose }: TriggerTest
         </div>
 
         <div>
-          <label className="text-xs font-medium uppercase tracking-wide text-nb-faint">Sample payload (JSON)</label>
-          <textarea
+          <label className="text-xs font-medium uppercase tracking-wide text-nb-faint" htmlFor="trigger-test-payload">Sample payload (JSON)</label>
+          <textarea id="trigger-test-payload"
             value={payloadText}
             onChange={(e) => setPayloadText(e.target.value)}
             spellCheck={false}

@@ -1,4 +1,4 @@
-import type { ComponentPropsWithoutRef } from "react";
+import type { ReactNode, ComponentPropsWithoutRef } from "react";
 import { cn } from "@/lib/cn";
 
 export function Card({ className, ...props }: ComponentPropsWithoutRef<"div">) {
@@ -14,7 +14,10 @@ export function CardHeader({ className, ...props }: ComponentPropsWithoutRef<"di
   return <div className={cn("border-b border-card-border px-5 py-4", className)} {...props} />;
 }
 
-export function CardTitle({ className, ...props }: ComponentPropsWithoutRef<"h3">) {
+export function CardTitle({
+  className,
+  ...props
+}: ComponentPropsWithoutRef<"h3"> & { children: ReactNode }) {
   return (
     <h3
       className={cn("text-sm font-semibold tracking-tight text-foreground", className)}

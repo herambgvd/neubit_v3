@@ -59,10 +59,17 @@ function normalize(text: string): string {
  */
 export function parseCoordinate(query: string): Coordinate | null {
   const cleaned = query.replace(/[°\s]+/g, " ").trim();
-  const match = cleaned.match(/^(-?\d+(?:\.\d+)?)\s*[,/ ]\s*(-?\d+(?:\.\d+)?)$/);
-  if (!match) return null;
-  const lat = Number(match[1]);
-  const lng = Number(match[2]);
+  // SPLIT, not one pattern. `\s*[,/ ]\s*` puts a space in the separator class and
+  // in `\s` either side of it, so "28 , 77" has several parses and the engine
+  // tries them — super-linear on a long paste that turns out not to be a
+  // coordinate at all. Splitting on the separators is unambiguous and says the
+  // thing out loud: two numbers, something between them.
+  const parts = cleaned.split(/[,/ ]+/).filter(Boolean);
+  if (parts.length !== 2) return null;
+  const NUM = /^-?\d+(?:\.\d+)?$/;
+  if (!NUM.test(parts[0]) || !NUM.test(parts[1])) return null;
+  const lat = Number(parts[0]);
+  const lng = Number(parts[1]);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
   return { lat, lng };

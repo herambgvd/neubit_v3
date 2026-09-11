@@ -159,7 +159,7 @@ export default function SimulatorTab() {
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto scroll-themed px-5 py-4 space-y-4">
           <div>
-            <label className="text-[10px] font-semibold uppercase tracking-[1.4px] text-nb-faint">Presets</label>
+            <span className="text-[10px] font-semibold uppercase tracking-[1.4px] text-nb-faint">Presets</span>
             <div className="mt-1.5 flex flex-wrap gap-2">
               {PRESETS.map((p) => (
                 <button
@@ -212,8 +212,8 @@ export default function SimulatorTab() {
             error={errors.payload}
           />
 
-          <label className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 cursor-pointer transition ${dryRun ? "border-nb-line bg-[rgba(6,11,26,.5)]" : "border-nb-warn/40 bg-nb-warn/10"}`}>
-            <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} className={`${checkboxClass} mt-0.5`} />
+          <label className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 cursor-pointer transition ${dryRun ? "border-nb-line bg-[rgba(6,11,26,.5)]" : "border-nb-warn/40 bg-nb-warn/10"}`} htmlFor="simulator-dry-run">
+            <input id="simulator-dry-run" type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} className={`${checkboxClass} mt-0.5`} />
             <span className="min-w-0">
               <span className="block text-sm font-medium text-nb-ink">Dry run</span>
               <span className="block text-[11px] text-nb-faint">

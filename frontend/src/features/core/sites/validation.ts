@@ -3,7 +3,6 @@
 // field, instead of reading a 422 out of a toast.
 
 // ASCII-only, same rule the backend enforces (core/fields.AsciiEmail).
-const EMAIL_RE = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
 
 // Zip code and phone are numeric fields — letters used to sail straight through
 // to the API. Same rules the backend now enforces (sites/shared.py).
@@ -12,6 +11,8 @@ const PHONE_RE = /^\+?[\d\s()-]+$/;
 
 // Strip anything that can't belong in the field as the operator types, so a
 // letter never lands in the box in the first place.
+import { isEmail } from "@/lib/validate";
+
 export const sanitizeZip = (v: string): string => v.replace(/\D/g, "").slice(0, 10);
 export const sanitizePhone = (v: string): string =>
   // A "+" is only meaningful as a country-code prefix, so keep it at the front only.
@@ -60,7 +61,7 @@ export function validateSite({ name, emailAddress, latitude, longitude, zipCode,
     // Optional field — but a filled-in address is held to the same rule as a user's.
     if (!/^[\x20-\x7e]*$/.test(email)) {
       errors.emailAddress = "Email can only contain plain letters, numbers and . _ % + - symbols.";
-    } else if (!EMAIL_RE.test(email)) {
+    } else if (!isEmail(email)) {
       errors.emailAddress = "Enter a valid email address, e.g. name@company.com.";
     }
   }
