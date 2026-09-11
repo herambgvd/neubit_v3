@@ -46,7 +46,10 @@ class DevicePlacement(Base):
     )
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
 
-    device_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    # 128, not 36: a recorder-owned camera's estate id is the composite
+    # `fed:<node>:<camera>` — two UUIDs and a prefix — and that is the id the floor
+    # builder offers and `useCameraSites` joins on. See migration 0029.
+    device_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     device_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     service: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
 
