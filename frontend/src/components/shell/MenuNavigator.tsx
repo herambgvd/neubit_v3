@@ -158,18 +158,28 @@ export default function MenuNavigator() {
   const overlay =
     open && mounted
       ? createPortal(
+          // THE DISMISS SURFACE IS ITS OWN ELEMENT, behind the content.
+          //
+          // It used to be the container itself: click anywhere to close, with the
+          // inner panel stopping propagation to carve itself out. That works for a
+          // mouse and produces two elements a keyboard cannot make sense of — an
+          // enormous clickable region with no role, and a panel whose only job is
+          // to cancel it. Splitting them means the backdrop is a real <button>
+          // announcing "close", and the content needs no handler at all.
           <div
             className="fixed inset-0 z-[100] overflow-y-auto text-[#f2f6ff] antialiased"
             style={{
               background:
                 "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)",
             }}
-            onClick={() => setOpen(false)}
           >
-            <div
-              className="mx-auto w-full max-w-6xl px-6 py-8"
-              onClick={(e) => e.stopPropagation()}
-            >
+            <button
+              type="button"
+              aria-label="Close the launcher"
+              className="fixed inset-0 -z-10 cursor-default"
+              onClick={() => setOpen(false)}
+            />
+            <div className="mx-auto w-full max-w-6xl px-6 py-8">
               <div className="mb-8 flex items-center gap-3">
                 <span className="grid h-9 w-9 place-items-center rounded-[8px] border border-[rgba(34,211,238,.4)] bg-[rgba(34,211,238,.13)] text-[#67e8f9]">
                   <Icon icon="heroicons-outline:home" className="text-[18px]" />

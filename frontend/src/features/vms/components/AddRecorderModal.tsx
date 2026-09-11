@@ -135,7 +135,7 @@ export default function AddRecorderModal({ node, onClose, onSuccess }: AddRecord
           required
           value={form.api_url}
           onChange={(e) => set({ api_url: e.target.value })}
-          placeholder="http://10.0.0.20:8000"
+          placeholder="https://10.0.0.20:8000"
           error={errors.api_url}
           hint="The recorder's node API (port 8000 by default) — NOT its operator console on 8080, which serves the browser and does not forward federation credentials. Saved even if unreachable now."
         />

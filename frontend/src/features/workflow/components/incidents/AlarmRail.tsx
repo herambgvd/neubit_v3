@@ -111,12 +111,18 @@ export default function AlarmRail({
                       </span>
                       <span className="truncate text-[10.5px] text-muted/80">{incSopName(it, sopName)}</span>
                     </span>
-                    <label className="flex items-start pt-0.5" onClick={(e) => e.stopPropagation()}>
+                    <label className="flex items-start pt-0.5">
                       <input
                         type="checkbox"
                         aria-label={`Select ${incTitle(it)}`}
                         checked={checked.has(id)}
                         onChange={() => onToggleChecked(id)}
+                        // On the checkbox, not on the label around it. Ticking a box
+                        // must not also open the alarm, and the guard belongs on the
+                        // interactive element — a click handler on the wrapper is a
+                        // control the keyboard cannot see, and the label wraps
+                        // nothing else anyway.
+                        onClick={(e) => e.stopPropagation()}
                         className="h-3.5 w-3.5 accent-blue-500"
                       />
                     </label>

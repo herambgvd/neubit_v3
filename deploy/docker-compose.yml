@@ -226,6 +226,15 @@ services:
       VE_LOG_LEVEL: ${VE_LOG_LEVEL:-INFO}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    # The socket's GROUP, which is what mode 0660 actually gates on — the image runs
+    # as uid 10001 like everything else rather than as root. 0 is correct for Docker
+    # Desktop, where the socket is root:root inside the container. On a Linux host it
+    # is usually root:docker: check with
+    #   docker run --rm -v /var/run/docker.sock:/var/run/docker.sock alpine stat -c %g /var/run/docker.sock
+    # and set that gid here. Getting it wrong is loud, not silent: /readyz pings the
+    # daemon, so the container reports unhealthy instead of quietly 502ing.
+    group_add:
+      - "0"
     # /readyz pings the daemon. /health only says the process is up, and the
     # agent's entire purpose is the socket — without this the container reported
     # running while every request 502'd. No curl in the image, so python does it.

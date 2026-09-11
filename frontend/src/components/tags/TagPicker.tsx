@@ -123,7 +123,12 @@ export default function TagPicker({ entityType, entityId, size = "sm" }: TagPick
             user with an open popover and nothing to press. The backdrop stays —
             it is the mouse route — and is marked presentational, because Escape
             (above) is the real one and this needs no tab stop of its own. */}
-        <div className="fixed inset-0 z-30" role="presentation" onClick={() => setOpen(false)} />
+        <button
+          type="button"
+          aria-label="Close the tag picker"
+          className="fixed inset-0 z-30"
+          onClick={() => setOpen(false)}
+        />
             <div className="absolute left-0 z-40 mt-1 w-56 rounded-lg border border-card-border bg-card shadow-xl p-1">
               {allQ.isLoading ? (
                 <div className="px-3 py-3 text-xs text-muted">Loading tags…</div>

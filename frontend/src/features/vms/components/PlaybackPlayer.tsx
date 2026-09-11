@@ -55,10 +55,15 @@ function readout(ms: number | null) {
 // (the media token authorizes the /h264 sub-path too). Used as the H.265/HEVC fallback:
 // browsers/hls.js can't decode HEVC, so on a codec error we reload this transcoded URL.
 // Returns null when it isn't an index.m3u8 URL or is already a /h264 variant.
+// The second argument to `new URL` is a BASE for resolving a relative path, never
+// somewhere anything is fetched from — during SSR there is no window.location to
+// borrow. `.invalid` is the reserved TLD for exactly this (RFC 2606), so the value
+// cannot resolve even by accident, and https keeps a cleartext URL out of a file
+// nobody should have to read twice to be sure about.
 function toH264Hls(url: string | null | undefined): string | null {
   if (!url) return null;
   try {
-    const u = new URL(url, typeof window !== "undefined" ? window.location.origin : "http://x");
+    const u = new URL(url, typeof window !== "undefined" ? window.location.origin : "https://ssr.invalid");
     if (/\/h264\/index\.m3u8$/.test(u.pathname) || !/\/index\.m3u8$/.test(u.pathname)) return null;
     u.pathname = u.pathname.replace(/\/index\.m3u8$/, "/h264/index.m3u8");
     return u.href;
@@ -73,7 +78,7 @@ function toH264Hls(url: string | null | undefined): string | null {
 function toTranscodedWhep(url: string): string | null {
   if (!url) return null;
   try {
-    const u = new URL(url, typeof window !== "undefined" ? window.location.origin : "http://x");
+    const u = new URL(url, typeof window !== "undefined" ? window.location.origin : "https://ssr.invalid");
     if (!/\/whep$/.test(u.pathname) || /\/h264\/whep$/.test(u.pathname)) return null;
     u.pathname = u.pathname.replace(/\/whep$/, "/h264/whep");
     return u.toString();

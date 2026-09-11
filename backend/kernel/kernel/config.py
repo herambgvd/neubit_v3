@@ -30,7 +30,13 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
 
     # --- Databases (this service's OWN db) ---------------------------------
-    database_url: str = "postgresql+asyncpg://neubit:neubit@localhost:5432/neubit"
+    # NO PASSWORD IN THE DEFAULT. This value exists so a developer can start a
+    # service against a local Postgres; every deployment sets VE_DATABASE_URL. A
+    # password baked in here is a credential in source control that nothing uses —
+    # and the day somebody DOES rely on it, the default has quietly become the
+    # production secret. Without one, libpq falls back to ~/.pgpass or a prompt,
+    # which is where a developer's own credential belongs.
+    database_url: str = "postgresql+asyncpg://neubit@localhost:5432/neubit"
     # DB-per-tenant (ARCHITECTURE.md §10). Off: shared DB with tenant_id row
     # scoping, today's default. On: each tenant gets its own physical database
     # (``<base>_t_<tenant_hex>``), routed by the JWT tenant claim, created on

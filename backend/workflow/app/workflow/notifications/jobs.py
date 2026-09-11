@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
-import random
+import secrets
 import socket
 from datetime import timedelta
 
@@ -53,7 +53,12 @@ def _backoff_delay(attempts: int) -> timedelta:
     next retry). Jitter is ±20% to avoid thundering-herd re-dispatch.
     """
     raw = min(NOTIFY_BACKOFF_BASE_SECONDS * (2 ** max(attempts, 0)), NOTIFY_BACKOFF_CAP_SECONDS)
-    jitter = raw * 0.2 * (random.random() * 2 - 1)  # ±20%
+    # `secrets`, not `random`. The jitter itself guards nothing — it only spreads a
+    # herd — but one source of randomness across the codebase beats a per-call-site
+    # judgement about which uses matter, which the next reader has to re-derive and
+    # can get wrong. randbelow(2001)/1000 - 1 gives a uniform [-1, 1] in
+    # milli-steps, which is finer than a retry schedule can observe.
+    jitter = raw * 0.2 * (secrets.randbelow(2001) / 1000 - 1)  # ±20%
     return timedelta(seconds=max(1.0, raw + jitter))
 
 

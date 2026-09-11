@@ -225,7 +225,13 @@ export default function CommandPalette() {
 
   return (
     <div className="fixed inset-0 z-[70]">
-      <div
+      {/* A real <button>, not a div with an onClick. It IS a control — "dismiss
+          this" — and as a div it was a control with no tab stop, no role and no
+          keyboard route. Escape covers keyboard users either way; this makes the
+          element honest about what it is instead of leaving that to a comment. */}
+      <button
+        type="button"
+        aria-label="Close the command palette"
         className="fixed inset-0 animate-fade-in bg-black/60 backdrop-blur-xs"
         onClick={() => setOpen(false)}
       />

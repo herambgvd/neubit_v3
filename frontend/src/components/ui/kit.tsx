@@ -586,7 +586,19 @@ export function Overlay({ onClose, staticBackdrop, wrapper = "items-center justi
   if (!mounted) return null;
   return createPortal(
     <div className={`fixed inset-0 z-50 flex ${wrapper}`}>
-      <div
+      {/* A <button>, because dismissing IS an action and a div with an onClick is
+          a control nothing can see. Hidden from assistive tech and out of the tab
+          order on purpose: the dialog already has an X with an accessible name,
+          and Escape closes it — so this is a REDUNDANT mouse affordance, and
+          announcing a second "Close" would make a screen-reader user choose
+          between two identical controls. Not focusable, so aria-hidden is honest
+          here rather than the usual mistake. `disabled` carries staticBackdrop,
+          so a modal that refuses an outside click has no dead control at all. */}
+      <button
+        type="button"
+        aria-hidden="true"
+        tabIndex={-1}
+        disabled={!!staticBackdrop}
         className="absolute inset-0 bg-black/60 backdrop-blur-xs animate-fade-in"
         onClick={staticBackdrop ? undefined : onClose}
       />

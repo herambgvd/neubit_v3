@@ -15,6 +15,8 @@
 // `wrap_email` (messaging/templates.py) which supplies the shell, and email
 // clients ignore <style> blocks.
 
+import { randomId } from "@/lib/random";
+
 export type BlockType = "heading" | "text" | "button" | "image" | "divider" | "spacer";
 
 export interface Block {
@@ -46,7 +48,7 @@ export const BLOCK_LABELS: Record<BlockType, { label: string; icon: string }> = 
 const MARKER = "nb-blocks:";
 
 export function newBlock(type: BlockType): Block {
-  const id = `b${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const id = `b${randomId(12)}`;
   switch (type) {
     case "heading":
       return { id, type, text: "Heading", level: 2, align: "left" };

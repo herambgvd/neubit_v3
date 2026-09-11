@@ -152,7 +152,7 @@ export default function OnboardInstanceModal({ onClose, onSuccess }: OnboardInst
           label="Base URL"
           value={form.base_url}
           onChange={(e) => set({ base_url: e.target.value })}
-          placeholder="http://dds.local:10695"
+          placeholder="https://dds.local:10695"
           error={errors.base_url}
         />
 

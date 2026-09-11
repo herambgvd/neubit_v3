@@ -22,6 +22,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
+import { randomId } from "@/lib/random";
 
 import { Button } from "@/components/ui/kit";
 import { CanvasToolControls } from "@/components/floor-builder/CanvasToolControls";
@@ -234,7 +235,7 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }: Floor
     (points: number[][]) => {
       pushHistory(zones);
       const draft: EditorZone = {
-        zone_id: `draft_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        zone_id: `draft_${randomId(12)}`,
         name: `Zone ${zones.length + 1}`,
         polygon: points,
         zone_type: "other",

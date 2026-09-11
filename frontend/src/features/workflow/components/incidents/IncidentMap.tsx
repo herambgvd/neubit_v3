@@ -153,12 +153,16 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
         unplaced.push(...items);
         continue;
       }
-      // Top priority in the cluster drives the marker color. No seed, and none is
-      // possible: "highest priority" has no identity element, and a fabricated
-      // one would colour a cluster by a priority no alarm in it holds. `items` is
-      // non-empty by construction — a zone appears in byZone only because an
-      // alarm was pushed into it — which is what makes the seedless reduce safe.
-      const top = items.reduce((a, b) => (prioWeight(b.priority) > prioWeight(a.priority) ? b : a));
+      // Top priority in the cluster drives the marker color. The seed is the first
+      // ITEM, not an invented default: "highest priority" has no identity element,
+      // and a fabricated seed would colour a cluster by a priority no alarm in it
+      // actually holds. Seeding from the list also removes the unwritten
+      // precondition a bare reduce carries — that `items` is never empty — which
+      // is true here by construction and was true only by construction.
+      const top = items.slice(1).reduce(
+        (a, b) => (prioWeight(b.priority) > prioWeight(a.priority) ? b : a),
+        items[0],
+      );
       clusters.push({ zone, items, x: ctr[0], y: ctr[1], priority: top.priority });
     }
     return { clusters, unplaced, siteCount: forSite.length, unmappedNoSite };

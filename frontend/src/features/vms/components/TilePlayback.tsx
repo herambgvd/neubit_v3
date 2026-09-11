@@ -45,6 +45,7 @@
 //      only a stream that has delivered NOTHING for a long time is a failure.
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
+import { randomInt } from "@/lib/random";
 
 import { vms } from "../api";
 import type { WallClock } from "../hooks/useWallPlayback";
@@ -426,7 +427,7 @@ function TilePlayback({
       try {
         // Bounded: never more than CHUNK_MAX_MS, never less than CHUNK_MIN_MS,
         // and jittered so a wall opened together does not run out together.
-        const jitter = Math.floor(Math.random() * CHUNK_JITTER_MS);
+        const jitter = randomInt(CHUNK_JITTER_MS);
         const far = Math.min(windowToRef.current ?? 0, atMs + CHUNK_MAX_MS);
         const to = Math.max(atMs + CHUNK_MIN_MS, far) + jitter;
         const s = await vms.federation.playback(nodeId, realId, {

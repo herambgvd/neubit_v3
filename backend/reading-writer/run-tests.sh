@@ -53,7 +53,7 @@ exec "$DOCKER" run --rm --network none \
   -e VE_ENV=dev \
   -e VE_JWT_SECRET=test-jwt-secret-that-is-long-enough-for-hs256 \
   -e VE_SECRETS_KEY=test-secrets-key \
-  -e VE_DATABASE_URL=postgresql+asyncpg://unused:unused@localhost:5432/neubit_reporting \
+  -e VE_DATABASE_URL=postgresql+asyncpg://localhost:5432/neubit_reporting \
   -e VE_NATS_URL= \
   "$TEST_IMAGE" \
   python -m pytest -p no:cacheprovider "$@"

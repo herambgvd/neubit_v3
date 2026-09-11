@@ -354,10 +354,13 @@ class HealthSampler:
         self._running = False
         if self._task is not None:
             self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
+            # gather(..., return_exceptions=True) rather than try/except: we are the
+            # canceller, so the CancelledError coming back is our own acknowledgement
+            # and there is nothing to handle. Written as an except clause it looked
+            # like a swallowed cancellation, which is a real bug elsewhere in this
+            # file — the task BODIES used to do exactly that. One shape that cannot
+            # be mistaken for the other is worth more than three saved characters.
+            await asyncio.gather(self._task, return_exceptions=True)
             self._task = None
         log.info("health sampler stopped")
 

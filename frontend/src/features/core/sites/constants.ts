@@ -3,6 +3,7 @@
 // feature's detail panels, forms, and the map view. Extracted from views/Sites.jsx
 // + views/SitesMap.jsx so every component reads one source of truth.
 import type { Coordinates, SitePublic, SiteType, ThreatLevel, ZoneType } from "@/lib/types";
+import { randomFrom } from "@/lib/random";
 
 /** A site that can be pinned: `coordinates` narrowed to non-null (see SitesMap). */
 export type SiteWithCoords = SitePublic & { coordinates: Coordinates };
@@ -46,6 +47,6 @@ const SITE_TYPE_PREFIX: Record<SiteType, string> = {
 
 export function generateLocationCode(siteType: SiteType): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const rand = Array.from({ length: 6 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
+  const rand = Array.from({ length: 6 }, () => randomFrom([...alphabet])).join("");
   return `${SITE_TYPE_PREFIX[siteType] || "STE"}-${rand}`;
 }

@@ -18,6 +18,8 @@ import {
   useInView,
 } from "framer-motion";
 
+import { randomFrom, randomInt } from "@/lib/random";
+
 const ACCENT = "#22d3ee"; // teal — NeuBit command-console accent
 
 /* ------------------------------------------------------------------ */
@@ -166,13 +168,13 @@ function EventFeed({ time }: { time: Date | null }) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const push = () => {
       if (!mounted) return;
-      const pick = EVENT_POOL[Math.floor(Math.random() * EVENT_POOL.length)];
+      const pick = randomFrom(EVENT_POOL);
       const id = seqRef.current++;
       setEvents((prev) => [
         { ...pick, id, t: fmtTime(new Date()) },
         ...prev.slice(0, 5),
       ]);
-      timer = setTimeout(push, 1500 + Math.random() * 1000);
+      timer = setTimeout(push, 1500 + randomInt(1000));
     };
     timer = setTimeout(push, 1800);
     return () => {

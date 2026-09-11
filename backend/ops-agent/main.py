@@ -547,16 +547,29 @@ async def db_import(request: Request) -> dict:
     # tenant secrets, the audit log — sat in the postgres container readable by
     # anything that could exec in, until the container was recreated. Two
     # concurrent restores also interleaved into the same file.
-    path = f"/tmp/neubit_restore_{uuid.uuid4().hex}.sql"
+    # A PRIVATE DIRECTORY, not a file in the shared one.
+    #
+    # /tmp is world-writable, and both halves of that matter. World-READABLE means
+    # a full control-DB dump — password hashes, encrypted tenant secrets, the audit
+    # log — is visible to anything that can exec into the container for as long as
+    # it exists. World-WRITABLE means another process can pre-create the path and
+    # have us write through its symlink.
+    #
+    # So the dump goes inside a 0700 directory with an unpredictable name, created
+    # in the same archive: the directory is ours before the file exists, nobody
+    # else can enter it, and the tar carries both modes so there is no window
+    # between creating and locking them down. The file itself is 0600 as well —
+    # belt and braces, because the two protect against different mistakes.
+    stage = f"neubit_restore_{uuid.uuid4().hex}"
+    path = f"/tmp/{stage}/dump.sql"
     tar_buf = io.BytesIO()
     with tarfile.open(fileobj=tar_buf, mode="w") as tar:
-        info = tarfile.TarInfo(name="neubit_restore.sql")
+        d = tarfile.TarInfo(name=stage)
+        d.type = tarfile.DIRTYPE
+        d.mode = 0o700
+        tar.addfile(d)
+        info = tarfile.TarInfo(name=f"{stage}/dump.sql")
         info.size = len(sql)
-        # 0600. The name is already unpredictable and the file is removed in the
-        # finally below, but between those two moments it is a full control-DB dump
-        # — password hashes, encrypted tenant secrets, the audit log — sitting in a
-        # world-readable /tmp. tar carries the mode, so the file is never readable
-        # by anything else in the container even for that window.
         info.mode = 0o600
         tar.addfile(info, io.BytesIO(sql))
     tar_buf.seek(0)
@@ -589,7 +602,7 @@ async def db_import(request: Request) -> dict:
     finally:
         # Always, including on failure — the staged file holds the whole dump.
         try:
-            container.exec_run(["rm", "-f", path])
+            container.exec_run(["rm", "-rf", f"/tmp/{stage}"])
         except APIError as exc:  # noqa: BLE001 — cleanup must not mask the result
             log.warning("could not remove staged dump %s: %s", path, exc)
     stdout, stderr = streams if isinstance(streams, tuple) else (streams, b"")
