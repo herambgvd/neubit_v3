@@ -12,6 +12,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import { renderWithProviders } from "@/test/render";
 import { stubApi } from "@/test/apiStub";
@@ -149,5 +150,76 @@ describe("the schedules screen", () => {
     renderWithProviders(<RecordingSchedules />);
 
     expect(await screen.findByText(/does not reach back into cameras already set/i)).toBeInTheDocument();
+  });
+});
+
+describe("changing a week", () => {
+  it("only offers Save once something has been painted", async () => {
+    // Enabled from the start, Save would write the stored week back over itself
+    // and mark a template as touched when nothing was.
+    authState.value = CAN;
+    stubApi(routes([{ id: "t1", name: "Business hours", schedule: GRID_WEEK }]));
+    renderWithProviders(<RecordingSchedules />);
+
+    expect(await screen.findByRole("button", { name: "Save week" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Discard" })).toBeNull();
+  });
+
+  it("sends the week that is on screen, not the one that was loaded", async () => {
+    authState.value = CAN;
+    const stub = stubApi({
+      ...routes([{ id: "t1", name: "Business hours", schedule: GRID_WEEK }]),
+      "PUT /vms/federation/nodes/n1/recording-schedule-templates/t1": () => ({
+        id: "t1",
+        name: "Business hours",
+      }),
+    });
+    renderWithProviders(<RecordingSchedules />);
+
+    // Paint Tuesday 09:00, which the stored week leaves off.
+    await userEvent.click(await screen.findByLabelText("Tue 09:00 — off"));
+    await userEvent.click(screen.getByRole("button", { name: "Save week" }));
+
+    const sent = stub.body(
+      "PUT /vms/federation/nodes/n1/recording-schedule-templates/t1",
+    ) as { schedule: Record<string, string[]> };
+    expect(sent.schedule.Tue[9]).toBe("record");
+    // And the day that was already on is still on — a save must not narrow the
+    // week to whatever was just touched.
+    expect(sent.schedule.Mon[9]).toBe("record");
+  });
+
+  it("will not apply a week that has not been saved", async () => {
+    // Applying pushes the STORED document. Offering it while a paint is unsaved
+    // would put one week on the cameras and leave a different one on screen.
+    authState.value = CAN;
+    stubApi(routes([{ id: "t1", name: "Business hours", schedule: GRID_WEEK }]));
+    renderWithProviders(<RecordingSchedules />);
+
+    await userEvent.click(await screen.findByLabelText("Tue 09:00 — off"));
+    expect(screen.getByRole("button", { name: /Apply to cameras/ })).toBeDisabled();
+  });
+
+  it("discards a paint back to what the recorder holds", async () => {
+    authState.value = CAN;
+    stubApi(routes([{ id: "t1", name: "Business hours", schedule: GRID_WEEK }]));
+    renderWithProviders(<RecordingSchedules />);
+
+    await userEvent.click(await screen.findByLabelText("Tue 09:00 — off"));
+    expect(screen.getByText("10h / week")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(screen.getByText("9h / week")).toBeInTheDocument();
+  });
+
+  it("says what deleting a template does NOT do", async () => {
+    // Cameras keep the schedule they were given — the copy is theirs. Somebody
+    // deleting a template must not think they are unscheduling forty cameras.
+    authState.value = CAN;
+    stubApi(routes([{ id: "t1", name: "Business hours", schedule: GRID_WEEK }]));
+    renderWithProviders(<RecordingSchedules />);
+
+    await userEvent.click(await screen.findByTitle("Delete"));
+    expect(await screen.findByText(/cameras it was applied to keep the schedule/i)).toBeInTheDocument();
   });
 });
