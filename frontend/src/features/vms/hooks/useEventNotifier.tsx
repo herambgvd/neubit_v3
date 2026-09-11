@@ -27,7 +27,8 @@ import { toast } from "sonner";
 import { isAttentionSeverity } from "../constants";
 import { normalizeVmsEvent } from "../eventLib";
 import { vms } from "../api";
-import EventToast from "../components/EventToast";
+import LiveEventToast, { clearAllEventToasts } from "../components/LiveEventToast";
+import { registerToast, unregisterToast } from "../liveToasts";
 import { useEstateCameras } from "./useEstateCameras";
 import { useVmsEventStream } from "./useVmsEventStream";
 
@@ -101,9 +102,17 @@ export function useEventNotifier({ enabled = true }: UseEventNotifierOptions = {
 
       // A CUSTOM toast, not a title + description: an alarm has a severity, an
       // age, a state and two actions, and none of that survives one line of text.
+      // The sonner id is minted here rather than left to sonner, because the
+      // registry has to know about this toast BEFORE it renders — a toast that
+      // registers itself on mount makes the first one of a burst briefly think it
+      // is alone.
+      const toastId = `vms-event:${key}`;
+      registerToast(toastId);
+
       toast.custom(
         (id) => (
-          <EventToast
+          <LiveEventToast
+            toastId={toastId}
             event={e}
             cameraName={where}
             recorderName={recorder}
@@ -126,6 +135,9 @@ export function useEventNotifier({ enabled = true }: UseEventNotifierOptions = {
             }
             onMute={() => {
               setEventsMuted(true);
+              // Mute means stop interrupting me — leaving the rest of the burst
+              // on screen would be the console ignoring what was just asked.
+              clearAllEventToasts();
               toast.dismiss(id);
               toast("Event alerts muted", {
                 description: "The Events page keeps its own live feed.",
@@ -135,9 +147,17 @@ export function useEventNotifier({ enabled = true }: UseEventNotifierOptions = {
             onDismiss={() => toast.dismiss(id)}
           />
         ),
-        // Long enough to read six fields and decide; a critical waits for a
-        // decision rather than expiring on its own.
-        { duration: e.severity === "critical" ? Infinity : 10_000 },
+        {
+          id: toastId,
+          // Long enough to read six fields and decide; a critical waits for a
+          // decision rather than expiring on its own.
+          duration: e.severity === "critical" ? Infinity : 10_000,
+          // Both, or the count drifts: a toast the operator clicked away and one
+          // that timed out are equally gone, and "Clear all (3)" with one on
+          // screen is worse than no button at all.
+          onDismiss: () => unregisterToast(toastId),
+          onAutoClose: () => unregisterToast(toastId),
+        },
       );
     }
   }, [events, onEventsPage, router, qc, cameras]);

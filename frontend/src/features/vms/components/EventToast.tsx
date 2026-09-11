@@ -42,6 +42,12 @@ export interface EventToastProps {
   /** Stop the corner interrupting — the operator's own preference. */
   onMute?: () => void;
   onDismiss: () => void;
+  /** Dismiss every live alarm toast, not just this one. Passed only to the toast
+   *  at the front of the stack, and only while more than one is up. */
+  onClearAll?: () => void;
+  /** How many alarms that would clear — the QUEUED ones included, which is the
+   *  number the operator cannot see and is trying to get rid of. */
+  clearAllCount?: number;
   /** Injectable for tests; defaults to the moment the toast was raised. */
   now?: number;
 }
@@ -67,6 +73,8 @@ export default function EventToast({
   ackPending = false,
   onMute,
   onDismiss,
+  onClearAll,
+  clearAllCount = 0,
   now,
 }: EventToastProps) {
   // Lazily, once: a Date.now() in the render body is a different answer every
@@ -140,17 +148,32 @@ export default function EventToast({
                   <Icon icon="heroicons-outline:check" className="text-xs" /> Acknowledge
                 </button>
               )}
-              {onMute && (
-                <button
-                  type="button"
-                  onClick={onMute}
-                  title="Stop these corner alerts (Events keeps its own feed)"
-                  aria-label="Mute event alerts"
-                  className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded-md text-muted transition hover:bg-hover hover:text-foreground"
-                >
-                  <Icon icon="heroicons-outline:bell-slash" className="text-xs" />
-                </button>
-              )}
+              <div className="ml-auto flex shrink-0 items-center gap-1">
+                {/* A burst raises one of these per camera and sonner shows three
+                    at a time, so dismissing what is visible just promotes the
+                    queue. One control empties it — on the front toast only, or
+                    every toast in the stack would carry the same button. */}
+                {onClearAll && clearAllCount > 1 && (
+                  <button
+                    type="button"
+                    onClick={onClearAll}
+                    className="rounded-md px-1.5 py-1 text-[11.5px] text-muted transition hover:bg-hover hover:text-foreground"
+                  >
+                    Clear all ({clearAllCount})
+                  </button>
+                )}
+                {onMute && (
+                  <button
+                    type="button"
+                    onClick={onMute}
+                    title="Stop these corner alerts (Events keeps its own feed)"
+                    aria-label="Mute event alerts"
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted transition hover:bg-hover hover:text-foreground"
+                  >
+                    <Icon icon="heroicons-outline:bell-slash" className="text-xs" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
