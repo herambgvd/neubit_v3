@@ -946,7 +946,14 @@ async def _node_json(
     except httpx.HTTPError as e:
         raise NodeUnavailable(str(e)) from e
     if r.status_code // 100 != 2:
-        raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
+        # EVERY 4xx is a refusal, not only 401/403. The node answered and said no —
+        # a malformed schedule document, an id that is not there, a conflict — and
+        # reporting that as NodeUnavailable turns "this schedule is not a shape I
+        # can read" into "recorder unavailable", which reads as a network fault,
+        # invites a pointless retry, and buries the one sentence that would have
+        # fixed it. Only a 5xx or a transport failure means the next try could
+        # differ, which is exactly what 503 claims and 502 does not.
+        raise (_refusal(r.status_code, r.text) if r.status_code // 100 == 4
                 else NodeUnavailable(f"{r.status_code}: {_node_error_message(r, r.text[:160])}"))
     if r.status_code == 204 or not (r.content or b"").strip():
         return {}
@@ -1309,3 +1316,82 @@ async def motion_search_node(
         raise (_refusal(r.status_code, r.text) if r.status_code in (401, 403)
                 else NodeUnavailable(f"{r.status_code}: {_node_error_message(r, r.text[:160])}"))
     return r.json() or {}
+
+
+# ── recording schedules (Phase-3, the one config authorship) ─────────────────
+#
+# "Record this camera 09:00-18:00 on weekdays" is weekly operator work, and until
+# the node's grant set was widened it could only be done on the recorder's own
+# screen. These call the node's schedule-template library and its per-camera
+# recording config.
+#
+# Gated node-side on ``recording.read`` / ``recording.configure``. The read half a
+# federation credential has always carried; the WRITE half arrived with the grant
+# set, so a node enrolled before that refuses every write here — and says so, by
+# name, through _refusal. That sentence is the whole reason not to flatten a 403
+# into "unavailable": the fix is a re-enrolment, not a network.
+
+_SCHEDULE_TEMPLATES = "/recording-schedule-templates"
+
+
+async def list_schedule_templates(api_url: str, *, credential: str | None = None) -> dict:
+    """GET → { items, total }: this recorder's named schedule library."""
+    return await _node_json("GET", api_url, _SCHEDULE_TEMPLATES, credential=credential)
+
+
+async def create_schedule_template(
+    api_url: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """POST → the created template. The node VALIDATES the schedule document, so an
+    unusable week is refused here rather than discovered on forty cameras later."""
+    return await _node_json("POST", api_url, _SCHEDULE_TEMPLATES, credential=credential, json_body=body)
+
+
+async def update_schedule_template(
+    api_url: str, template_id: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """PUT → the updated template. Editing does NOT re-write cameras an earlier
+    apply set; those hold their own copy. Re-apply to push a new version."""
+    return await _node_json(
+        "PUT", api_url, f"{_SCHEDULE_TEMPLATES}/{template_id}", credential=credential, json_body=body
+    )
+
+
+async def delete_schedule_template(
+    api_url: str, template_id: str, *, credential: str | None = None
+) -> dict:
+    """DELETE → { deleted, id }. Cameras keep the schedule they were given."""
+    return await _node_json(
+        "DELETE", api_url, f"{_SCHEDULE_TEMPLATES}/{template_id}", credential=credential
+    )
+
+
+async def apply_schedule_template(
+    api_url: str, template_id: str, camera_ids: list[str], *, credential: str | None = None
+) -> dict:
+    """POST /{id}/apply → a PER-CAMERA outcome, never all-or-nothing: one camera the
+    credential may not touch does not cost the other thirty-nine, and the response
+    names which changed and which did not."""
+    return await _node_json(
+        "POST", api_url, f"{_SCHEDULE_TEMPLATES}/{template_id}/apply",
+        credential=credential, json_body={"camera_ids": camera_ids},
+    )
+
+
+async def get_camera_recording(
+    api_url: str, camera_id: str, *, credential: str | None = None
+) -> dict:
+    """GET a camera's own recording config — mode, schedule, retention, buffers."""
+    return await _node_json(
+        "GET", api_url, f"/cameras/{camera_id}/recording", credential=credential
+    )
+
+
+async def put_camera_recording(
+    api_url: str, camera_id: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """PATCH-shaped PUT: a partial config writes only the fields it carries, so
+    sending {"schedule": …} cannot silently reset retention to a default."""
+    return await _node_json(
+        "PUT", api_url, f"/cameras/{camera_id}/recording", credential=credential, json_body=body
+    )
