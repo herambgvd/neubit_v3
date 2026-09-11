@@ -1,0 +1,44 @@
+# SonarQube analysis.
+#
+# SWITCHED OFF UNTIL THE SERVER IS REACHABLE FROM A RUNNER, and that is not an
+# oversight. SonarQube's setup wizard gives you a workflow pointing SONAR_HOST_URL
+# at your own server; on a laptop that is http://localhost:9000, and a
+# GitHub-hosted runner's localhost is the runner. The job would fail on every push
+# with a connection error that reads like a bad token, which is how a red build
+# stops meaning anything.
+#
+# So the gate below is real: with no SONAR_HOST_URL secret set, the job is skipped
+# rather than failed. Set the secret the day one of these is true —
+#
+#   * a self-hosted runner on the machine SonarQube runs on (then change runs-on);
+#   * SonarQube reachable from the internet, behind auth;
+#   * SonarCloud, which needs no host URL at all.
+#
+# Until then analysis runs locally: SONAR_TOKEN=… ./scripts/sonar-scan.sh
+#
+# ubuntu-latest and not the wizard's macos-latest: every other job in this repo is
+# ubuntu, macOS runners bill at ten times the rate, and nothing about a static
+# analysis of Python and TypeScript needs macOS.
+name: Sonar
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  analyze:
+    name: Analyse
+    runs-on: ubuntu-latest
+    if: ${{ vars.SONAR_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Shallow clones cost Sonar its blame data, and blame is what makes "new
+          # code" mean anything — without it every finding looks equally old.
+          fetch-depth: 0
+      - uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
