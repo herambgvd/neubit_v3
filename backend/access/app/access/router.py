@@ -74,6 +74,61 @@ PERM_MANAGE = "access.manage"
 PERM_CREDENTIAL = "access.credential"   # who may enter — cardholders and cards
 PERM_COMMAND = "access.command"         # act on the hardware now — doors, outputs, zones
 
+
+def _denied(permission: str) -> dict:
+    """The two statuses every route in this router inherits from its gates.
+
+    Composed per route rather than declared once on the APIRouter because the 403
+    has to name the key the route actually gates on — and a route-level entry would
+    replace a router-level one for the same status anyway.
+    """
+    return {
+        401: {
+            "description": (
+                "No bearer token, a token that fails verification, or an X-Tenant-Id "
+                "header that disagrees with the token's tenant claim. "
+                "Envelope code UNAUTHORIZED."
+            )
+        },
+        403: {
+            "description": (
+                f"The caller's token does not grant {permission}, the tenant does not "
+                "have the 'access' module enabled, the tenant is suspended, or its "
+                "licence has expired. Envelope codes FORBIDDEN, FEATURE_DISABLED, "
+                "TENANT_SUSPENDED, LICENSE_EXPIRED."
+            )
+        },
+    }
+
+
+# A DDS/connector failure is relayed with the CONTROLLER's own status code, which
+# this service cannot enumerate — so it is stated in the route description instead
+# of invented as a `responses` entry.
+_RELAY = (
+    "A failure the controller itself reports is relayed with the controller's own "
+    "status code, and the error message carries its response body."
+)
+
+_INSTANCE_404 = {
+    404: {
+        "description": (
+            "No instance with that id in the caller's tenant. An instance owned by "
+            "another tenant answers identically, so ids cannot be probed. "
+            "Envelope code NOT_FOUND."
+        )
+    }
+}
+
+_UNREACHABLE_502 = {
+    502: {
+        "description": (
+            "The controller could not be reached, or answered in a way the connector "
+            "could not parse. Envelope code UPSTREAM_ERROR."
+        )
+    }
+}
+
+
 router = APIRouter(prefix="/access", tags=["Access Control"])
 
 # Map the public mirror-listing path segment → the mirror collection name.
@@ -140,6 +195,7 @@ def _dds_err(exc: DDSError) -> HTTPException:
     "/instances",
     response_model=InstanceListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
+    responses=_denied(PERM_READ),
 )
 async def list_instances(
     svc: Annotated[InstanceService, Depends(_instance_service)],
@@ -154,6 +210,15 @@ async def list_instances(
     "/instances",
     response_model=InstancePublic,
     status_code=status.HTTP_201_CREATED,
+    responses={
+        **_denied(PERM_MANAGE),
+        409: {
+            "description": (
+                "Another instance in this tenant already uses that name. "
+                "Envelope code CONFLICT."
+            )
+        },
+    },
 )
 async def create_instance(
     body: InstanceCreate,
@@ -167,6 +232,7 @@ async def create_instance(
     "/instances/{instance_id}",
     response_model=InstancePublic,
     dependencies=[Depends(require_permission(PERM_READ))],
+    responses={**_denied(PERM_READ), **_INSTANCE_404},
 )
 async def get_instance(
     instance_id: str,
@@ -175,7 +241,11 @@ async def get_instance(
     return await svc.get(instance_id)
 
 
-@router.patch("/instances/{instance_id}", response_model=InstancePublic)
+@router.patch(
+    "/instances/{instance_id}",
+    response_model=InstancePublic,
+    responses={**_denied(PERM_MANAGE), **_INSTANCE_404},
+)
 async def update_instance(
     instance_id: str,
     body: InstanceUpdate,
@@ -185,7 +255,11 @@ async def update_instance(
     return await svc.update(instance_id, body, actor=actor)
 
 
-@router.delete("/instances/{instance_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/instances/{instance_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={**_denied(PERM_MANAGE), **_INSTANCE_404},
+)
 async def delete_instance(
     instance_id: str,
     svc: Annotated[InstanceService, Depends(_instance_service)],
@@ -198,7 +272,11 @@ async def delete_instance(
 # ── Connector-driven ops ───────────────────────────────────────────────
 
 
-@router.post("/instances/{instance_id}/test-connection", response_model=TestConnectionResponse)
+@router.post(
+    "/instances/{instance_id}/test-connection",
+    response_model=TestConnectionResponse,
+    responses={**_denied(PERM_MANAGE), **_INSTANCE_404},
+)
 async def test_connection(
     instance_id: str,
     svc: Annotated[InstanceService, Depends(_instance_service)],
@@ -208,7 +286,11 @@ async def test_connection(
     return await svc.test_connection(instance_id)
 
 
-@router.post("/instances/{instance_id}/reconcile", response_model=SyncJobPublic)
+@router.post(
+    "/instances/{instance_id}/reconcile",
+    response_model=SyncJobPublic,
+    responses={**_denied(PERM_MANAGE), **_INSTANCE_404},
+)
 async def reconcile_instance(
     instance_id: str,
     svc: Annotated[InstanceService, Depends(_instance_service)],
@@ -223,6 +305,7 @@ async def reconcile_instance(
     "/instances/{instance_id}/sync-jobs",
     response_model=SyncJobListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
+    responses={**_denied(PERM_READ), **_INSTANCE_404},
 )
 async def list_sync_jobs(
     instance_id: str,
@@ -246,6 +329,7 @@ async def _list_mirror(
     "/instances/{instance_id}/cardholders",
     response_model=MirrorListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
+    responses={**_denied(PERM_READ), **_INSTANCE_404},
 )
 async def list_cardholders(
     instance_id: str,
@@ -260,6 +344,7 @@ async def list_cardholders(
     "/instances/{instance_id}/cards",
     response_model=MirrorListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
+    responses={**_denied(PERM_READ), **_INSTANCE_404},
 )
 async def list_cards(
     instance_id: str,
@@ -286,6 +371,17 @@ async def list_cards(
 @router.post(
     "/instances/{instance_id}/cardholders",
     status_code=status.HTTP_201_CREATED,
+    description=_RELAY,
+    responses={
+        **_denied(PERM_CREDENTIAL),
+        **_INSTANCE_404,
+        422: {
+            "description": (
+                "The body carries none of name, first_name or last_name — the "
+                "controller cannot create a cardholder without one (code name_required)."
+            )
+        },
+    },
 )
 async def create_cardholder(
     instance_id: str,
@@ -302,7 +398,20 @@ async def create_cardholder(
         raise _dds_err(exc) from None
 
 
-@router.patch("/instances/{instance_id}/cardholders/{cardholder_id}")
+@router.patch(
+    "/instances/{instance_id}/cardholders/{cardholder_id}",
+    description=_RELAY,
+    responses={
+        **_denied(PERM_CREDENTIAL),
+        **_INSTANCE_404,
+        422: {
+            "description": (
+                "The body sets no field, so there is nothing to write through to the "
+                "controller (code empty_body)."
+            )
+        },
+    },
+)
 async def update_cardholder(
     instance_id: str,
     cardholder_id: str,
@@ -322,6 +431,8 @@ async def update_cardholder(
 @router.delete(
     "/instances/{instance_id}/cardholders/{cardholder_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    description=_RELAY,
+    responses={**_denied(PERM_CREDENTIAL), **_INSTANCE_404},
 )
 async def delete_cardholder(
     instance_id: str,
@@ -336,7 +447,11 @@ async def delete_cardholder(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/instances/{instance_id}/cardholders/{cardholder_id}/suspend")
+@router.post(
+    "/instances/{instance_id}/cardholders/{cardholder_id}/suspend",
+    description=_RELAY,
+    responses={**_denied(PERM_CREDENTIAL), **_INSTANCE_404},
+)
 async def suspend_cardholder(
     instance_id: str,
     cardholder_id: str,
@@ -349,7 +464,11 @@ async def suspend_cardholder(
         raise _dds_err(exc) from None
 
 
-@router.post("/instances/{instance_id}/cardholders/{cardholder_id}/reinstate")
+@router.post(
+    "/instances/{instance_id}/cardholders/{cardholder_id}/reinstate",
+    description=_RELAY,
+    responses={**_denied(PERM_CREDENTIAL), **_INSTANCE_404},
+)
 async def reinstate_cardholder(
     instance_id: str,
     cardholder_id: str,
@@ -362,7 +481,11 @@ async def reinstate_cardholder(
         raise _dds_err(exc) from None
 
 
-@router.post("/instances/{instance_id}/cardholders/{cardholder_id}/cards")
+@router.post(
+    "/instances/{instance_id}/cardholders/{cardholder_id}/cards",
+    description=_RELAY,
+    responses={**_denied(PERM_CREDENTIAL), **_INSTANCE_404},
+)
 async def cardholder_add_card(
     instance_id: str,
     cardholder_id: str,
@@ -376,7 +499,11 @@ async def cardholder_add_card(
         raise _dds_err(exc) from None
 
 
-@router.delete("/instances/{instance_id}/cardholders/{cardholder_id}/cards/{card_id}")
+@router.delete(
+    "/instances/{instance_id}/cardholders/{cardholder_id}/cards/{card_id}",
+    description=_RELAY,
+    responses={**_denied(PERM_CREDENTIAL), **_INSTANCE_404},
+)
 async def cardholder_remove_card(
     instance_id: str,
     cardholder_id: str,
@@ -390,7 +517,11 @@ async def cardholder_remove_card(
         raise _dds_err(exc) from None
 
 
-@router.post("/instances/{instance_id}/cardholders/{cardholder_id}/access-groups")
+@router.post(
+    "/instances/{instance_id}/cardholders/{cardholder_id}/access-groups",
+    description=_RELAY,
+    responses={**_denied(PERM_CREDENTIAL), **_INSTANCE_404},
+)
 async def cardholder_add_group(
     instance_id: str,
     cardholder_id: str,
@@ -407,7 +538,9 @@ async def cardholder_add_group(
 
 
 @router.delete(
-    "/instances/{instance_id}/cardholders/{cardholder_id}/access-groups/{group_id}"
+    "/instances/{instance_id}/cardholders/{cardholder_id}/access-groups/{group_id}",
+    description=_RELAY,
+    responses={**_denied(PERM_CREDENTIAL), **_INSTANCE_404},
 )
 async def cardholder_remove_group(
     instance_id: str,
@@ -430,6 +563,17 @@ async def cardholder_remove_group(
 @router.post(
     "/instances/{instance_id}/cards",
     status_code=status.HTTP_201_CREATED,
+    description=_RELAY,
+    responses={
+        **_denied(PERM_CREDENTIAL),
+        **_INSTANCE_404,
+        502: {
+            "description": (
+                "The controller accepted the card but returned no UID, so there is "
+                "nothing to patch or mirror (code dds_card_create_missing_uid)."
+            )
+        },
+    },
 )
 async def create_card(
     instance_id: str,
@@ -443,7 +587,20 @@ async def create_card(
         raise _dds_err(exc) from None
 
 
-@router.patch("/instances/{instance_id}/cards/{card_id}")
+@router.patch(
+    "/instances/{instance_id}/cards/{card_id}",
+    description=_RELAY,
+    responses={
+        **_denied(PERM_CREDENTIAL),
+        **_INSTANCE_404,
+        422: {
+            "description": (
+                "The body sets no field, so there is nothing to write through to the "
+                "controller (code empty_body)."
+            )
+        },
+    },
+)
 async def update_card(
     instance_id: str,
     card_id: str,
@@ -460,7 +617,11 @@ async def update_card(
         raise _dds_err(exc) from None
 
 
-@router.post("/instances/{instance_id}/cards/{card_id}/status")
+@router.post(
+    "/instances/{instance_id}/cards/{card_id}/status",
+    description=_RELAY,
+    responses={**_denied(PERM_CREDENTIAL), **_INSTANCE_404},
+)
 async def set_card_status(
     instance_id: str,
     card_id: str,
@@ -477,6 +638,17 @@ async def set_card_status(
 @router.delete(
     "/instances/{instance_id}/cards/{card_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    description=_RELAY,
+    responses={
+        **_denied(PERM_CREDENTIAL),
+        **_INSTANCE_404,
+        409: {
+            "description": (
+                'The mirrored card is "Used" — a card that is in use cannot be '
+                "deleted (code card_in_use)."
+            )
+        },
+    },
 )
 async def delete_card(
     instance_id: str,
@@ -504,6 +676,7 @@ async def delete_card(
     "/access-groups",
     response_model=AccessGroupListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
+    responses={**_denied(PERM_READ), **_INSTANCE_404},
 )
 async def list_access_groups(
     svc: Annotated[AccessGroupCatalog, Depends(_group_catalog)],
@@ -517,6 +690,7 @@ async def list_access_groups(
     "/access-groups",
     response_model=AccessGroupPublic,
     status_code=status.HTTP_201_CREATED,
+    responses={**_denied(PERM_MANAGE), **_INSTANCE_404},
 )
 async def create_access_group(
     body: AccessGroupCreate,
@@ -532,6 +706,15 @@ async def create_access_group(
     "/access-groups/{group_id}",
     response_model=AccessGroupPublic,
     dependencies=[Depends(require_permission(PERM_READ))],
+    responses={
+        **_denied(PERM_READ),
+        404: {
+            "description": (
+                "No access group with that id under that instance, or no such "
+                "instance in the caller's tenant (code group_not_found)."
+            )
+        },
+    },
 )
 async def get_access_group(
     group_id: str,
@@ -544,7 +727,19 @@ async def get_access_group(
     return AccessGroupPublic.from_row(row)
 
 
-@router.patch("/access-groups/{group_id}", response_model=AccessGroupPublic)
+@router.patch(
+    "/access-groups/{group_id}",
+    response_model=AccessGroupPublic,
+    responses={
+        **_denied(PERM_MANAGE),
+        404: {
+            "description": (
+                "No access group with that id under that instance, or no such "
+                "instance in the caller's tenant (code group_not_found)."
+            )
+        },
+    },
+)
 async def update_access_group(
     group_id: str,
     body: AccessGroupUpdate,
@@ -561,6 +756,15 @@ async def update_access_group(
 @router.delete(
     "/access-groups/{group_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        **_denied(PERM_MANAGE),
+        404: {
+            "description": (
+                "No access group with that id under that instance, or no such "
+                "instance in the caller's tenant (code group_not_found)."
+            )
+        },
+    },
 )
 async def delete_access_group(
     group_id: str,
@@ -577,6 +781,7 @@ async def delete_access_group(
     "/schedules",
     response_model=ScheduleListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
+    responses={**_denied(PERM_READ), **_INSTANCE_404},
 )
 async def list_schedules(
     svc: Annotated[ScheduleCatalog, Depends(_schedule_catalog)],
@@ -590,6 +795,7 @@ async def list_schedules(
     "/schedules",
     response_model=SchedulePublic,
     status_code=status.HTTP_201_CREATED,
+    responses={**_denied(PERM_MANAGE), **_INSTANCE_404},
 )
 async def create_schedule(
     body: ScheduleCreate,
@@ -605,6 +811,15 @@ async def create_schedule(
     "/schedules/{schedule_id}",
     response_model=SchedulePublic,
     dependencies=[Depends(require_permission(PERM_READ))],
+    responses={
+        **_denied(PERM_READ),
+        404: {
+            "description": (
+                "No schedule with that id under that instance, or no such instance "
+                "in the caller's tenant (code schedule_not_found)."
+            )
+        },
+    },
 )
 async def get_schedule(
     schedule_id: str,
@@ -617,7 +832,19 @@ async def get_schedule(
     return SchedulePublic.from_row(row)
 
 
-@router.patch("/schedules/{schedule_id}", response_model=SchedulePublic)
+@router.patch(
+    "/schedules/{schedule_id}",
+    response_model=SchedulePublic,
+    responses={
+        **_denied(PERM_MANAGE),
+        404: {
+            "description": (
+                "No schedule with that id under that instance, or no such instance "
+                "in the caller's tenant (code schedule_not_found)."
+            )
+        },
+    },
+)
 async def update_schedule(
     schedule_id: str,
     body: ScheduleUpdate,
@@ -634,6 +861,15 @@ async def update_schedule(
 @router.delete(
     "/schedules/{schedule_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        **_denied(PERM_MANAGE),
+        404: {
+            "description": (
+                "No schedule with that id under that instance, or no such instance "
+                "in the caller's tenant (code schedule_not_found)."
+            )
+        },
+    },
 )
 async def delete_schedule(
     schedule_id: str,
@@ -653,6 +889,15 @@ async def delete_schedule(
     "/doors",
     response_model=DoorListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
+    responses={
+        **_denied(PERM_READ),
+        422: {
+            "description": (
+                "site_id is not a usable building id. Answering with an empty list "
+                "would read as \"no doors on that site\", which is a wrong answer."
+            )
+        },
+    },
 )
 async def list_doors(
     svc: Annotated[DoorService, Depends(_door_service)],
@@ -678,7 +923,12 @@ async def list_doors(
     )
 
 
-@router.post("/doors", response_model=DoorPublic, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/doors",
+    response_model=DoorPublic,
+    status_code=status.HTTP_201_CREATED,
+    responses={**_denied(PERM_MANAGE), **_INSTANCE_404},
+)
 async def create_door(
     body: DoorCreate,
     svc: Annotated[DoorService, Depends(_door_service)],
@@ -692,6 +942,15 @@ async def create_door(
     "/doors/{door_id}",
     response_model=DoorPublic,
     dependencies=[Depends(require_permission(PERM_READ))],
+    responses={
+        **_denied(PERM_READ),
+        404: {
+            "description": (
+                "No door with that id in the caller's tenant. A door owned by another "
+                "tenant answers identically. Envelope code NOT_FOUND."
+            )
+        },
+    },
 )
 async def get_door(
     door_id: str,
@@ -700,7 +959,19 @@ async def get_door(
     return DoorPublic.from_row(await svc.get(door_id))
 
 
-@router.patch("/doors/{door_id}", response_model=DoorPublic)
+@router.patch(
+    "/doors/{door_id}",
+    response_model=DoorPublic,
+    responses={
+        **_denied(PERM_MANAGE),
+        404: {
+            "description": (
+                "No door with that id in the caller's tenant. A door owned by another "
+                "tenant answers identically. Envelope code NOT_FOUND."
+            )
+        },
+    },
+)
 async def update_door(
     door_id: str,
     body: DoorUpdate,
@@ -711,7 +982,19 @@ async def update_door(
     return DoorPublic.from_row(row)
 
 
-@router.delete("/doors/{door_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/doors/{door_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        **_denied(PERM_MANAGE),
+        404: {
+            "description": (
+                "No door with that id in the caller's tenant. A door owned by another "
+                "tenant answers identically. Envelope code NOT_FOUND."
+            )
+        },
+    },
+)
 async def delete_door(
     door_id: str,
     svc: Annotated[DoorService, Depends(_door_service)],
@@ -721,7 +1004,26 @@ async def delete_door(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/doors/{door_id}/unlock")
+@router.post(
+    "/doors/{door_id}/unlock",
+    description=_RELAY,
+    responses={
+        **_denied(PERM_COMMAND),
+        404: {
+            "description": (
+                "No door with that id in the caller's tenant, or the instance it "
+                "points at is not the caller's. Envelope code NOT_FOUND."
+            )
+        },
+        409: {
+            "description": (
+                "The door has no remote_ref, so there is no relay on the controller "
+                "to drive (code door_not_mapped)."
+            )
+        },
+        **_UNREACHABLE_502,
+    },
+)
 async def unlock_door(
     door_id: str,
     svc: Annotated[DoorService, Depends(_door_service)],
@@ -733,7 +1035,26 @@ async def unlock_door(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from None
 
 
-@router.post("/doors/{door_id}/lock")
+@router.post(
+    "/doors/{door_id}/lock",
+    description=_RELAY,
+    responses={
+        **_denied(PERM_COMMAND),
+        404: {
+            "description": (
+                "No door with that id in the caller's tenant, or the instance it "
+                "points at is not the caller's. Envelope code NOT_FOUND."
+            )
+        },
+        409: {
+            "description": (
+                "The door has no remote_ref, so there is no relay on the controller "
+                "to drive (code door_not_mapped)."
+            )
+        },
+        **_UNREACHABLE_502,
+    },
+)
 async def lock_door(
     door_id: str,
     svc: Annotated[DoorService, Depends(_door_service)],
@@ -752,7 +1073,11 @@ def _cmd_http(exc: CommandError) -> HTTPException:
     return HTTPException(status_code=exc.status_code, detail=exc.detail)
 
 
-@router.post("/instances/{instance_id}/commands/outputs/activate")
+@router.post(
+    "/instances/{instance_id}/commands/outputs/activate",
+    description=_RELAY,
+    responses={**_denied(PERM_COMMAND), **_INSTANCE_404, **_UNREACHABLE_502},
+)
 async def cmd_output_activate(
     instance_id: str,
     body: OutputTargets,
@@ -765,7 +1090,11 @@ async def cmd_output_activate(
         raise _cmd_http(exc) from None
 
 
-@router.post("/instances/{instance_id}/commands/outputs/activate_continuous")
+@router.post(
+    "/instances/{instance_id}/commands/outputs/activate_continuous",
+    description=_RELAY,
+    responses={**_denied(PERM_COMMAND), **_INSTANCE_404, **_UNREACHABLE_502},
+)
 async def cmd_output_activate_continuous(
     instance_id: str,
     body: OutputTargets,
@@ -778,7 +1107,11 @@ async def cmd_output_activate_continuous(
         raise _cmd_http(exc) from None
 
 
-@router.post("/instances/{instance_id}/commands/outputs/deactivate")
+@router.post(
+    "/instances/{instance_id}/commands/outputs/deactivate",
+    description=_RELAY,
+    responses={**_denied(PERM_COMMAND), **_INSTANCE_404, **_UNREACHABLE_502},
+)
 async def cmd_output_deactivate(
     instance_id: str,
     body: OutputTargets,
@@ -791,7 +1124,11 @@ async def cmd_output_deactivate(
         raise _cmd_http(exc) from None
 
 
-@router.post("/instances/{instance_id}/commands/outputs/return_to_normal")
+@router.post(
+    "/instances/{instance_id}/commands/outputs/return_to_normal",
+    description=_RELAY,
+    responses={**_denied(PERM_COMMAND), **_INSTANCE_404, **_UNREACHABLE_502},
+)
 async def cmd_output_return_to_normal(
     instance_id: str,
     body: OutputTargets,
@@ -804,7 +1141,11 @@ async def cmd_output_return_to_normal(
         raise _cmd_http(exc) from None
 
 
-@router.post("/instances/{instance_id}/commands/outputs/open_all_doors")
+@router.post(
+    "/instances/{instance_id}/commands/outputs/open_all_doors",
+    description=_RELAY,
+    responses={**_denied(PERM_COMMAND), **_INSTANCE_404, **_UNREACHABLE_502},
+)
 async def cmd_output_open_all(
     instance_id: str,
     svc: Annotated[CommandService, Depends(_cmd_service)],
@@ -816,7 +1157,11 @@ async def cmd_output_open_all(
         raise _cmd_http(exc) from None
 
 
-@router.post("/instances/{instance_id}/commands/outputs/return_to_normal_all")
+@router.post(
+    "/instances/{instance_id}/commands/outputs/return_to_normal_all",
+    description=_RELAY,
+    responses={**_denied(PERM_COMMAND), **_INSTANCE_404, **_UNREACHABLE_502},
+)
 async def cmd_output_return_all(
     instance_id: str,
     svc: Annotated[CommandService, Depends(_cmd_service)],
@@ -828,7 +1173,11 @@ async def cmd_output_return_all(
         raise _cmd_http(exc) from None
 
 
-@router.post("/instances/{instance_id}/commands/alarm-zones/{dds_uid}/arm")
+@router.post(
+    "/instances/{instance_id}/commands/alarm-zones/{dds_uid}/arm",
+    description=_RELAY,
+    responses={**_denied(PERM_COMMAND), **_INSTANCE_404, **_UNREACHABLE_502},
+)
 async def cmd_arm_zone(
     instance_id: str,
     dds_uid: str,
@@ -844,7 +1193,11 @@ async def cmd_arm_zone(
         raise _cmd_http(exc) from None
 
 
-@router.post("/instances/{instance_id}/commands/alarm-zones/{dds_uid}/disarm")
+@router.post(
+    "/instances/{instance_id}/commands/alarm-zones/{dds_uid}/disarm",
+    description=_RELAY,
+    responses={**_denied(PERM_COMMAND), **_INSTANCE_404, **_UNREACHABLE_502},
+)
 async def cmd_disarm_zone(
     instance_id: str,
     dds_uid: str,
@@ -860,7 +1213,11 @@ async def cmd_disarm_zone(
         raise _cmd_http(exc) from None
 
 
-@router.post("/instances/{instance_id}/commands/alarm-zones/{dds_uid}/return-to-schedule")
+@router.post(
+    "/instances/{instance_id}/commands/alarm-zones/{dds_uid}/return-to-schedule",
+    description=_RELAY,
+    responses={**_denied(PERM_COMMAND), **_INSTANCE_404, **_UNREACHABLE_502},
+)
 async def cmd_return_zone(
     instance_id: str,
     dds_uid: str,
@@ -873,7 +1230,11 @@ async def cmd_return_zone(
         raise _cmd_http(exc) from None
 
 
-@router.post("/instances/{instance_id}/commands/controllers/{dds_uid}/initialize")
+@router.post(
+    "/instances/{instance_id}/commands/controllers/{dds_uid}/initialize",
+    description=_RELAY,
+    responses={**_denied(PERM_COMMAND), **_INSTANCE_404, **_UNREACHABLE_502},
+)
 async def cmd_init_controller(
     instance_id: str,
     dds_uid: str,
@@ -886,7 +1247,11 @@ async def cmd_init_controller(
         raise _cmd_http(exc) from None
 
 
-@router.post("/instances/{instance_id}/commands/sites/{dds_uid}/polling/start")
+@router.post(
+    "/instances/{instance_id}/commands/sites/{dds_uid}/polling/start",
+    description=_RELAY,
+    responses={**_denied(PERM_COMMAND), **_INSTANCE_404, **_UNREACHABLE_502},
+)
 async def cmd_site_start_polling(
     instance_id: str,
     dds_uid: str,
@@ -899,7 +1264,11 @@ async def cmd_site_start_polling(
         raise _cmd_http(exc) from None
 
 
-@router.post("/instances/{instance_id}/commands/sites/{dds_uid}/polling/stop")
+@router.post(
+    "/instances/{instance_id}/commands/sites/{dds_uid}/polling/stop",
+    description=_RELAY,
+    responses={**_denied(PERM_COMMAND), **_INSTANCE_404, **_UNREACHABLE_502},
+)
 async def cmd_site_stop_polling(
     instance_id: str,
     dds_uid: str,
@@ -918,6 +1287,17 @@ async def cmd_site_stop_polling(
 @router.get(
     "/instances/{instance_id}/hardware/{hardware_set}",
     dependencies=[Depends(require_permission(PERM_READ))],
+    description=_RELAY,
+    responses={
+        **_denied(PERM_READ),
+        404: {
+            "description": (
+                "No such instance in the caller's tenant, or hardware_set is not one "
+                "the connector serves (code unknown_hardware_set)."
+            )
+        },
+        **_UNREACHABLE_502,
+    },
 )
 async def list_hardware(
     instance_id: str,
@@ -942,6 +1322,17 @@ async def list_hardware(
 @router.get(
     "/instances/{instance_id}/scheduled/{scheduled_set}",
     dependencies=[Depends(require_permission(PERM_READ))],
+    description=_RELAY,
+    responses={
+        **_denied(PERM_READ),
+        404: {
+            "description": (
+                "No such instance in the caller's tenant, or scheduled_set is not one "
+                "the connector serves (code unknown_scheduled_set)."
+            )
+        },
+        **_UNREACHABLE_502,
+    },
 )
 async def list_scheduled(
     instance_id: str,
@@ -967,6 +1358,7 @@ async def list_scheduled(
     "/instances/{instance_id}/events",
     response_model=AccessEventListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
+    responses={**_denied(PERM_READ), **_INSTANCE_404},
 )
 async def list_events(
     instance_id: str,

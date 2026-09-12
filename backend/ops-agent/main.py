@@ -235,6 +235,18 @@ def _serialize(container, *, with_stats: bool = True) -> dict:
 
 
 # --- Endpoints ---------------------------------------------------------------
+# This service registers no error handlers, so every error body below is FastAPI's
+# own {"detail": ...} — not core's {"error": {"code", "message"}} envelope.
+_UNAUTHORIZED = {
+    401: {
+        "description": (
+            "X-Ops-Token was absent or did not match OPS_AGENT_TOKEN. An agent with "
+            "no token configured refuses every request this way."
+        )
+    }
+}
+
+
 @app.get("/health")
 async def health() -> dict:
     """Liveness: the process is up. Touches nothing, so it cannot fail for a
@@ -242,7 +254,17 @@ async def health() -> dict:
     return {"ok": True, "service": "ops-agent"}
 
 
-@app.get("/readyz")
+@app.get(
+    "/readyz",
+    responses={
+        503: {
+            "description": (
+                "The docker daemon did not answer a ping. The agent can serve nothing "
+                "until it does; body is {\"status\": \"not_ready\", ...}."
+            )
+        }
+    },
+)
 def readyz() -> Response:
     """Readiness: can this agent actually reach the docker daemon?
 
@@ -271,7 +293,16 @@ def readyz() -> Response:
     )
 
 
-@app.get("/containers", dependencies=[Depends(require_token)])
+@app.get(
+    "/containers",
+    dependencies=[Depends(require_token)],
+    responses={**_UNAUTHORIZED, 502: {
+            "description": (
+                "The docker daemon returned an API error or could not be reached over "
+                "the mounted socket. `detail` carries the daemon's message."
+            )
+        }},
+)
 def list_containers() -> list[dict]:
     """Every container in the compose project, with live cpu/mem stats.
 
@@ -299,7 +330,26 @@ class LogsOut(BaseModel):
     lines: list[str]
 
 
-@app.get("/containers/{name}/logs", dependencies=[Depends(require_token)])
+@app.get(
+    "/containers/{name}/logs",
+    dependencies=[Depends(require_token)],
+    responses={
+        **_UNAUTHORIZED,
+        404: {
+            "description": (
+                "No container of that name in the `COMPOSE_PROJECT` compose "
+                "project. A container outside the project answers identically, so "
+                "this never reveals that an unrelated host container exists."
+            )
+        },
+        502: {
+            "description": (
+                "The docker daemon returned an API error or could not be reached over "
+                "the mounted socket. `detail` carries the daemon's message."
+            )
+        },
+    },
+)
 def container_logs(name: str = Path(...), tail: int = 200, since: int = 0) -> LogsOut:
     """Tail the last `tail` log lines of a project container (raw, newest-last).
 
@@ -332,7 +382,7 @@ def _lifecycle(name: str, verb: str) -> OkOut:
     try:
         getattr(container, verb)()
     except APIError as exc:
-        log.error("%s %s failed: %s", verb, name, exc)
+        log.exception("%s %s failed", verb, name)
         raise HTTPException(status_code=502, detail=f"docker {verb} failed: {exc}") from exc
     # The agent had no record of its own actions. Core audits its side, but core
     # is not the only caller that can reach this port.
@@ -340,17 +390,74 @@ def _lifecycle(name: str, verb: str) -> OkOut:
     return OkOut(ok=True)
 
 
-@app.post("/containers/{name}/restart", dependencies=[Depends(require_token)])
+@app.post(
+    "/containers/{name}/restart",
+    dependencies=[Depends(require_token)],
+    responses={
+        **_UNAUTHORIZED,
+        404: {
+            "description": (
+                "No container of that name in the `COMPOSE_PROJECT` compose "
+                "project. A container outside the project answers identically, so "
+                "this never reveals that an unrelated host container exists."
+            )
+        },
+        502: {
+            "description": (
+                "The docker daemon refused the restart, or could not be reached over the "
+                "mounted socket. `detail` carries the daemon's message."
+            )
+        },
+    },
+)
 def restart_container(name: str = Path(...)) -> OkOut:
     return _lifecycle(name, "restart")
 
 
-@app.post("/containers/{name}/stop", dependencies=[Depends(require_token)])
+@app.post(
+    "/containers/{name}/stop",
+    dependencies=[Depends(require_token)],
+    responses={
+        **_UNAUTHORIZED,
+        404: {
+            "description": (
+                "No container of that name in the `COMPOSE_PROJECT` compose "
+                "project. A container outside the project answers identically, so "
+                "this never reveals that an unrelated host container exists."
+            )
+        },
+        502: {
+            "description": (
+                "The docker daemon refused the stop, or could not be reached over the "
+                "mounted socket. `detail` carries the daemon's message."
+            )
+        },
+    },
+)
 def stop_container(name: str = Path(...)) -> OkOut:
     return _lifecycle(name, "stop")
 
 
-@app.post("/containers/{name}/start", dependencies=[Depends(require_token)])
+@app.post(
+    "/containers/{name}/start",
+    dependencies=[Depends(require_token)],
+    responses={
+        **_UNAUTHORIZED,
+        404: {
+            "description": (
+                "No container of that name in the `COMPOSE_PROJECT` compose "
+                "project. A container outside the project answers identically, so "
+                "this never reveals that an unrelated host container exists."
+            )
+        },
+        502: {
+            "description": (
+                "The docker daemon refused the start, or could not be reached over the "
+                "mounted socket. `detail` carries the daemon's message."
+            )
+        },
+    },
+)
 def start_container(name: str = Path(...)) -> OkOut:
     return _lifecycle(name, "start")
 
@@ -359,7 +466,19 @@ class ScaleIn(BaseModel):
     replicas: int
 
 
-@app.post("/services/{name}/scale", dependencies=[Depends(require_token)])
+@app.post(
+    "/services/{name}/scale",
+    dependencies=[Depends(require_token)],
+    responses={
+        **_UNAUTHORIZED,
+        501: {
+            "description": (
+                "Always. Scaling is not implemented — there are no stateless worker "
+                "services to clone, and cloning a stateful one corrupts it."
+            )
+        },
+    },
+)
 async def scale_service(name: str = Path(...), body: ScaleIn | None = None) -> OkOut:
     """Not implemented — 501.
 
@@ -378,7 +497,16 @@ async def scale_service(name: str = Path(...), body: ScaleIn | None = None) -> O
     )
 
 
-@app.get("/host", dependencies=[Depends(require_token)])
+@app.get(
+    "/host",
+    dependencies=[Depends(require_token)],
+    responses={**_UNAUTHORIZED, 502: {
+            "description": (
+                "The docker daemon returned an API error or could not be reached over "
+                "the mounted socket. `detail` carries the daemon's message."
+            )
+        }},
+)
 def host_summary() -> dict:
     """Host/stack summary: project container counts (+ optional host cpu/mem/disk)."""
     client = get_docker()
@@ -506,7 +634,25 @@ async def _read_capped(request: Request) -> bytes:
     return b"".join(chunks)
 
 
-@app.get("/db/export", dependencies=[Depends(require_token)])
+@app.get(
+    "/db/export",
+    dependencies=[Depends(require_token)],
+    responses={
+        **_UNAUTHORIZED,
+        404: {
+            "description": (
+                "The compose project has no container for the DB_SERVICE service "
+                "(`postgres` by default) — the database container is not running."
+            )
+        },
+        502: {
+            "description": (
+                "The docker daemon errored, or pg_dump exited non-zero — the tail of "
+                "its stderr is in `detail`."
+            )
+        },
+    },
+)
 def db_export() -> Response:
     """Stream a plain-SQL dump of the control database (pg_dump inside postgres)."""
     client = get_docker()
@@ -526,7 +672,38 @@ def db_export() -> Response:
     return Response(content=stdout or b"", media_type="application/sql")
 
 
-@app.post("/db/import", dependencies=[Depends(require_token)])
+@app.post(
+    "/db/import",
+    dependencies=[Depends(require_token)],
+    responses={
+        **_UNAUTHORIZED,
+        400: {
+            "description": (
+                "The body was empty, or the dump invokes a psql meta-command pg_dump "
+                "never emits — `detail` names the command and its line."
+            )
+        },
+        404: {
+            "description": (
+                "The compose project has no container for the DB_SERVICE service "
+                "(`postgres` by default) — the database container is not running."
+            )
+        },
+        413: {
+            "description": (
+                "The dump is larger than OPS_AGENT_MAX_DUMP_BYTES (512 MiB by "
+                "default), by Content-Length or by what was actually streamed."
+            )
+        },
+        502: {
+            "description": (
+                "The dump could not be staged inside the database container, or the "
+                "docker daemon errored while running psql. A dump psql rejects "
+                "returns 200 with ok=false instead."
+            )
+        },
+    },
+)
 async def db_import(request: Request) -> dict:
     """Restore the control database from a plain-SQL dump (psql inside postgres).
 
@@ -602,7 +779,7 @@ async def db_import(request: Request) -> dict:
             demux=True,
         )
     except APIError as exc:
-        log.error("db import failed: %s", exc)
+        log.exception("db import failed")
         raise HTTPException(status_code=502, detail=f"docker error: {exc}") from exc
     finally:
         # Always, including on failure — the staged file holds the whole dump.
