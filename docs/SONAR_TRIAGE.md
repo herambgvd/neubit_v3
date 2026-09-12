@@ -9,11 +9,19 @@ where it can be argued with.
 
 ## What was fixed
 
-| | first scan | now |
+| | first scan | 2026-09-12 |
 |---|---|---|
-| Bugs | 41 | **0** — reliability **A** |
-| Vulnerabilities | 27 | **1** |
-| Code smells | 2,625 | 2,640 — maintainability **A** |
+| Security issues | 27 | **0** — **A** |
+| Reliability issues | 172 | **96** — **B**, and see the waivers below |
+| Maintainability issues | 2,625 | 2,494 — **A** |
+| Duplication | — | **1.0 %** |
+| Quality gate | FAILED | **PASSED** |
+
+Note that the counts above are Sonar's MQR (software-quality impact) view, not the
+legacy `bugs` / `vulnerabilities` metrics — the two disagree, and the dashboard
+shows MQR. An MQR rating is set by the HIGHEST-severity issue of that quality, not
+by the count: reliability is **B** because LOW-severity findings remain, and it
+cannot reach **A** while any reliability finding is open at all.
 
 One finding remains, and it is the only one in the repo that cannot be fixed
 without breaking the product. It is documented below as a waiver.
@@ -131,3 +139,55 @@ The two worth doing when there is a reason to touch those files anyway:
 **The recommendation is to tune the quality profile rather than the code**: turn
 off S6759, S3358, S8409 and S8410 for this project. A rule nobody intends to act
 on is a rule that hides the ones somebody should.
+
+## Quality-profile waivers (2026-09-12)
+
+Two rules are deactivated for this project. Both profiles are copies of the
+built-in `Sonar way` with exactly ONE rule removed each — verified by diffing the
+active-rule sets, not assumed:
+
+    py : Sonar way 398 rules -> "neubit Python"     397   (python:S7503 removed)
+    ts : Sonar way 435 rules -> "neubit TypeScript" 434   (typescript:S4084 removed)
+
+A copy does not inherit future updates to `Sonar way`, so on a SonarQube upgrade
+these two profiles need re-copying. That is the cost of the waiver and it is
+deliberate: SonarQube does not allow a rule inherited from a parent profile to be
+deactivated in a child, so an inheriting profile could not express this at all.
+
+### `python:S7503` — "Async functions should use async features" (74 findings)
+
+All 76 occurrences were opened and classified before this was turned off:
+
+| | |
+|---|---|
+| 50 | FastAPI route handlers and `Depends()` dependencies. Removing `async` does not tidy them — it moves the work to a threadpool. For the auth and DB-session dependencies in `kernel/auth.py` that is a change to how every request in every service is executed. |
+| 19 | Callback contracts — NATS subscription callbacks, ASGI `receive`, the `error_cb`/`disconnected_cb`/`reconnected_cb` handed to `nats.connect()`, and lifespan `start()` methods paired with a `stop()` that genuinely awaits. |
+| 4 | Async protocol members: `aclose`, and overrides of async base-class methods whose other implementations do await. |
+| 3 | Genuinely removable. |
+
+Of the three removable ones, two were not "delete the keyword" findings at all —
+`_convert_pdf` and `_convert_dxf` in `sites/floor/floorplan_converter.py` had no
+`await` because they ran blocking poppler and matplotlib work INLINE on the event
+loop, stalling every SSE stream in `core` for the length of a floor-plan render.
+They are fixed (`asyncio.to_thread`, with the matplotlib figure lifetime
+serialised), which also removes them from this rule because the `await` is now
+real. The rule found a genuine availability bug and filed it as a style nit.
+
+The rule was turned off only after that bug was fixed, so it is not hiding a live
+finding. The remaining 74 are framework contracts the analyser cannot see, and a
+96 %-false-positive wall on every scan is how a dashboard stops being read.
+
+### `typescript:S4084` — "Media elements should have captions" (2 findings)
+
+`LivePlayer` and `TilePlayback`, both rendering a LIVE CCTV stream. There is no
+caption track for a camera feed and there is no way to produce one. Satisfying the
+rule would mean adding an empty `<track>` element that claims captions exist.
+
+### Not waived, though it was proposed: `typescript:S6772`
+
+This one was initially judged a false positive and that judgement was wrong. The
+sites were read, and the rule is right: in JSX, whether a space survives between an
+element and adjacent text depends on the line breaks, not on the space that was
+typed. `<kbd>N</kbd> next` renders "N next" until a formatter moves `next` onto its
+own line, at which point it silently becomes "Nnext". The 20 sites are being made
+explicit rather than waived.

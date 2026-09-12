@@ -141,14 +141,19 @@ async def _convert_pdf(
     try:
         return await asyncio.to_thread(_render_pdf, content, filename, namespace, site_id)
     except ImportError as exc:
-        logger.error("pdf2image not installed: %s", exc)
+        # An optional extra is simply absent — expected, and the message names the
+        # missing piece. A traceback here would only show the lazy import line.
+        logger.warning("pdf2image not installed: %s", exc)
         raise ValueError(
             "PDF conversion not available — pdf2image (and poppler-utils) required"
         ) from exc
     except ValueError:
         raise
     except Exception as exc:
-        logger.error("PDF conversion failed: %s", exc)
+        # The frame that failed is in the worker thread and the ValueError below
+        # flattens it to a string for the 422, so this log is the only place the
+        # real poppler/PIL failure is ever recorded.
+        logger.exception("PDF conversion failed")
         raise ValueError(f"PDF conversion failed: {exc}") from exc
 
 
@@ -204,12 +209,16 @@ async def _convert_dxf(
     try:
         return await asyncio.to_thread(_render_dxf, content, filename, namespace, site_id)
     except ImportError as exc:
-        logger.error("ezdxf not installed: %s", exc)
+        # Same as the PDF path: a missing optional extra, fully described by the
+        # message. Tracebacks for expected conditions teach people to skip them.
+        logger.warning("ezdxf not installed: %s", exc)
         raise ValueError(
             "DXF conversion not available — ezdxf + matplotlib required"
         ) from exc
     except Exception as exc:
-        logger.error("DXF conversion failed: %s", exc)
+        # ezdxf and matplotlib fail deep inside their own stacks, on a worker
+        # thread; without the traceback all anyone ever sees is the 422 text.
+        logger.exception("DXF conversion failed")
         raise ValueError(f"DXF conversion failed: {exc}") from exc
 
 

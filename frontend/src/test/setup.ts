@@ -10,13 +10,18 @@ import "@/lib/icons";
 import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 
-// jsdom implements none of these, and the console's UI uses all three.
+// jsdom implements none of these, and the console's UI uses all three. Components
+// only need the constructor and these methods to exist.
 class ResizeObserverStub {
-  // Nothing to observe: jsdom has no layout, so no box ever resizes. Components
-  // only need the constructor and these methods to exist.
-  observe() {}
-  unobserve() {}
-  disconnect() {}
+  observe() {
+    // jsdom has no layout, so no box ever resizes and no callback could ever fire.
+  }
+  unobserve() {
+    // Nothing was ever observed, so there is no subscription to drop.
+  }
+  disconnect() {
+    // Likewise: there is no subscription to tear down.
+  }
 }
 vi.stubGlobal("ResizeObserver", ResizeObserverStub);
 

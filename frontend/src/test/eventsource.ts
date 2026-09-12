@@ -26,9 +26,10 @@ export class FakeEventSource {
     this.listeners.set(type, [...(this.listeners.get(type) || []), handler]);
   }
 
-  // Deliberately inert: an instance is thrown away after close(), and tests
-  // assert on connections opened, never on listeners left behind.
-  removeEventListener() {}
+  removeEventListener() {
+    // Deliberately inert: an instance is thrown away after close(), and tests
+    // assert on connections opened, never on listeners left behind.
+  }
 
   close() {
     this.closed = true;

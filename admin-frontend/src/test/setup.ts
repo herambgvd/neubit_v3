@@ -3,13 +3,18 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 
-// jsdom implements neither of these, and Radix + the charts use both.
+// jsdom implements neither of these, and Radix + the charts use both. They only
+// need the constructor and these methods to exist.
 class ResizeObserverStub {
-  // Nothing to observe: jsdom has no layout, so no box ever resizes. Radix and
-  // the charts only need the constructor and these methods to exist.
-  observe() {}
-  unobserve() {}
-  disconnect() {}
+  observe() {
+    // jsdom has no layout, so no box ever resizes and no callback could ever fire.
+  }
+  unobserve() {
+    // Nothing was ever observed, so there is no subscription to drop.
+  }
+  disconnect() {
+    // Likewise: there is no subscription to tear down.
+  }
 }
 vi.stubGlobal("ResizeObserver", ResizeObserverStub);
 
