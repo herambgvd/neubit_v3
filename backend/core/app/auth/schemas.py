@@ -40,8 +40,9 @@ class UserOut(BaseModel):
     email: str
     full_name: str | None
     role: RoleOut
-    # Platform (vendor) super-admin — gates vendor-only features (e.g. External
-    # Access / ONVIF server) that a client's own admin must NOT be able to enable.
+    # Platform (vendor) super-admin (tenant_id NULL + is_superadmin True) — gates
+    # vendor-only features (e.g. External Access / ONVIF server) that a client's own
+    # admin must NOT be able to enable, and the admin console's cross-tenant panel.
     is_superadmin: bool = False
     is_active: bool
     email_verified: bool
@@ -66,9 +67,6 @@ class UserOut(BaseModel):
     # --- site access scope -------------------------------------------------
     # The site ids this user is confined to; EMPTY = unrestricted (all sites).
     site_ids: list[str] = []
-    # Platform super-admin flag (tenant_id NULL + is_superadmin True). The admin
-    # console reads this to gate access to the cross-tenant panel.
-    is_superadmin: bool = False
 
 
 class LoginIn(BaseModel):

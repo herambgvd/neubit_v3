@@ -42,6 +42,7 @@ from . import rating as rt
 from . import units as un
 from . import registry
 from . import spec as widget_spec
+from .metrics import metrics_router as _metrics_router
 from .schemas import (
     ActivityBucket,
     AlertListResponse,
@@ -951,7 +952,6 @@ async def rating(
     # meters and sub-boards (contract §21). An explicit `point_id` list still
     # overrides, because a caller asking about one specific meter is asking a
     # narrower question, not contradicting the stored fact.
-    role_default = False
     if not chosen:
         role_rows = (
             (
@@ -973,7 +973,6 @@ async def rating(
             # site's) energy to this one, so it is simply not chosen.
             if pid in by_id and pid not in chosen:
                 chosen.append(pid)
-        role_default = bool(chosen)
 
     blocked: list[str] = []
     if not chosen:
@@ -1417,4 +1416,8 @@ async def whoami(scope: Caller) -> dict:
     }
 
 
-from .metrics import metrics_router as _metrics_router; bi_router.include_router(_metrics_router)  # noqa: E401,E402,E702 — metric registry (/bi/metrics/*), owned by app/api/metrics.py
+# The metric registry's routes (/bi/metrics/*) live in app/api/metrics.py and are
+# mounted here so they inherit this router's gates. Mounted at the END of the module
+# only for reading order — `include_router` copies routes at call time, so the
+# position relative to this file's own decorators makes no difference.
+bi_router.include_router(_metrics_router)

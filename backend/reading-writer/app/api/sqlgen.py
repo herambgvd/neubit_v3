@@ -542,7 +542,7 @@ def discover_series(
         lab = _dim_sql(d, q.series_label)
         sel.append(f"{lab} AS {quote_ident(COL_SERIES_LABEL)}")
         group.append(lab)
-    sel.append(f"count(*) AS n")
+    sel.append("count(*) AS n")
     sel.append(f"count(*) OVER () AS {quote_ident(COL_TOTAL)}")
 
     dim_keys = [f.column for f in q.filters] + [q.series_by or ""]

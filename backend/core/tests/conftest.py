@@ -12,6 +12,7 @@ inside the running core container is missing the shared kernel one test needs.
 
 import os
 import sys
+from collections.abc import AsyncGenerator
 from pathlib import Path
 
 import httpx
@@ -100,7 +101,7 @@ def _import_all_models() -> None:
 
 
 @pytest_asyncio.fixture
-async def sessionmaker_() -> async_sessionmaker[AsyncSession]:
+async def sessionmaker_() -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
     _import_all_models()
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
@@ -118,7 +119,7 @@ async def sessionmaker_() -> async_sessionmaker[AsyncSession]:
 
 
 @pytest_asyncio.fixture
-async def db(sessionmaker_) -> AsyncSession:
+async def db(sessionmaker_) -> AsyncGenerator[AsyncSession, None]:
     async with sessionmaker_() as session:
         yield session
 

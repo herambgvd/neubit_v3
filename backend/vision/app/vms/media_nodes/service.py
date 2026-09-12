@@ -754,7 +754,6 @@ class NodeHeartbeatMonitor:
                 # the assignment on the dead node; recording stays down until a recorder
                 # recovers). Alert once per stranded camera batch below.
                 continue
-            old_node_id = cam.media_node_id
             cam.media_node_id = target.id
             cam.updated_at = _utcnow()
             # Persist the reassignment, then bump the local load so the next camera

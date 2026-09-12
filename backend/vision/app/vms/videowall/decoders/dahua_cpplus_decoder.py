@@ -183,7 +183,7 @@ class DahuaCpPlusDecoder(DecoderDriver):
         if not await _tcp_reachable(host, creds.port):
             return DecoderResult(ok=False, error="decoder host unreachable (TCP)")
         params = [
-            f"action=setTour",
+            "action=setTour",
             f"channel={int(channel)}",
             f"interval={int(dwell)}",
         ]

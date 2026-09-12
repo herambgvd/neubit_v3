@@ -134,10 +134,10 @@ class LicenseEnforcementMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         if request.method == "OPTIONS":  # never block CORS preflight
             return await call_next(request)
-        license = getattr(request.app.state, "license", None)
+        lic = getattr(request.app.state, "license", None)
         if (
-            license is not None
-            and license.is_expired
+            lic is not None
+            and lic.is_expired
             and not request.url.path.startswith(self.allow_prefixes)
         ):
             return JSONResponse(
@@ -220,12 +220,12 @@ def create_app(
 
     configure_rate_limiter(settings)
 
-    license = load_license(settings)
-    log.info("license: client=%s modules=%s", license.client, sorted(license.modules))
+    lic = load_license(settings)
+    log.info("license: client=%s modules=%s", lic.client, sorted(lic.modules))
 
     app = FastAPI(title=title, lifespan=lifespan)
     app.state.settings = settings
-    app.state.license = license
+    app.state.license = lic
     app.state.registry = registry
 
     # Endpoints reachable even under an expired license (so the app can be renewed).
@@ -327,7 +327,7 @@ def create_app(
     for r in extra_routers:  # always-on: auth, licensing, audit, system, ...
         app.include_router(r, prefix=prefix)
 
-    enabled = registry.enabled(license)
+    enabled = registry.enabled(lic)
     for spec in enabled:  # license-gated feature modules
         app.include_router(spec.router, prefix=f"{prefix}/modules/{spec.id}", tags=[spec.name])
     log.info("mounted modules: %s", [s.id for s in enabled])
@@ -354,11 +354,11 @@ def create_app(
         def features() -> dict:
             """Frontend calls this on load to build its nav from enabled modules."""
             return {
-                "client": license.client,
-                "expires_at": license.expires_at.isoformat() if license.expires_at else None,
+                "client": lic.client,
+                "expires_at": lic.expires_at.isoformat() if lic.expires_at else None,
                 "modules": [spec.nav for spec in enabled],
-                "limits": {} if license._dev else license.limits,
-                "features": {} if license._dev else license.features,
+                "limits": {} if lic._dev else lic.limits,
+                "features": {} if lic._dev else lic.features,
             }
 
     @app.get("/", include_in_schema=False, response_class=HTMLResponse)

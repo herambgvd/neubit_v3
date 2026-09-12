@@ -30,7 +30,6 @@ def base_routers() -> list[APIRouter]:
     from .billing import router as billing_router
     from .branding import public_router as branding_public_router
     from .branding import router as branding_router
-    from .branding import public_router as branding_public_router
     from .broadcasts import public_router as broadcasts_public_router
     from .broadcasts import router as broadcasts_router
     from .core.audit import audit_router
@@ -43,8 +42,6 @@ def base_routers() -> list[APIRouter]:
     from .device_brands import router as device_brands_router
     from .infra import router as infra_router
     from .licensing import router as licensing_router
-    from .settings import public_router as settings_public_router
-    from .security.router import sso_router
     from .messaging import router as messaging_router
     from .module_catalog import router as module_catalog_router
     from .platform_admin import router as platform_admin_router
