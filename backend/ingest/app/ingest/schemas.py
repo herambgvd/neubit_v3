@@ -13,6 +13,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 # v2's exact slug rule: lowercase alphanumeric with -/_ , 3-64 chars, must start
 # and end with an alphanumeric.
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$")
+
+#: A target_domain names a projection table, so the request schema and the field
+#: validator have to accept exactly the same set — a value one allows and the
+#: other rejects is a 422 nobody can explain from the message.
+_DOMAIN_PATTERN = r"^[a-z][a-z0-9_]{0,63}$"
 _SLUG_ERROR = "slug must be lowercase alphanumeric with -/_ (3-64 chars)"
 
 # The receiver's public origin (e.g. "https://ingest.acme.com"), so the operator
@@ -95,7 +100,7 @@ def _target_domain(v):
     unchecked in the first place."""
     if v is None:
         return None
-    if not re.match(r"^[a-z][a-z0-9_]{0,63}$", v):
+    if not re.match(_DOMAIN_PATTERN, v):
         raise ValueError("target_domain must be lowercase [a-z0-9_], starting with a letter")
     if v in RESERVED_DOMAINS:
         raise ValueError(
@@ -449,7 +454,7 @@ class EventRuleCreate(BaseModel):
     # the category's — went straight into the NATS subject, so a holder of
     # ingest.manage could publish into another module's namespace by setting it to
     # "access" or "vms.camera".
-    target_domain: Optional[str] = Field(default=None, max_length=64, pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    target_domain: Optional[str] = Field(default=None, max_length=64, pattern=_DOMAIN_PATTERN)
     enabled: bool = True
 
     _check_domain = field_validator("target_domain")(_target_domain)
@@ -467,7 +472,7 @@ class EventRuleUpdate(BaseModel):
     # the category's — went straight into the NATS subject, so a holder of
     # ingest.manage could publish into another module's namespace by setting it to
     # "access" or "vms.camera".
-    target_domain: Optional[str] = Field(default=None, max_length=64, pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    target_domain: Optional[str] = Field(default=None, max_length=64, pattern=_DOMAIN_PATTERN)
     enabled: Optional[bool] = None
 
     _check_domain = field_validator("target_domain")(_target_domain)

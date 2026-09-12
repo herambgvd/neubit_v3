@@ -21,6 +21,7 @@ from ..models import Role, User
 from .. import dynamic_permissions
 from ..permissions import WILDCARD
 from ..schemas import CreateRoleIn, UpdateRoleIn
+from ._constants import ROLE_NOT_FOUND
 
 class RolesMixin:
     """Part of :class:`AuthService`; see `services/__init__.py`."""
@@ -58,12 +59,12 @@ class RolesMixin:
                           scope: Scope | None = None) -> Role:
         role = await self.db.get(Role, role_id)
         if role is None:
-            raise NotFoundError("role not found")
+            raise NotFoundError(ROLE_NOT_FOUND)
         # Tenant isolation: a tenant-admin may only touch their own tenant's roles.
         # Shared system roles (tenant_id NULL) are read-only to tenant-admins anyway
         # (blocked by is_system below), and invisible-as-editable to other tenants.
         if scope is not None and not scope.is_platform and role.tenant_id != scope.tenant_id:
-            raise NotFoundError("role not found")
+            raise NotFoundError(ROLE_NOT_FOUND)
         if role.is_system:
             raise ValidationError("the system Administrator role cannot be modified")
         if data.permissions is not None:
@@ -84,11 +85,11 @@ class RolesMixin:
     async def delete_role(self, role_id: uuid.UUID, scope: Scope | None = None) -> None:
         role = await self.db.get(Role, role_id)
         if role is None:
-            raise NotFoundError("role not found")
+            raise NotFoundError(ROLE_NOT_FOUND)
         # A tenant-admin may only delete their own tenant's roles (a shared system
         # role has tenant_id NULL and is blocked by is_system regardless).
         if scope is not None and not scope.is_platform and role.tenant_id != scope.tenant_id:
-            raise NotFoundError("role not found")
+            raise NotFoundError(ROLE_NOT_FOUND)
         if role.is_system:
             raise ValidationError("the system Administrator role cannot be deleted")
         in_use = await self.db.scalar(
@@ -140,9 +141,9 @@ class RolesMixin:
         """Copy a role's permissions + description under a new name (own tenant)."""
         src = await self.db.get(Role, role_id)
         if src is None:
-            raise NotFoundError("role not found")
+            raise NotFoundError(ROLE_NOT_FOUND)
         if scope is not None and not scope.is_platform and src.tenant_id not in (None, scope.tenant_id):
-            raise NotFoundError("role not found")
+            raise NotFoundError(ROLE_NOT_FOUND)
         # Same conflict rule as create_role: unique within the caller's own view.
         if await self._role_by_name(name, scope):
             raise ConflictError("a role with this name already exists")

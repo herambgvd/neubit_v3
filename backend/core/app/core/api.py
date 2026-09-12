@@ -31,6 +31,11 @@ from .request_limits import RequestSizeLimitMiddleware
 from .metrics import MetricsMiddleware, metrics_response
 from .modules import ModuleRegistry
 
+#: Where blobs are served. Three separate policies key off this path — a relaxed CSP,
+#: a wider rate-limit bucket, and reachability under an expired licence — and they are
+#: only coherent while they name the same mount.
+FILES_PREFIX = "/files"
+
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Standard security response headers on every response.
@@ -59,7 +64,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # load, plus `sandbox` so anything reaching the browser as a document (an
         # SVG, a legacy .html) runs with no script and an opaque origin. Backs up
         # the attachment disposition in core/storage.py.
-        if request.url.path.startswith("/files"):
+        if request.url.path.startswith(FILES_PREFIX):
             response.headers["Content-Security-Policy"] = (
                 "default-src 'none'; img-src 'self'; sandbox"
             )
@@ -82,7 +87,6 @@ class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
     EXEMPT_PATHS = frozenset({"/health", "/readyz", "/metrics"})
 
     #: `/files` is bandwidth, not API calls: its own bucket, wider budget.
-    FILES_PREFIX = "/files"
     FILES_MULTIPLIER = 10
 
     def __init__(self, app, limit: int, skip_prefixes: tuple[str, ...] = ()):
@@ -105,7 +109,7 @@ class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
         # `client_ip`, not `request.client.host`: behind a gateway the peer is the
         # gateway, which would count the whole estate into one bucket.
         ip = client_ip(request)
-        if path.startswith(self.FILES_PREFIX):
+        if path.startswith(FILES_PREFIX):
             bucket, limit = f"files:{ip}", self.limit * self.FILES_MULTIPLIER
         else:
             bucket, limit = f"global:{ip}", self.limit
@@ -233,7 +237,7 @@ def create_app(
         "/health",
         "/readyz",
         "/metrics",
-        "/files",
+        FILES_PREFIX,
         "/docs",
         "/redoc",
         "/openapi.json",

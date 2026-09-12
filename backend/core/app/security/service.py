@@ -29,6 +29,11 @@ from .models import DirectoryConfig, DualAuthRequest, SecurityPolicy, SsoConfig
 from .oidc_client import HttpLike, HttpxAdapter, OidcClaims, exchange_code, fetch_discovery
 
 
+# A four-eyes request the caller may not see answers exactly as one that never
+# existed: the difference would tell an outsider which requests are pending.
+_REQUEST_NOT_FOUND = "request not found"
+
+
 def _now() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
@@ -402,13 +407,13 @@ class SecurityService:
     ) -> DualAuthRequest:
         req = await self.db.get(DualAuthRequest, req_id)
         if req is None:
-            raise NotFoundError("request not found")
+            raise NotFoundError(_REQUEST_NOT_FOUND)
         if not scope.is_platform and req.tenant_id != scope.tenant_id:
-            raise NotFoundError("request not found")
+            raise NotFoundError(_REQUEST_NOT_FOUND)
         if only_own_of is not None and req.requested_by != only_own_of:
             # NOT_FOUND, not FORBIDDEN: the id must not be confirmable by someone
             # who cannot act on it, since the id is what `consume` takes.
-            raise NotFoundError("request not found")
+            raise NotFoundError(_REQUEST_NOT_FOUND)
         return req
 
     def _expired(self, req: DualAuthRequest) -> bool:
@@ -460,7 +465,7 @@ class SecurityService:
         if actor_id is not None and req.requested_by != actor_id:
             # NOT_FOUND for the same reason as the tenant check: the id must not be
             # confirmable by someone who cannot act on it.
-            raise NotFoundError("request not found")
+            raise NotFoundError(_REQUEST_NOT_FOUND)
         if req.status == "consumed":
             raise ConflictError("approval has already been used")
         if req.status != "approved":

@@ -70,6 +70,10 @@ EVENTS_STREAM = "EVENTS"
 SUBJECT = "tenant.*.sites.site.>"
 DURABLE = "reading-writer-site-facts"
 
+#: What a log line prints for a fact the site simply has not filled in — distinct from
+#: a zero, which is a stated value.
+_NOT_STATED = "<not stated>"
+
 # Every site event carries the facts, so all of them are worth applying. A
 # `deleted` flips `is_active` rather than removing the row.
 _EVENTS = {
@@ -418,7 +422,7 @@ class SiteFactsSync:
             values["gross_floor_area_sqm"],
             values["energy_tariff_per_kwh"],
             values["occupancy"],
-            values.get("city", "<not stated>"),
-            "<not stated>" if slabs is None else len(slabs),
-            "<not stated>" if factors is None else len(factors),
+            values.get("city", _NOT_STATED),
+            _NOT_STATED if slabs is None else len(slabs),
+            _NOT_STATED if factors is None else len(factors),
         )

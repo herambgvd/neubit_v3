@@ -30,9 +30,10 @@ from .starters import (
 )
 
 
+_SOP_NOT_FOUND = "SOP not found"
+
+
 # ── SOP ────────────────────────────────────────────────────────────────
-
-
 class SopService:
     def __init__(self, db: AsyncSession, scope: Scope) -> None:
         self.db = db
@@ -48,7 +49,7 @@ class SopService:
         `for_write` is what separates the two.
         """
         row = await self.db.get(SOP, sop_id)
-        assert_owned(row, self.scope, message="SOP not found",
+        assert_owned(row, self.scope, message=_SOP_NOT_FOUND,
                      allow_shared=not for_write)
         return row
 
@@ -225,7 +226,7 @@ class StateService:
 
     async def _sop(self, sop_id: str, *, for_write: bool = False) -> SOP:
         row = await self.db.get(SOP, sop_id)
-        assert_owned(row, self.scope, message="SOP not found",
+        assert_owned(row, self.scope, message=_SOP_NOT_FOUND,
                      allow_shared=not for_write)
         return row
 
@@ -359,7 +360,7 @@ class TransitionService:
 
     async def _sop(self, sop_id: str, *, for_write: bool = False) -> SOP:
         row = await self.db.get(SOP, sop_id)
-        assert_owned(row, self.scope, message="SOP not found",
+        assert_owned(row, self.scope, message=_SOP_NOT_FOUND,
                      allow_shared=not for_write)
         return row
 

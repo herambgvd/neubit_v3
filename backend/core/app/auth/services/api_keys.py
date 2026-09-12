@@ -23,6 +23,7 @@ from ...tenancy.scope import Scope, assert_owned
 from ..models import ApiKey, User
 from .. import dynamic_permissions
 from ..permissions import WILDCARD
+from ._constants import INVALID_API_KEY
 from ..schemas import ApiKeyCreateIn
 from ..security import api_key_prefix, create_api_key_token, generate_api_key, hash_api_key
 
@@ -139,17 +140,17 @@ class ApiKeyMixin:
         """
         prefix = api_key_prefix(raw)
         if prefix is None:
-            raise UnauthorizedError("invalid API key")
+            raise UnauthorizedError(INVALID_API_KEY)
         key = (
             await self.db.execute(select(ApiKey).where(ApiKey.prefix == prefix))
         ).scalar_one_or_none()
         if key is None:
-            raise UnauthorizedError("invalid API key")
+            raise UnauthorizedError(INVALID_API_KEY)
         if not hmac.compare_digest(key.key_hash, hash_api_key(raw)):
-            raise UnauthorizedError("invalid API key")
+            raise UnauthorizedError(INVALID_API_KEY)
         now = dt.datetime.now(dt.timezone.utc)
         if not key.usable_at(now):
-            raise UnauthorizedError("invalid API key")
+            raise UnauthorizedError(INVALID_API_KEY)
         # Stamped on the exchange, not on every request the resulting token makes
         # (satellites verify statelessly and never see the key). So it means "last
         # exchanged" — within a token TTL of last use, which is enough to answer

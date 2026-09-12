@@ -33,6 +33,7 @@ from xml.sax.saxutils import escape
 
 from . import _http
 from .decoder_base import (
+    UNREACHABLE,
     DecoderCredentials,
     DecoderDriver,
     DecoderInfo,
@@ -60,7 +61,7 @@ class HikvisionDecoder(DecoderDriver):
     async def probe(self, host: str, creds: DecoderCredentials) -> DecoderInfo:
         """GET /ISAPI/System/deviceInfo → identity. Never raises."""
         if not await _tcp_reachable(host, creds.port):
-            return DecoderInfo(reachable=False, error="decoder host unreachable (TCP)")
+            return DecoderInfo(reachable=False, error=UNREACHABLE)
         body = await _http.get_text(
             f"{self._base(host, creds)}/ISAPI/System/deviceInfo",
             creds.username,
@@ -99,7 +100,7 @@ class HikvisionDecoder(DecoderDriver):
         if grid not in _VALID_GRIDS:
             return DecoderResult(ok=False, error=f"unsupported grid {grid} (want 1|4|9|16)")
         if not await _tcp_reachable(host, creds.port):
-            return DecoderResult(ok=False, error="decoder host unreachable (TCP)")
+            return DecoderResult(ok=False, error=UNREACHABLE)
         # <VideoOutputWindow><layout>4</layout></VideoOutputWindow>
         payload = (
             '<?xml version="1.0" encoding="UTF-8"?>'
@@ -120,7 +121,7 @@ class HikvisionDecoder(DecoderDriver):
         if not rtsp_uri:
             return DecoderResult(ok=False, error="empty rtsp_uri")
         if not await _tcp_reachable(host, creds.port):
-            return DecoderResult(ok=False, error="decoder host unreachable (TCP)")
+            return DecoderResult(ok=False, error=UNREACHABLE)
         # <DynamicChannel><id>ch</id><window>cell</window><srcUrl>rtsp://…</srcUrl>
         #   <protocolType>RTSP</protocolType></DynamicChannel>
         payload = (
@@ -144,7 +145,7 @@ class HikvisionDecoder(DecoderDriver):
         """PUT /ISAPI/ContentMgmt/dynamicChannels/<ch> with an empty ``<srcUrl>`` — stop
         decoding on window ``cell`` (or the whole output when None). Never raises."""
         if not await _tcp_reachable(host, creds.port):
-            return DecoderResult(ok=False, error="decoder host unreachable (TCP)")
+            return DecoderResult(ok=False, error=UNREACHABLE)
         window = "" if cell is None else f"<window>{int(cell)}</window>"
         payload = (
             '<?xml version="1.0" encoding="UTF-8"?>'
@@ -172,7 +173,7 @@ class HikvisionDecoder(DecoderDriver):
         if not uris:
             return DecoderResult(ok=False, error="empty tour uri list")
         if not await _tcp_reachable(host, creds.port):
-            return DecoderResult(ok=False, error="decoder host unreachable (TCP)")
+            return DecoderResult(ok=False, error=UNREACHABLE)
         items = "".join(
             f"<PlanItem><window>{i}</window><srcUrl>{escape(u)}</srcUrl>"
             f"<dwellTime>{int(dwell)}</dwellTime></PlanItem>"

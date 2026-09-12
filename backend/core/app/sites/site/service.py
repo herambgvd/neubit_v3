@@ -43,6 +43,9 @@ from .schemas import (
 )
 
 
+_PARENT_CYCLE = "Setting this parent would create a cycle"
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -447,14 +450,14 @@ class SiteService:
         vetted by _require_assignable_parent.
         """
         if new_parent == site_id:
-            raise ConflictError("Setting this parent would create a cycle")
+            raise ConflictError(_PARENT_CYCLE)
         seen = {new_parent}
         current = await self.db.get(Site, new_parent)
         while current and current.parent_id:
             if current.parent_id == site_id:
-                raise ConflictError("Setting this parent would create a cycle")
+                raise ConflictError(_PARENT_CYCLE)
             if current.parent_id in seen:
-                raise ConflictError("Setting this parent would create a cycle")
+                raise ConflictError(_PARENT_CYCLE)
             seen.add(current.parent_id)
             current = await self.db.get(Site, current.parent_id)
 

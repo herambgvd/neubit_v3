@@ -43,16 +43,16 @@ PERM_PTZ = "vms.ptz.control"
 # are the operator's right; the NODE separately enforces the federation credential's
 # own scoped grants (recording.control / export.create / evidence.* / camera.reboot).
 PERM_RECORDING = "vms.recording.control"  # manual record + evidence-write, as the local recording/evidence UI gates
-PERM_EXPORT = "vms.playback.view"         # clip export rides the playback/investigation right the app uses
-PERM_EVIDENCE_HOLD = "vms.recording.control"   # evidence write == recording.control (matches EvidenceLockModal)
-PERM_EVIDENCE_RELEASE = "vms.recording.control"
-PERM_EVIDENCE_READ = "vms.playback.view"
+PERM_EXPORT = PERM_PLAYBACK               # clip export rides the playback/investigation right the app uses
+PERM_EVIDENCE_HOLD = PERM_RECORDING       # evidence write == recording.control (matches EvidenceLockModal)
+PERM_EVIDENCE_RELEASE = PERM_RECORDING
+PERM_EVIDENCE_READ = PERM_PLAYBACK
 PERM_CAMERA_REBOOT = "vms.config.manage"  # the real device-maintenance/reboot right (deviceMgmt.reboot)
 
 # Nodes we attempt to reach for a federated read (a draining/errored node is skipped).
 _REACHABLE = ("online", "unknown", "draining")
 PERM_DEVICE_TUNE = "vms.camera.tune"
-PERM_MOTION_SEARCH = "vms.playback.view"  # forensic search reads recorded footage
+PERM_MOTION_SEARCH = PERM_PLAYBACK        # forensic search reads recorded footage
 
 
 def _nodes_query(scope: Scope):

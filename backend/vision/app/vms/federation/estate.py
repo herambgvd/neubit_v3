@@ -327,7 +327,5 @@ async def federated_playback(
 # re-gated: the node refuses them to a federation credential on purpose, because
 # a central VMS that can rewrite a recorder's camera configuration has become an
 # NVR. Those screens belong to the owning node's own console.
-PERM_DEVICE_TUNE = "vms.camera.tune"
-PERM_MOTION_SEARCH = "vms.playback.view"  # forensic search reads recorded footage
 
 # ── Image tab — picture settings + the focus MOTOR (onvifapi/imaging.go) ──────

@@ -31,6 +31,7 @@ from urllib.parse import quote
 
 from . import _http
 from .decoder_base import (
+    UNREACHABLE,
     DecoderCredentials,
     DecoderDriver,
     DecoderInfo,
@@ -59,7 +60,7 @@ class DahuaCpPlusDecoder(DecoderDriver):
     async def probe(self, host: str, creds: DecoderCredentials) -> DecoderInfo:
         """GET magicBox.cgi?action=getSystemInfo → identity. Never raises."""
         if not await _tcp_reachable(host, creds.port):
-            return DecoderInfo(reachable=False, error="decoder host unreachable (TCP)")
+            return DecoderInfo(reachable=False, error=UNREACHABLE)
         base = self._base(host, creds)
         body = await _http.get_text(
             f"{base}/cgi-bin/magicBox.cgi?action=getSystemInfo",
@@ -114,7 +115,7 @@ class DahuaCpPlusDecoder(DecoderDriver):
         if split is None:
             return DecoderResult(ok=False, error=f"unsupported grid {grid} (want 1|4|9|16)")
         if not await _tcp_reachable(host, creds.port):
-            return DecoderResult(ok=False, error="decoder host unreachable (TCP)")
+            return DecoderResult(ok=False, error=UNREACHABLE)
         url = (
             f"{self._base(host, creds)}/cgi-bin/configManager.cgi?action=setConfig"
             f"&VideoWidget[{int(channel)}].SplitMode={int(split)}"
@@ -135,7 +136,7 @@ class DahuaCpPlusDecoder(DecoderDriver):
         if not rtsp_uri:
             return DecoderResult(ok=False, error="empty rtsp_uri")
         if not await _tcp_reachable(host, creds.port):
-            return DecoderResult(ok=False, error="decoder host unreachable (TCP)")
+            return DecoderResult(ok=False, error=UNREACHABLE)
         target = int(channel) * 100 + int(cell)
         url = (
             f"{self._base(host, creds)}/cgi-bin/decoder.cgi?action=makeConnect"
@@ -151,7 +152,7 @@ class DahuaCpPlusDecoder(DecoderDriver):
         """GET decoder.cgi?action=closeConnect&channel=<target> — stop decoding on window
         ``cell`` (or the whole output when None). Never raises."""
         if not await _tcp_reachable(host, creds.port):
-            return DecoderResult(ok=False, error="decoder host unreachable (TCP)")
+            return DecoderResult(ok=False, error=UNREACHABLE)
         if cell is None:
             # Whole-output clear — Dahua closes all windows on the output channel.
             url = (
@@ -181,7 +182,7 @@ class DahuaCpPlusDecoder(DecoderDriver):
         if not uris:
             return DecoderResult(ok=False, error="empty tour uri list")
         if not await _tcp_reachable(host, creds.port):
-            return DecoderResult(ok=False, error="decoder host unreachable (TCP)")
+            return DecoderResult(ok=False, error=UNREACHABLE)
         params = [
             "action=setTour",
             f"channel={int(channel)}",

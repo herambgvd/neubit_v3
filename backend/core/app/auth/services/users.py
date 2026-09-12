@@ -9,7 +9,7 @@ and is correct only on the bootstrap path.
 
 from __future__ import annotations
 
-from ._constants import ADMIN_ROLE_NAME, _now
+from ._constants import ADMIN_ROLE_NAME, EMAIL_TAKEN, USER_NOT_FOUND, _now
 
 
 import datetime as dt
@@ -33,7 +33,7 @@ class UsersMixin:
     # --- users -------------------------------------------------------------
     async def create_user(self, data: CreateUserIn, scope: Scope | None = None) -> User:
         if (await self.db.execute(select(User).where(User.email == data.email))).scalar_one_or_none():
-            raise ConflictError("email already registered")
+            raise ConflictError(EMAIL_TAKEN)
         validate_password(data.password)
         await self._require_role(data.role_id, scope)
         # Multi-tenancy: decide the new user's tenant.
@@ -65,19 +65,19 @@ class UsersMixin:
         """Fetch one user, enforcing tenant ownership (404 if in another tenant)."""
         user = await self.db.get(User, user_id)
         if user is None:
-            raise NotFoundError("user not found")
+            raise NotFoundError(USER_NOT_FOUND)
         if scope is not None:
-            assert_owned(user, scope, message="user not found")
+            assert_owned(user, scope, message=USER_NOT_FOUND)
         return user
 
     async def update_user(self, user_id: uuid.UUID, data: UpdateUserIn,
                           scope: Scope | None = None) -> User:
         user = await self.db.get(User, user_id)
         if user is None:
-            raise NotFoundError("user not found")
+            raise NotFoundError(USER_NOT_FOUND)
         # Isolation: a tenant-admin can only update users in their own tenant.
         if scope is not None:
-            assert_owned(user, scope, message="user not found")
+            assert_owned(user, scope, message=USER_NOT_FOUND)
         if data.role_id is not None:
             await self._require_role(data.role_id, scope)
             user.role_id = data.role_id
@@ -92,7 +92,7 @@ class UsersMixin:
                 )
             ).scalar_one_or_none()
             if taken is not None:
-                raise ConflictError("email already registered")
+                raise ConflictError(EMAIL_TAKEN)
             user.email = data.email
             # A new address is an unproven inbox: require re-verification.
             user.email_verified = False
@@ -115,9 +115,9 @@ class UsersMixin:
         """Load a target user, enforcing tenant ownership (404 across tenants)."""
         user = await self.db.get(User, user_id)
         if user is None:
-            raise NotFoundError("user not found")
+            raise NotFoundError(USER_NOT_FOUND)
         if scope is not None:
-            assert_owned(user, scope, message="user not found")
+            assert_owned(user, scope, message=USER_NOT_FOUND)
         return user
 
     async def admin_lock_user(self, user_id: uuid.UUID, scope: Scope | None = None) -> User:
@@ -162,7 +162,7 @@ class UsersMixin:
         own via the invite; no credential is copied."""
         src = await self._admin_target(user_id, scope)
         if (await self.db.execute(select(User).where(User.email == data.email))).scalar_one_or_none():
-            raise ConflictError("email already registered")
+            raise ConflictError(EMAIL_TAKEN)
         import secrets as _secrets
 
         user = User(
@@ -211,10 +211,10 @@ class UsersMixin:
         """Hard-delete a user. Refresh/reset tokens cascade automatically."""
         user = await self.db.get(User, user_id)
         if user is None:
-            raise NotFoundError("user not found")
+            raise NotFoundError(USER_NOT_FOUND)
         # Isolation: a tenant-admin can only delete users in their own tenant.
         if scope is not None:
-            assert_owned(user, scope, message="user not found")
+            assert_owned(user, scope, message=USER_NOT_FOUND)
         await self.db.delete(user)
         await self.db.commit()
         return user

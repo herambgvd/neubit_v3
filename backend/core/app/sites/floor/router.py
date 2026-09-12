@@ -24,6 +24,7 @@ from fastapi import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...auth.deps import require_permission
+from ...auth.permissions import CorePerm
 from ...auth.models import User
 from ...core.errors import ValidationError
 from ...core.storage import get_storage
@@ -52,7 +53,7 @@ async def _service(
 @router.get(
     "",
     response_model=FloorListResponse,
-    dependencies=[Depends(require_permission("floors.read"))],
+    dependencies=[Depends(require_permission(CorePerm.FLOORS_READ))],
 )
 async def list_floors(
     svc: Annotated[FloorService, Depends(_service)],
@@ -76,7 +77,7 @@ async def list_floors(
 async def create_floor(
     body: CreateFloorRequest,
     svc: Annotated[FloorService, Depends(_service)],
-    actor: User = Depends(require_permission("floors.create")),
+    actor: User = Depends(require_permission(CorePerm.FLOORS_CREATE)),
 ) -> FloorPublic:
     return await svc.create(body, actor=actor)
 
@@ -95,7 +96,7 @@ async def create_floor_with_upload(
     floor_number: Annotated[Optional[int], Form()] = None,
     description: Annotated[Optional[str], Form()] = None,
     total_area: Annotated[Optional[float], Form()] = None,
-    actor: User = Depends(require_permission("floors.create")),
+    actor: User = Depends(require_permission(CorePerm.FLOORS_CREATE)),
 ) -> FloorPublic:
     floorplan_url = await _process_upload(file, scope=scope, site_id=site_id)
     body = CreateFloorRequest(
@@ -112,7 +113,7 @@ async def create_floor_with_upload(
 @router.get(
     "/{floor_id}",
     response_model=FloorPublic,
-    dependencies=[Depends(require_permission("floors.read"))],
+    dependencies=[Depends(require_permission(CorePerm.FLOORS_READ))],
 )
 async def get_floor(
     floor_id: str,
@@ -129,7 +130,7 @@ async def update_floor(
     floor_id: str,
     body: UpdateFloorRequest,
     svc: Annotated[FloorService, Depends(_service)],
-    actor: User = Depends(require_permission("floors.update")),
+    actor: User = Depends(require_permission(CorePerm.FLOORS_UPDATE)),
 ) -> FloorPublic:
     return await svc.update(floor_id, body, actor=actor)
 
@@ -141,7 +142,7 @@ async def update_floor(
 async def delete_floor(
     floor_id: str,
     svc: Annotated[FloorService, Depends(_service)],
-    actor: User = Depends(require_permission("floors.delete")),
+    actor: User = Depends(require_permission(CorePerm.FLOORS_DELETE)),
 ) -> Response:
     await svc.delete(floor_id, actor=actor)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -156,7 +157,7 @@ async def replace_floorplan(
     svc: Annotated[FloorService, Depends(_service)],
     scope: Annotated[Scope, Depends(get_scope)],
     file: Annotated[UploadFile, File()],
-    actor: User = Depends(require_permission("floors.update")),
+    actor: User = Depends(require_permission(CorePerm.FLOORS_UPDATE)),
 ) -> FloorPublic:
     existing = await svc.get(floor_id)  # 404s (scoped) if not the caller's floor
     floorplan_url = await _process_upload(file, scope=scope, site_id=existing.site_id)
@@ -170,7 +171,7 @@ async def replace_floorplan(
 async def restore_floor(
     floor_id: str,
     svc: Annotated[FloorService, Depends(_service)],
-    actor: User = Depends(require_permission("floors.update")),
+    actor: User = Depends(require_permission(CorePerm.FLOORS_UPDATE)),
 ) -> FloorPublic:
     return await svc.restore(floor_id, actor=actor)
 

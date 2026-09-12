@@ -35,6 +35,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+UNREACHABLE = "decoder host unreachable (TCP)"
+
+
 # ── Credentials ────────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class DecoderCredentials:

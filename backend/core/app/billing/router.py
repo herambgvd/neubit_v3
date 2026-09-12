@@ -45,6 +45,9 @@ from .schemas import (
 router = APIRouter(prefix="/admin/billing", tags=["admin", "billing"])
 
 
+_PLAN_NOT_FOUND = "plan not found"
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -93,7 +96,7 @@ async def update_plan(
 ) -> PlanOut:
     plan = await db.scalar(select(Plan).where(Plan.key == key))
     if plan is None:
-        raise NotFoundError("plan not found")
+        raise NotFoundError(_PLAN_NOT_FOUND)
     fields = data.model_dump(exclude_unset=True)
     if "interval" in fields and fields["interval"] not in PLAN_INTERVALS:
         raise ValidationError(f"interval must be one of {PLAN_INTERVALS}")
@@ -117,7 +120,7 @@ async def delete_plan(
 ) -> None:
     plan = await db.scalar(select(Plan).where(Plan.key == key))
     if plan is None:
-        raise NotFoundError("plan not found")
+        raise NotFoundError(_PLAN_NOT_FOUND)
     in_use = await db.scalar(
         select(func.count()).select_from(Subscription).where(Subscription.plan_key == key)
     )
@@ -167,7 +170,7 @@ async def subscribe(
         raise NotFoundError("tenant not found")
     plan = await db.scalar(select(Plan).where(Plan.key == data.plan_key))
     if plan is None:
-        raise NotFoundError("plan not found")
+        raise NotFoundError(_PLAN_NOT_FOUND)
 
     sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
     if sub is None:

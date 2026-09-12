@@ -55,6 +55,9 @@ log = logging.getLogger("vision.linkage.actions")
 _background: set[asyncio.Task] = set()
 
 
+_NO_RECORDER = "camera is not fronted by a recorder"
+
+
 def _spawn(coro) -> None:
     """Run a coroutine detached, and keep it alive long enough to finish."""
     task = asyncio.create_task(coro)
@@ -134,7 +137,7 @@ async def action_start_recording(ctx: ActionContext, config: dict) -> ActionResu
     if cam is None:
         return ActionResult("start_recording", False, "no camera to record")
     if node is None:
-        return ActionResult("start_recording", False, "camera is not fronted by a recorder")
+        return ActionResult("start_recording", False, _NO_RECORDER)
     try:
         await fed.record_start_node(node.api_url, cam.id, credential=node.credential)
         return ActionResult("start_recording", True, "recording started on the owning recorder")
@@ -223,7 +226,7 @@ async def action_ptz_preset(ctx: ActionContext, config: dict) -> ActionResult:
     if cam is None:
         return ActionResult("ptz_preset", False, "camera not found")
     if node is None:
-        return ActionResult("ptz_preset", False, "camera is not fronted by a recorder")
+        return ActionResult("ptz_preset", False, _NO_RECORDER)
     try:
         await fed.goto_ptz_preset_node(
             node.api_url, cam.id, str(preset), credential=node.credential
@@ -255,7 +258,7 @@ async def action_trigger_output(ctx: ActionContext, config: dict) -> ActionResul
     if cam is None:
         return ActionResult("trigger_output", False, "camera not found")
     if node is None:
-        return ActionResult("trigger_output", False, "camera is not fronted by a recorder")
+        return ActionResult("trigger_output", False, _NO_RECORDER)
 
     relay_token = config.get("relay_token") or "RelayOut1"
     state = config.get("state") or "active"

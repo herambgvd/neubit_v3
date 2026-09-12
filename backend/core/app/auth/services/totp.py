@@ -26,6 +26,7 @@ from ..security import (
     totp_provisioning_uri,
     verify_totp,
 )
+from ._constants import INVALID_TOTP_OR_RECOVERY
 
 class TotpMixin:
     """Part of :class:`AuthService`; see `services/__init__.py`."""
@@ -69,7 +70,7 @@ class TotpMixin:
         if user is None or not user.is_active or not user.totp_enabled:
             raise UnauthorizedError("2FA session is no longer valid")
         if not self._check_mfa(user, code):
-            raise UnauthorizedError("invalid authentication or recovery code")
+            raise UnauthorizedError(INVALID_TOTP_OR_RECOVERY)
         await self.db.commit()  # persist a consumed recovery code
         return user
 
@@ -107,7 +108,7 @@ class TotpMixin:
         if not user.totp_enabled:
             return
         if not self._check_mfa(user, code):
-            raise UnauthorizedError("invalid authentication or recovery code")
+            raise UnauthorizedError(INVALID_TOTP_OR_RECOVERY)
         user.totp_enabled = False
         user.totp_secret = None
         user.mfa_recovery_codes = []
@@ -117,7 +118,7 @@ class TotpMixin:
         if not user.totp_enabled:
             raise ValidationError("2FA is not enabled")
         if not self._check_mfa(user, code):
-            raise UnauthorizedError("invalid authentication or recovery code")
+            raise UnauthorizedError(INVALID_TOTP_OR_RECOVERY)
         raw, hashed = generate_recovery_codes()
         user.mfa_recovery_codes = hashed
         await self.db.commit()

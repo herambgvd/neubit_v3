@@ -55,6 +55,11 @@ def _actor_id(actor) -> str | None:
     return str(getattr(actor, "user_id", "")) or None
 
 
+# The same sentence for "no such camera" and "not yours": assert_owned answers it
+# too, so a camera id belonging to another tenant cannot be confirmed by probing.
+_CAMERA_NOT_FOUND = "camera not found"
+
+
 class LiveUpstreamError(AppError):
     """Camera unreachable / nvr down / no RTSP derivable → a clean 502 (never 500)."""
 
@@ -99,7 +104,7 @@ class LiveService:
     # ── row helpers ─────────────────────────────────────────────────────
     async def _camera(self, camera_id: str) -> Camera:
         row = await self.db.get(Camera, camera_id)
-        assert_owned(row, self.scope, message="camera not found", allow_shared=False)
+        assert_owned(row, self.scope, message=_CAMERA_NOT_FOUND, allow_shared=False)
         return row
 
     async def _session(self, session_id: str) -> PlaybackSession:
@@ -239,7 +244,7 @@ class LiveService:
 
         node = await owning_node(self.db, self.scope.tenant_id, camera_id)
         if node is None:
-            raise NotFoundError("camera not found")
+            raise NotFoundError(_CAMERA_NOT_FOUND)
         try:
             payload = await mint_estate_live(
                 node.api_url, camera_id, profile=profile, credential=node.credential
@@ -298,7 +303,7 @@ class LiveService:
             # Optional per-request DB cross-check: camera exists in the token tenant.
             cam = await self.db.get(Camera, claims.get("camera_id"))
             if cam is None:
-                raise NotFoundError("camera not found")
+                raise NotFoundError(_CAMERA_NOT_FOUND)
             tok_tenant = claims.get("tenant_id")
             cam_tenant = str(cam.tenant_id) if cam.tenant_id else "platform"
             if tok_tenant not in (cam_tenant, "platform"):

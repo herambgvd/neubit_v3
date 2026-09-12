@@ -36,6 +36,15 @@ from .security import decode_token
 
 _bearer = HTTPBearer(auto_error=False)
 
+# Three code paths reject a caller — the user token, the API key, and the websocket
+# handshake — and each must answer the same sentence for the same cause. A path that
+# said something more specific would tell an attacker which half of the credential
+# was wrong, and which one they had reached.
+_MISSING_BEARER = "missing bearer token"
+_BAD_TOKEN = "invalid or expired token"
+_NOT_ACCESS_TOKEN = "not an access token"
+_NO_SUCH_USER = "user not found or inactive"
+
 
 async def get_current_user(
     cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
@@ -47,16 +56,16 @@ async def get_current_user(
     and that is enforced by this path not knowing what a key is.
     """
     if cred is None:
-        raise UnauthorizedError("missing bearer token")
+        raise UnauthorizedError(_MISSING_BEARER)
     try:
         payload = decode_token(cred.credentials)
     except jwt.PyJWTError:
-        raise UnauthorizedError("invalid or expired token")
+        raise UnauthorizedError(_BAD_TOKEN)
     if payload.get("type") != "access":
-        raise UnauthorizedError("not an access token")
+        raise UnauthorizedError(_NOT_ACCESS_TOKEN)
     user = await db.get(User, uuid.UUID(payload["sub"]))  # role selectin-loaded
     if user is None or not user.is_active:
-        raise UnauthorizedError("user not found or inactive")
+        raise UnauthorizedError(_NO_SUCH_USER)
     return user
 
 
@@ -151,13 +160,13 @@ async def _resolve_actor(
     downgraded to the one with more reach.
     """
     if cred is None:
-        raise UnauthorizedError("missing bearer token")
+        raise UnauthorizedError(_MISSING_BEARER)
     try:
         payload = decode_token(cred.credentials)
     except jwt.PyJWTError:
-        raise UnauthorizedError("invalid or expired token")
+        raise UnauthorizedError(_BAD_TOKEN)
     if payload.get("type") != "access":
-        raise UnauthorizedError("not an access token")
+        raise UnauthorizedError(_NOT_ACCESS_TOKEN)
     act = payload.get("act")
     if act == "apikey":
         return await _resolve_key_actor(payload, db)
@@ -165,7 +174,7 @@ async def _resolve_actor(
         raise UnauthorizedError("unknown credential kind")
     user = await db.get(User, uuid.UUID(payload["sub"]))  # role selectin-loaded
     if user is None or not user.is_active:
-        raise UnauthorizedError("user not found or inactive")
+        raise UnauthorizedError(_NO_SUCH_USER)
     return user
 
 
@@ -228,13 +237,13 @@ def require_service_permission(*permissions: str):
         db: AsyncSession = Depends(get_db),
     ) -> User | None:
         if cred is None:
-            raise UnauthorizedError("missing bearer token")
+            raise UnauthorizedError(_MISSING_BEARER)
         try:
             payload = decode_token(cred.credentials)
         except jwt.PyJWTError:
-            raise UnauthorizedError("invalid or expired token")
+            raise UnauthorizedError(_BAD_TOKEN)
         if payload.get("type") != "access":
-            raise UnauthorizedError("not an access token")
+            raise UnauthorizedError(_NOT_ACCESS_TOKEN)
         # A service key gets the same live-row check as in require_permission, so
         # a revoked key is refused here too. Without this it falls through to the
         # claims branch below and keeps working until its token expires.
@@ -277,7 +286,7 @@ def require_service_permission(*permissions: str):
         # been granted the key explicitly rather than as a superadmin.
         if all(p in claims for p in permissions):
             return None
-        raise UnauthorizedError("user not found or inactive")
+        raise UnauthorizedError(_NO_SUCH_USER)
 
     return _dep
 

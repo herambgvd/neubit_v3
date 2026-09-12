@@ -37,9 +37,10 @@ from .models import WorkflowInstance
 log = logging.getLogger("workflow.instances.service")
 
 
+_INSTANCE_CLOSED = "Cannot mutate a closed instance"
+
+
 # ── Workflow instance (the state machine) ──────────────────────────────
-
-
 class InstanceService:
     """The running-incident state machine: create, transition, assign, escalate."""
 
@@ -207,7 +208,7 @@ class InstanceService:
         # the default is to READ IT rather than to leave the field empty.
         inst = await self._row(instance_id, for_write=True)
         if InstanceStatus(inst.status) in CLOSED_STATUSES:
-            raise ConflictError("Cannot mutate a closed instance")
+            raise ConflictError(_INSTANCE_CLOSED)
 
         trans = await self.db.get(Transition, body.transition_id)
         if (not trans or trans.sop_id != inst.sop_id
@@ -285,7 +286,7 @@ class InstanceService:
     async def assign(self, instance_id: str, body, *, actor) -> WorkflowInstance:
         inst = await self._row(instance_id, for_write=True)
         if InstanceStatus(inst.status) in CLOSED_STATUSES:
-            raise ConflictError("Cannot mutate a closed instance")
+            raise ConflictError(_INSTANCE_CLOSED)
         now = utcnow()
         inst.assigned_to = body.assigned_to
         inst.assignment = {
@@ -305,7 +306,7 @@ class InstanceService:
         inst = await self._row(instance_id, for_write=True)
         current = InstanceStatus(inst.status)
         if current in CLOSED_STATUSES:
-            raise ConflictError("Cannot mutate a closed instance")
+            raise ConflictError(_INSTANCE_CLOSED)
         # Enforce the legal status machine; a no-op is allowed. See core.enums.
         if not is_legal_status_change(current, body.status):
             raise ConflictError(
@@ -328,7 +329,7 @@ class InstanceService:
     async def escalate(self, instance_id: str, body, *, actor) -> WorkflowInstance:
         inst = await self._row(instance_id, for_write=True)
         if InstanceStatus(inst.status) in CLOSED_STATUSES:
-            raise ConflictError("Cannot mutate a closed instance")
+            raise ConflictError(_INSTANCE_CLOSED)
         now = utcnow()
         level = ((inst.escalation or {}).get("level", 0)) + 1
         inst.escalation = {

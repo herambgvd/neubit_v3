@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from kernel.auth import Principal, Scope, get_scope, require_permission
 
 from app.db import get_db
+from app.workflow import perms
 from . import schemas as S
 from .service import SopService, StateService, TransitionService
 
@@ -37,7 +38,7 @@ sop_router = APIRouter(prefix="/workflow/sops", tags=["Workflow · SOPs"])
 
 
 @sop_router.get("", response_model=S.SopListResponse,
-                dependencies=[Depends(require_permission("workflow.sop.read"))])
+                dependencies=[Depends(require_permission(perms.SOP_READ))])
 async def list_sops(svc: Annotated[SopService, Depends(_sop_svc)],
                     skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200),
                     is_active: Optional[bool] = Query(None), tag: Optional[str] = Query(None)):
@@ -48,14 +49,14 @@ async def list_sops(svc: Annotated[SopService, Depends(_sop_svc)],
 
 @sop_router.post("", response_model=S.SopPublic, status_code=status.HTTP_201_CREATED)
 async def create_sop(body: S.CreateSopRequest, svc: Annotated[SopService, Depends(_sop_svc)],
-                     actor: Principal = Depends(require_permission("workflow.sop.create"))):
+                     actor: Principal = Depends(require_permission(perms.SOP_CREATE))):
     return S.SopPublic.from_row(await svc.create(body, actor=actor))
 
 
 @sop_router.post("/starters", response_model=S.InstallStartersResponse,
                  status_code=status.HTTP_201_CREATED)
 async def install_starter_sops(svc: Annotated[SopService, Depends(_sop_svc)],
-                               actor: Principal = Depends(require_permission("workflow.sop.create"))):
+                               actor: Principal = Depends(require_permission(perms.SOP_CREATE))):
     """Install the starter playbooks this tenant is missing.
 
     Idempotent: re-running installs only what is absent, so it is safe to offer as
@@ -72,20 +73,20 @@ async def install_starter_sops(svc: Annotated[SopService, Depends(_sop_svc)],
 
 
 @sop_router.get("/{sop_id}", response_model=S.SopPublic,
-                dependencies=[Depends(require_permission("workflow.sop.read"))])
+                dependencies=[Depends(require_permission(perms.SOP_READ))])
 async def get_sop(sop_id: str, svc: Annotated[SopService, Depends(_sop_svc)]):
     return S.SopPublic.from_row(await svc.get(sop_id))
 
 
 @sop_router.patch("/{sop_id}", response_model=S.SopPublic)
 async def update_sop(sop_id: str, body: S.UpdateSopRequest, svc: Annotated[SopService, Depends(_sop_svc)],
-                     actor: Principal = Depends(require_permission("workflow.sop.update"))):
+                     actor: Principal = Depends(require_permission(perms.SOP_UPDATE))):
     return S.SopPublic.from_row(await svc.update(sop_id, body, actor=actor))
 
 
 @sop_router.delete("/{sop_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_sop(sop_id: str, svc: Annotated[SopService, Depends(_sop_svc)],
-                     actor: Principal = Depends(require_permission("workflow.sop.delete"))):
+                     actor: Principal = Depends(require_permission(perms.SOP_DELETE))):
     await svc.delete(sop_id, actor=actor)
 
 
@@ -95,26 +96,26 @@ state_router = APIRouter(prefix="/workflow/sops/{sop_id}/states", tags=["Workflo
 
 
 @state_router.get("", response_model=list[S.StatePublic],
-                  dependencies=[Depends(require_permission("workflow.sop.read"))])
+                  dependencies=[Depends(require_permission(perms.SOP_READ))])
 async def list_states(sop_id: str, svc: Annotated[StateService, Depends(_state_svc)]):
     return [S.StatePublic.from_row(r) for r in await svc.list_(sop_id)]
 
 
 @state_router.post("", response_model=S.StatePublic, status_code=status.HTTP_201_CREATED)
 async def create_state(sop_id: str, body: S.CreateStateRequest, svc: Annotated[StateService, Depends(_state_svc)],
-                       actor: Principal = Depends(require_permission("workflow.sop.update"))):
+                       actor: Principal = Depends(require_permission(perms.SOP_UPDATE))):
     return S.StatePublic.from_row(await svc.create(sop_id, body, actor=actor))
 
 
 @state_router.patch("/{state_id}", response_model=S.StatePublic)
 async def update_state(sop_id: str, state_id: str, body: S.UpdateStateRequest,
                        svc: Annotated[StateService, Depends(_state_svc)],
-                       actor: Principal = Depends(require_permission("workflow.sop.update"))):
+                       actor: Principal = Depends(require_permission(perms.SOP_UPDATE))):
     return S.StatePublic.from_row(await svc.update(state_id, body, actor=actor))
 
 
 @state_router.delete("/{state_id}", status_code=status.HTTP_204_NO_CONTENT,
-                     dependencies=[Depends(require_permission("workflow.sop.update"))])
+                     dependencies=[Depends(require_permission(perms.SOP_UPDATE))])
 async def delete_state(sop_id: str, state_id: str, svc: Annotated[StateService, Depends(_state_svc)]):
     await svc.delete(state_id)
 
@@ -125,7 +126,7 @@ transition_router = APIRouter(prefix="/workflow/sops/{sop_id}/transitions", tags
 
 
 @transition_router.get("", response_model=list[S.TransitionPublic],
-                       dependencies=[Depends(require_permission("workflow.sop.read"))])
+                       dependencies=[Depends(require_permission(perms.SOP_READ))])
 async def list_transitions(sop_id: str, svc: Annotated[TransitionService, Depends(_trans_svc)]):
     return [S.TransitionPublic.from_row(r) for r in await svc.list_(sop_id)]
 
@@ -133,19 +134,19 @@ async def list_transitions(sop_id: str, svc: Annotated[TransitionService, Depend
 @transition_router.post("", response_model=S.TransitionPublic, status_code=status.HTTP_201_CREATED)
 async def create_transition(sop_id: str, body: S.CreateTransitionRequest,
                             svc: Annotated[TransitionService, Depends(_trans_svc)],
-                            actor: Principal = Depends(require_permission("workflow.sop.update"))):
+                            actor: Principal = Depends(require_permission(perms.SOP_UPDATE))):
     return S.TransitionPublic.from_row(await svc.create(sop_id, body, actor=actor))
 
 
 @transition_router.patch("/{transition_id}", response_model=S.TransitionPublic)
 async def update_transition(sop_id: str, transition_id: str, body: S.UpdateTransitionRequest,
                             svc: Annotated[TransitionService, Depends(_trans_svc)],
-                            actor: Principal = Depends(require_permission("workflow.sop.update"))):
+                            actor: Principal = Depends(require_permission(perms.SOP_UPDATE))):
     return S.TransitionPublic.from_row(await svc.update(transition_id, body, actor=actor))
 
 
 @transition_router.delete("/{transition_id}", status_code=status.HTTP_204_NO_CONTENT,
-                          dependencies=[Depends(require_permission("workflow.sop.update"))])
+                          dependencies=[Depends(require_permission(perms.SOP_UPDATE))])
 async def delete_transition(sop_id: str, transition_id: str, svc: Annotated[TransitionService, Depends(_trans_svc)]):
     await svc.delete(transition_id)
 
