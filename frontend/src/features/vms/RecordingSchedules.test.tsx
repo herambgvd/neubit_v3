@@ -11,7 +11,7 @@
  *    than leaving them to be discovered from an empty timeline later.
  */
 import { describe, expect, it, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { renderWithProviders } from "@/test/render";
@@ -221,5 +221,259 @@ describe("changing a week", () => {
 
     await userEvent.click(await screen.findByTitle("Delete"));
     expect(await screen.findByText(/cameras it was applied to keep the schedule/i)).toBeInTheDocument();
+  });
+});
+
+/**
+ * AND THE REST OF THE SCREEN — the parts that are not the week.
+ *
+ * Everything below protects a claim the console makes about somebody ELSE'S state:
+ * which recorder a schedule belongs to, whether a template still exists, and
+ * whether a week survived being renamed. Each is a place where the cheap
+ * implementation is silently wrong rather than visibly broken.
+ */
+const NIGHT = { Mon: Array.from({ length: 24 }, (_, h) => (h >= 22 ? "record" : "off")) };
+const ONE_HOUR = { Mon: Array.from({ length: 24 }, (_, h) => (h === 9 ? "record" : "off")) };
+
+/** Two federated recorders, each holding its own templates. */
+function twoRecorders() {
+  return {
+    "GET /vms/federation/nodes": () => ({
+      items: [
+        { id: "n1", name: "recorder-a" },
+        { id: "n2", name: "recorder-b" },
+      ],
+      total: 2,
+    }),
+    "GET /vms/federation/nodes/n1/recording-schedule-templates": () => ({
+      items: [{ id: "t1", name: "Business hours", schedule: GRID_WEEK }],
+      total: 1,
+    }),
+    "GET /vms/federation/nodes/n2/recording-schedule-templates": () => ({
+      items: [{ id: "t9", name: "Night watch", schedule: NIGHT }],
+      total: 1,
+    }),
+    "GET /vms/federation/cameras": () => ({ items: [], total: 0 }),
+  };
+}
+
+describe("which recorder these belong to", () => {
+  it("offers no chooser when there is only one recorder", async () => {
+    // With one node the control can only ever say what it already says, and a
+    // console full of single-option selects teaches people to ignore selects.
+    authState.value = CAN;
+    stubApi(routes([{ id: "t1", name: "Business hours", schedule: GRID_WEEK }]));
+    renderWithProviders(<RecordingSchedules />);
+
+    await screen.findAllByText("Business hours");
+    expect(screen.queryByRole("combobox")).toBeNull();
+  });
+
+  it("shows the chosen recorder's schedules and nothing of the previous one's", async () => {
+    // Templates live ON a recorder. Leaving recorder-a's selection standing while
+    // recorder-b's list loads would show one recorder's week under the other's
+    // name — and every write from that screen goes to the wrong node.
+    authState.value = CAN;
+    stubApi(twoRecorders());
+    renderWithProviders(<RecordingSchedules />);
+
+    await screen.findAllByText("Business hours");
+    await userEvent.selectOptions(screen.getByRole("combobox"), "n2");
+
+    expect(await screen.findAllByText("Night watch")).not.toHaveLength(0);
+    expect(screen.queryAllByText("Business hours")).toHaveLength(0);
+  });
+});
+
+describe("finding one schedule among many", () => {
+  const MANY = [
+    { id: "t1", name: "Business hours", description: "loading bay is staffed 09:00–18:00", schedule: GRID_WEEK },
+    { id: "t2", name: "Night watch", description: "car park after dark", schedule: NIGHT },
+  ];
+
+  it("matches on what a schedule is for, not only on its name", async () => {
+    // Schedules get named for a place and described by a reason; an operator
+    // hunting "the car park one" is searching the sentence, not the title.
+    authState.value = CAN;
+    stubApi(routes(MANY));
+    renderWithProviders(<RecordingSchedules />);
+
+    await screen.findAllByText("Night watch");
+    await userEvent.type(screen.getByPlaceholderText("Search schedules…"), "car park");
+
+    expect(screen.queryAllByText("Night watch")).not.toHaveLength(0);
+    expect(screen.queryAllByText("Business hours")).toHaveLength(0);
+  });
+
+  it("says the rail is FILTERED, not that the recorder has none", async () => {
+    // "No named schedules on this recorder yet" in front of a typed search would
+    // read as an empty recorder, and the next move is to create a duplicate of
+    // something that is already there.
+    authState.value = CAN;
+    stubApi(routes(MANY));
+    renderWithProviders(<RecordingSchedules />);
+
+    await screen.findAllByText("Night watch");
+    await userEvent.type(screen.getByPlaceholderText("Search schedules…"), "zzz");
+
+    expect(screen.getByText("No schedule matches that")).toBeInTheDocument();
+    expect(screen.queryByText(/No named schedules/i)).toBeNull();
+  });
+});
+
+describe("painting a week down to nothing", () => {
+  it("refuses to save it, and says why rather than failing at the recorder", async () => {
+    // The recorder rejects a document with no recording in it. Letting Save fire
+    // turns a knowable refusal into a 422 toast about a shape the operator never
+    // chose — and leaves them unsure whether the week on screen is stored.
+    authState.value = CAN;
+    stubApi(routes([{ id: "t1", name: "Sparse", schedule: ONE_HOUR }]));
+    renderWithProviders(<RecordingSchedules />);
+
+    // The only painted hour, clicked with the same tool, erases.
+    await userEvent.click(await screen.findByLabelText("Mon 09:00 — continuous"));
+
+    expect(screen.getByText(/Nothing is scheduled/i)).toBeInTheDocument();
+    // Dirty — Discard is offered — and still not saveable.
+    expect(screen.getByRole("button", { name: "Discard" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save week" })).toBeDisabled();
+  });
+});
+
+describe("naming a schedule", () => {
+  it("creates one with a week already in it", async () => {
+    // A template whose whole job is to hold a schedule must carry one: the
+    // recorder refuses an empty document, so "create" from a blank grid fails on
+    // the first press with a validation error nobody asked for.
+    authState.value = CAN;
+    const stub = stubApi({
+      ...routes([]),
+      "POST /vms/federation/nodes/n1/recording-schedule-templates": () => ({
+        id: "t2",
+        name: "Loading bay",
+        schedule: GRID_WEEK,
+      }),
+    });
+    renderWithProviders(<RecordingSchedules />);
+
+    await userEvent.click(await screen.findByTitle("New schedule"));
+    await userEvent.type(screen.getByPlaceholderText("Business hours"), "Loading bay");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    const sent = stub.body("POST /vms/federation/nodes/n1/recording-schedule-templates") as {
+      name: string;
+      schedule: Record<string, string[]>;
+    };
+    expect(sent.name).toBe("Loading bay");
+    expect(sent.schedule.Mon[9]).toBe("record");
+    expect(sent.schedule.Sat.every((s) => s === "off")).toBe(true);
+  });
+
+  it("drops the operator on the week they just created", async () => {
+    // Creating is half the act — the week is painted on the screen behind. Landing
+    // back on whatever was selected before makes the next paint edit the wrong
+    // template.
+    authState.value = CAN;
+    let list: unknown[] = [{ id: "t1", name: "Business hours", schedule: GRID_WEEK }];
+    stubApi({
+      "GET /vms/federation/nodes": () => ({ items: [{ id: "n1", name: "recorder-a" }], total: 1 }),
+      "GET /vms/federation/nodes/n1/recording-schedule-templates": () => ({
+        items: list,
+        total: list.length,
+      }),
+      "GET /vms/federation/cameras": () => ({ items: [], total: 0 }),
+      "POST /vms/federation/nodes/n1/recording-schedule-templates": () => {
+        const saved = { id: "t2", name: "Loading bay", schedule: NIGHT };
+        list = [...list, saved];
+        return saved;
+      },
+    });
+    renderWithProviders(<RecordingSchedules />);
+
+    await userEvent.click(await screen.findByTitle("New schedule"));
+    await userEvent.type(screen.getByPlaceholderText("Business hours"), "Loading bay");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    // NIGHT is 22:00–24:00 — two hours, and only the new template's week is.
+    expect(await screen.findByText("2h / week")).toBeInTheDocument();
+  });
+
+  it("renames without blanking the week it is renaming", async () => {
+    // The node's PUT REPLACES the template. A rename that sent only a name would
+    // silently unschedule the camera-facing document it was renaming, and nothing
+    // on screen would say so.
+    authState.value = CAN;
+    const stub = stubApi({
+      ...routes([{ id: "t1", name: "Business hours", schedule: GRID_WEEK }]),
+      "PUT /vms/federation/nodes/n1/recording-schedule-templates/t1": () => ({
+        id: "t1",
+        name: "Loading bay",
+        schedule: GRID_WEEK,
+      }),
+    });
+    renderWithProviders(<RecordingSchedules />);
+
+    await userEvent.click(await screen.findByTitle("Rename"));
+    const field = screen.getByPlaceholderText("Business hours");
+    expect(field).toHaveValue("Business hours");
+    await userEvent.clear(field);
+    await userEvent.type(field, "Loading bay");
+    await userEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Rename" }),
+    );
+
+    const sent = stub.body("PUT /vms/federation/nodes/n1/recording-schedule-templates/t1") as {
+      name: string;
+      schedule: Record<string, string[]>;
+    };
+    expect(sent.name).toBe("Loading bay");
+    expect(sent.schedule.Mon[9]).toBe("record");
+  });
+});
+
+describe("pushing a week onto cameras", () => {
+  it("opens the apply dialog for the schedule that is on screen", async () => {
+    // Apply is per-template and per-node. A dialog opened for anything but the
+    // selected template would fan a different week out to forty cameras.
+    authState.value = CAN;
+    stubApi(routes([{ id: "t1", name: "Business hours", schedule: GRID_WEEK }]));
+    renderWithProviders(<RecordingSchedules />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /Apply to cameras/ }));
+
+    expect(await screen.findByText(/Apply .Business hours./)).toBeInTheDocument();
+  });
+});
+
+describe("deleting a template", () => {
+  it("deletes it on the recorder that holds it, and takes nothing else with it", async () => {
+    // The template is a VMS-side stencil; the cameras hold copies. Deleting must
+    // reach exactly one node-scoped endpoint — a delete sent to the wrong node
+    // either 404s or removes a stranger's schedule.
+    authState.value = CAN;
+    let list: unknown[] = [{ id: "t1", name: "Business hours", schedule: GRID_WEEK }];
+    const stub = stubApi({
+      "GET /vms/federation/nodes": () => ({ items: [{ id: "n1", name: "recorder-a" }], total: 1 }),
+      "GET /vms/federation/nodes/n1/recording-schedule-templates": () => ({
+        items: list,
+        total: list.length,
+      }),
+      "GET /vms/federation/cameras": () => ({ items: [], total: 0 }),
+      "DELETE /vms/federation/nodes/n1/recording-schedule-templates/t1": () => {
+        list = [];
+        return null;
+      },
+    });
+    renderWithProviders(<RecordingSchedules />);
+
+    await userEvent.click(await screen.findByTitle("Delete"));
+    await userEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }),
+    );
+
+    expect(
+      stub.matching("DELETE /vms/federation/nodes/n1/recording-schedule-templates/t1"),
+    ).toHaveLength(1);
+    expect(await screen.findByText("No schedule selected")).toBeInTheDocument();
   });
 });
