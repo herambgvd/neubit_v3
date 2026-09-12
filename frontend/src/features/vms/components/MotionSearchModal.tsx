@@ -25,7 +25,14 @@
 // pixel-difference over sampled frames, NOT object detection, and a hit list is
 // exactly the sort of output somebody reads as "three intruders" if nothing says
 // otherwise.
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+} from "react";
 import { toast } from "sonner";
 import { Icon } from "@iconify/react";
 
@@ -49,6 +56,76 @@ const fromLocalInput = (v: string): string | null => (v ? new Date(v).toISOStrin
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 const fmtTime = (iso: string) =>
   new Date(iso).toLocaleTimeString(undefined, { hour12: false });
+
+// ── Drawing a region without a mouse ────────────────────────────────────────
+// A step is 5% of the frame and the smallest side is 5% too, which is above the
+// 2% threshold a mouse drag has to clear — so a region built from the keyboard
+// can never be one the commit path throws away as an accidental click.
+const KEY_STEP = 0.05;
+const MIN_SIDE = 0.05;
+/** Where the first key press puts a region: centred, half the frame, so it is
+ *  visible and has room to move in every direction. */
+const SEED_REGION: MotionRegion = { x: 0.25, y: 0.25, w: 0.5, h: 0.5 };
+
+/** What a key press does to the region being drawn, or null for a key the draw
+ *  surface does not claim — so Tab still leaves it and shortcuts above still fire.
+ *
+ *  `region` is the draft under the cursor (null = nothing drawn yet). Arrows move
+ *  it, Shift+arrows grow or shrink it from its top-left corner, Enter/Space seeds
+ *  one and then keeps it, Escape throws the draft away.
+ *
+ *  Escape with NOTHING drawn is not claimed, and that is the whole of it: this
+ *  modal closes on Escape from a document-level listener, so the first press has
+ *  to mean "abandon the box I am drawing" and the second "close the dialog". A
+ *  press that did both would close the dialog whatever the operator meant.
+ *
+ *  Out here rather than inside the handler because this is the whole of drawing a
+ *  region from the keyboard, and clamping a rectangle to the frame is exactly the
+ *  sort of arithmetic worth pinning down without a DOM. */
+export function regionKeyAction(
+  key: string,
+  { shiftKey = false, region = null }: { shiftKey?: boolean; region?: MotionRegion | null } = {},
+): { kind: "draft"; region: MotionRegion } | { kind: "commit" } | { kind: "discard" } | null {
+  if (key === "Escape") return region ? { kind: "discard" } : null;
+  if (key === "Enter" || key === " ")
+    return region ? { kind: "commit" } : { kind: "draft", region: SEED_REGION };
+
+  const DIRECTIONS: Record<string, [number, number]> = {
+    ArrowLeft: [-1, 0],
+    ArrowRight: [1, 0],
+    ArrowUp: [0, -1],
+    ArrowDown: [0, 1],
+  };
+  const dir = DIRECTIONS[key];
+  if (!dir) return null;
+  // An arrow with nothing drawn yet seeds the region instead of doing nothing:
+  // a focused surface that swallows arrows silently is the trap this avoids.
+  if (!region) return { kind: "draft", region: SEED_REGION };
+
+  const [dx, dy] = dir;
+  if (shiftKey) {
+    // A side may not shrink below MIN_SIDE nor grow past the frame's edge.
+    const side = (v: number, origin: number) => Math.max(MIN_SIDE, Math.min(1 - origin, v));
+    return {
+      kind: "draft",
+      region: {
+        ...region,
+        w: side(region.w + dx * KEY_STEP, region.x),
+        h: side(region.h + dy * KEY_STEP, region.y),
+      },
+    };
+  }
+  // Moving stops at the edges rather than pushing the region off the frame.
+  const origin = (v: number, extent: number) => Math.max(0, Math.min(1 - extent, v));
+  return {
+    kind: "draft",
+    region: {
+      ...region,
+      x: origin(region.x + dx * KEY_STEP, region.w),
+      y: origin(region.y + dy * KEY_STEP, region.h),
+    },
+  };
+}
 
 export interface MotionSearchModalProps {
   open: boolean;
@@ -106,7 +183,7 @@ export default function MotionSearchModal({
   const [result, setResult] = useState<FederatedMotionSearch | null>(null);
   const [jobError, setJobError] = useState("");
 
-  const drawRef = useRef<HTMLDivElement | null>(null);
+  const drawRef = useRef<HTMLButtonElement | null>(null);
   const dragRef = useRef<{ startX: number; startY: number } | null>(null);
 
   // ── Seed window + fetch a reference frame when opened ────────────────────
@@ -144,7 +221,7 @@ export default function MotionSearchModal({
   }, [open, nodeId, cameraId, seedFrom, seedTo]);
 
   // ── Draw layer — drag to add a normalized rect ───────────────────────────
-  const rectFromEvent = (e: MouseEvent<HTMLDivElement>) => {
+  const rectFromEvent = (e: MouseEvent<HTMLButtonElement>) => {
     const box = drawRef.current?.getBoundingClientRect();
     if (!box?.width || !box?.height) return null;
     return {
@@ -153,7 +230,7 @@ export default function MotionSearchModal({
     };
   };
 
-  const onDrawDown = (e: MouseEvent<HTMLDivElement>) => {
+  const onDrawDown = (e: MouseEvent<HTMLButtonElement>) => {
     if (running) return;
     const p = rectFromEvent(e);
     if (!p) return;
@@ -162,7 +239,7 @@ export default function MotionSearchModal({
     e.preventDefault();
   };
 
-  const onDrawMove = (e: MouseEvent<HTMLDivElement>) => {
+  const onDrawMove = (e: MouseEvent<HTMLButtonElement>) => {
     if (!dragRef.current) return;
     const p = rectFromEvent(e);
     if (!p) return;
@@ -189,6 +266,25 @@ export default function MotionSearchModal({
 
   const removeRegion = (idx: number) => setRegions((prev) => prev.filter((_, i) => i !== idx));
   const clearRegions = () => setRegions([]);
+
+  const onDrawKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+    if (running) return;
+    const action = regionKeyAction(e.key, { shiftKey: e.shiftKey, region: draft });
+    if (!action) return; // not ours — Tab, shortcuts and typing carry on
+    e.preventDefault();
+    if (action.kind === "draft") {
+      setDraft(action.region);
+    } else if (action.kind === "commit") {
+      if (draft) setRegions((prev) => [...prev, draft]);
+      setDraft(null);
+    } else {
+      // Stopped here, so the dialog's own Escape listener does not also fire and
+      // close it. Abandoning a half-drawn box and abandoning the search are two
+      // different intentions, and Escape has to be able to mean the first.
+      e.stopPropagation();
+      setDraft(null);
+    }
+  };
 
   // ── Run the search ────────────────────────────────────────────────────────
   const fromIso = fromLocalInput(from);
@@ -306,16 +402,7 @@ export default function MotionSearchModal({
               </button>
             )}
           </div>
-          <div
-            ref={drawRef}
-            onMouseDown={onDrawDown}
-            onMouseMove={onDrawMove}
-            onMouseUp={onDrawUp}
-            onMouseLeave={onDrawUp}
-            className={`relative aspect-video w-full select-none overflow-hidden rounded-lg border border-[rgba(150,180,245,.22)] bg-black ${
-              running ? "cursor-not-allowed" : "cursor-crosshair"
-            }`}
-          >
+          <div className="relative aspect-video w-full select-none overflow-hidden rounded-lg border border-[rgba(150,180,245,.22)] bg-black">
             {frameLoading ? (
               <div className="absolute inset-0 flex items-center justify-center text-white/70">
                 <Icon icon="svg-spinners:180-ring" className="text-2xl" />
@@ -335,11 +422,33 @@ export default function MotionSearchModal({
               />
             )}
 
-            {/* committed regions */}
+            {/* The drawing surface is a real BUTTON covering the frame, not the
+                frame's container with mouse handlers hung on it. A region drawn
+                only by dragging is a region an operator without a mouse cannot
+                draw at all, and the whole forensic search is scoped by it. The
+                button takes focus natively, and `onDrawKeyDown` is the same
+                editing gesture through the keyboard — see `regionKeyAction`. */}
+            <button
+              ref={drawRef}
+              type="button"
+              disabled={running}
+              aria-label="Draw the region to search. Enter places a region, the arrow keys move it, Shift with an arrow key resizes it, Enter keeps it and Escape removes it."
+              onMouseDown={onDrawDown}
+              onMouseMove={onDrawMove}
+              onMouseUp={onDrawUp}
+              onMouseLeave={onDrawUp}
+              onKeyDown={onDrawKeyDown}
+              className={`absolute inset-0 z-1 rounded-lg focus:outline-hidden focus-visible:ring-2 focus-visible:ring-fuchsia-400 ${
+                running ? "cursor-not-allowed" : "cursor-crosshair"
+              }`}
+            />
+
+            {/* committed regions — drawn over the surface, so they must not eat
+                the pointer the surface is tracking. */}
             {regions.map((r, i) => (
               <div
                 key={i}
-                className="absolute border-2 border-fuchsia-400 bg-fuchsia-400/15"
+                className="pointer-events-none absolute z-2 border-2 border-fuchsia-400 bg-fuchsia-400/15"
                 style={{
                   left: `${r.x * 100}%`,
                   top: `${r.y * 100}%`,
@@ -355,7 +464,7 @@ export default function MotionSearchModal({
                   }}
                   disabled={running}
                   title="Remove region"
-                  className="absolute -right-2 -top-2 flex h-4 w-4 items-center justify-center rounded-full bg-fuchsia-500 text-white shadow-sm hover:bg-fuchsia-400 disabled:opacity-40"
+                  className="pointer-events-auto absolute -right-2 -top-2 flex h-4 w-4 items-center justify-center rounded-full bg-fuchsia-500 text-white shadow-sm hover:bg-fuchsia-400 disabled:opacity-40"
                 >
                   <Icon icon="heroicons-solid:x-mark" className="h-3 w-3" />
                 </button>
@@ -365,7 +474,7 @@ export default function MotionSearchModal({
             {/* in-progress draft */}
             {draft && draft.w > 0 && draft.h > 0 && (
               <div
-                className="absolute border-2 border-dashed border-fuchsia-300 bg-fuchsia-300/10"
+                className="pointer-events-none absolute z-2 border-2 border-dashed border-fuchsia-300 bg-fuchsia-300/10"
                 style={{
                   left: `${draft.x * 100}%`,
                   top: `${draft.y * 100}%`,
@@ -376,7 +485,8 @@ export default function MotionSearchModal({
             )}
           </div>
           <p className="mt-1 text-[10px] text-[#aec2e8]">
-            Drag on the frame to add a search box. No box = the whole frame is searched.
+            Drag on the frame to add a search box, or focus it and press Enter — arrow keys move the
+            box, Shift with an arrow key resizes it. No box = the whole frame is searched.
           </p>
         </div>
 
@@ -408,18 +518,22 @@ export default function MotionSearchModal({
         )}
 
         {/* Sensitivity */}
-        <label className="block" htmlFor="motion-sensitivity">
-          <span className="mb-1 flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">
-            <span>Sensitivity</span>
+        {/* The label carries its own text and points at the slider by id. Wrapping
+            the whole block in a <label> whose words sat two spans deep left the
+            slider announced as an unnamed range. */}
+        <div className="block">
+          <div className="mb-1 flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">
+            <label htmlFor="motion-sensitivity">Sensitivity</label>
             <span className="font-mono text-[#f2f6ff]">{sensitivity.toFixed(2)}</span>
-          </span>
+          </div>
           <input
-            id="motion-sensitivity" type="range"
+            id="motion-sensitivity"
+            type="range"
             min={0}
             max={1}
             step={0.05}
             value={sensitivity}
-            onChange={(e) => setSensitivity(parseFloat(e.target.value))}
+            onChange={(e) => setSensitivity(Number.parseFloat(e.target.value))}
             disabled={running}
             className="w-full accent-fuchsia-500"
           />
@@ -427,7 +541,7 @@ export default function MotionSearchModal({
             <span>Less (only big motion)</span>
             <span>More (subtle motion)</span>
           </div>
-        </label>
+        </div>
 
         {/* Advanced */}
         <div>
@@ -454,7 +568,7 @@ export default function MotionSearchModal({
                 max={10}
                 step={0.5}
                 value={sampleFps}
-                onChange={(e) => setSampleFps(parseFloat(e.target.value))}
+                onChange={(e) => setSampleFps(Number.parseFloat(e.target.value))}
                 disabled={running}
                 className="w-full accent-fuchsia-500"
               />
