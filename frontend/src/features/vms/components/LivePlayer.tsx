@@ -899,7 +899,6 @@ function LivePlayer({
       onMouseEnter={() => !minimal && setShowChrome(true)}
       onMouseLeave={() => !minimal && setShowChrome(false)}
     >
-      { }
       <video
         ref={videoRef}
         className={`h-full w-full ${fitMode === "cover" ? "object-cover" : "object-contain"} ${zoom > 1 ? "cursor-grab active:cursor-grabbing" : ""}`}
@@ -972,8 +971,7 @@ function LivePlayer({
       {/* LIVE badge */}
       {!busy && !playError && (
         <span className="pointer-events-none absolute left-2 top-2 z-10 inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
-          Live
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />Live
         </span>
       )}
 

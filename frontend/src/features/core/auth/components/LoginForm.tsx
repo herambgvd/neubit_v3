@@ -181,7 +181,7 @@ export function LoginForm({ email, setEmail, password, setPassword, error, busy,
               onChange={(e) => setKeepSignedIn(e.target.checked)}
               style={{ accentColor: "#22d3ee" }}
             />
-            Keep me signed in on this console
+            <span>Keep me signed in on this console</span>
           </label>
           <Link href="/forgot-password" className="text-[11px] text-[#c4b5fd] hover:text-[#67e8f9]">
             Forgot?

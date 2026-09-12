@@ -143,8 +143,7 @@ export default function AuthShell({
             className="max-w-lg"
           >
             <div className="inline-flex items-center gap-2 rounded-full border border-card-border bg-hover px-3 py-1 text-xs font-medium text-cyan-600 dark:text-cyan-200 backdrop-blur">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
-              Unified Command & Control
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />Unified Command & Control
             </div>
             <h2 className="mt-5 text-3xl xl:text-4xl font-semibold tracking-tight leading-[1.1]">
               Command.{" "}

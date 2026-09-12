@@ -185,9 +185,26 @@ rule would mean adding an empty `<track>` element that claims captions exist.
 
 ### Not waived, though it was proposed: `typescript:S6772`
 
-This one was initially judged a false positive and that judgement was wrong. The
-sites were read, and the rule is right: in JSX, whether a space survives between an
-element and adjacent text depends on the line breaks, not on the space that was
-typed. `<kbd>N</kbd> next` renders "N next" until a formatter moves `next` onto its
-own line, at which point it silently becomes "Nnext". The 20 sites are being made
-explicit rather than waived.
+Worth recording in full, because the reasoning was wrong TWICE before it was right.
+
+First it was called a false positive — no site had been read. Then it was defended
+on the general hazard: in JSX whether a space survives depends on the line breaks,
+not on the space that was typed, so `<kbd>N</kbd> next` becomes "Nnext" the moment
+a formatter moves the text onto its own line.
+
+That hazard is real, and it is not what is happening at any of these 20 sites. Every
+one sits either inside a `flex`/`inline-flex` container with a `gap-*` class or
+immediately before a `block`-level element. In the first case the text is its own
+anonymous flex item and the visible separation comes from `gap`; in the second,
+trailing whitespace before a block box is dropped. The whitespace renders NOTHING
+at any of the twenty.
+
+So `{" "}` — the rule's own suggested fix — would have been wrong everywhere here:
+it adds a text node that renders nothing and implies the spacing comes from it
+rather than from `gap`. The sites were fixed by making the absence explicit
+instead: joining the text onto the neighbouring tag, or wrapping it in a `<span>`
+where joining would read as a typo (`</kbd>next`). Same flex items, same gap, same
+DOM text — and now a reformat cannot change any of it.
+
+The rule earned its keep even so: it pointed at twenty places where what renders
+depended on invisible whitespace, and none of them depends on it any more.

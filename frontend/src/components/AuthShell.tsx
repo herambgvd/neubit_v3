@@ -233,7 +233,7 @@ export default function AuthShell({ eyebrow, title, subtitle, productName = "Neu
                 className="h-1.5 w-1.5 animate-pulse rounded-full"
                 style={{ background: ACCENT, boxShadow: `0 0 8px ${ACCENT}` }}
               />
-              UNIFIED COMMAND &amp; CONTROL
+              <span>UNIFIED COMMAND &amp; CONTROL</span>
             </div>
             <h2 className="mt-4 text-3xl font-semibold leading-[1.1] tracking-tight xl:text-4xl">
               Command. Control. <span style={{ color: ACCENT }}>Intelligence.</span>

@@ -247,7 +247,7 @@ export default function EventsFeed({ instanceId, doorIndex }: EventsFeedProps) {
           </button>
           <label className="inline-flex items-center gap-1 text-[11px] text-muted">
             <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} />
-            Auto-scroll
+            <span>Auto-scroll</span>
           </label>
         </div>
 

@@ -425,15 +425,13 @@ export default function WorkflowPage() {
           ) : instancesQ.isError ? (
             // A failed read must never look like a quiet estate.
             <span className="text-center text-[12px] text-red-400">
-              Could not load the queue.
-              <span className="mt-1 block text-[11px] opacity-80">
+              Could not load the queue.<span className="mt-1 block text-[11px] opacity-80">
                 {apiError(instancesQ.error, "Unknown error")}
               </span>
             </span>
           ) : filtered ? (
             <span className="text-center text-[12px] text-muted">
-              No alarms match these filters.
-              <button
+              No alarms match these filters.<button
                 type="button"
                 onClick={clearFilters}
                 className="mt-2 block w-full rounded-md border border-card-border px-2 py-1 text-[11px] text-muted transition hover:bg-hover hover:text-foreground"
@@ -443,8 +441,7 @@ export default function WorkflowPage() {
             </span>
           ) : (
             <span className="text-center text-[12px] text-muted">
-              No alarms.
-              <span className="mt-1 block text-[11px]">
+              No alarms.<span className="mt-1 block text-[11px]">
                 One arrives when a rule matches an event, or when somebody escalates one.
               </span>
               <Link

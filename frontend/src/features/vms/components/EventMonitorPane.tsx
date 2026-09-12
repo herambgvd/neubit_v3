@@ -102,7 +102,7 @@ export default function EventMonitorPane({
         checked={follow}
         onChange={(e) => onFollowChange(e.target.checked)}
       />
-      Follow alarms
+      <span>Follow alarms</span>
     </label>
   );
 

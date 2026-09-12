@@ -331,8 +331,7 @@ export default function PlayoutBar({ camera, pb, onClose }: PlayoutBarProps) {
           </button>
         ) : (
           <span className="ml-0.5 inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-[8px] border border-[rgba(248,113,113,.5)] bg-[rgba(248,113,113,.14)] px-2.5 text-[11px] font-semibold tracking-[.6px] text-[#f87171]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#f87171]" />
-            LIVE
+            <span className="h-1.5 w-1.5 rounded-full bg-[#f87171]" />LIVE
           </span>
         )}
 

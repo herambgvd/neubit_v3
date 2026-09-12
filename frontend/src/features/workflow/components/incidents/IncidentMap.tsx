@@ -317,7 +317,7 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
             {/* Unplaced fallback */}
             <div>
               <div className="mb-1.5 flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#7e93bf]">
-                Unplaced at this site
+                <span>Unplaced at this site</span>
                 <span className="rounded-sm border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1 text-[10px] text-[#aec2e8]">{unplaced.length}</span>
               </div>
               {unplaced.length === 0 ? (

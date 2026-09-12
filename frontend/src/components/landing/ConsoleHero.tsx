@@ -120,8 +120,7 @@ function VideoWall({ time }: { time: Date | null }) {
           Video Wall · 12 / 512
         </span>
         <span className="flex items-center gap-1 font-mono text-[9px] text-white/40">
-          <span className="h-1 w-1 rounded-full" style={{ background: ACCENT }} />
-          streaming
+          <span className="h-1 w-1 rounded-full" style={{ background: ACCENT }} />streaming
         </span>
       </div>
       <div className="grid grid-cols-4 gap-1.5">

@@ -653,7 +653,7 @@ export default function CameraEventsPage() {
                 {total > events.length && ` (of ${total} on the recorder)`}
               </span>
               <label className="inline-flex items-center gap-1.5 text-[11px] text-muted">
-                Rows
+                <span>Rows</span>
                 <select
                   aria-label="Rows per page"
                   value={pageSize}

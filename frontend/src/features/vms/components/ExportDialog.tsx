@@ -262,8 +262,7 @@ export default function ExportDialog({ open, onClose, nodeId, cameraId, cameraNa
             <label className="flex items-start gap-2">
               <Toggle checked={watermark} onChange={setWatermark} label="Burn a provenance watermark" />
               <span className="text-xs text-[#aec2e8]">
-                Burn a provenance watermark
-                <span className="mt-0.5 block text-[11px] text-[#8fa4c8]">
+                Burn a provenance watermark<span className="mt-0.5 block text-[11px] text-[#8fa4c8]">
                   Stamps the camera, window, recorder and your name into the picture. The
                   recorder re-encodes to draw it, so the export is slower and the clip is not
                   byte-identical to the recording.

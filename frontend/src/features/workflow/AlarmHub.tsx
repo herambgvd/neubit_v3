@@ -214,8 +214,10 @@ export default function AlarmHub() {
         </span>
 
         <span className="ml-auto flex items-center gap-2 text-[11px] text-muted">
-          <kbd className="rounded border border-card-border px-1 font-mono">N</kbd> next
-          <kbd className="rounded border border-card-border px-1 font-mono">A</kbd> take
+          <kbd className="rounded border border-card-border px-1 font-mono">N</kbd>
+          <span>next</span>
+          <kbd className="rounded border border-card-border px-1 font-mono">A</kbd>
+          <span>take</span>
         </span>
         <Link
           href="/alarms"
