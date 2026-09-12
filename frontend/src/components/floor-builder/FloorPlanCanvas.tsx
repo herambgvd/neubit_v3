@@ -84,6 +84,18 @@ function isPointInDeviceFov(device: RenderableDevice, worldPt: number[]): boolea
   return Math.abs(delta) <= half;
 }
 
+/** Where a camera's rotation grip sits. The offset is in SCREEN pixels — hence the
+ *  /scale — so the grip stays the same size to grab however far the plan is zoomed
+ *  out. Shared so the grab and the cursor that promises it can never disagree. */
+function rotationHandleWorld(device: RenderableDevice, scale: number): [number, number] {
+  const rot = (device.rotation ?? 0) * (Math.PI / 180);
+  const handleR = 28 / scale;
+  return [
+    (device.x ?? 0) + Math.cos(rot - Math.PI / 2) * handleR,
+    (device.y ?? 0) + Math.sin(rot - Math.PI / 2) * handleR,
+  ];
+}
+
 function pointInAnyZone(worldPt: number[], zones: EditorZone[] = []): boolean {
   if (!zones.length) return false;
   return zones.some(
@@ -124,6 +136,25 @@ export type CanvasKeyAction =
   | { kind: "zoom"; factor: number }
   | { kind: "fit" };
 
+/** What an arrow key means, which is the one key on the canvas that means two
+ *  things — and carries the two step sizes that go with them. Out of the table
+ *  below because it is the only branch in it, and the table reads as a table
+ *  once it is gone. Only called for a key the axis maps know. */
+function arrowAction(
+  key: string,
+  mods: { shiftKey?: boolean; altKey?: boolean },
+  drawing: boolean,
+): CanvasKeyAction {
+  if (drawing && !mods.altKey) {
+    const [ax, ay] = CURSOR_AXES[key];
+    const step = mods.shiftKey ? 1 : CURSOR_STEP;
+    return { kind: "cursor", dx: ax * step, dy: ay * step };
+  }
+  const [px, py] = PAN_AXES[key];
+  const step = mods.shiftKey ? PAN_STEP * 4 : PAN_STEP;
+  return { kind: "pan", dx: px * step, dy: py * step };
+}
+
 /** Where a key press takes the canvas, or null for a key it does not claim.
  *
  *  The arrows mean two things because the canvas does: while a polygon is being
@@ -145,16 +176,7 @@ export function canvasKeyAction(
 ): CanvasKeyAction | null {
   if (mods.ctrlKey || mods.metaKey) return null;
 
-  if (CURSOR_AXES[key]) {
-    if (ctx.drawing && !mods.altKey) {
-      const [ax, ay] = CURSOR_AXES[key];
-      const step = mods.shiftKey ? 1 : CURSOR_STEP;
-      return { kind: "cursor", dx: ax * step, dy: ay * step };
-    }
-    const [px, py] = PAN_AXES[key];
-    const step = mods.shiftKey ? PAN_STEP * 4 : PAN_STEP;
-    return { kind: "pan", dx: px * step, dy: py * step };
-  }
+  if (CURSOR_AXES[key]) return arrowAction(key, mods, ctx.drawing);
 
   if (ctx.drawing && key === " ") return { kind: "addPoint" };
   if (ctx.drawing && ctx.draftCount > 0 && (key === "Backspace" || key === "Delete"))
@@ -209,6 +231,9 @@ export interface FloorPlanCanvasProps {
 type DragState =
   | { device: EditorPlacement; mode: "move"; origWorld: number[]; startWorld: number[]; moved: boolean; changed: boolean }
   | { device: EditorPlacement; mode: "rotate"; origRotation: number; moved: boolean; changed: boolean };
+
+type MoveDrag = Extract<DragState, { mode: "move" }>;
+type RotateDrag = Extract<DragState, { mode: "rotate" }>;
 
 /** Where a palette drag is over the canvas, and whether it is a legal drop. */
 interface DropHover {
@@ -642,81 +667,93 @@ export const FloorPlanCanvas = forwardRef<FloorPlanCanvasHandle, FloorPlanCanvas
     return () => el.removeEventListener("wheel", onWheel);
   }, [zoomAt]);
 
-  const onMouseDown = useCallback(
+  /** Panning is where three different gestures end up — the explicit alt/middle
+   *  drag and, in two modes, a press that hit nothing. One function so the start
+   *  point and the offset it will be measured against are always captured together. */
+  const beginPan = useCallback(
     (e: ReactMouseEvent<HTMLCanvasElement>) => {
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
-      const world = screenToWorld(sx, sy);
-      const canEditDevices = editorMode === EDITOR_MODES.DEVICE_PLACE;
+      setPanning(true);
+      panStartRef.current = { x: e.clientX, y: e.clientY, ox: offset.x, oy: offset.y };
+    },
+    [offset],
+  );
 
-      if (e.button === 1 || e.altKey) {
-        setPanning(true);
-        panStartRef.current = { x: e.clientX, y: e.clientY, ox: offset.x, oy: offset.y };
+  /** The selected device, but only when it is a camera and the mode can rotate one
+   *  — the precondition the rotate grab and its hover cursor have to agree on. */
+  const rotatableSelection = useCallback((): EditorPlacement | null => {
+    if (editorMode !== EDITOR_MODES.DEVICE_PLACE || !selectedDeviceId) return null;
+    const sel = devices.find((d) => d.device_id === selectedDeviceId);
+    if (!sel || (sel.device_type || "camera") !== "camera") return null;
+    return sel;
+  }, [editorMode, selectedDeviceId, devices]);
+
+  // ── Mouse-down, one function per editor mode ──────────────────────
+  // onMouseDown itself only decides which mode the press belongs to; each mode's
+  // own reading of a press lives below it, because they share nothing but the point.
+
+  /** ZONE_DRAW: a press either closes the polygon or adds a point to it. */
+  const zoneDrawMouseDown = useCallback(
+    (world: number[]) => {
+      if (draftPoints.length >= 3 && distance(world, draftPoints[0]) * scale < 12) {
+        onZoneCreate?.(draftPoints);
+        setDraftPoints([]);
         return;
       }
+      setDraftPoints((prev) => [...prev, world]);
+    },
+    [draftPoints, scale, onZoneCreate],
+  );
 
-      if (editorMode === EDITOR_MODES.ZONE_DRAW && activeTool === TOOL_TYPES.ZONE_POLYGON) {
-        if (draftPoints.length >= 3 && distance(world, draftPoints[0]) * scale < 12) {
-          onZoneCreate?.(draftPoints);
-          setDraftPoints([]);
-          return;
-        }
-        setDraftPoints((prev) => [...prev, world]);
-        return;
-      }
+  /** Starts a rotate drag if the press landed on a camera's grip — or anywhere in
+   *  its cone, which is the far easier target. Answers whether it took the press. */
+  const beginRotateDrag = useCallback(
+    (world: number[]): boolean => {
+      const sel = rotatableSelection();
+      if (!sel) return false;
+      const overHandle = distance(world, rotationHandleWorld(sel, scale)) * scale < 12;
+      const overFov = isPointInDeviceFov(sel, world);
+      if (!overHandle && !overFov) return false;
+      setHoverRotationHandle(overHandle);
+      setHoverRotationFov(overFov);
+      setHoverDeviceId(sel.device_id ?? null);
+      dragRef.current = {
+        device: sel,
+        mode: "rotate",
+        origRotation: sel.rotation ?? 0,
+        moved: false,
+        changed: false,
+      };
+      return true;
+    },
+    [rotatableSelection, scale],
+  );
 
-      if (
-        editorMode === EDITOR_MODES.DEVICE_PLACE &&
-        (activeTool === TOOL_TYPES.CAMERA_PLACE || activeTool === TOOL_TYPES.NVR_PLACE)
-      ) {
-        onDeviceCreate?.({ x: world[0], y: world[1] });
-        return;
-      }
-
+  /** VIEW and ZONE_SELECT: a press selects whatever is under it, and empty plan
+   *  drags the view — nothing here may start a device drag. */
+  const selectMouseDown = useCallback(
+    (e: ReactMouseEvent<HTMLCanvasElement>, world: number[]) => {
       const hd = hitDevice(world);
-      if (!canEditDevices) {
-        if (hd) {
-          onSelectDevice?.(hd);
-          onDeviceClick?.(hd);
-          return;
-        }
-        const hz = hitZone(world);
-        if (hz) {
-          onSelectZone?.(hz);
-          return;
-        }
-        setPanning(true);
-        panStartRef.current = { x: e.clientX, y: e.clientY, ox: offset.x, oy: offset.y };
+      if (hd) {
+        onSelectDevice?.(hd);
+        onDeviceClick?.(hd);
         return;
       }
-
-      if (selectedDeviceId) {
-        const sel = devices.find((d) => d.device_id === selectedDeviceId);
-        if (sel && (sel.device_type || "camera") === "camera") {
-          const rot = (sel.rotation ?? 0) * (Math.PI / 180);
-          const handleR = 28 / scale;
-          const hx = (sel.x ?? 0) + Math.cos(rot - Math.PI / 2) * handleR;
-          const hy = (sel.y ?? 0) + Math.sin(rot - Math.PI / 2) * handleR;
-          const overHandle = distance(world, [hx, hy]) * scale < 12;
-          const overFov = isPointInDeviceFov(sel, world);
-          if (overHandle || overFov) {
-            setHoverRotationHandle(overHandle);
-            setHoverRotationFov(overFov);
-            setHoverDeviceId(sel.device_id ?? null);
-            dragRef.current = {
-              device: sel,
-              mode: "rotate",
-              origRotation: sel.rotation ?? 0,
-              moved: false,
-              changed: false,
-            };
-            return;
-          }
-        }
+      const hz = hitZone(world);
+      if (hz) {
+        onSelectZone?.(hz);
+        return;
       }
+      beginPan(e);
+    },
+    [hitDevice, hitZone, onSelectDevice, onDeviceClick, onSelectZone, beginPan],
+  );
 
+  /** DEVICE_PLACE: rotate, then move, then select a zone, then pan. The order is
+   *  the point — the smallest target has to be tried first or it is unreachable. */
+  const deviceEditMouseDown = useCallback(
+    (e: ReactMouseEvent<HTMLCanvasElement>, world: number[]) => {
+      if (beginRotateDrag(world)) return;
+      const hd = hitDevice(world);
       if (hd) {
         setHoverDeviceId(hd.device_id ?? null);
         onSelectDevice?.(hd);
@@ -735,62 +772,111 @@ export const FloorPlanCanvas = forwardRef<FloorPlanCanvasHandle, FloorPlanCanvas
         onSelectZone?.(hz);
         return;
       }
-      setPanning(true);
-      panStartRef.current = { x: e.clientX, y: e.clientY, ox: offset.x, oy: offset.y };
+      beginPan(e);
+    },
+    [beginRotateDrag, hitDevice, hitZone, onSelectDevice, onSelectZone, beginPan],
+  );
+
+  const onMouseDown = useCallback(
+    (e: ReactMouseEvent<HTMLCanvasElement>) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+
+      // Alt and the middle button pan from anywhere, whatever the mode is doing.
+      if (e.button === 1 || e.altKey) {
+        beginPan(e);
+        return;
+      }
+
+      if (editorMode === EDITOR_MODES.ZONE_DRAW && activeTool === TOOL_TYPES.ZONE_POLYGON) {
+        zoneDrawMouseDown(world);
+        return;
+      }
+
+      if (
+        editorMode === EDITOR_MODES.DEVICE_PLACE &&
+        (activeTool === TOOL_TYPES.CAMERA_PLACE || activeTool === TOOL_TYPES.NVR_PLACE)
+      ) {
+        onDeviceCreate?.({ x: world[0], y: world[1] });
+        return;
+      }
+
+      if (editorMode === EDITOR_MODES.DEVICE_PLACE) deviceEditMouseDown(e, world);
+      else selectMouseDown(e, world);
     },
     [
-      offset,
       screenToWorld,
       editorMode,
       activeTool,
-      draftPoints,
-      scale,
-      onZoneCreate,
       onDeviceCreate,
-      hitDevice,
-      hitZone,
-      onSelectDevice,
-      onSelectZone,
-      onDeviceClick,
-      selectedDeviceId,
-      devices,
+      beginPan,
+      zoneDrawMouseDown,
+      deviceEditMouseDown,
+      selectMouseDown,
     ],
+  );
+
+  // ── Mouse-move, one function per thing the pointer can be doing ───
+
+  /** A move drag is confined to the zones: outside one the device simply stops
+   *  following the pointer, which reads as a wall rather than as a dropped frame. */
+  const dragDeviceTo = useCallback(
+    (drag: MoveDrag, world: number[]) => {
+      const nx = drag.origWorld[0] + (world[0] - drag.startWorld[0]);
+      const ny = drag.origWorld[1] + (world[1] - drag.startWorld[1]);
+      if (!pointInAnyZone([nx, ny], zones)) return;
+      if (drag.device.x !== nx || drag.device.y !== ny) drag.changed = true;
+      drag.device.x = nx;
+      drag.device.y = ny;
+    },
+    [zones],
+  );
+
+  /** Rotation follows the pointer's bearing from the device. The +90° is what turns
+   *  the canvas's east-is-zero into the device's north-is-zero. */
+  const rotateDeviceTo = useCallback((drag: RotateDrag, world: number[]) => {
+    const cx = drag.device.x ?? 0;
+    const cy = drag.device.y ?? 0;
+    const ang = (Math.atan2(world[1] - cy, world[0] - cx) + Math.PI / 2) * (180 / Math.PI);
+    const nextRotation = ((ang % 360) + 360) % 360;
+    if (drag.device.rotation !== nextRotation) drag.changed = true;
+    drag.device.rotation = nextRotation;
+  }, []);
+
+  /** The grab cursor that promises a rotation is available, kept in step with the
+   *  grab itself — and cleared wherever it is not, which is most of the time. */
+  const updateRotationHover = useCallback(
+    (world: number[]) => {
+      const sel = rotatableSelection();
+      if (!sel) {
+        setHoverRotationHandle(false);
+        setHoverRotationFov(false);
+        return;
+      }
+      setHoverRotationHandle(distance(world, rotationHandleWorld(sel, scale)) * scale < 12);
+      setHoverRotationFov(isPointInDeviceFov(sel, world));
+    },
+    [rotatableSelection, scale],
   );
 
   const onMouseMove = useCallback(
     (e: ReactMouseEvent<HTMLCanvasElement>) => {
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
-      const world = screenToWorld(sx, sy);
+      const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
 
-      if (dragRef.current) {
-        const drag = dragRef.current;
+      // A drag owns the pointer: while one is running nothing else on the canvas
+      // may react to the move, not even the hover states.
+      const drag = dragRef.current;
+      if (drag) {
         drag.moved = true;
-        if (drag.mode === "move") {
-          const dx = world[0] - drag.startWorld[0];
-          const dy = world[1] - drag.startWorld[1];
-          const nx = drag.origWorld[0] + dx;
-          const ny = drag.origWorld[1] + dy;
-          if (pointInAnyZone([nx, ny], zones)) {
-            if (drag.device.x !== nx || drag.device.y !== ny) drag.changed = true;
-            drag.device.x = nx;
-            drag.device.y = ny;
-          }
-        } else if (drag.mode === "rotate") {
-          const cx = drag.device.x ?? 0;
-          const cy = drag.device.y ?? 0;
-          const ang = (Math.atan2(world[1] - cy, world[0] - cx) + Math.PI / 2) * (180 / Math.PI);
-          const nextRotation = ((ang % 360) + 360) % 360;
-          if (drag.device.rotation !== nextRotation) drag.changed = true;
-          drag.device.rotation = nextRotation;
-        }
+        if (drag.mode === "move") dragDeviceTo(drag, world);
+        else rotateDeviceTo(drag, world);
         return;
       }
 
-      const hoveredDevice = hitDevice(world);
-      setHoverDeviceId(hoveredDevice?.device_id ?? null);
+      setHoverDeviceId(hitDevice(world)?.device_id ?? null);
 
       if (panning && panStartRef.current) {
         setOffset({
@@ -800,24 +886,7 @@ export const FloorPlanCanvas = forwardRef<FloorPlanCanvasHandle, FloorPlanCanvas
         return;
       }
 
-      if (selectedDeviceId && editorMode === EDITOR_MODES.DEVICE_PLACE) {
-        const sel = devices.find((d) => d.device_id === selectedDeviceId);
-        if (sel && (sel.device_type || "camera") === "camera") {
-          const rot = (sel.rotation ?? 0) * (Math.PI / 180);
-          const handleR = 28 / scale;
-          const hx = (sel.x ?? 0) + Math.cos(rot - Math.PI / 2) * handleR;
-          const hy = (sel.y ?? 0) + Math.sin(rot - Math.PI / 2) * handleR;
-          const dist = distance(world, [hx, hy]) * scale;
-          setHoverRotationHandle(dist < 12);
-          setHoverRotationFov(isPointInDeviceFov(sel, world));
-        } else {
-          setHoverRotationHandle(false);
-          setHoverRotationFov(false);
-        }
-      } else {
-        setHoverRotationHandle(false);
-        setHoverRotationFov(false);
-      }
+      updateRotationHover(world);
 
       if (
         editorMode === EDITOR_MODES.ZONE_DRAW &&
@@ -827,7 +896,17 @@ export const FloorPlanCanvas = forwardRef<FloorPlanCanvasHandle, FloorPlanCanvas
         setHoverWorld(world);
       }
     },
-    [panning, editorMode, activeTool, draftPoints, screenToWorld, selectedDeviceId, devices, zones, scale, hitDevice],
+    [
+      panning,
+      editorMode,
+      activeTool,
+      draftPoints,
+      screenToWorld,
+      hitDevice,
+      dragDeviceTo,
+      rotateDeviceTo,
+      updateRotationHover,
+    ],
   );
 
   const endDragOrPan = useCallback(() => {
@@ -920,7 +999,8 @@ export const FloorPlanCanvas = forwardRef<FloorPlanCanvasHandle, FloorPlanCanvas
   /** Where the crosshair starts when the arrows are first used: on the last point
    *  of a polygon already under way, otherwise the middle of the view. */
   const cursorOrigin = useCallback((): number[] => {
-    if (draftPoints.length) return draftPoints[draftPoints.length - 1];
+    const last = draftPoints.at(-1);
+    if (last) return last;
     const el = containerRef.current;
     if (!el) return [0, 0];
     return screenToWorld(el.clientWidth / 2, el.clientHeight / 2);
