@@ -379,7 +379,7 @@ class Pipeline:
             )
         except Exception as exc:  # noqa: BLE001 — keep failing visibly, retry next streak
             self.m.note_error(exc)
-            log.error("could not re-bind durable %s on %s: %s", c.durable, c.stream, exc)
+            log.exception("could not re-bind durable %s on %s", c.durable, c.stream)
             return
         self.m.consumer_rebinds += 1
         # Deliberately NOT `note_consumer_seen()`. A subscribe that returned

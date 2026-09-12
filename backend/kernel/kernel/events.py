@@ -202,10 +202,10 @@ async def dead_letter(js, msg, *, consumer: str, reason: str, delivery: int) -> 
     }
     try:
         await js.publish(DLQ_SUBJECT_PREFIX + msg.subject, msg.data, headers=headers)
-    except Exception as e:  # noqa: BLE001 — never let a DLQ failure block the term
-        log.error(
-            "DLQ publish failed for %s (%s) — message dropped: %s",
-            msg.subject, consumer, e,
+    except Exception:  # noqa: BLE001 — never let a DLQ failure block the term
+        log.exception(
+            "DLQ publish failed for %s (%s) — message dropped",
+            msg.subject, consumer,
         )
         return False
     log.error(
@@ -406,13 +406,13 @@ class EventBus:
             # Where `term()` parks a poisoned message instead of dropping it.
             await ensure_dlq_stream(self._js)
             log.info("NATS connected: %s", url)
-        except Exception as e:
+        except Exception:
             # Degrade rather than block boot, but say so at ERROR: with no bus this
             # service emits no events and consumes none, and that used to be a
             # single WARNING at startup and nothing afterwards.
-            log.error(
-                "NATS connect FAILED (%s) — this service will emit and consume no "
-                "events until it is restarted with the broker reachable", e,
+            log.exception(
+                "NATS connect FAILED — this service will emit and consume no "
+                "events until it is restarted with the broker reachable"
             )
             self._nc = None
             self._js = None
@@ -461,8 +461,11 @@ class EventBus:
                 headers={"Nats-Msg-Id": body["event_id"]},
             )
             return True
-        except Exception as e:
-            log.error("event publish FAILED on %s: %s", subj, e)
+        except Exception:
+            # nats errors stringify to nothing useful (a bare TimeoutError is an
+            # empty string), so the traceback is the only thing that says which
+            # publish path broke.
+            log.exception("event publish FAILED on %s", subj)
             return False
 
     async def subscribe(
@@ -566,8 +569,8 @@ class EventBus:
                 durable, pattern, ACK_WAIT, MAX_DELIVER,
             )
             return True
-        except Exception as e:
-            log.error("consumer %s (%s): could not apply ack policy: %s", durable, pattern, e)
+        except Exception:
+            log.exception("consumer %s (%s): could not apply ack policy", durable, pattern)
             return False
 
     async def _deliver(self, pattern: str, durable: str, handler, msg) -> None:
@@ -617,10 +620,10 @@ class EventBus:
         except Exception as e:
             event_id = env.get("event_id") if isinstance(env, dict) else None
             if delivery >= MAX_DELIVER:
-                log.error(
-                    "event handler error on %s (%s) event=%s after %d/%d deliveries: %r "
+                log.exception(
+                    "event handler error on %s (%s) event=%s after %d/%d deliveries "
                     "— dead-lettering",
-                    pattern, durable, event_id, delivery, MAX_DELIVER, e,
+                    pattern, durable, event_id, delivery, MAX_DELIVER,
                 )
                 await self._dead_letter(msg, durable, repr(e), delivery)
                 await _quiet(msg.term())

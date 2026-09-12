@@ -253,9 +253,9 @@ class Worker:
             )
         except Exception as exc:  # noqa: BLE001 — keep failing visibly, retry next streak
             self.m.note_error(exc)
-            log.error(
-                "projection %s: could not re-bind durable %s on %s: %s",
-                self.row.key, src.durable, src.stream, exc,
+            log.exception(
+                "projection %s: could not re-bind durable %s on %s",
+                self.row.key, src.durable, src.stream,
             )
             return
         log.warning(
