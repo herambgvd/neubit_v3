@@ -1147,7 +1147,7 @@ export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps)
               <div className="w-20">
                 <Select
                   value={String(speed)}
-                  onChange={(e) => setSpeed(parseFloat(e.target.value))}
+                  onChange={(e) => setSpeed(Number.parseFloat(e.target.value))}
                   options={SPEEDS.map((s) => ({ value: String(s), label: `${s}×` }))}
                   className="!h-8 !py-1"
                 />

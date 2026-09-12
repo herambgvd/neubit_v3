@@ -916,7 +916,7 @@ export default function PlaybackPlayer({
           <div className="w-20">
             <Select
               value={String(localSpeed)}
-              onChange={(e) => setLocalSpeed(parseFloat(e.target.value))}
+              onChange={(e) => setLocalSpeed(Number.parseFloat(e.target.value))}
               options={SPEEDS.map((s) => ({ value: String(s), label: `${s}×` }))}
               className="!h-8 !py-1"
             />

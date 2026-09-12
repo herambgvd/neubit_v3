@@ -969,7 +969,7 @@ function NewInvoiceDialog({
   const create = useMutation({
     mutationFn: () =>
       adminApi.createInvoice(tenantId, {
-        amount_cents: Math.round((parseFloat(amount) || 0) * 100),
+        amount_cents: Math.round((Number.parseFloat(amount) || 0) * 100),
         currency,
         status: "issued",
         due_at: due ? new Date(due).toISOString() : null,
@@ -986,7 +986,7 @@ function NewInvoiceDialog({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (!amount || parseFloat(amount) < 0) return toast.error("Enter a valid amount");
+            if (!amount || Number.parseFloat(amount) < 0) return toast.error("Enter a valid amount");
             create.mutate();
           }}
           className="space-y-4"

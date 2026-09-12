@@ -72,7 +72,7 @@ export default function FormatsTab() {
   const save = useMutation({
     mutationFn: ({ id, body }: { id: string | null; body: CreateAlertFormatRequest }) =>
       (id ? wfApi.alertFormats.update(id, body) : wfApi.alertFormats.create(body)),
-    onSuccess: (saved) => { toast.success("Saved"); qc.invalidateQueries({ queryKey: ["wf-alert-formats"] }); const id = fmtId(saved); if (id) setSelectedId(id); setMode("view"); },
+    onSuccess: (saved) => { toast.success("Saved"); qc.invalidateQueries({ queryKey: ["wf-alert-formats"] }); const id = fmtId(saved); if (id) { setSelectedId(id); } setMode("view"); },
     onError: onSaveError,
   });
   const remove = useMutation({

@@ -165,7 +165,7 @@ api.interceptors.response.use(
         window.location.href = "/license-expired";
       }
     }
-    return Promise.reject(error);
+    throw error;
   }
 );
 

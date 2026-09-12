@@ -59,6 +59,25 @@ export function Field({ label, htmlFor, error, hint, required, className, childr
   );
 }
 
-export function Label({ className, ...props }: ComponentPropsWithoutRef<"label">) {
-  return <label className={cn("block text-sm font-medium text-foreground", className)} {...props} />;
+/**
+ * Standalone label for a control laid out by hand rather than by `Field`.
+ *
+ * `htmlFor` and the text are REQUIRED: a label with neither is decorative markup
+ * that a screen reader never reads out and a click never focuses.
+ */
+export function Label({
+  className,
+  htmlFor,
+  children,
+  ...props
+}: ComponentPropsWithoutRef<"label"> & { htmlFor: string; children: ReactNode }) {
+  return (
+    <label
+      htmlFor={htmlFor}
+      className={cn("block text-sm font-medium text-foreground", className)}
+      {...props}
+    >
+      {children}
+    </label>
+  );
 }

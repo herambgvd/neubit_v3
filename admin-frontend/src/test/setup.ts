@@ -5,6 +5,8 @@ import { afterEach, vi } from "vitest";
 
 // jsdom implements neither of these, and Radix + the charts use both.
 class ResizeObserverStub {
+  // Nothing to observe: jsdom has no layout, so no box ever resizes. Radix and
+  // the charts only need the constructor and these methods to exist.
   observe() {}
   unobserve() {}
   disconnect() {}

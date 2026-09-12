@@ -264,7 +264,7 @@ function PlanDialog({
 
   const save = useMutation({
     mutationFn: () => {
-      const price_cents = Math.round((parseFloat(price) || 0) * 100);
+      const price_cents = Math.round((Number.parseFloat(price) || 0) * 100);
       const limits: Record<string, number> = { ...(plan?.limits || {}) };
       if (maxUsers.trim() === "") delete limits.max_users;
       else limits.max_users = Number(maxUsers);

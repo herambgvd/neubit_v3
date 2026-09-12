@@ -110,6 +110,29 @@ function toTranscodedWhepUrl(url: string | null | undefined): string | null {
   }
 }
 
+// play() rejects when autoplay policy blocks it (no gesture yet, tab hidden).
+// The stream is attached either way, so there is nothing to report or recover.
+function playIgnoringAutoplayBlock(video: HTMLVideoElement) {
+  video.play().catch(() => {});
+}
+
+// Resolve once ICE gathering is complete, so the SDP offer we POST carries its
+// candidates. Bounded: MediaMTX accepts a partial offer, and some networks never
+// reach "complete", so a stalled gather must not stall the connect ladder.
+function waitForIceGathering(pc: RTCPeerConnection, timeoutMs: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (pc.iceGatheringState === "complete") return resolve();
+    const check = () => {
+      if (pc.iceGatheringState === "complete") {
+        pc.removeEventListener("icegatheringstatechange", check);
+        resolve();
+      }
+    };
+    pc.addEventListener("icegatheringstatechange", check);
+    setTimeout(resolve, timeoutMs);
+  });
+}
+
 // Stream IDENTITY = the session URL WITHOUT its "?token=". useLiveSession renews
 // the media token every ~4-5 min (TTL 300s) and hands back the SAME path with a
 // FRESH token — which changed the url string and, when used as an effect dep,
@@ -521,7 +544,7 @@ function LivePlayer({
             setLoading(false);
             settle();
             onReady?.("webrtc");
-            if (autoPlay) video.play().catch(() => {});
+            if (autoPlay) playIgnoringAutoplayBlock(video);
           }
         };
         pc.oniceconnectionstatechange = () => {
@@ -541,18 +564,7 @@ function LivePlayer({
         try {
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
-          // Wait for ICE gathering (bounded) so the offer carries candidates.
-          await new Promise<void>((resolve) => {
-            if (pc.iceGatheringState === "complete") return resolve();
-            const check = () => {
-              if (pc.iceGatheringState === "complete") {
-                pc.removeEventListener("icegatheringstatechange", check);
-                resolve();
-              }
-            };
-            pc.addEventListener("icegatheringstatechange", check);
-            setTimeout(resolve, 3_000);
-          });
+          await waitForIceGathering(pc, 3_000);
 
           // `url` is the full WHEP endpoint + already carries "?token=".
           // MediaMTX WHEP CORS only allows Authorization/Content-Type/If-Match
@@ -650,7 +662,7 @@ function LivePlayer({
           setLoading(false);
           settle();
           onReady?.("hls");
-          if (autoPlay) video.play().catch(() => {});
+          if (autoPlay) playIgnoringAutoplayBlock(video);
         };
         nativeError = () => {
           if (disposed) return;
@@ -698,7 +710,7 @@ function LivePlayer({
           setLoading(false);
           settle();
           onReady?.("hls");
-          if (autoPlay) video.play().catch(() => {});
+          if (autoPlay) playIgnoringAutoplayBlock(video);
         });
 
         hls.on(Hls.Events.ERROR, (_e, data) => {

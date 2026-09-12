@@ -212,15 +212,13 @@ export default function SimulatorTab() {
             error={errors.payload}
           />
 
-          <label className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 cursor-pointer transition ${dryRun ? "border-nb-line bg-[rgba(6,11,26,.5)]" : "border-nb-warn/40 bg-nb-warn/10"}`} htmlFor="simulator-dry-run">
+          <label className={`grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2.5 rounded-lg border px-3 py-2.5 cursor-pointer transition ${dryRun ? "border-nb-line bg-[rgba(6,11,26,.5)]" : "border-nb-warn/40 bg-nb-warn/10"}`} htmlFor="simulator-dry-run">
             <input id="simulator-dry-run" type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} className={`${checkboxClass} mt-0.5`} />
-            <span className="min-w-0">
-              <span className="block text-sm font-medium text-nb-ink">Dry run</span>
-              <span className="block text-[11px] text-nb-faint">
-                {dryRun
-                  ? "Match only — no incident is created."
-                  : "Live — a matching format/trigger will create a REAL incident."}
-              </span>
+            <span className="block text-sm font-medium text-nb-ink">Dry run</span>
+            <span className="col-start-2 block text-[11px] text-nb-faint">
+              {dryRun
+                ? "Match only — no incident is created."
+                : "Live — a matching format/trigger will create a REAL incident."}
             </span>
           </label>
 

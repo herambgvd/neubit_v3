@@ -16,13 +16,21 @@ export function CardHeader({ className, ...props }: ComponentPropsWithoutRef<"di
 
 export function CardTitle({
   className,
+  children,
   ...props
 }: ComponentPropsWithoutRef<"h3"> & { children: ReactNode }) {
+  // An empty heading is announced as a heading with no name, which breaks a
+  // screen reader's heading outline — a title-less card renders no <h3> at all.
+  if (children === null || children === undefined || children === false || children === "") {
+    return null;
+  }
   return (
     <h3
       className={cn("text-sm font-semibold tracking-tight text-foreground", className)}
       {...props}
-    />
+    >
+      {children}
+    </h3>
   );
 }
 

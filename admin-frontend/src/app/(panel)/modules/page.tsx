@@ -271,7 +271,7 @@ function ModuleModal({
   });
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) form.reset(); onOpenChange(o); }}>
+    <Dialog open={open} onOpenChange={(o) => { if (!o) { form.reset(); } onOpenChange(o); }}>
       <DialogContent>
         <DialogHeader
           title={isEdit ? "Edit module" : "Add module"}

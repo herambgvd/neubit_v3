@@ -255,12 +255,10 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
           {DEDUP_STRATEGIES.map((s) => {
             const active = dedupStrategy === s.value;
             return (
-              <label key={s.value} className={`flex items-start gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${active ? "border-[rgba(96,165,250,.50)] bg-[rgba(96,165,250,.10)]" : "border-nb-line bg-[rgba(8,15,34,.5)] hover:bg-[rgba(96,165,250,.1)]"}`}>
+              <label key={s.value} className={`grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${active ? "border-[rgba(96,165,250,.50)] bg-[rgba(96,165,250,.10)]" : "border-nb-line bg-[rgba(8,15,34,.5)] hover:bg-[rgba(96,165,250,.1)]"}`}>
                 <input type="radio" name="dedup-strategy" checked={active} onChange={() => setDedupStrategy(s.value)} className="mt-0.5" />
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium text-nb-ink">{s.label}</span>
-                  <span className="mt-0.5 block text-[11px] text-nb-faint">{s.hint}</span>
-                </span>
+                <span className="block text-sm font-medium text-nb-ink">{s.label}</span>
+                <span className="col-start-2 mt-0.5 block text-[11px] text-nb-faint">{s.hint}</span>
               </label>
             );
           })}

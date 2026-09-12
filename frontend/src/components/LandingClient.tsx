@@ -277,8 +277,8 @@ export default function LandingPage() {
 
       // Count-up stats on enter.
       gsap.utils.toArray<HTMLElement>(".stat-num").forEach((el) => {
-        const to = parseFloat(el.dataset.to ?? "0");
-        const dec = parseInt(el.dataset.dec || "0", 10);
+        const to = Number.parseFloat(el.dataset.to ?? "0");
+        const dec = Number.parseInt(el.dataset.dec || "0", 10);
         const obj = { v: 0 };
         ScrollTrigger.create({
           trigger: el,

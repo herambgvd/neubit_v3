@@ -109,7 +109,7 @@ export function stubApi(routes: Routes): ApiStub {
 
     const hit = Object.keys(table).find((k) => keyMatches(k, method, path));
     if (hit === undefined) {
-      return Promise.reject(new AxiosError(`no stub for ${method} ${path}`, "404"));
+      throw new AxiosError(`no stub for ${method} ${path}`, "404");
     }
     const value = table[hit];
     const data: unknown = typeof value === "function" ? (value as RouteHandler)(req) : value;

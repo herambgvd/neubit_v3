@@ -12,6 +12,8 @@ import { afterEach, vi } from "vitest";
 
 // jsdom implements none of these, and the console's UI uses all three.
 class ResizeObserverStub {
+  // Nothing to observe: jsdom has no layout, so no box ever resizes. Components
+  // only need the constructor and these methods to exist.
   observe() {}
   unobserve() {}
   disconnect() {}

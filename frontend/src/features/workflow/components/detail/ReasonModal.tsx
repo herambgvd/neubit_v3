@@ -36,8 +36,9 @@ export default function ReasonModal({ action, pending, onCancel, onSubmit }: Rea
         </>
       }
     >
-      <label className="text-xs font-medium uppercase tracking-wide text-muted">Reason (optional)</label>
+      <label className="text-xs font-medium uppercase tracking-wide text-muted" htmlFor="reason-modal-reason">Reason (optional)</label>
       <textarea
+        id="reason-modal-reason"
         rows={3}
         value={reason}
         onChange={(e) => setReason(e.target.value)}

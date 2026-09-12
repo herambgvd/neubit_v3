@@ -8,7 +8,7 @@ import type { NotificationOut } from "@/lib/types";
 function formatTime(ts: string | null | undefined): string {
   if (!ts) return "";
   const d = new Date(ts);
-  if (isNaN(d.getTime())) return String(ts);
+  if (Number.isNaN(d.getTime())) return String(ts);
   const diff = Date.now() - d.getTime();
   const min = Math.round(diff / 60000);
   if (min < 1) return "just now";

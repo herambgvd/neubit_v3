@@ -8,7 +8,7 @@ import type { ApiKeyOut } from "../types";
 export function fmtDate(v?: string | number | Date | null): string {
   if (!v) return "—";
   const d = new Date(v);
-  return isNaN(d.getTime())
+  return Number.isNaN(d.getTime())
     ? "—"
     : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }

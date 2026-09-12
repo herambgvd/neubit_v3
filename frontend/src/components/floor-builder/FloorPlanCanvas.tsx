@@ -7,7 +7,8 @@
 // Device-placement paths (drag-drop / move / rotate / FoV) are retained but DORMANT:
 // neubit_v3 has no devices backend yet, so `devices` is always [] and the parent editor
 // never enters DEVICE_PLACE mode. The device code stays so re-enabling is a one-liner in
-// the devices phase.
+// the devices phase — including its keyboard path, which the key table below does not
+// try to guess: that table covers the view and zone drawing, the two things that exist.
 import {
   forwardRef,
   useCallback,
@@ -18,6 +19,7 @@ import {
   useRef,
   useState,
   type DragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
@@ -87,6 +89,82 @@ function pointInAnyZone(worldPt: number[], zones: EditorZone[] = []): boolean {
   return zones.some(
     (z) => z.polygon && z.polygon.length >= 3 && pointInPolygon(worldPt, z.polygon),
   );
+}
+
+// ── Keyboard model ────────────────────────────────────────────────────
+
+/** Screen-pixel steps. A pan has to cross a plan in a few presses; a crosshair
+ *  step is small because a point is usually wanted on a wall, and Shift drops it
+ *  to a single pixel for the last bit. */
+const PAN_STEP = 48;
+const CURSOR_STEP = 8;
+
+const CURSOR_AXES: Record<string, [number, number]> = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+};
+
+// The view offset moves against the key: ArrowRight looks further right, which
+// slides the plan left under a fixed viewport.
+const PAN_AXES: Record<string, [number, number]> = {
+  ArrowLeft: [1, 0],
+  ArrowRight: [-1, 0],
+  ArrowUp: [0, 1],
+  ArrowDown: [0, -1],
+};
+
+/** What a key does on the canvas — `dx`/`dy` are screen pixels. */
+export type CanvasKeyAction =
+  | { kind: "pan"; dx: number; dy: number }
+  | { kind: "cursor"; dx: number; dy: number }
+  | { kind: "addPoint" }
+  | { kind: "undoPoint" }
+  | { kind: "zoom"; factor: number }
+  | { kind: "fit" };
+
+/** Where a key press takes the canvas, or null for a key it does not claim.
+ *
+ *  The arrows mean two things because the canvas does: while a polygon is being
+ *  drawn they walk a crosshair over the plan — placing a point is the one thing
+ *  an operator cannot otherwise do without a pointer — and the rest of the time
+ *  they pan. Alt pans either way, the same modifier that pans with the mouse.
+ *
+ *  Enter and Escape are deliberately NOT claimed: the window-level draft handler
+ *  already closes and cancels a polygon from the keyboard, and claiming them here
+ *  would close the zone twice. Nor is anything with Ctrl/Cmd — the editor above
+ *  owns undo/redo, and the browser owns the rest.
+ *
+ *  Out here rather than inside the handler because this table IS the keyboard
+ *  interaction, and it is worth reading — and testing — without a DOM. */
+export function canvasKeyAction(
+  key: string,
+  mods: { shiftKey?: boolean; altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean },
+  ctx: { drawing: boolean; draftCount: number },
+): CanvasKeyAction | null {
+  if (mods.ctrlKey || mods.metaKey) return null;
+
+  if (CURSOR_AXES[key]) {
+    if (ctx.drawing && !mods.altKey) {
+      const [ax, ay] = CURSOR_AXES[key];
+      const step = mods.shiftKey ? 1 : CURSOR_STEP;
+      return { kind: "cursor", dx: ax * step, dy: ay * step };
+    }
+    const [px, py] = PAN_AXES[key];
+    const step = mods.shiftKey ? PAN_STEP * 4 : PAN_STEP;
+    return { kind: "pan", dx: px * step, dy: py * step };
+  }
+
+  if (ctx.drawing && key === " ") return { kind: "addPoint" };
+  if (ctx.drawing && ctx.draftCount > 0 && (key === "Backspace" || key === "Delete"))
+    return { kind: "undoPoint" };
+
+  if (key === "+" || key === "=") return { kind: "zoom", factor: 1.2 };
+  if (key === "-" || key === "_") return { kind: "zoom", factor: 1 / 1.2 };
+  if (key === "0") return { kind: "fit" };
+
+  return null;
 }
 
 // ── Component ─────────────────────────────────────────────────────────
@@ -187,6 +265,10 @@ export const FloorPlanCanvas = forwardRef<FloorPlanCanvasHandle, FloorPlanCanvas
   // `null` whenever no palette drag is over the canvas.
   const [dropHover, setDropHover] = useState<DropHover | null>(null);
 
+  // The keyboard crosshair, in WORLD coords — where Space drops the next polygon
+  // point. `null` until the arrows are used, so a pointer operator never sees it.
+  const [keyCursor, setKeyCursor] = useState<number[] | null>(null);
+
   // ── Imperative API ────────────────────────────────────────────────
   useImperativeHandle(
     ref,
@@ -260,6 +342,20 @@ export const FloorPlanCanvas = forwardRef<FloorPlanCanvasHandle, FloorPlanCanvas
     (wx: number, wy: number): [number, number] => [wx * scale + offset.x, wy * scale + offset.y],
     [offset, scale],
   );
+
+  /** Zoom about a point in screen space, keeping what is under it put. Shared by
+   *  the wheel (about the cursor) and the +/- keys (about the middle). */
+  const zoomAt = useCallback((sx: number, sy: number, factor: number) => {
+    setScale((prevScale) => {
+      const next = Math.max(0.1, Math.min(5, prevScale * factor));
+      setOffset((prevOff) => {
+        const wx = (sx - prevOff.x) / prevScale;
+        const wy = (sy - prevOff.y) / prevScale;
+        return { x: sx - wx * next, y: sy - wy * next };
+      });
+      return next;
+    });
+  }, []);
 
   // ── Render ────────────────────────────────────────────────────────
 
@@ -393,6 +489,33 @@ export const FloorPlanCanvas = forwardRef<FloorPlanCanvasHandle, FloorPlanCanvas
       }
     }
 
+    // Keyboard crosshair — the pointer's stand-in. Without something drawn here
+    // the arrows would be moving an invisible thing, which is worse than having
+    // no keyboard path at all.
+    if (
+      editorMode === EDITOR_MODES.ZONE_DRAW &&
+      activeTool === TOOL_TYPES.ZONE_POLYGON &&
+      keyCursor
+    ) {
+      const [cx, cy] = worldToScreen(keyCursor[0], keyCursor[1]);
+      ctx.save();
+      // White underlay first, so the cross reads over a dark floor plan too.
+      for (const [color, width] of [["rgba(255,255,255,0.9)", 4], ["#2563eb", 1.5]] as const) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        ctx.moveTo(cx - 11, cy);
+        ctx.lineTo(cx + 11, cy);
+        ctx.moveTo(cx, cy - 11);
+        ctx.lineTo(cx, cy + 11);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx, cy, 4.5, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
     // Devices (dormant — devices is always [] until the devices phase)
     for (const dev of devices) {
       const isSelected = dev.device_id === selectedDeviceId;
@@ -466,6 +589,7 @@ export const FloorPlanCanvas = forwardRef<FloorPlanCanvasHandle, FloorPlanCanvas
     activeTool,
     draftPoints,
     hoverWorld,
+    keyCursor,
     worldToScreen,
     deviceRenderer,
     dropHover,
@@ -512,25 +636,14 @@ export const FloorPlanCanvas = forwardRef<FloorPlanCanvasHandle, FloorPlanCanvas
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const rect = el.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-      setScale((prevScale) => {
-        const next = Math.max(0.1, Math.min(5, prevScale * factor));
-        setOffset((prevOff) => {
-          const wx = (mx - prevOff.x) / prevScale;
-          const wy = (my - prevOff.y) / prevScale;
-          return { x: mx - wx * next, y: my - wy * next };
-        });
-        return next;
-      });
+      zoomAt(e.clientX - rect.left, e.clientY - rect.top, e.deltaY < 0 ? 1.1 : 1 / 1.1);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [zoomAt]);
 
   const onMouseDown = useCallback(
-    (e: ReactMouseEvent<HTMLDivElement>) => {
+    (e: ReactMouseEvent<HTMLCanvasElement>) => {
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
       const sx = e.clientX - rect.left;
@@ -645,7 +758,7 @@ export const FloorPlanCanvas = forwardRef<FloorPlanCanvasHandle, FloorPlanCanvas
   );
 
   const onMouseMove = useCallback(
-    (e: ReactMouseEvent<HTMLDivElement>) => {
+    (e: ReactMouseEvent<HTMLCanvasElement>) => {
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
       const sx = e.clientX - rect.left;
@@ -744,7 +857,7 @@ export const FloorPlanCanvas = forwardRef<FloorPlanCanvasHandle, FloorPlanCanvas
   // payload can't be inspected here — only its presence via `types`. The device
   // itself arrives out-of-band as the `dragPreview` prop.
   const onDragOver = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
+    (e: DragEvent<HTMLCanvasElement>) => {
       if (
         !e.dataTransfer.types.includes("application/x-neubit-device") &&
         !e.dataTransfer.types.includes("application/x-neubit-camera")
@@ -761,15 +874,15 @@ export const FloorPlanCanvas = forwardRef<FloorPlanCanvasHandle, FloorPlanCanvas
     [screenToWorld, hitZone],
   );
 
-  // Only clear when the pointer actually leaves the container — dragleave also fires
-  // when crossing onto the child <canvas>, which would flicker the ghost off.
-  const onDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
+  // Only clear when the pointer actually leaves the plan — a dragleave onto
+  // anything else inside the container would flicker the ghost off.
+  const onDragLeave = useCallback((e: DragEvent<HTMLCanvasElement>) => {
     if (e.relatedTarget && containerRef.current?.contains(e.relatedTarget as Node)) return;
     setDropHover(null);
   }, []);
 
   const onDrop = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
+    (e: DragEvent<HTMLCanvasElement>) => {
       const data =
         e.dataTransfer.getData("application/x-neubit-device") ||
         e.dataTransfer.getData("application/x-neubit-camera");
@@ -797,6 +910,86 @@ export const FloorPlanCanvas = forwardRef<FloorPlanCanvasHandle, FloorPlanCanvas
       }
     },
     [screenToWorld, onDeviceDrop, onInvalidDrop, zones],
+  );
+
+  // ── Keyboard handlers ─────────────────────────────────────────────
+
+  const drawing =
+    editorMode === EDITOR_MODES.ZONE_DRAW && activeTool === TOOL_TYPES.ZONE_POLYGON;
+
+  /** Where the crosshair starts when the arrows are first used: on the last point
+   *  of a polygon already under way, otherwise the middle of the view. */
+  const cursorOrigin = useCallback((): number[] => {
+    if (draftPoints.length) return draftPoints[draftPoints.length - 1];
+    const el = containerRef.current;
+    if (!el) return [0, 0];
+    return screenToWorld(el.clientWidth / 2, el.clientHeight / 2);
+  }, [draftPoints, screenToWorld]);
+
+  const onKeyDown = useCallback(
+    (e: ReactKeyboardEvent<HTMLCanvasElement>) => {
+      const el = containerRef.current;
+      if (!el) return;
+      const action = canvasKeyAction(e.key, e, { drawing, draftCount: draftPoints.length });
+      if (!action) return;
+      e.preventDefault();
+      const cw = el.clientWidth;
+      const ch = el.clientHeight;
+
+      switch (action.kind) {
+        case "pan":
+          setOffset((prev) => ({ x: prev.x + action.dx, y: prev.y + action.dy }));
+          return;
+        case "zoom":
+          zoomAt(cw / 2, ch / 2, action.factor);
+          return;
+        case "fit":
+          fitToContainer();
+          return;
+        case "cursor": {
+          const base = keyCursor ?? cursorOrigin();
+          const [sx, sy] = worldToScreen(base[0], base[1]);
+          // Clamped to the viewport: a crosshair walked off screen is a cursor the
+          // operator cannot see, and a point they cannot aim.
+          const next = screenToWorld(
+            Math.max(0, Math.min(cw, sx + action.dx)),
+            Math.max(0, Math.min(ch, sy + action.dy)),
+          );
+          setKeyCursor(next);
+          // Feeds the rubber-band line, exactly as the mouse's hover does.
+          setHoverWorld(next);
+          return;
+        }
+        case "addPoint": {
+          const pt = keyCursor ?? cursorOrigin();
+          setKeyCursor(pt);
+          // Landing back on the first point closes the polygon — the same gesture
+          // the mouse has, so both paths finish a zone the same way.
+          if (draftPoints.length >= 3 && distance(pt, draftPoints[0]) * scale < 12) {
+            onZoneCreate?.(draftPoints);
+            setDraftPoints([]);
+            return;
+          }
+          setDraftPoints((prev) => [...prev, pt]);
+          return;
+        }
+        case "undoPoint":
+          setDraftPoints((prev) => prev.slice(0, -1));
+          return;
+      }
+    },
+    [
+      drawing,
+      draftPoints,
+      keyCursor,
+      cursorOrigin,
+      screenToWorld,
+      worldToScreen,
+      zoomAt,
+      fitToContainer,
+      onZoneCreate,
+      scale,
+    ],
   );
 
   useEffect(() => {
@@ -828,15 +1021,30 @@ export const FloorPlanCanvas = forwardRef<FloorPlanCanvasHandle, FloorPlanCanvas
       ref={containerRef}
       className="relative h-full w-full overflow-hidden rounded-xl border border-card-border bg-hover/40"
       style={{ cursor }}
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onMouseUp={endDragOrPan}
-      onMouseLeave={endDragOrPan}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
     >
-      <canvas ref={canvasRef} className="block h-full w-full" />
+      {/* Pointer and keyboard both belong on the canvas, not on the wrapper: it is
+          the surface being drawn on, and the wrapper only positions it. Focusable
+          because pan, zoom and placing a polygon point all happen in one coordinate
+          space with nothing smaller to tab to — the keys below are a real path to
+          each of them, and Tab is left unclaimed so focus can always leave again. */}
+      <canvas
+        ref={canvasRef}
+        tabIndex={0}
+        aria-label="Floor plan. Arrow keys pan the view, plus and minus zoom, 0 fits the plan. While drawing a zone the arrows move a crosshair, Space adds a point, Backspace removes the last, Enter closes the zone and Escape cancels it."
+        className="block h-full w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+        onKeyDown={onKeyDown}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={endDragOrPan}
+        onMouseLeave={endDragOrPan}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+      >
+        A floor plan with {zones.length} zone{zones.length === 1 ? "" : "s"} drawn on
+        it. Zones can be listed, selected and edited from the zone list beside this
+        plan.
+      </canvas>
       {dropHover && (
         <div
           className={`pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border px-3 py-1.5 text-xs font-medium shadow-xs ${
