@@ -41,8 +41,13 @@ const HIT_RADIUS = 8; // px in screen space
 // ── Geometry helpers ──────────────────────────────────────────────────
 // Points are `[x, y]` in WORLD coords (image-space pixels) — the same `number[]`
 // shape a zone's polygon comes off the wire as.
+//
+// Exported, because these four ARE the plan's spatial rules — which zone a point
+// is in, whether a drop is legal, where a camera's grip sits and what its cone
+// covers — and every one of them is arithmetic with a right answer that no amount
+// of clicking a canvas in jsdom can check. They are read, and tested, on their own.
 
-function pointInPolygon(pt: number[], points: number[][]): boolean {
+export function pointInPolygon(pt: number[], points: number[][]): boolean {
   let inside = false;
   for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
     const [xi, yi] = points[i];
@@ -66,7 +71,7 @@ function normalizeAngleRad(a: number): number {
   return v;
 }
 
-function isPointInDeviceFov(device: RenderableDevice, worldPt: number[]): boolean {
+export function isPointInDeviceFov(device: RenderableDevice, worldPt: number[]): boolean {
   const cx = device.x ?? 0;
   const cy = device.y ?? 0;
   const dx = worldPt[0] - cx;
@@ -87,7 +92,7 @@ function isPointInDeviceFov(device: RenderableDevice, worldPt: number[]): boolea
 /** Where a camera's rotation grip sits. The offset is in SCREEN pixels — hence the
  *  /scale — so the grip stays the same size to grab however far the plan is zoomed
  *  out. Shared so the grab and the cursor that promises it can never disagree. */
-function rotationHandleWorld(device: RenderableDevice, scale: number): [number, number] {
+export function rotationHandleWorld(device: RenderableDevice, scale: number): [number, number] {
   const rot = (device.rotation ?? 0) * (Math.PI / 180);
   const handleR = 28 / scale;
   return [
@@ -96,7 +101,7 @@ function rotationHandleWorld(device: RenderableDevice, scale: number): [number, 
   ];
 }
 
-function pointInAnyZone(worldPt: number[], zones: EditorZone[] = []): boolean {
+export function pointInAnyZone(worldPt: number[], zones: EditorZone[] = []): boolean {
   if (!zones.length) return false;
   return zones.some(
     (z) => z.polygon && z.polygon.length >= 3 && pointInPolygon(worldPt, z.polygon),
