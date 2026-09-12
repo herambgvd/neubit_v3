@@ -16,12 +16,22 @@ where ``{tenant}`` is the caller's tenant id (or ``platform`` for super-admin).
 
 Optional deps (pyproject ``[sites]`` extra): pdf2image, ezdxf, matplotlib, Pillow.
 System dep: poppler-utils (for pdf2image).
+
+A RENDER MUST NOT RUN ON THE EVENT LOOP. Rasterising a PDF shells out to poppler
+and a DXF render walks the whole drawing through matplotlib; both are seconds of
+uninterruptible CPU and subprocess wait. Run directly, one operator's floor-plan
+upload freezes every other request in this process — including the SSE streams in
+``app/.../realtime_*.py``, whose consumers see a live event feed simply stop. So
+the blocking work lives in ``_render_*`` sync functions and the async wrappers
+hand it to a worker thread.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import threading
 import uuid
 from dataclasses import dataclass
 
@@ -100,30 +110,36 @@ async def convert_floorplan(
     raise ValueError(f"Unsupported file type: {content_type}")
 
 
+def _render_pdf(
+    content: bytes, filename: str, namespace: str, site_id: str
+) -> ConvertedFloorplan:
+    import io
+
+    from pdf2image import convert_from_bytes  # type: ignore  # lazy heavy dep
+
+    images = convert_from_bytes(content, dpi=200, first_page=1, last_page=1)
+    if not images:
+        raise ValueError("PDF has no pages")
+
+    buf = io.BytesIO()
+    images[0].save(buf, format="PNG", optimize=True)
+    png_bytes = buf.getvalue()
+
+    return ConvertedFloorplan(
+        original_filename=filename,
+        original_type="application/pdf",
+        storage_path=_storage_path(namespace, site_id, ".png"),
+        converted_type="image/png",
+        converted_content=png_bytes,
+        pages=len(images),
+    )
+
+
 async def _convert_pdf(
     content: bytes, filename: str, namespace: str, site_id: str
 ) -> ConvertedFloorplan:
     try:
-        import io
-
-        from pdf2image import convert_from_bytes  # type: ignore  # lazy heavy dep
-
-        images = convert_from_bytes(content, dpi=200, first_page=1, last_page=1)
-        if not images:
-            raise ValueError("PDF has no pages")
-
-        buf = io.BytesIO()
-        images[0].save(buf, format="PNG", optimize=True)
-        png_bytes = buf.getvalue()
-
-        return ConvertedFloorplan(
-            original_filename=filename,
-            original_type="application/pdf",
-            storage_path=_storage_path(namespace, site_id, ".png"),
-            converted_type="image/png",
-            converted_content=png_bytes,
-            pages=len(images),
-        )
+        return await asyncio.to_thread(_render_pdf, content, filename, namespace, site_id)
     except ImportError as exc:
         logger.error("pdf2image not installed: %s", exc)
         raise ValueError(
@@ -136,35 +152,57 @@ async def _convert_pdf(
         raise ValueError(f"PDF conversion failed: {exc}") from exc
 
 
+# ONE DXF RENDER AT A TIME, ACROSS THE WHOLE PROCESS.
+#
+# ``qfigure`` builds its figure through ``pyplot``, which is a global, single-
+# threaded state machine: the current figure is process-wide. Two uploads
+# rendering at once on worker threads would interleave their ``plt`` calls and
+# could draw one drawing's geometry into the other's figure, or have ``plt.close``
+# take the wrong one — a silently wrong floor plan, which is worse than a slow one.
+# Serialising costs a second upload its wait; it does NOT put that wait back on the
+# event loop, which is the thing this module must never do.
+_DXF_RENDER_LOCK = threading.Lock()
+
+
+def _render_dxf(
+    content: bytes, filename: str, namespace: str, site_id: str
+) -> ConvertedFloorplan:
+    import io
+
+    import ezdxf  # type: ignore  # lazy heavy dep
+    from ezdxf.addons.drawing import matplotlib as ezdxf_matplotlib  # type: ignore
+
+    doc = ezdxf.read(io.BytesIO(content))
+    msp = doc.modelspace()
+
+    with _DXF_RENDER_LOCK:
+        fig = ezdxf_matplotlib.qfigure(msp)
+        try:
+            buf = io.BytesIO()
+            fig.savefig(buf, format="svg", bbox_inches="tight", pad_inches=0.1)
+            svg_bytes = buf.getvalue()
+        finally:
+            # pyplot keeps the figure in a global registry, so a render that raises
+            # before this leaks it for the life of the process.
+            import matplotlib.pyplot as plt  # type: ignore
+
+            plt.close(fig)
+
+    return ConvertedFloorplan(
+        original_filename=filename,
+        original_type="application/x-dxf",
+        storage_path=_storage_path(namespace, site_id, ".svg"),
+        converted_type="image/svg+xml",
+        converted_content=svg_bytes,
+        pages=1,
+    )
+
+
 async def _convert_dxf(
     content: bytes, filename: str, namespace: str, site_id: str
 ) -> ConvertedFloorplan:
     try:
-        import io
-
-        import ezdxf  # type: ignore  # lazy heavy dep
-        from ezdxf.addons.drawing import matplotlib as ezdxf_matplotlib  # type: ignore
-
-        doc = ezdxf.read(io.BytesIO(content))
-        msp = doc.modelspace()
-
-        fig = ezdxf_matplotlib.qfigure(msp)
-        buf = io.BytesIO()
-        fig.savefig(buf, format="svg", bbox_inches="tight", pad_inches=0.1)
-        svg_bytes = buf.getvalue()
-
-        import matplotlib.pyplot as plt  # type: ignore
-
-        plt.close(fig)
-
-        return ConvertedFloorplan(
-            original_filename=filename,
-            original_type="application/x-dxf",
-            storage_path=_storage_path(namespace, site_id, ".svg"),
-            converted_type="image/svg+xml",
-            converted_content=svg_bytes,
-            pages=1,
-        )
+        return await asyncio.to_thread(_render_dxf, content, filename, namespace, site_id)
     except ImportError as exc:
         logger.error("ezdxf not installed: %s", exc)
         raise ValueError(
