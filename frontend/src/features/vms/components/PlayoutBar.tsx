@@ -194,6 +194,310 @@ export function seekTargetMs(at: number, spans: readonly Span[]): number {
   return spans.find((s) => s.start >= at)?.start ?? at;
 }
 
+/** The neighbouring recorded span's start, stepping from `at` — or null when
+ *  there is none that way.
+ *
+ *  The 1.5s grace is what makes the button repeatable: without it, stepping
+ *  forward lands the playhead ON a span's start, and stepping forward again
+ *  finds that same span still "after" the playhead by a millisecond and never
+ *  moves. It is a dead control that looks like a dead recorder. */
+export function neighbourSpanStart(spans: readonly Span[], at: number, dir: number): number | null {
+  const GRACE_MS = 1_500;
+  const target =
+    dir < 0
+      ? [...spans].reverse().find((s) => s.start < at - GRACE_MS)
+      : spans.find((s) => s.start > at + GRACE_MS);
+  return target ? target.start : null;
+}
+
+/** One recorded span as a percentage rectangle on the track — or null when it
+ *  lies wholly outside the window and should not be drawn at all.
+ *
+ *  The clamping is the point. A span that started yesterday has a negative
+ *  left, and drawn unclamped it would paint over the ticks and the playhead to
+ *  the left of the track; the 0.15% floor is the opposite case, a two-second
+ *  clip on a 24h track, which would otherwise round to nothing and read as a
+ *  gap in footage that exists. */
+export function spanRect(s: Span, from: number, windowMs: number): { left: number; width: number } | null {
+  const left = ((s.start - from) / windowMs) * 100;
+  const width = ((s.end - s.start) / windowMs) * 100;
+  if (left > 100 || left + width < 0) return null;
+  const clamped = Math.max(0, left);
+  return { left: clamped, width: Math.max(0.15, Math.min(100 - clamped, width)) };
+}
+
+/** Where the track's marker and its clock sit, in one place.
+ *
+ *  Three answers that have to agree, and they read in priority order: while a
+ *  drag is live the marker follows the POINTER, not the playhead, because the
+ *  operator is aiming and has not committed yet; in playback it is the playhead;
+ *  otherwise it is the live edge. `markerFrac` is null when there is nothing to
+ *  mark — before a playhead exists — and the caller draws nothing rather than
+ *  parking the marker at the window's start, which would read as "we are playing
+ *  the oldest footage in view". */
+export function trackMarker(v: Readonly<{
+  from: number;
+  windowMs: number;
+  drag: number | null;
+  hover: number | null;
+  playback: boolean;
+  head: number | null;
+  nowMs: number;
+}>): { markerMs: number | null; markerFrac: number | null; hoverMs: number | null } {
+  let markerMs: number | null;
+  if (v.drag != null) markerMs = v.from + v.drag * v.windowMs;
+  else if (v.playback) markerMs = v.head;
+  else markerMs = v.nowMs;
+  return {
+    markerMs,
+    markerFrac: markerMs == null ? null : (markerMs - v.from) / v.windowMs,
+    hoverMs: v.hover == null ? null : v.from + v.hover * v.windowMs,
+  };
+}
+
+/** What `trackMarker` decided, as the track's children receive it. */
+export type TrackMarker = ReturnType<typeof trackMarker>;
+
+/** The transport: span stepping, play/pause, the ten-second skips, LIVE ⇄ GO
+ *  LIVE and SYNC.
+ *
+ *  Its own component because every control in it is disabled by the same two
+ *  facts — is this camera on a recorder, and is the wall in playback — and those
+ *  rules are far easier to keep consistent when they are not spread through a
+ *  three-hundred-line render. */
+function TransportControls({
+  pb,
+  federated,
+  spans,
+  playback,
+  onStep,
+}: Readonly<{
+  pb: WallPlayback;
+  /** Only a recorder-owned camera has footage to step through. */
+  federated: boolean;
+  spans: readonly Span[];
+  playback: boolean;
+  onStep: (dir: number) => void;
+}>) {
+  const { sync, playing } = pb;
+  return (
+    <>
+    <Btn
+      icon="heroicons-solid:backward"
+      title="Previous recorded span"
+      disabled={!federated || !spans.length}
+      onClick={() => onStep(-1)}
+    />
+    <Btn
+      icon={playback && playing ? "heroicons-solid:pause" : "heroicons-solid:play"}
+      title={!playback ? "Play the earliest footage in view" : playing ? "Pause" : "Play"}
+      disabled={!federated || (!playback && !spans.length)}
+      onClick={() => {
+        if (playback) pb.togglePlaying();
+        else if (spans.length) pb.playAt(spans[0].start);
+      }}
+    />
+    <Btn
+      icon="heroicons-solid:forward"
+      title="Next recorded span"
+      disabled={!federated || !spans.length}
+      onClick={() => onStep(1)}
+    />
+    <Btn
+      icon="heroicons-outline:chevron-double-left"
+      title={`Back ${SKIP_SEC}s`}
+      disabled={!playback}
+      onClick={() => pb.skip(-SKIP_SEC)}
+    />
+    <Btn
+      icon="heroicons-outline:chevron-double-right"
+      title={`Forward ${SKIP_SEC}s`}
+      disabled={!playback}
+      onClick={() => pb.skip(SKIP_SEC)}
+    />
+
+    {/* LIVE ⇄ GO LIVE. In playback this is the way back, and it is the first
+        control an operator reaches for after scrubbing. */}
+    {playback ? (
+      <button
+        type="button"
+        onClick={pb.goLive}
+        title="Return every tile to its live stream"
+        className="ml-0.5 inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-[8px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.14)] px-2.5 text-[11px] font-semibold tracking-[.6px] text-[#67e8f9] transition hover:border-[#22d3ee]"
+      >
+        <Icon icon="heroicons-outline:arrow-uturn-left" className="text-xs" />
+        GO LIVE
+      </button>
+    ) : (
+      <span className="ml-0.5 inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-[8px] border border-[rgba(248,113,113,.5)] bg-[rgba(248,113,113,.14)] px-2.5 text-[11px] font-semibold tracking-[.6px] text-[#f87171]">
+        <span className="h-1.5 w-1.5 rounded-full bg-[#f87171]" />LIVE
+      </span>
+    )}
+
+    {/* SYNC — every filled tile plays this instant, together. Off, only the
+        focused tile goes to playback and the rest of the wall stays live,
+        which is what you want when you are checking one camera against what
+        the others are showing NOW. */}
+    <button
+      type="button"
+      onClick={pb.toggleSync}
+      disabled={!playback}
+      title={
+        sync
+          ? "Sync on — every camera on the wall plays this instant"
+          : "Sync — play every camera on the wall at this instant"
+      }
+      className={`inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-[8px] border px-2.5 text-[11px] font-semibold tracking-[.6px] transition disabled:cursor-not-allowed disabled:opacity-40 ${
+        sync
+          ? "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
+          : "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.6)] hover:text-[#22d3ee]"
+      }`}
+    >
+      <Icon icon="heroicons-outline:squares-2x2" className="text-sm" />
+      SYNC
+    </button>
+    </>
+  );
+}
+
+/** Which camera the track is drawing, and how much of it is in view. */
+function FocusedCameraLabel({
+  camera,
+  federated,
+  loading,
+  spanCount,
+}: Readonly<{
+  camera?: EstateCamera | null;
+  federated: boolean;
+  loading: boolean;
+  spanCount: number;
+}>) {
+  return (
+    <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[#aec2e8]">
+      {camera ? (
+        <>
+          <Icon icon="heroicons-solid:video-camera" className="mr-1 inline text-sm text-[#22d3ee]" />
+          {camera.name}
+          {camera.node_name && <span className="ml-1.5 text-[#7e93bf]">· {camera.node_name}</span>}
+          {federated && (
+            <span className="ml-2 text-[#7e93bf]">
+              {loading ? "loading…" : `${spanCount} span${spanCount === 1 ? "" : "s"} in view`}
+            </span>
+          )}
+        </>
+      ) : (
+        <span className="text-[#7e93bf]">Click a camera on the wall to scrub its recordings</span>
+      )}
+    </span>
+  );
+}
+
+/** Everything drawn INSIDE the track: coverage, ticks, the two honest empty
+ *  states, the hover clock and the playhead.
+ *
+ *  The track's own div stays in the bar because it owns the scrub gesture (its
+ *  ref and pointer handlers); what it draws does not, and that is the seam. */
+function TrackContents({
+  spans,
+  ticks,
+  from,
+  span,
+  federated,
+  loading,
+  hasCamera,
+  playback,
+  marker,
+  hoverFrac,
+  dragging,
+}: Readonly<{
+  spans: readonly Span[];
+  ticks: readonly number[];
+  from: number;
+  span: number;
+  federated: boolean;
+  loading: boolean;
+  hasCamera: boolean;
+  playback: boolean;
+  marker: TrackMarker;
+  hoverFrac: number | null;
+  dragging: boolean;
+}>) {
+  const { markerFrac, hoverMs } = marker;
+  return (
+    <>
+    {/* Recorded coverage (REAL) */}
+    {spans.map((s, i) => {
+      const rect = spanRect(s, from, span);
+      if (!rect) return null;
+      return (
+        <div
+          key={i}
+          className="pointer-events-none absolute top-1/2 h-3.5 -translate-y-1/2 rounded-[2px]"
+          style={{
+            left: `${rect.left}%`,
+            width: `${rect.width}%`,
+            background: presetFor(TRIGGER_COLOR, s.trigger, TRIGGER_COLOR.continuous),
+            opacity: 0.8,
+          }}
+        />
+      );
+    })}
+
+    {/* Time ticks, spaced for whatever range is on screen */}
+    {ticks.map((t) => (
+      <div
+        key={t}
+        className="pointer-events-none absolute top-0 h-full border-l border-[rgba(150,180,245,.1)]"
+        style={{ left: `${((t - from) / span) * 100}%` }}
+      >
+        <span className="absolute left-1 top-0.5 font-mono text-[9px] text-[#7e93bf]">{hhmm(t)}</span>
+      </div>
+    ))}
+
+    {/* Honest empty states */}
+    {federated && !loading && spans.length === 0 && (
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <span className="font-mono text-[10px] tracking-[.6px] text-[#7e93bf]">
+          No recorded footage in this window
+        </span>
+      </div>
+    )}
+    {!federated && (
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <span className="font-mono text-[10px] tracking-[.6px] text-[#7e93bf]">
+          {hasCamera ? "Recorder playback only" : "—"}
+        </span>
+      </div>
+    )}
+
+    {/* Time under the cursor — so an operator aims at 14:07:12, not at "about
+        two thirds along". */}
+    {federated && hoverMs != null && (
+      <div
+        className="pointer-events-none absolute top-0.5 z-10 -translate-x-1/2 rounded-[5px] border border-[rgba(150,180,245,.3)] bg-[rgba(8,15,34,.95)] px-1.5 py-px font-mono text-[10px] tabular-nums text-[#d7f7e9]"
+        style={{ left: `${Math.min(96, Math.max(4, (hoverFrac ?? 0) * 100))}%` }}
+      >
+        {clockOf(hoverMs)}
+      </div>
+    )}
+
+    {/* Playhead — the playback position, or the live edge. */}
+    {markerFrac != null && markerFrac >= 0 && markerFrac <= 1 && (
+      <div
+        className={`pointer-events-none absolute top-0 h-full ${playheadCls(dragging, playback)}`}
+        style={{ left: `${markerFrac * 100}%`, boxShadow: playback ? "0 0 6px #22d3ee" : "0 0 6px #f87171" }}
+      >
+        <span
+          className={`absolute left-1/2 top-0 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 ${
+            playback ? "bg-[#22d3ee]" : "bg-[#f87171]"
+          }`}
+        />
+      </div>
+    )}
+    </>
+  );
+}
+
 export interface PlayoutBarProps {
   /** The focused tile's camera — whose coverage the track draws. */
   camera?: EstateCamera | null;
@@ -202,7 +506,7 @@ export interface PlayoutBarProps {
 }
 
 export default function PlayoutBar({ camera, pb, onClose }: Readonly<PlayoutBarProps>) {
-  const { win, mode, sync, playing, speed, rangeSeconds, clock } = pb;
+  const { win, mode, speed, rangeSeconds, clock } = pb;
   const federated = !!camera?.federated;
   const nodeId = camera?.node_id;
   const realId = camera?.real_id;
@@ -275,13 +579,8 @@ export default function PlayoutBar({ camera, pb, onClose }: Readonly<PlayoutBarP
 
   // Step to the neighbouring recorded span.
   const stepSpan = (dir: number) => {
-    if (!spans.length) return;
-    const at = head ?? nowMs;
-    const target =
-      dir < 0
-        ? [...spans].reverse().find((s) => s.start < at - 1_500)
-        : spans.find((s) => s.start > at + 1_500);
-    if (target) pb.playAt(target.start);
+    const start = neighbourSpanStart(spans, head ?? nowMs, dir);
+    if (start != null) pb.playAt(start);
   };
 
   const ticks = useMemo(() => {
@@ -293,90 +592,21 @@ export default function PlayoutBar({ camera, pb, onClose }: Readonly<PlayoutBarP
   }, [from, to, span]);
 
   const playback = mode === "playback";
-  // What the track's marker shows: the drag target while scrubbing, then the
-  // playhead in playback, and the live edge otherwise.
-  const markerMs = scrub.drag != null ? from + scrub.drag * span : playback ? head : nowMs;
-  const markerFrac = markerMs == null ? null : (markerMs - from) / span;
-  const hoverMs = scrub.hover != null ? from + scrub.hover * span : null;
+  const marker = trackMarker({
+    from,
+    windowMs: span,
+    drag: scrub.drag,
+    hover: scrub.hover,
+    playback,
+    head,
+    nowMs,
+  });
 
   return (
     <div className="shrink-0 border-t border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.82)] px-3 py-2 backdrop-blur-xs">
       {/* Transport row */}
       <div className="flex items-center gap-1.5">
-        <Btn
-          icon="heroicons-solid:backward"
-          title="Previous recorded span"
-          disabled={!federated || !spans.length}
-          onClick={() => stepSpan(-1)}
-        />
-        <Btn
-          icon={playback && playing ? "heroicons-solid:pause" : "heroicons-solid:play"}
-          title={!playback ? "Play the earliest footage in view" : playing ? "Pause" : "Play"}
-          disabled={!federated || (!playback && !spans.length)}
-          onClick={() => {
-            if (playback) pb.togglePlaying();
-            else if (spans.length) pb.playAt(spans[0].start);
-          }}
-        />
-        <Btn
-          icon="heroicons-solid:forward"
-          title="Next recorded span"
-          disabled={!federated || !spans.length}
-          onClick={() => stepSpan(1)}
-        />
-        <Btn
-          icon="heroicons-outline:chevron-double-left"
-          title={`Back ${SKIP_SEC}s`}
-          disabled={!playback}
-          onClick={() => pb.skip(-SKIP_SEC)}
-        />
-        <Btn
-          icon="heroicons-outline:chevron-double-right"
-          title={`Forward ${SKIP_SEC}s`}
-          disabled={!playback}
-          onClick={() => pb.skip(SKIP_SEC)}
-        />
-
-        {/* LIVE ⇄ GO LIVE. In playback this is the way back, and it is the first
-            control an operator reaches for after scrubbing. */}
-        {playback ? (
-          <button
-            type="button"
-            onClick={pb.goLive}
-            title="Return every tile to its live stream"
-            className="ml-0.5 inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-[8px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.14)] px-2.5 text-[11px] font-semibold tracking-[.6px] text-[#67e8f9] transition hover:border-[#22d3ee]"
-          >
-            <Icon icon="heroicons-outline:arrow-uturn-left" className="text-xs" />
-            GO LIVE
-          </button>
-        ) : (
-          <span className="ml-0.5 inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-[8px] border border-[rgba(248,113,113,.5)] bg-[rgba(248,113,113,.14)] px-2.5 text-[11px] font-semibold tracking-[.6px] text-[#f87171]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#f87171]" />LIVE
-          </span>
-        )}
-
-        {/* SYNC — every filled tile plays this instant, together. Off, only the
-            focused tile goes to playback and the rest of the wall stays live,
-            which is what you want when you are checking one camera against what
-            the others are showing NOW. */}
-        <button
-          type="button"
-          onClick={pb.toggleSync}
-          disabled={!playback}
-          title={
-            sync
-              ? "Sync on — every camera on the wall plays this instant"
-              : "Sync — play every camera on the wall at this instant"
-          }
-          className={`inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-[8px] border px-2.5 text-[11px] font-semibold tracking-[.6px] transition disabled:cursor-not-allowed disabled:opacity-40 ${
-            sync
-              ? "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
-              : "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.6)] hover:text-[#22d3ee]"
-          }`}
-        >
-          <Icon icon="heroicons-outline:squares-2x2" className="text-sm" />
-          SYNC
-        </button>
+        <TransportControls pb={pb} federated={federated} spans={spans} playback={playback} onStep={stepSpan} />
 
         <div className="mx-0.5 h-6 w-px shrink-0 bg-[rgba(150,180,245,.22)]" />
 
@@ -384,7 +614,7 @@ export default function PlayoutBar({ camera, pb, onClose }: Readonly<PlayoutBarP
             the playhead. A DVR bar with no clock on it answers no question. */}
         <span className="inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-[8px] border border-[rgba(150,180,245,.22)] px-2 font-mono text-[12px] tabular-nums text-[#d7f7e9]">
           <Icon icon="heroicons-outline:clock" className="text-xs text-[#7e93bf]" />
-          {clockOf(hoverMs ?? markerMs)}
+          {clockOf(marker.hoverMs ?? marker.markerMs)}
         </span>
 
         {/* Speed — playback only; it means nothing on a live wall. */}
@@ -407,22 +637,12 @@ export default function PlayoutBar({ camera, pb, onClose }: Readonly<PlayoutBarP
           </div>
         )}
 
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[#aec2e8]">
-          {camera ? (
-            <>
-              <Icon icon="heroicons-solid:video-camera" className="mr-1 inline text-sm text-[#22d3ee]" />
-              {camera.name}
-              {camera.node_name && <span className="ml-1.5 text-[#7e93bf]">· {camera.node_name}</span>}
-              {federated && (
-                <span className="ml-2 text-[#7e93bf]">
-                  {tlQ.isLoading ? "loading…" : `${spans.length} span${spans.length === 1 ? "" : "s"} in view`}
-                </span>
-              )}
-            </>
-          ) : (
-            <span className="text-[#7e93bf]">Click a camera on the wall to scrub its recordings</span>
-          )}
-        </span>
+        <FocusedCameraLabel
+          camera={camera}
+          federated={federated}
+          loading={tlQ.isLoading}
+          spanCount={spans.length}
+        />
 
         {/* DATE. Without this the wall could only ever reach today: the window
             starts at now and the ladder only rescales around the playhead, so
@@ -484,76 +704,19 @@ export default function PlayoutBar({ camera, pb, onClose }: Readonly<PlayoutBarP
           federated ? "cursor-pointer" : ""
         }`}
       >
-        {/* Recorded coverage (REAL) */}
-        {spans.map((s, i) => {
-          const left = ((s.start - from) / span) * 100;
-          const width = ((s.end - s.start) / span) * 100;
-          if (left > 100 || left + width < 0) return null;
-          return (
-            <div
-              key={i}
-              className="pointer-events-none absolute top-1/2 h-3.5 -translate-y-1/2 rounded-[2px]"
-              style={{
-                left: `${Math.max(0, left)}%`,
-                width: `${Math.max(0.15, Math.min(100 - Math.max(0, left), width))}%`,
-                background: presetFor(TRIGGER_COLOR, s.trigger, TRIGGER_COLOR.continuous),
-                opacity: 0.8,
-              }}
-            />
-          );
-        })}
-
-        {/* Time ticks, spaced for whatever range is on screen */}
-        {ticks.map((t) => (
-          <div
-            key={t}
-            className="pointer-events-none absolute top-0 h-full border-l border-[rgba(150,180,245,.1)]"
-            style={{ left: `${((t - from) / span) * 100}%` }}
-          >
-            <span className="absolute left-1 top-0.5 font-mono text-[9px] text-[#7e93bf]">{hhmm(t)}</span>
-          </div>
-        ))}
-
-        {/* Honest empty states */}
-        {federated && !tlQ.isLoading && spans.length === 0 && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <span className="font-mono text-[10px] tracking-[.6px] text-[#7e93bf]">
-              No recorded footage in this window
-            </span>
-          </div>
-        )}
-        {!federated && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <span className="font-mono text-[10px] tracking-[.6px] text-[#7e93bf]">
-              {camera ? "Recorder playback only" : "—"}
-            </span>
-          </div>
-        )}
-
-        {/* Time under the cursor — so an operator aims at 14:07:12, not at "about
-            two thirds along". */}
-        {federated && hoverMs != null && (
-          <div
-            className="pointer-events-none absolute top-0.5 z-10 -translate-x-1/2 rounded-[5px] border border-[rgba(150,180,245,.3)] bg-[rgba(8,15,34,.95)] px-1.5 py-px font-mono text-[10px] tabular-nums text-[#d7f7e9]"
-            style={{ left: `${Math.min(96, Math.max(4, (scrub.hover ?? 0) * 100))}%` }}
-          >
-            {clockOf(hoverMs)}
-          </div>
-        )}
-
-        {/* Playhead — the playback position, or the live edge. */}
-        {markerFrac != null && markerFrac >= 0 && markerFrac <= 1 && (
-          <div
-            className={`pointer-events-none absolute top-0 h-full ${playheadCls(scrub.drag != null, playback)}`}
-            style={{ left: `${markerFrac * 100}%`, boxShadow: playback ? "0 0 6px #22d3ee" : "0 0 6px #f87171" }}
-          >
-            <span
-              className={`absolute left-1/2 top-0 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 ${
-                playback ? "bg-[#22d3ee]" : "bg-[#f87171]"
-              }`}
-            />
-          </div>
-        )}
+        <TrackContents
+          spans={spans}
+          ticks={ticks}
+          from={from}
+          span={span}
+          federated={federated}
+          loading={tlQ.isLoading}
+          hasCamera={!!camera}
+          playback={playback}
+          marker={marker}
+          hoverFrac={scrub.hover}
+          dragging={scrub.drag != null}
+        />
       </div>
     </div>
   );

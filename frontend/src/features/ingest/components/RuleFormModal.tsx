@@ -84,10 +84,54 @@ export interface RuleFormModalProps {
 /** A condition's literal as editable text. An object is shown as its JSON so a
  *  rule matching a structured value can still be edited by hand; nothing-at-all
  *  is shown as "" rather than as the words "null" or "undefined", which would
- *  be saved back as a literal to match against. */
-function conditionText(value: unknown): string {
+ *  be saved back as a literal to match against.
+ *
+ *  Typed as `JsonValue` — what the rule actually stores — rather than `unknown`.
+ *  A structured literal is real here and is why the JSON arm exists; saying so
+ *  is what proves the other arm only ever sees a primitive. */
+function conditionText(value: JsonValue | undefined): string {
   if (value === null || value === undefined) return "";
   return typeof value === "object" ? JSON.stringify(value) : String(value);
+}
+
+/** The first thing wrong with the match conditions, in the operator's words —
+ *  or null when there is nothing wrong.
+ *
+ *  Out here because it is a RULE about rules, not a piece of the form: a
+ *  condition without a path matches nothing, and an equals/contains with an
+ *  empty literal silently matches the empty string. Both are saved happily by
+ *  the backend and then never fire, which is the failure this refuses at the
+ *  point the operator can still see what they typed. First problem only — the
+ *  form reports one at a time, and numbering is 1-based because that is how the
+ *  rows are read on screen. */
+export function conditionProblem(conditions: readonly ConditionDraft[]): string | null {
+  for (let i = 0; i < conditions.length; i++) {
+    const c = conditions[i];
+    if (!c.path) return `Condition #${i + 1} needs a path`;
+    if (OP_NEEDS_VALUE.has(c.op) && c.value === "") return `Condition #${i + 1} needs a value`;
+  }
+  return null;
+}
+
+/** The first thing wrong with the field map, or null.
+ *
+ *  A wholly blank row is not a mistake — it is the empty row the Add button
+ *  leaves behind — so it is skipped rather than rejected. A HALF-filled one is,
+ *  and so is a repeated output key: the second silently overwrites the first on
+ *  the way into the `{key: expression}` object the API takes, so the operator
+ *  would lose a mapping they can still see on screen. */
+export function fieldMapProblem(rows: readonly FieldMapRow[]): string | null {
+  const seen = new Set<string>();
+  for (const r of rows) {
+    const outKey = r.outKey?.trim();
+    const jmespath = r.jmespath?.trim();
+    if (!outKey && !jmespath) continue;
+    if (!outKey) return "A field-map row is missing its output key";
+    if (!jmespath) return `Field "${r.outKey}" needs a JMESPath expression`;
+    if (seen.has(outKey)) return `Output key "${r.outKey}" is used more than once`;
+    seen.add(outKey);
+  }
+  return null;
 }
 
 export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: Readonly<RuleFormModalProps>) {
@@ -185,19 +229,8 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: Rea
     const next: { name?: string; eventType?: string } = {};
     if (!name.trim()) next.name = "Name is required";
     if (!eventType.trim()) next.eventType = "Event type is required";
-    for (let i = 0; i < conditions.length; i++) {
-      const c = conditions[i];
-      if (!c.path) { toast.error(`Condition #${i + 1} needs a path`); return; }
-      if (OP_NEEDS_VALUE.has(c.op) && c.value === "") { toast.error(`Condition #${i + 1} needs a value`); return; }
-    }
-    const seen = new Set<string>();
-    for (const r of fieldRows) {
-      if (!r.outKey?.trim() && !r.jmespath?.trim()) continue;
-      if (!r.outKey?.trim()) { toast.error("A field-map row is missing its output key"); return; }
-      if (!r.jmespath?.trim()) { toast.error(`Field "${r.outKey}" needs a JMESPath expression`); return; }
-      if (seen.has(r.outKey.trim())) { toast.error(`Output key "${r.outKey}" is used more than once`); return; }
-      seen.add(r.outKey.trim());
-    }
+    const problem = conditionProblem(conditions) ?? fieldMapProblem(fieldRows);
+    if (problem) { toast.error(problem); return; }
     if (Object.keys(next).length) { setErrors(next); return; }
 
     save.mutate({

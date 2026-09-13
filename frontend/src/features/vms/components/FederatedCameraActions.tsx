@@ -54,9 +54,14 @@ const FAILED = new Set<string>(["failed", "error"]);
  *
  *  A status the recorder invents is WORKING, not failed and not ready: the poll
  *  keeps running, which is the honest reading of a job that has not said it
- *  finished. */
-export function exportVerdict(status: unknown): { icon: string; iconCls: string; textCls: string; text: string } {
-  const s = String(status ?? "").toLowerCase();
+ *  finished.
+ *
+ *  The parameter is the job field's own type. `FederatedExportJob.status` is a
+ *  string the recorder sends or nothing at all — it was never `unknown`, and
+ *  saying `unknown` here bought no safety while forcing a `String()` that would
+ *  have printed a type name into the operator's sentence if it ever were true. */
+export function exportVerdict(status: string | null | undefined): { icon: string; iconCls: string; textCls: string; text: string } {
+  const s = (status ?? "").toLowerCase();
   if (status && FAILED.has(s)) {
     return {
       icon: "heroicons:exclamation-triangle",
@@ -78,7 +83,7 @@ export function exportVerdict(status: unknown): { icon: string; iconCls: string;
     iconCls: "animate-spin text-nb-blueb",
     textCls: "text-nb-soft",
     // The recorder's own word for where it is, spelled as it sent it.
-    text: `Working on the recorder… (${String(status ?? "") || "queued"})`,
+    text: `Working on the recorder… (${status || "queued"})`,
   };
 }
 

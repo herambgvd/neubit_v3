@@ -269,6 +269,78 @@ export default function StoragePage() {
   );
 }
 
+/** The four numbers a disk bar needs, from whatever subset the recorder sent.
+ *
+ *  Recorders disagree about which of these they report: some send used, some
+ *  send free and a total, some send the percentage and nothing else. The
+ *  fallbacks are arithmetic, not guesses — and the `total && free` guard is
+ *  load-bearing, because with either one missing the subtraction would produce a
+ *  confident figure out of a number nobody sent. A disk that reported nothing
+ *  lands on zeroes, which the card reads as "not reported" rather than "empty". */
+export function diskFigures(usage: NodeStorageUsage): {
+  total: number;
+  free: number;
+  used: number;
+  usedPct: number;
+} {
+  const total = usage.total_bytes ?? 0;
+  const free = usage.free_bytes ?? 0;
+  const used = usage.used_bytes ?? (total && free ? total - free : 0);
+  const usedPct = usage.used_percent ?? (total > 0 ? (used / total) * 100 : 0);
+  return { total, free, used, usedPct };
+}
+
+/** The disk-usage section: the query's three states, and inside the loaded one
+ *  the difference between a recorder that reports no usage and one this VMS
+ *  cannot reach — two very different sentences that used to sit five levels deep
+ *  in the pane. */
+function DiskUsageCard({
+  query,
+  figures,
+  reachable,
+}: Readonly<{
+  query: UseQueryResult<NodeStorageUsage>;
+  figures: ReturnType<typeof diskFigures>;
+  /** False when the recorder is offline or says so itself — the empty state then
+   *  says the figures are unavailable rather than that the disk reported none. */
+  reachable: boolean;
+}>) {
+  const { total, free, used, usedPct } = figures;
+  return (
+    <>
+      {query.isLoading ? (
+        <InlineLoading />
+      ) : query.isError ? (
+        <InlineError error={query.error} fallback="Failed to load disk usage" />
+      ) : (
+        <div className="rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] p-3">
+          {total > 0 ? (
+            <>
+              <div className="mb-2 h-2 overflow-hidden rounded-full border border-nb-line bg-black/40">
+                <div className={`h-full rounded-full ${barColor(usedPct)}`} style={{ width: `${Math.min(100, usedPct)}%` }} />
+              </div>
+              <div className="flex flex-wrap justify-between gap-x-4 gap-y-1 text-xs text-nb-soft">
+                <span>{fmtBytes(used)} used ({Math.round(usedPct)}%)</span>
+                <span>{fmtBytes(free)} free</span>
+                <span>{fmtBytes(total)} total</span>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-nb-soft">
+              {reachable ? "No disk usage reported by this recorder." : "Usage unavailable while the recorder is unreachable."}
+            </p>
+          )}
+          {usedPct > 90 && total > 0 && (
+            <div className="mt-2 flex items-center gap-1 text-xs text-nb-crit">
+              <Icon icon="heroicons:exclamation-triangle" className="text-xs" /> Storage nearly full
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 // ── Right pane: one node's storage, read-only ───────────────────────────────
 function NodeStorageDetail({ node, nvrs }: Readonly<{ node: FederationNode; nvrs: UpstreamNvrRef[] }>) {
   const reachableOffline = node.status !== "online";
@@ -306,10 +378,7 @@ function NodeStorageDetail({ node, nvrs }: Readonly<{ node: FederationNode; nvrs
     return m;
   }, [pools]);
 
-  const total = usage.total_bytes ?? 0;
-  const free = usage.free_bytes ?? 0;
-  const used = usage.used_bytes ?? (total && free ? total - free : 0);
-  const usedPct = usage.used_percent ?? (total > 0 ? (used / total) * 100 : 0);
+  const { total, free, used, usedPct } = diskFigures(usage);
   const reachable = usage.reachable !== false && !reachableOffline;
 
   return (
@@ -347,35 +416,7 @@ function NodeStorageDetail({ node, nvrs }: Readonly<{ node: FederationNode; nvrs
 
         {/* Disk usage */}
         <SectionLabel>Disk usage</SectionLabel>
-        {usageQ.isLoading ? (
-          <InlineLoading />
-        ) : usageQ.isError ? (
-          <InlineError error={usageQ.error} fallback="Failed to load disk usage" />
-        ) : (
-          <div className="rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] p-3">
-            {total > 0 ? (
-              <>
-                <div className="mb-2 h-2 overflow-hidden rounded-full border border-nb-line bg-black/40">
-                  <div className={`h-full rounded-full ${barColor(usedPct)}`} style={{ width: `${Math.min(100, usedPct)}%` }} />
-                </div>
-                <div className="flex flex-wrap justify-between gap-x-4 gap-y-1 text-xs text-nb-soft">
-                  <span>{fmtBytes(used)} used ({Math.round(usedPct)}%)</span>
-                  <span>{fmtBytes(free)} free</span>
-                  <span>{fmtBytes(total)} total</span>
-                </div>
-              </>
-            ) : (
-              <p className="text-sm text-nb-soft">
-                {reachable ? "No disk usage reported by this recorder." : "Usage unavailable while the recorder is unreachable."}
-              </p>
-            )}
-            {usedPct > 90 && total > 0 && (
-              <div className="mt-2 flex items-center gap-1 text-xs text-nb-crit">
-                <Icon icon="heroicons:exclamation-triangle" className="text-xs" /> Storage nearly full
-              </div>
-            )}
-          </div>
-        )}
+        <DiskUsageCard query={usageQ} figures={{ total, free, used, usedPct }} reachable={reachable} />
 
         {/* RAID */}
         <SectionLabel className="mt-4">RAID health</SectionLabel>

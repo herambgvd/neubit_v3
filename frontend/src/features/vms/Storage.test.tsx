@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderWithProviders } from "@/test/render";
 
-import StoragePage from "./Storage";
+import StoragePage, { diskFigures } from "./Storage";
 import { vms } from "./api";
 import type { FederationNode } from "./types";
 
@@ -135,5 +135,44 @@ describe("the panel chrome", () => {
 
     expect(screen.queryAllByText(/read-only view/i)).toHaveLength(0);
     expect(screen.queryAllByText(/owned and managed by the recorder/i)).toHaveLength(0);
+  });
+});
+
+describe("diskFigures", () => {
+  it("uses what the recorder sent when it sent everything", () => {
+    expect(diskFigures({ total_bytes: 1_000, free_bytes: 250, used_bytes: 750, used_percent: 75 })).toEqual({
+      total: 1_000,
+      free: 250,
+      used: 750,
+      usedPct: 75,
+    });
+  });
+
+  it("derives used from total and free, and the percentage from used", () => {
+    // Recorders disagree about which of these they report; the subtraction is
+    // arithmetic on two numbers the recorder DID send, not a guess.
+    expect(diskFigures({ total_bytes: 1_000, free_bytes: 400 })).toEqual({
+      total: 1_000,
+      free: 400,
+      used: 600,
+      usedPct: 60,
+    });
+  });
+
+  it("refuses to subtract when one of the two numbers is missing", () => {
+    // total with no free would otherwise produce a confident "1000 bytes used"
+    // out of a figure nobody sent, and the bar would read as a full disk.
+    expect(diskFigures({ total_bytes: 1_000 }).used).toBe(0);
+    expect(diskFigures({ free_bytes: 400 }).used).toBe(0);
+  });
+
+  it("keeps a recorder's own percentage even when the byte counts are absent", () => {
+    expect(diskFigures({ used_percent: 42 })).toEqual({ total: 0, free: 0, used: 0, usedPct: 42 });
+  });
+
+  it("lands on zeroes — never a division by zero — for a disk that reported nothing", () => {
+    // The card reads all-zero as "not reported", which is the honest answer; NaN
+    // would render as "NaN% used".
+    expect(diskFigures({})).toEqual({ total: 0, free: 0, used: 0, usedPct: 0 });
   });
 });

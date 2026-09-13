@@ -351,13 +351,21 @@ async def test_a_relay_ends_the_stream_once_the_guard_refuses(app, db, path, mon
                 assert r.status_code == 200, f"{path}: the stream did not even open"
                 return "".join([chunk async for chunk in r.aiter_text()])
 
-    try:
-        body = await asyncio.wait_for(_drain(), timeout=10.0)
-    except (asyncio.TimeoutError, asyncio.CancelledError):
-        pytest.fail(
-            f"{RELAY_MODULES[path]}: the guard refused and the stream stayed open — "
-            "this relay is still pushing to a caller who is no longer entitled to it"
-        )
+    # `asyncio.wait` rather than `wait_for`: a relay that ignores the refusal has to
+    # be REPORTED, not raised out of, and wait_for's TimeoutError arrives with none
+    # of the context below. This returns instead of raising, so the deadline becomes
+    # an ordinary assertion that says what staying open means.
+    drain = asyncio.ensure_future(_drain())
+    done, pending = await asyncio.wait([drain], timeout=10.0)
+    for task in pending:
+        task.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+
+    assert done, (
+        f"{RELAY_MODULES[path]}: the guard refused and the stream stayed open — "
+        "this relay is still pushing to a caller who is no longer entitled to it"
+    )
+    body = drain.result()
     assert "event: revoked" in body, (
         f"{RELAY_MODULES[path]}: the stream ended without telling the client why"
     )

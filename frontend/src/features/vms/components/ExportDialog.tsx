@@ -81,6 +81,214 @@ export function exportProgress(status: string | null | undefined): { icon: strin
   return { icon: "svg-spinners:180-ring", iconCls: "text-[#f2f6ff]/70", text: `Export ${status || "queued"}…` };
 }
 
+/** The dialog's one action button, plus Cancel.
+ *
+ *  Lifted out of the dialog because it is a LADDER, not a layout: which single
+ *  button is offered is the whole of what the operator can do next, and reading
+ *  it next to seventy lines of form inputs is how an arm gets added to the wrong
+ *  end. The order is the job's own life — nothing started, finished, failed,
+ *  still running — and the last arm is deliberately the running one, so a status
+ *  this dialog has never seen offers a disabled spinner rather than a Download
+ *  for a clip that may not exist. */
+function ExportFooter({
+  status,
+  started,
+  rangeValid,
+  submitting,
+  downloading,
+  onClose,
+  onStart,
+  onDownload,
+  onRetry,
+}: Readonly<{
+  status: string | undefined;
+  /** Whether a job exists at all — before that there is nothing to download. */
+  started: boolean;
+  rangeValid: boolean;
+  submitting: boolean;
+  downloading: boolean;
+  onClose?: () => void;
+  onStart: () => void;
+  onDownload: () => void;
+  onRetry: () => void;
+}>) {
+  return (
+    <>
+      <Button variant="ghost" onClick={onClose}>
+        {status === "done" ? "Close" : "Cancel"}
+      </Button>
+      {!started ? (
+        <Button
+          variant="primary"
+          icon="heroicons-outline:scissors"
+          disabled={!rangeValid || submitting}
+          onClick={onStart}
+        >
+          {submitting ? "Starting…" : "Export"}
+        </Button>
+      ) : status === "done" ? (
+        <Button
+          variant="success"
+          icon="heroicons-outline:arrow-down-tray"
+          disabled={downloading}
+          onClick={onDownload}
+        >
+          {downloading ? "Downloading…" : "Download"}
+        </Button>
+      ) : status === "failed" ? (
+        <Button variant="secondary" icon="heroicons-outline:arrow-path" onClick={onRetry}>
+          Try again
+        </Button>
+      ) : (
+        <Button variant="primary" disabled>
+          <Icon icon="svg-spinners:180-ring" className="text-base" /> Exporting…
+        </Button>
+      )}
+    </>
+  );
+}
+
+/** Everything the dialog says once a job exists: where it has got to, and — for
+ *  a finished clip — its chain of custody.
+ *
+ *  This is an EVIDENCE surface, and that is why the seam is here rather than at
+ *  the badges: the hashes, the signature verdict and the "not signed by this
+ *  recorder's current key" caveat only ever render together, off one job, and
+ *  nothing above them in the dialog reads any of it. */
+function ExportJobPanel({
+  job,
+  status,
+  progress,
+  inFlight,
+  watermark,
+  verify,
+  onVerify,
+  onManifest,
+}: Readonly<{
+  job: ExportJobState;
+  status: string | undefined;
+  progress: ReturnType<typeof exportProgress>;
+  inFlight: boolean;
+  watermark: boolean;
+  verify: FederatedExportVerify | "loading" | null;
+  onVerify: () => void;
+  onManifest: () => void;
+}>) {
+  return (
+    <div className="rounded-lg border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.08)]/30 p-4">
+      <div className="flex items-center gap-3">
+        <Icon icon={progress.icon} className={`text-2xl ${progress.iconCls}`} />
+        <div className="min-w-0">
+          <p className="text-sm font-medium capitalize text-[#f2f6ff]">{progress.text}</p>
+          <p className="truncate text-xs text-[#aec2e8]">
+            Job {String(job.job_id).slice(0, 12)}
+            {job.file_size ? ` · ${fmtBytes(job.file_size)}` : ""}
+            {status === "failed" && job.error ? ` · ${job.error}` : ""}
+          </p>
+        </div>
+      </div>
+      {inFlight && (
+        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[rgba(150,180,245,.22)]">
+          <div className="h-full w-1/3 animate-pulse rounded-full bg-[rgba(34,211,238,.6)]" />
+        </div>
+      )}
+
+      {/* Tamper-evidence — signed badge + verify affordance (P6-B) */}
+      {status === "done" && (
+        <div className="mt-4 space-y-3 border-t border-[rgba(150,180,245,.22)] pt-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {job.signed ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(34,211,238,.15)] px-2.5 py-1 text-xs font-medium text-[#67e8f9]">
+                <Icon icon="heroicons-solid:shield-check" className="text-sm" /> Signed (Ed25519)
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(150,180,245,.08)] px-2.5 py-1 text-xs text-[#aec2e8]">
+                <Icon icon="heroicons-outline:shield-exclamation" className="text-sm" /> Not signed
+              </span>
+            )}
+            {watermark && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(150,180,245,.08)] px-2.5 py-1 text-xs text-[#aec2e8]">
+                <Icon icon="heroicons-outline:identification" className="text-sm" /> Watermarked
+              </span>
+            )}
+            {job.encode_mode === "reencode" && (
+              /* Worth surfacing on an evidence artefact: the clip is not
+                 bit-identical to what was recorded. Either the source segments
+                 could not be concatenated by stream copy, or a watermark was
+                 drawn — which can only be done on a re-encode. The manifest
+                 pins the clip either way. */
+              <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(150,180,245,.08)] px-2.5 py-1 text-xs text-[#aec2e8]">
+                <Icon icon="heroicons-outline:arrow-path" className="text-sm" /> Re-encoded
+              </span>
+            )}
+            {verify && verify !== "loading" && (
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${
+                  verify.valid ? "bg-[rgba(34,211,238,.15)] text-[#67e8f9]" : "bg-red-500/15 text-red-500"
+                }`}
+              >
+                <Icon icon={verify.valid ? "heroicons-solid:check-badge" : "heroicons-solid:x-circle"} className="text-sm" />
+                {verify.valid ? "Verified authentic" : `Not verified — ${verify.reason}`}
+              </span>
+            )}
+          </div>
+
+          {job.sha256 && (
+            <div className="text-[11px] text-[#aec2e8]">
+              SHA-256 <code className="break-all text-[#f2f6ff]">{job.sha256}</code>
+            </div>
+          )}
+
+          {/* The recorder's own words about what it found, and — when the
+              clip does not match — both hashes, because "tampered" with no
+              numbers behind it is not something anybody can act on. */}
+          {verify && verify !== "loading" && !verify.valid && (
+            <div className="space-y-1 text-[11px] text-[#aec2e8]">
+              {verify.detail && <p>{verify.detail}</p>}
+              {verify.expected_sha256 && verify.actual_sha256 && (
+                <>
+                  <div>
+                    Manifest says{" "}
+                    <code className="break-all text-[#f2f6ff]">{verify.expected_sha256}</code>
+                  </div>
+                  <div>
+                    File hashes to{" "}
+                    <code className="break-all text-red-400">{verify.actual_sha256}</code>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Verifying against the key EMBEDDED in the manifest proves only
+              that whoever holds the matching private key signed it. This says
+              whether that key is the recorder's current one. */}
+          {verify && verify !== "loading" && verify.valid && verify.signed_by_this_node === false && (
+            <p className="text-[11px] text-amber-400">
+              The manifest is internally valid but was not signed by this recorder&apos;s current
+              key — it predates a key rotation, or it came from another recorder.
+            </p>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              icon="heroicons-outline:shield-check"
+              disabled={verify === "loading"}
+              onClick={onVerify}
+            >
+              {verify === "loading" ? "Verifying…" : "Verify signature"}
+            </Button>
+            <Button variant="ghost" icon="heroicons-outline:document-text" onClick={onManifest}>
+              Manifest
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ExportDialog({ open, onClose, nodeId, cameraId, cameraName, range }: Readonly<ExportDialogProps>) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -214,38 +422,17 @@ export default function ExportDialog({ open, onClose, nodeId, cameraId, cameraNa
       onClose={onClose}
       title="Export clip"
       footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            {status === "done" ? "Close" : "Cancel"}
-          </Button>
-          {!job ? (
-            <Button
-              variant="primary"
-              icon="heroicons-outline:scissors"
-              disabled={!rangeValid || submitting}
-              onClick={startExport}
-            >
-              {submitting ? "Starting…" : "Export"}
-            </Button>
-          ) : status === "done" ? (
-            <Button
-              variant="success"
-              icon="heroicons-outline:arrow-down-tray"
-              disabled={downloading}
-              onClick={download}
-            >
-              {downloading ? "Downloading…" : "Download"}
-            </Button>
-          ) : status === "failed" ? (
-            <Button variant="secondary" icon="heroicons-outline:arrow-path" onClick={() => setJob(null)}>
-              Try again
-            </Button>
-          ) : (
-            <Button variant="primary" disabled>
-              <Icon icon="svg-spinners:180-ring" className="text-base" /> Exporting…
-            </Button>
-          )}
-        </>
+        <ExportFooter
+          status={status}
+          started={!!job}
+          rangeValid={rangeValid}
+          submitting={submitting}
+          downloading={downloading}
+          onClose={onClose}
+          onStart={startExport}
+          onDownload={download}
+          onRetry={() => setJob(null)}
+        />
       }
     >
       <div className="space-y-4">
@@ -300,117 +487,16 @@ export default function ExportDialog({ open, onClose, nodeId, cameraId, cameraNa
         )}
 
         {job && (
-          <div className="rounded-lg border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.08)]/30 p-4">
-            <div className="flex items-center gap-3">
-              <Icon icon={progress.icon} className={`text-2xl ${progress.iconCls}`} />
-              <div className="min-w-0">
-                <p className="text-sm font-medium capitalize text-[#f2f6ff]">{progress.text}</p>
-                <p className="truncate text-xs text-[#aec2e8]">
-                  Job {String(job.job_id).slice(0, 12)}
-                  {job.file_size ? ` · ${fmtBytes(job.file_size)}` : ""}
-                  {status === "failed" && job.error ? ` · ${job.error}` : ""}
-                </p>
-              </div>
-            </div>
-            {inFlight && (
-              <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[rgba(150,180,245,.22)]">
-                <div className="h-full w-1/3 animate-pulse rounded-full bg-[rgba(34,211,238,.6)]" />
-              </div>
-            )}
-
-            {/* Tamper-evidence — signed badge + verify affordance (P6-B) */}
-            {status === "done" && (
-              <div className="mt-4 space-y-3 border-t border-[rgba(150,180,245,.22)] pt-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  {job.signed ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(34,211,238,.15)] px-2.5 py-1 text-xs font-medium text-[#67e8f9]">
-                      <Icon icon="heroicons-solid:shield-check" className="text-sm" /> Signed (Ed25519)
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(150,180,245,.08)] px-2.5 py-1 text-xs text-[#aec2e8]">
-                      <Icon icon="heroicons-outline:shield-exclamation" className="text-sm" /> Not signed
-                    </span>
-                  )}
-                  {watermark && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(150,180,245,.08)] px-2.5 py-1 text-xs text-[#aec2e8]">
-                      <Icon icon="heroicons-outline:identification" className="text-sm" /> Watermarked
-                    </span>
-                  )}
-                  {job.encode_mode === "reencode" && (
-                    /* Worth surfacing on an evidence artefact: the clip is not
-                       bit-identical to what was recorded. Either the source segments
-                       could not be concatenated by stream copy, or a watermark was
-                       drawn — which can only be done on a re-encode. The manifest
-                       pins the clip either way. */
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(150,180,245,.08)] px-2.5 py-1 text-xs text-[#aec2e8]">
-                      <Icon icon="heroicons-outline:arrow-path" className="text-sm" /> Re-encoded
-                    </span>
-                  )}
-                  {verify && verify !== "loading" && (
-                    <span
-                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${
-                        verify.valid ? "bg-[rgba(34,211,238,.15)] text-[#67e8f9]" : "bg-red-500/15 text-red-500"
-                      }`}
-                    >
-                      <Icon icon={verify.valid ? "heroicons-solid:check-badge" : "heroicons-solid:x-circle"} className="text-sm" />
-                      {verify.valid ? "Verified authentic" : `Not verified — ${verify.reason}`}
-                    </span>
-                  )}
-                </div>
-
-                {job.sha256 && (
-                  <div className="text-[11px] text-[#aec2e8]">
-                    SHA-256 <code className="break-all text-[#f2f6ff]">{job.sha256}</code>
-                  </div>
-                )}
-
-                {/* The recorder's own words about what it found, and — when the
-                    clip does not match — both hashes, because "tampered" with no
-                    numbers behind it is not something anybody can act on. */}
-                {verify && verify !== "loading" && !verify.valid && (
-                  <div className="space-y-1 text-[11px] text-[#aec2e8]">
-                    {verify.detail && <p>{verify.detail}</p>}
-                    {verify.expected_sha256 && verify.actual_sha256 && (
-                      <>
-                        <div>
-                          Manifest says{" "}
-                          <code className="break-all text-[#f2f6ff]">{verify.expected_sha256}</code>
-                        </div>
-                        <div>
-                          File hashes to{" "}
-                          <code className="break-all text-red-400">{verify.actual_sha256}</code>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {/* Verifying against the key EMBEDDED in the manifest proves only
-                    that whoever holds the matching private key signed it. This says
-                    whether that key is the recorder's current one. */}
-                {verify && verify !== "loading" && verify.valid && verify.signed_by_this_node === false && (
-                  <p className="text-[11px] text-amber-400">
-                    The manifest is internally valid but was not signed by this recorder&apos;s current
-                    key — it predates a key rotation, or it came from another recorder.
-                  </p>
-                )}
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    variant="secondary"
-                    icon="heroicons-outline:shield-check"
-                    disabled={verify === "loading"}
-                    onClick={runVerify}
-                  >
-                    {verify === "loading" ? "Verifying…" : "Verify signature"}
-                  </Button>
-                  <Button variant="ghost" icon="heroicons-outline:document-text" onClick={downloadManifest}>
-                    Manifest
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
+          <ExportJobPanel
+            job={job}
+            status={status}
+            progress={progress}
+            inFlight={inFlight}
+            watermark={watermark}
+            verify={verify}
+            onVerify={runVerify}
+            onManifest={downloadManifest}
+          />
         )}
       </div>
     </Modal>

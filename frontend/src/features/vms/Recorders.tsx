@@ -7,7 +7,7 @@
 // exactly (MasterDetail + ListPanel + EmptyDetail, TanStack Query + invalidation,
 // StatusBadge, sonner, ConfirmDialog). Add / edit reuse AddRecorderModal.
 import { useMemo, useState, type ReactNode } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
@@ -17,7 +17,7 @@ import { apiError } from "@/lib/api";
 import { asItems, fmtRelative } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { vms } from "./api";
-import type { MediaNodePublic, NodeEnrollResult } from "./types";
+import type { MediaNodePublic, NodeCredentialPublic, NodeEnrollResult } from "./types";
 import StatusBadge, { StatusDot } from "./components/StatusBadge";
 import AddRecorderModal from "./components/AddRecorderModal";
 
@@ -417,6 +417,201 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }: Readonly<RecorderDe
   );
 }
 
+/** The recorder's issued federation keys — loading, the two ways the list can be
+ *  absent, and the list itself.
+ *
+ *  Its own component because the middle arm is the subtle one: a recorder
+ *  deployed on its own box refuses to enumerate its keys, and that refusal is
+ *  NOT a broken federation. Keeping the four states together is what stops the
+ *  "not readable from here" explanation drifting away from the error it
+ *  replaces. */
+function CredentialList({
+  query,
+  creds,
+  hasCredential,
+  canManage,
+  revoking,
+  onRevoke,
+}: Readonly<{
+  query: UseQueryResult<unknown>;
+  creds: readonly NodeCredentialPublic[];
+  /** The VMS holds a key for this recorder even if the recorder will not list it. */
+  hasCredential: boolean;
+  canManage: boolean;
+  revoking: boolean;
+  onRevoke: (cred: NodeCredentialPublic) => void;
+}>) {
+  return (
+    <>
+    {query.isLoading ? (
+      <p className="px-1 py-2 text-xs text-[#9a92c8]"><Icon icon="svg-spinners:180-ring" className="mr-1 inline text-sm text-[#67e8f9]" />Loading…</p>
+    ) : query.isError ? (
+      hasCredential ? (
+        // Listing a recorder's keys needs settings.manage on the recorder, which a
+        // pairing-issued credential deliberately never holds. For a separately
+        // deployed box this call is EXPECTED to fail — the VMS holds a working key
+        // and simply cannot enumerate the recorder's own list. Showing a red error
+        // would report a broken federation that is in fact working as designed.
+        <p className="rounded-[10px] border border-dashed border-[rgba(160,150,245,.28)] px-3 py-3 text-xs text-[#9a92c8]">
+          This VMS holds a credential for this recorder. The recorder&apos;s own credential list is
+          managed on the recorder and is not readable from here — revoke keys on its console.
+        </p>
+      ) : (
+        <p className="px-1 py-2 text-xs text-[#f87171]">{apiError(query.error, "Failed to load credentials")}</p>
+      )
+    ) : creds.length === 0 ? (
+      <p className="rounded-[10px] border border-dashed border-[rgba(160,150,245,.28)] px-3 py-3 text-center text-xs text-[#9a92c8]">
+        No credentials issued yet. Pair this recorder with a code from its console — or enroll it,
+        if it shares this stack&apos;s signing secret.
+      </p>
+    ) : (
+      <ul className="space-y-1.5">
+        {creds.map((c) => {
+          const revoked = !!c.revoked_at;
+          return (
+            <li
+              key={c.id}
+              className={`rounded-[10px] border px-3 py-2 ${
+                revoked ? "border-[rgba(160,150,245,.18)] bg-[rgba(150,180,245,.03)] opacity-70" : "border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)]"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-2">
+                  <Icon icon="heroicons-outline:key" className="shrink-0 text-sm text-[#aec2e8]" />
+                  <span className="truncate text-[13px] font-medium text-[#f2f6ff]">{c.label || "credential"}</span>
+                  {revoked && (
+                    <span className="shrink-0 rounded-full border border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.1)] px-1.5 py-0.5 text-[9px] font-medium text-[#f87171]">Revoked</span>
+                  )}
+                </span>
+                {canManage && !revoked && (
+                  <button
+                    onClick={() => onRevoke(c)}
+                    disabled={revoking}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-[7px] border border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.08)] px-2 py-1 text-[11px] text-[#f87171] transition hover:bg-[rgba(248,113,113,.16)] disabled:opacity-50"
+                  >
+                    <Icon icon="heroicons-outline:no-symbol" className="text-[13px]" /> Revoke
+                  </button>
+                )}
+              </div>
+              {/* The grant list is not printed. Fifteen chips of
+                  `vms.camera.read`-style permission keys is not something an
+                  operator acts on here — and when a grant is actually MISSING,
+                  the recorder says so and Federation shows the refusal. */}
+              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 pl-6 font-mono text-[10px] text-[#7e93bf]">
+                <span>issued {c.created_at ? fmtRelative(c.created_at) : "—"}</span>
+                <span>last used {c.last_used_at ? fmtRelative(c.last_used_at) : "never"}</span>
+                {revoked && <span>revoked {fmtRelative(c.revoked_at)}</span>}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    )}
+    </>
+  );
+}
+
+/** Pairing — the one-use code an operator minted on the recorder's own console. */
+function PairModal({
+  code,
+  onCode,
+  onPair,
+  pending,
+}: Readonly<{
+  /** Non-null while the dialog is open; the empty string is an opened, unfilled box. */
+  code: string | null;
+  onCode: (code: string | null) => void;
+  onPair: () => void;
+  pending: boolean;
+}>) {
+  return (
+    <Modal
+      open={code !== null}
+      onClose={() => onCode(null)}
+      title="Pair with recorder"
+      footer={
+        <>
+          <div className="flex-1" />
+          <Button variant="secondary" onClick={() => onCode(null)} disabled={pending}>Cancel</Button>
+          <Button
+            variant="success"
+            onClick={onPair}
+            disabled={pending || !(code || "").trim()}
+          >
+            {pending ? "Pairing…" : "Pair"}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <p className="text-[12px] leading-relaxed text-[#7e93bf]">
+          On the recorder&apos;s console open <span className="text-[#aec2e8]">Federation → Pair central VMS</span> and
+          mint a code. It is one-use and expires in 15 minutes.
+        </p>
+        <Field
+          label="Pairing code"
+          value={code || ""}
+          onChange={(e) => onCode(e.target.value)}
+          placeholder="8FK2N-9QTXW"
+        />
+      </div>
+    </Modal>
+  );
+}
+
+/** The raw credential, shown once. Its own component so the "copy this now"
+ *  warning and the secret it is about cannot be separated by an edit. */
+function IssuedCredentialModal({
+  issued,
+  copied,
+  onCopy,
+  onClose,
+}: Readonly<{
+  issued: NodeEnrollResult | null;
+  copied: boolean;
+  onCopy: () => void;
+  onClose: () => void;
+}>) {
+  return (
+    <Modal
+      open={!!issued}
+      onClose={onClose}
+      title="Federation credential"
+      footer={<Button variant="secondary" onClick={onClose}>Done</Button>}
+    >
+      <div className="space-y-3">
+        <div className="flex items-start gap-2 rounded-[10px] border border-[rgba(251,191,36,.3)] bg-[rgba(251,191,36,.08)] px-3 py-2 text-[12px] text-[#fbbf24]">
+          <Icon icon="heroicons:exclamation-triangle" className="mt-0.5 shrink-0 text-sm" />
+          Copy this now — it is shown once and cannot be retrieved again. Store it on the recorder, then revoke + re-enroll to rotate.
+        </div>
+        <div>
+          <p className="mb-1 font-mono text-[10px] uppercase tracking-[1.4px] text-[#9a92c8]">Credential {issued?.label ? `· ${issued.label}` : ""}</p>
+          <div className="flex items-stretch gap-2">
+            <code className="min-w-0 flex-1 select-all break-all rounded-[8px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.7)] px-3 py-2 font-mono text-[12px] text-[#f2f6ff]">
+              {issued?.credential}
+            </code>
+            <Button
+              variant="secondary"
+              className="!px-2.5"
+              icon={copied ? "heroicons-outline:check" : "heroicons-outline:clipboard"}
+              onClick={onCopy}
+            >
+              {copied ? "Copied" : "Copy"}
+            </Button>
+          </div>
+        </div>
+        {Array.isArray(issued?.grants) && issued.grants.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {issued.grants.map((g) => (
+              <span key={g} className="rounded-sm border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1.5 py-0.5 font-mono text-[9.5px] text-[#aec2e8]">{g}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 // Federation trust / credentials for one recorder node. Shows enrollment status,
 // lists issued credentials (grants + activity), lets an operator Enroll / Re-enroll
 // (the RAW secret is shown ONCE, copyable, with a warning) and Revoke a credential.
@@ -478,6 +673,18 @@ function FederationTrust({ node }: Readonly<{ node: MediaNodePublic }>) {
     onError: (e) => toast.error(apiError(e, "Revoke failed")),
   });
 
+  // Revoking is irreversible and cuts this VMS off from the recorder (cameras and
+  // live streams stop resolving), so it asks first — the mutation fires only from
+  // onConfirm.
+  const askRevoke = (c: NodeCredentialPublic) =>
+    setConfirm({
+      title: "Revoke credential",
+      message: `Revoke “${c.label || "credential"}”? This VMS immediately loses access to ${node.name}'s cameras and streams until it is paired or enrolled again. This cannot be undone.`,
+      confirmLabel: "Revoke",
+      danger: true,
+      onConfirm: () => { revoke.mutate(c.id); setConfirm(null); },
+    });
+
   // Only reachable from the credential modal, which renders while `issued` is set.
   const copyRaw = async () => {
     try {
@@ -508,81 +715,14 @@ function FederationTrust({ node }: Readonly<{ node: MediaNodePublic }>) {
       {/* No explainer paragraph. The Enrolled badge says the state and the two
           buttons below say the two ways to change it; a paragraph restating both
           is read once and skipped forever after. */}
-      {credsQ.isLoading ? (
-        <p className="px-1 py-2 text-xs text-[#9a92c8]"><Icon icon="svg-spinners:180-ring" className="mr-1 inline text-sm text-[#67e8f9]" />Loading…</p>
-      ) : credsQ.isError ? (
-        node.has_credential ? (
-          // Listing a recorder's keys needs settings.manage on the recorder, which a
-          // pairing-issued credential deliberately never holds. For a separately
-          // deployed box this call is EXPECTED to fail — the VMS holds a working key
-          // and simply cannot enumerate the recorder's own list. Showing a red error
-          // would report a broken federation that is in fact working as designed.
-          <p className="rounded-[10px] border border-dashed border-[rgba(160,150,245,.28)] px-3 py-3 text-xs text-[#9a92c8]">
-            This VMS holds a credential for this recorder. The recorder&apos;s own credential list is
-            managed on the recorder and is not readable from here — revoke keys on its console.
-          </p>
-        ) : (
-          <p className="px-1 py-2 text-xs text-[#f87171]">{apiError(credsQ.error, "Failed to load credentials")}</p>
-        )
-      ) : creds.length === 0 ? (
-        <p className="rounded-[10px] border border-dashed border-[rgba(160,150,245,.28)] px-3 py-3 text-center text-xs text-[#9a92c8]">
-          No credentials issued yet. Pair this recorder with a code from its console — or enroll it,
-          if it shares this stack&apos;s signing secret.
-        </p>
-      ) : (
-        <ul className="space-y-1.5">
-          {creds.map((c) => {
-            const revoked = !!c.revoked_at;
-            return (
-              <li
-                key={c.id}
-                className={`rounded-[10px] border px-3 py-2 ${
-                  revoked ? "border-[rgba(160,150,245,.18)] bg-[rgba(150,180,245,.03)] opacity-70" : "border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)]"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex min-w-0 items-center gap-2">
-                    <Icon icon="heroicons-outline:key" className="shrink-0 text-sm text-[#aec2e8]" />
-                    <span className="truncate text-[13px] font-medium text-[#f2f6ff]">{c.label || "credential"}</span>
-                    {revoked && (
-                      <span className="shrink-0 rounded-full border border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.1)] px-1.5 py-0.5 text-[9px] font-medium text-[#f87171]">Revoked</span>
-                    )}
-                  </span>
-                  {canManage && !revoked && (
-                    <button
-                      onClick={() =>
-                        // Revoking is irreversible and cuts this VMS off from the
-                        // recorder (cameras and live streams stop resolving), so it
-                        // asks first — the mutation fires only from onConfirm.
-                        setConfirm({
-                          title: "Revoke credential",
-                          message: `Revoke “${c.label || "credential"}”? This VMS immediately loses access to ${node.name}'s cameras and streams until it is paired or enrolled again. This cannot be undone.`,
-                          confirmLabel: "Revoke",
-                          danger: true,
-                          onConfirm: () => { revoke.mutate(c.id); setConfirm(null); },
-                        })
-                      }
-                      disabled={revoke.isPending}
-                      className="inline-flex shrink-0 items-center gap-1 rounded-[7px] border border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.08)] px-2 py-1 text-[11px] text-[#f87171] transition hover:bg-[rgba(248,113,113,.16)] disabled:opacity-50"
-                    >
-                      <Icon icon="heroicons-outline:no-symbol" className="text-[13px]" /> Revoke
-                    </button>
-                  )}
-                </div>
-                {/* The grant list is not printed. Fifteen chips of
-                    `vms.camera.read`-style permission keys is not something an
-                    operator acts on here — and when a grant is actually MISSING,
-                    the recorder says so and Federation shows the refusal. */}
-                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 pl-6 font-mono text-[10px] text-[#7e93bf]">
-                  <span>issued {c.created_at ? fmtRelative(c.created_at) : "—"}</span>
-                  <span>last used {c.last_used_at ? fmtRelative(c.last_used_at) : "never"}</span>
-                  {revoked && <span>revoked {fmtRelative(c.revoked_at)}</span>}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <CredentialList
+        query={credsQ}
+        creds={creds}
+        hasCredential={!!node.has_credential}
+        canManage={canManage}
+        revoking={revoke.isPending}
+        onRevoke={askRevoke}
+      />
 
       {canManage && (
         <div className="mt-2.5 flex flex-wrap gap-2">
@@ -607,75 +747,20 @@ function FederationTrust({ node }: Readonly<{ node: MediaNodePublic }>) {
       )}
 
       {/* Pair — the code an operator minted on the recorder's own console. */}
-      <Modal
-        open={pairCode !== null}
-        onClose={() => setPairCode(null)}
-        title="Pair with recorder"
-        footer={
-          <>
-            <div className="flex-1" />
-            <Button variant="secondary" onClick={() => setPairCode(null)} disabled={pair.isPending}>Cancel</Button>
-            <Button
-              variant="success"
-              onClick={() => pair.mutate()}
-              disabled={pair.isPending || !(pairCode || "").trim()}
-            >
-              {pair.isPending ? "Pairing…" : "Pair"}
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-3">
-          <p className="text-[12px] leading-relaxed text-[#7e93bf]">
-            On the recorder&apos;s console open <span className="text-[#aec2e8]">Federation → Pair central VMS</span> and
-            mint a code. It is one-use and expires in 15 minutes.
-          </p>
-          <Field
-            label="Pairing code"
-            value={pairCode || ""}
-            onChange={(e) => setPairCode(e.target.value)}
-            placeholder="8FK2N-9QTXW"
-          />
-        </div>
-      </Modal>
+      <PairModal
+        code={pairCode}
+        onCode={setPairCode}
+        onPair={() => pair.mutate()}
+        pending={pair.isPending}
+      />
 
       {/* The RAW credential — shown ONCE. */}
-      <Modal
-        open={!!issued}
+      <IssuedCredentialModal
+        issued={issued}
+        copied={copied}
+        onCopy={copyRaw}
         onClose={() => setIssued(null)}
-        title="Federation credential"
-        footer={<Button variant="secondary" onClick={() => setIssued(null)}>Done</Button>}
-      >
-        <div className="space-y-3">
-          <div className="flex items-start gap-2 rounded-[10px] border border-[rgba(251,191,36,.3)] bg-[rgba(251,191,36,.08)] px-3 py-2 text-[12px] text-[#fbbf24]">
-            <Icon icon="heroicons:exclamation-triangle" className="mt-0.5 shrink-0 text-sm" />
-            Copy this now — it is shown once and cannot be retrieved again. Store it on the recorder, then revoke + re-enroll to rotate.
-          </div>
-          <div>
-            <p className="mb-1 font-mono text-[10px] uppercase tracking-[1.4px] text-[#9a92c8]">Credential {issued?.label ? `· ${issued.label}` : ""}</p>
-            <div className="flex items-stretch gap-2">
-              <code className="min-w-0 flex-1 select-all break-all rounded-[8px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.7)] px-3 py-2 font-mono text-[12px] text-[#f2f6ff]">
-                {issued?.credential}
-              </code>
-              <Button
-                variant="secondary"
-                className="!px-2.5"
-                icon={copied ? "heroicons-outline:check" : "heroicons-outline:clipboard"}
-                onClick={copyRaw}
-              >
-                {copied ? "Copied" : "Copy"}
-              </Button>
-            </div>
-          </div>
-          {Array.isArray(issued?.grants) && issued.grants.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {issued.grants.map((g) => (
-                <span key={g} className="rounded-sm border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1.5 py-0.5 font-mono text-[9.5px] text-[#aec2e8]">{g}</span>
-              ))}
-            </div>
-          )}
-        </div>
-      </Modal>
+      />
 
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={revoke.isPending} />
     </>

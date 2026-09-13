@@ -14,7 +14,10 @@ import { SectionCard, SectionHead } from "@/components/console";
  *  detail — the server URI, the SSO issuer — is what proves which one it is. */
 export function configuredSummary(configured: boolean, detail: string | null | undefined): string {
   if (!configured) return "Not configured";
-  return `Configured${detail ? ` — ${detail}` : ""}, currently off`;
+  // Named rather than inlined: the sentence reads as one line, and the detail is
+  // the half an admin is actually looking for.
+  const evidence = detail ? ` — ${detail}` : "";
+  return `Configured${evidence}, currently off`;
 }
 
 export interface SecuritySectionProps {

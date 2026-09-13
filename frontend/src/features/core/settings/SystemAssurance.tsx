@@ -46,6 +46,7 @@ import type {
   DualAuthRequestOut,
   SecurityPolicyOut,
   SettingsOut,
+  SettingValue,
   SsoConfigOut,
   UserOut,
 } from "../types";
@@ -191,10 +192,16 @@ export function twoFactorScope(required: boolean | null | undefined, roles: stri
 }
 
 /** Audit retention. Zero means KEEP FOREVER — the one value where printing the
- *  number would say the opposite of what the setting does. */
-export function retentionLabel(days: unknown): string {
+ *  number would say the opposite of what the setting does.
+ *
+ *  Typed as the settings map's own value rather than `unknown`: /settings is a
+ *  flat catalogue of primitives, so the only uncertainty here is WHICH primitive
+ *  — a settings row the operator typed arrives as the string "90". Saying that
+ *  in the signature is what makes the interpolation below provably a number or a
+ *  word, and not a struct rendering as "[object Object] days". */
+export function retentionLabel(days: SettingValue | undefined): string {
   if (days == null) return dash;
-  return Number(days) > 0 ? `${String(days)} days` : "Forever";
+  return Number(days) > 0 ? `${days} days` : "Forever";
 }
 
 const fmtDate = (s: string | null | undefined): string => {
