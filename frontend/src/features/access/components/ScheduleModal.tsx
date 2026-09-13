@@ -11,11 +11,25 @@ import { toast } from "sonner";
 import { Button, Modal } from "@/components/ui/kit";
 import { Field, FieldLabel } from "@/components/common";
 import { apiError } from "@/lib/api";
+import { randomId } from "@/lib/random";
 import { gates } from "../api";
 import { SCHEDULE_DAYS, TIMEZONES } from "../constants";
 import type { SchedulePublic, TimeWindow } from "../types";
 
-const DEFAULT_WINDOW = (): TimeWindow => ({ days: [1, 2, 3, 4, 5], start_time: "09:00", end_time: "18:00" });
+/** A window row while it is being edited. `_key` is this browser's only stable
+ *  handle on a row — the wire shape has no identity, so removing the first of
+ *  three windows would otherwise leave the operator typing into the row that
+ *  slid up under the cursor. It is stripped before the body is sent. */
+type WindowDraft = TimeWindow & { _key: string };
+
+const draft = (w?: Partial<TimeWindow>): WindowDraft => ({
+  days: w?.days || [],
+  start_time: w?.start_time || "09:00",
+  end_time: w?.end_time || "18:00",
+  _key: randomId(),
+});
+
+const DEFAULT_WINDOW = (): WindowDraft => draft({ days: [1, 2, 3, 4, 5] });
 
 /** The three scalar fields; the windows and holidays lists are their own state. */
 interface ScheduleForm {
@@ -50,12 +64,7 @@ export default function ScheduleModal({ instanceId, schedule, onClose, onSuccess
     description: schedule?.description || "",
     timezone: schedule?.timezone || "Asia/Kolkata",
   });
-  const [windows, setWindows] = useState<TimeWindow[]>(
-    () =>
-      schedule?.windows?.map((w) => ({ days: w.days || [], start_time: w.start_time || "09:00", end_time: w.end_time || "18:00" })) || [
-        DEFAULT_WINDOW(),
-      ],
-  );
+  const [windows, setWindows] = useState<WindowDraft[]>(() => schedule?.windows?.map(draft) || [DEFAULT_WINDOW()]);
   const [holidays, setHolidays] = useState<string[]>(schedule?.holidays || []);
   const [newHoliday, setNewHoliday] = useState("");
   // Keyed by field name, plus `w<i>` per time window.
@@ -70,11 +79,7 @@ export default function ScheduleModal({ instanceId, schedule, onClose, onSuccess
       description: editSchedule.description || "",
       timezone: editSchedule.timezone || "Asia/Kolkata",
     });
-    setWindows(
-      editSchedule.windows?.map((w) => ({ days: w.days || [], start_time: w.start_time || "09:00", end_time: w.end_time || "18:00" })) || [
-        DEFAULT_WINDOW(),
-      ],
-    );
+    setWindows(editSchedule.windows?.map(draft) || [DEFAULT_WINDOW()]);
     setHolidays(editSchedule.holidays || []);
   }, [editSchedule]);
 
@@ -84,7 +89,7 @@ export default function ScheduleModal({ instanceId, schedule, onClose, onSuccess
         name: form.name.trim(),
         description: form.description.trim() || null,
         timezone: form.timezone,
-        windows,
+        windows: windows.map(({ _key, ...w }) => w),
         holidays,
       };
       // `schedule` set ⇔ isEdit, so this branch also narrows it for the id.
@@ -175,7 +180,7 @@ export default function ScheduleModal({ instanceId, schedule, onClose, onSuccess
           </div>
           <div className="space-y-3">
             {windows.map((w, i) => (
-              <div key={i} className="rounded-lg border border-card-border p-3">
+              <div key={w._key} className="rounded-lg border border-card-border p-3">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-[11px] text-muted">Window {i + 1}</span>
                   {windows.length > 1 && (

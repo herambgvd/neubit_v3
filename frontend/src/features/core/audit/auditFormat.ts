@@ -49,8 +49,11 @@ function humanizeAction(action: string | null | undefined): string {
 export function describe(r: Pick<AuditLogOut, "action" | "meta">): string {
   const base = ACTION_VERB[r.action] || humanizeAction(r.action);
   const m = r.meta || {};
-  const detail = m.email || m.name || m.title || null;
-  return detail ? `${base} · ${String(detail)}` : base;
+  // `meta` is free-form, and one writer (the vision report endpoint) spreads a
+  // caller-supplied dict into it — so the target is only a target when it is
+  // scalar. Anything else has no name to print and the sentence drops it.
+  const detail = [m.email, m.name, m.title].find((v) => typeof v === "string" || typeof v === "number");
+  return detail === undefined ? base : `${base} · ${detail}`;
 }
 
 export function formatTs(ts: string | null | undefined): string {

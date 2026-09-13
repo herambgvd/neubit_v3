@@ -20,6 +20,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FInput } from "@/features/core/sites/components/FormControls";
 import { ActionButton, RowAction } from "@/components/console";
 import { apiError } from "@/lib/api";
+import { randomId } from "@/lib/random";
 import sitesApi from "@/lib/api/sites";
 import type { SitePublic } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
@@ -28,6 +29,11 @@ type Row = {
   value: string; // kg CO2 per kWh
   source: string;
   effective_from: string; // YYYY-MM-DD
+  /** This browser's handle on the row. The wire shape has no identity, so
+   *  without it React keys these by position: delete the first of three and the
+   *  half-typed value in the second row stays on screen under the third row's
+   *  data. Never sent — the save below builds the wire shape field by field. */
+  _key: string;
 };
 
 function rowError(r: Row): string | null {
@@ -62,6 +68,7 @@ export default function EmissionFactorsEditor({ site }: { site: SitePublic }) {
           value: String(f.kg_co2_per_kwh),
           source: f.source,
           effective_from: f.effective_from,
+          _key: randomId(),
         })),
       );
       setDirty(false);
@@ -127,7 +134,7 @@ export default function EmissionFactorsEditor({ site }: { site: SitePublic }) {
         <div className="space-y-2">
           {rows.map((r, i) => (
             <div
-              key={i}
+              key={r._key}
               className="grid grid-cols-2 items-end gap-x-3 gap-y-2 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] px-3 py-2.5 md:grid-cols-[.9fr_2fr_1fr_auto]"
             >
               <FInput label="kg CO₂ / kWh" mono inputMode="decimal" value={r.value} onChange={(v) => set(i, { value: v })} placeholder="0.716" />
@@ -161,7 +168,7 @@ export default function EmissionFactorsEditor({ site }: { site: SitePublic }) {
           <ActionButton
             icon="heroicons-outline:plus"
             onClick={() => {
-              setRows((prev) => [...prev, { value: "", source: "", effective_from: "" }]);
+              setRows((prev) => [...prev, { value: "", source: "", effective_from: "", _key: randomId() }]);
               setDirty(true);
               setSaved(false);
             }}

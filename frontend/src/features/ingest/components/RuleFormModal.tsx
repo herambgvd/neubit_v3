@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { Button, Checkbox, Modal } from "@/components/ui/kit";
 import { Field, FieldLabel, fieldClass } from "@/components/common";
 import { apiError } from "@/lib/api";
+import { randomId } from "@/lib/random";
 import { ingest as ingestApi } from "../api";
 import SelectMenu from "@/components/common/SelectMenu";
 import type { FieldChangeEvent } from "@/components/common/Field";
@@ -104,12 +105,13 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: Rul
           : typeof c.value === "object"
             ? JSON.stringify(c.value)
             : String(c.value),
+      _key: randomId(),
     })),
   );
 
   // ── field map: repeating {outKey, jmespath} rows ──────────────
   const [fieldRows, setFieldRows] = useState<FieldMapRow[]>(() =>
-    Object.entries(rule?.field_map || {}).map(([outKey, jmespath]) => ({ outKey, jmespath })),
+    Object.entries(rule?.field_map || {}).map(([outKey, jmespath]) => ({ outKey, jmespath, _key: randomId() })),
   );
 
   // ── live test ─────────────────────────────────────────────────
@@ -283,7 +285,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: Rul
             <div className="space-y-2">
               {conditions.map((c: ConditionDraft, i: number) => (
                 <ConditionRow
-                  key={i}
+                  key={c._key}
                   condition={c}
                   onChange={(patch: Partial<ConditionDraft>) => {
                     const nextC = conditions.slice();
@@ -300,7 +302,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: Rul
             variant="secondary"
             icon="heroicons-outline:plus"
            
-            onClick={() => setConditions([...conditions, { path: "", op: "exists", value: "" }])}
+            onClick={() => setConditions([...conditions, { path: "", op: "exists", value: "", _key: randomId() }])}
           >
             Add condition
           </Button>
@@ -317,7 +319,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: Rul
           ) : (
             <div className="space-y-2">
               {fieldRows.map((r, i) => (
-                <div key={i} className="grid grid-cols-[1fr_1fr_auto] items-center gap-2">
+                <div key={r._key} className="grid grid-cols-[1fr_1fr_auto] items-center gap-2">
                   <input
                     value={r.outKey}
                     onChange={(e) => {
@@ -357,7 +359,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: Rul
             variant="secondary"
             icon="heroicons-outline:plus"
            
-            onClick={() => setFieldRows([...fieldRows, { outKey: "", jmespath: "" }])}
+            onClick={() => setFieldRows([...fieldRows, { outKey: "", jmespath: "", _key: randomId() }])}
           >
             Add field
           </Button>

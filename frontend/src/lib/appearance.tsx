@@ -1,6 +1,15 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import {
   DEFAULT_FONT,
@@ -143,9 +152,12 @@ export function AppearanceProvider({ children }: { children?: ReactNode }) {
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [user]);
 
-  return (
-    <AppearanceContext.Provider value={{ font, scale, setFont, setScale }}>{children}</AppearanceContext.Provider>
-  );
+  // A stable identity here matters more than it looks: `children` is one element
+  // the provider never rebuilds, so React skips the subtree on a re-render and
+  // this value is the only thing that tells consumers the font or scale moved.
+  const value = useMemo(() => ({ font, scale, setFont, setScale }), [font, scale, setFont, setScale]);
+
+  return <AppearanceContext.Provider value={value}>{children}</AppearanceContext.Provider>;
 }
 
 export const useAppearance = () => useContext(AppearanceContext);

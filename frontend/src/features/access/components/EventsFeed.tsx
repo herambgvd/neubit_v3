@@ -479,7 +479,7 @@ function summarize(event: NormalizedAccessEvent, labels: EventLabels = {}) {
 
 function eventTypeLabel(event: NormalizedAccessEvent): string {
   const p = event.raw_payload || {};
-  const rawType = String(pick(p, "Type", "type", "EventType", "eventType") || "").trim();
+  const rawType = String(pickText(p, "Type", "type", "EventType", "eventType") || "").trim();
   if (!rawType) return event.event_type || event.reason || "—";
   if (rawType === "1") return "Access Granted (Type 1)";
   if (rawType === "2") return "Access Denied (Type 2)";
@@ -542,13 +542,16 @@ function eventCategory(event: NormalizedAccessEvent): string {
 }
 
 function eventTypeOf(event: NormalizedAccessEvent): string {
-  return String(
-    pick(event?.raw_payload || {}, "Type", "type", "EventType", "eventType") || event?.event_type || event?.reason || "",
+  return (
+    pickText(event?.raw_payload || {}, "Type", "type", "EventType", "eventType") ||
+    event?.event_type ||
+    event?.reason ||
+    ""
   ).toLowerCase();
 }
 
-function deniedCodeOf(event: NormalizedAccessEvent): unknown {
-  return pick(event?.raw_payload || {}, "AccessDeniedCode", "accessDeniedCode");
+function deniedCodeOf(event: NormalizedAccessEvent): string | number | null {
+  return pickScalar(event?.raw_payload || {}, "AccessDeniedCode", "accessDeniedCode");
 }
 
 function alertSignature(event: NormalizedAccessEvent, cardholderById: CardholderIndex, doorById: DoorIndex): string {
@@ -564,9 +567,20 @@ function alertSignature(event: NormalizedAccessEvent, cardholderById: Cardholder
 function pick(obj: Record<string, unknown> | null | undefined, ...keys: string[]): unknown {
   for (const key of keys) {
     const value = obj?.[key];
-    if (value !== undefined && value !== null && `${value}`.trim() !== "") return value;
+    if (value === undefined || value === null) continue;
+    // Only a string can be blank-but-present; everything else counts as a value.
+    if (typeof value === "string" && value.trim() === "") continue;
+    return value;
   }
   return null;
+}
+
+/** `pick` narrowed to a scalar. The vendor payload is dynamic enough to hand
+ *  back a nested object where a code is expected; such a value is not a code, so
+ *  it reads as absent rather than reaching an operator as `[object Object]`. */
+function pickScalar(obj: Record<string, unknown> | null | undefined, ...keys: string[]): string | number | null {
+  const value = pick(obj, ...keys);
+  return typeof value === "string" || typeof value === "number" ? value : null;
 }
 
 /** `pick` narrowed to the text a label renderer can show; a picked value that is

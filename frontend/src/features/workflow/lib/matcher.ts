@@ -159,7 +159,11 @@ export function coerceValue(op: string, raw: unknown): unknown {
   }
   if (op === "in" || op === "not_in") {
     if (Array.isArray(raw)) return raw;
-    return String(raw ?? "")
+    // Only editor text can be split into items; a value that is not text has no
+    // comma-separated reading, and splitting its stringification would store one
+    // junk item rather than none.
+    if (typeof raw !== "string" && typeof raw !== "number" && typeof raw !== "boolean") return [];
+    return `${raw}`
       .split(",")
       .map((s) => s.trim())
       .filter((s) => s.length > 0)
@@ -197,6 +201,8 @@ export function stringifyValue(op: string, value: unknown): string {
   try {
     return JSON.stringify(value);
   } catch {
-    return String(value);
+    // Unserialisable (circular, a BigInt) — there is no editor text for it, and
+    // "[object Object]" would be saved back as the condition's literal value.
+    return "";
   }
 }

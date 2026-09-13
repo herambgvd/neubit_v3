@@ -42,13 +42,26 @@ function purposeLabel(value: unknown): string | undefined {
   return PURPOSE_MAP[Number(value)];
 }
 
+/** Text for one raw controller DTO value.
+ *
+ *  The hardware tables are an OData passthrough — the backend hands the vendor's
+ *  entity through untouched — so a "column" can arrive as a nested object or an
+ *  annotation bag. Plain stringification would print `[object Object]` in the
+ *  UID column of a live hardware inventory, which reads as a broken controller
+ *  rather than as a shape this console did not expect. */
+function cellText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
 // A controller DTO value is `unknown`; each pill narrows only what it needs.
 function renderPill(col: HardwareColumn, value: unknown): ReactElement | null {
   if (col.pill === "onoff") return value ? <OnPill label={col.on} /> : <OffPill label={col.off} />;
   if (col.pill === "purpose")
     return (
       <span className="inline-flex items-center rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium text-blue-500">
-        {purposeLabel(value) || String(value ?? "") || "—"}
+        {purposeLabel(value) || cellText(value) || "—"}
       </span>
     );
   if (col.pill === "bypass")
@@ -65,8 +78,8 @@ function renderPill(col: HardwareColumn, value: unknown): ReactElement | null {
 
 function Cell({ value }: { value: unknown }) {
   if (value === null || value === undefined || value === "") return <span className="text-muted/70">—</span>;
-  if (typeof value === "object") return <code className="text-[10px] text-muted">{JSON.stringify(value)}</code>;
-  const str = String(value);
+  if (typeof value === "object") return <code className="text-[10px] text-muted">{cellText(value)}</code>;
+  const str = cellText(value);
   return str.length > 60 ? <span title={str}>{str.slice(0, 60)}…</span> : str;
 }
 
@@ -172,8 +185,8 @@ export default function HardwareTab({ instanceId }: HardwareTabProps) {
                         {col.pill ? (
                           renderPill(col, val)
                         ) : col.truncate ? (
-                          <span title={String(val ?? "")}>
-                            {typeof val === "string" && val.length > col.truncate ? `${val.slice(0, col.truncate)}…` : String(val ?? "—")}
+                          <span title={cellText(val)}>
+                            {typeof val === "string" && val.length > col.truncate ? `${val.slice(0, col.truncate)}…` : cellText(val ?? "—")}
                           </span>
                         ) : (
                           <Cell value={val} />

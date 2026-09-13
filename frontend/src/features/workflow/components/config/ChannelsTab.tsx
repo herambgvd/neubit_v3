@@ -40,6 +40,21 @@ export const CHANNEL_TYPES = [
   { value: "mobile_push", label: "Mobile push", icon: "heroicons-outline:device-phone-mobile" },
 ] as const;
 
+/** One config value as text. A connector alias can hold a whole object (a
+ *  webhook's `headers`, say); showing its JSON is at least true, where plain
+ *  stringification would put `[object Object]` on the panel. */
+function configText(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
+
+/** A config value the text editor can hold and hand back unchanged. Anything
+ *  else has to ride around the form rather than through it. */
+function isEditable(v: unknown): v is string | number | boolean | null | undefined {
+  return v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean";
+}
+
 /** The fields each connector reads, in the order it reads them. Anything else in
  *  `config` is carried through untouched — the connectors accept aliases. */
 const FIELDS: Record<string, { key: string; label: string; placeholder?: string; secret?: boolean }[]> = {
@@ -254,7 +269,7 @@ function ChannelDetail({
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {fields.map((f) => {
             const raw = cfg[f.key];
-            const value = raw === undefined || raw === null || raw === "" ? "—" : String(raw);
+            const value = raw === undefined || raw === null || raw === "" ? "—" : configText(raw);
             return (
               <div key={f.key} className="rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] px-3 py-1.5">
                 <p className="text-[10px] font-semibold uppercase tracking-[1.4px] text-nb-faint">{f.label}</p>
@@ -291,6 +306,11 @@ function ChannelModal({
   const [name, setName] = useState("");
   const [type, setType] = useState<string>("email");
   const [cfg, setCfg] = useState<Record<string, string>>({});
+  // The alias keys this form has no row for and cannot hold as text — a
+  // webhook's `headers` object, for instance. They are seeded aside and merged
+  // back on save; stringifying them into `cfg` would write "[object Object]"
+  // over a working connector's config the first time anyone opened this modal.
+  const [passthrough, setPassthrough] = useState<Record<string, unknown>>({});
   const [isDefault, setIsDefault] = useState(false);
   const [seeded, setSeeded] = useState<string | null>(null);
 
@@ -302,11 +322,9 @@ function ChannelModal({
     setName(channel?.name || "");
     setType(channel?.channel_type || "email");
     setIsDefault(!!channel?.is_default);
-    setCfg(
-      Object.fromEntries(
-        Object.entries(channel?.config || {}).map(([k, v]) => [k, v == null ? "" : String(v)]),
-      ),
-    );
+    const entries = Object.entries(channel?.config || {});
+    setCfg(Object.fromEntries(entries.filter(([, v]) => isEditable(v)).map(([k, v]) => [k, v == null ? "" : String(v)])));
+    setPassthrough(Object.fromEntries(entries.filter(([, v]) => !isEditable(v))));
   }
 
   const fields = FIELDS[type] || [];
@@ -333,7 +351,10 @@ function ChannelModal({
                 is_default: isDefault,
                 // Empty strings are dropped: an untouched optional field must not
                 // be stored as "", which a connector would read as configured.
-                config: Object.fromEntries(Object.entries(cfg).filter(([, v]) => v !== "")),
+                config: {
+                  ...passthrough,
+                  ...Object.fromEntries(Object.entries(cfg).filter(([, v]) => v !== "")),
+                },
               })
             }
           >

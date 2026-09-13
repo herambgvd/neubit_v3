@@ -14,6 +14,11 @@ export interface ConditionRow {
   path: string;
   op: string;
   value: string;
+  /** The editor's handle on the row. A condition has no identity of its own, so
+   *  without this React keys these by position and removing one leaves a
+   *  half-typed path sitting on the condition below it. Dropped on the way to
+   *  the wire — `toWire` builds the stored shape field by field. */
+  _key: string;
 }
 
 const SAMPLE = JSON.stringify(

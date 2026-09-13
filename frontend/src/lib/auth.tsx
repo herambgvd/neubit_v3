@@ -3,7 +3,7 @@
 // DashCode Redux store, so it stays simple and portable across scenarios.
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { api, bootstrapSession, tokens } from "./api";
 import type { AuthUser, Entitlements, LoginResponse, ModuleEntitlement } from "./types";
@@ -138,24 +138,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const licenseState = entitlements?.license_state || null;
 
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        status,
-        login,
-        loginMfa,
-        logout,
-        can,
-        hasModule,
-        entitlements,
-        licenseState,
-        reload: loadMe,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  // This context wraps the whole console, so a fresh object every render would
+  // re-render every consumer in the app. The flip side is worse than the cost it
+  // saves: a memoised consumer only learns about a login, a role change or a
+  // logout when this identity changes, so every field below is a dependency and
+  // must stay one — auth.test.tsx holds that line behind a React.memo boundary.
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      user,
+      status,
+      login,
+      loginMfa,
+      logout,
+      can,
+      hasModule,
+      entitlements,
+      licenseState,
+      reload: loadMe,
+    }),
+    [user, status, login, loginMfa, logout, can, hasModule, entitlements, licenseState, loadMe]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

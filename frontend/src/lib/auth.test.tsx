@@ -3,6 +3,7 @@
  * pin the session lifecycle rather than the UI.
  */
 import axios, { type AxiosResponse, type InternalAxiosRequestConfig } from "axios";
+import { memo } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -170,5 +171,62 @@ describe("logout", () => {
 
     await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anon"));
     expect(tokens.access).toBeNull();
+  });
+});
+
+// The provider's context value is memoised, which means a consumer that sits
+// behind a React.memo boundary is only told about a session change when that
+// value's identity changes. These pin the dependency list: drop one and the
+// console keeps serving a principal that no longer exists.
+describe("memoised consumers", () => {
+  /** Never re-renders from above — only a new context value can wake it. */
+  const Sealed = memo(function Sealed() {
+    const { status, can, reload } = useAuth();
+    return (
+      <div>
+        <span data-testid="sealed-status">{status}</span>
+        <span data-testid="sealed-admin">{String(can("camera.delete"))}</span>
+        <button type="button" onClick={() => reload()}>
+          Reload
+        </button>
+      </div>
+    );
+  });
+
+  const renderSealed = () =>
+    render(
+      <AuthProvider>
+        <Sealed />
+      </AuthProvider>
+    );
+
+  it("tells a sealed consumer that the visitor is signed out", async () => {
+    // Nothing but `status` moves on this path: no user, no entitlements, and
+    // every callback keeps its identity. Drop `status` from the dependency list
+    // and the login page waits on "loading" forever.
+    refreshToken = null;
+
+    renderSealed();
+
+    await waitFor(() => expect(screen.getByTestId("sealed-status")).toHaveTextContent("anon"));
+  });
+
+  it("tells a sealed consumer that the role widened", async () => {
+    renderSealed();
+    await waitFor(() => expect(screen.getByTestId("sealed-status")).toHaveTextContent("authed"));
+    expect(screen.getByTestId("sealed-admin")).toHaveTextContent("false");
+
+    // An operator promoted to admin elsewhere; the console calls reload(). The
+    // status does not move, so only `user`/`can` can carry the news.
+    api.defaults.adapter = async (config) => {
+      seen.push(config);
+      if (config.url === "/auth/me") return respond(config, { ...ME, role: { permissions: ["*"] } });
+      if (config.url === "/features") return respond(config, FEATURES);
+      return respond(config, {});
+    };
+
+    await userEvent.click(screen.getByRole("button", { name: /reload/i }));
+
+    await waitFor(() => expect(screen.getByTestId("sealed-admin")).toHaveTextContent("true"));
   });
 });

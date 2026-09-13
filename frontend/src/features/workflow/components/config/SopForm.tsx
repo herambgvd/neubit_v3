@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { Button, Checkbox, Input, Select } from "@/components/ui/kit";
 import { Field, FieldLabel } from "@/components/common";
 import { apiError } from "@/lib/api";
+import { randomId } from "@/lib/random";
 import { titleize } from "@/lib/format";
 import { PRIORITIES, isPriority } from "../../constants";
 import { workflow as wfApi } from "../../api";
@@ -16,6 +17,13 @@ import type { CreateSopRequest, EscalationRule, SopPublic } from "../../types";
 import { PaneForm, QuietButton, RowAction } from "@/components/console";
 
 type ErrorKey = "name" | "escalation_rules";
+
+/** An escalation rule while it is being edited. The stored shape has no id, so
+ *  `_key` is what keeps a row's inputs with the row when one above it is
+ *  removed; it is stripped on submit. */
+type RuleDraft = EscalationRule & { _key: string };
+
+const asDraft = (r: EscalationRule): RuleDraft => ({ ...r, _key: randomId() });
 
 export interface SopFormProps {
   /** The SOP being edited; null creates one. */
@@ -34,7 +42,7 @@ export default function SopForm({ sop, onCancel, onSaved }: SopFormProps) {
   const [eventCsv, setEventCsv] = useState((sop?.trigger_event_types || []).join(", "));
   // The rules themselves. A malformed JSON string cannot exist here, so the
   // "must be valid JSON" error it used to raise cannot either.
-  const [rules, setRules] = useState<EscalationRule[]>(sop?.escalation_rules || []);
+  const [rules, setRules] = useState<RuleDraft[]>(() => (sop?.escalation_rules || []).map(asDraft));
   const patchRule = (i: number, patch: Partial<EscalationRule>) =>
     setRules((cur) => cur.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const [isActive, setIsActive] = useState(sop?.is_active !== false);
@@ -58,7 +66,7 @@ export default function SopForm({ sop, onCancel, onSaved }: SopFormProps) {
       trigger_event_types: eventCsv.split(",").map((s) => s.trim()).filter(Boolean),
       // Sorted, so the sweep reads them in the order they fire and a reader
       // sees the ladder rather than the order they were typed in.
-      escalation_rules: [...rules].sort((a, b) => a.after_hours - b.after_hours),
+      escalation_rules: [...rules].sort((a, b) => a.after_hours - b.after_hours).map(({ _key, ...r }) => r),
       is_active: isActive,
     });
   }
@@ -140,7 +148,7 @@ export default function SopForm({ sop, onCancel, onSaved }: SopFormProps) {
               </p>
             )}
             {rules.map((r, i) => (
-              <div key={i} className="flex flex-wrap items-center gap-2 rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] px-3 py-2">
+              <div key={r._key} className="flex flex-wrap items-center gap-2 rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] px-3 py-2">
                 <span className="text-[11.5px] text-nb-soft">After</span>
                 <Input
                   type="number"
@@ -172,7 +180,7 @@ export default function SopForm({ sop, onCancel, onSaved }: SopFormProps) {
             <QuietButton
               icon="heroicons:plus"
               className="!py-1.5 !text-xs"
-              onClick={() => setRules([...rules, { after_hours: 2, to_priority: "high", notify_role_ids: [] }])}
+              onClick={() => setRules([...rules, asDraft({ after_hours: 2, to_priority: "high", notify_role_ids: [] })])}
             >
               Add escalation
             </QuietButton>

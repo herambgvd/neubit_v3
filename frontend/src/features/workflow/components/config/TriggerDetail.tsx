@@ -6,7 +6,7 @@
 import type { ReactNode } from "react";
 import { Icon } from "@iconify/react";
 import { titleize, fmtRelative } from "@/lib/format";
-import { OP_LABEL } from "../../lib/matcher";
+import { OP_LABEL, stringifyValue } from "../../lib/matcher";
 import type { TriggerPublic } from "../../types";
 
 export interface TriggerDetailProps {
@@ -82,7 +82,7 @@ export default function TriggerDetail({ trigger, sopName, onEdit, onDelete, onTo
                 <li key={i} className="px-3 py-2 text-xs font-mono text-nb-ink flex items-center gap-2 flex-wrap">
                   <span className="text-nb-faint">{c.field}</span>
                   <span className="rounded-sm bg-[rgba(96,165,250,.1)] px-1.5 py-0.5 text-[10px] text-nb-faint">{OP_LABEL[c.operator] || c.operator}</span>
-                  <span>{c.value == null ? "—" : String(c.value)}</span>
+                  <span>{c.value == null ? "—" : stringifyValue(c.operator, c.value)}</span>
                 </li>
               ))}
             </ul>

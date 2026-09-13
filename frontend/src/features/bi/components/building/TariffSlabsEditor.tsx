@@ -24,6 +24,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FInput } from "@/features/core/sites/components/FormControls";
 import { ActionButton, RowAction } from "@/components/console";
 import { apiError } from "@/lib/api";
+import { randomId } from "@/lib/random";
 import sitesApi from "@/lib/api/sites";
 import type { SitePublic, TariffSlabIn, TariffSlabPublic } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
@@ -81,6 +82,11 @@ type Row = {
   rate: string;
   currency: string;
   effective_from: string; // YYYY-MM-DD
+  /** This browser's handle on the row. The wire shape has no identity, so
+   *  without it React keys these by position: delete the first of three and the
+   *  half-typed value in the second row stays on screen under the third row's
+   *  data. Never sent — the save below builds the wire shape field by field. */
+  _key: string;
 };
 
 function fromApi(item: TariffSlabPublic): Row {
@@ -91,6 +97,7 @@ function fromApi(item: TariffSlabPublic): Row {
     rate: String(item.rate_per_kwh),
     currency: item.currency,
     effective_from: item.effective_from,
+    _key: randomId(),
   };
 }
 
@@ -204,7 +211,7 @@ export default function TariffSlabsEditor({ site }: { site: SitePublic }) {
         <div className="space-y-2">
           {rows.map((r, i) => (
             <div
-              key={i}
+              key={r._key}
               className="grid grid-cols-2 items-end gap-x-3 gap-y-2 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] px-3 py-2.5 md:grid-cols-[1.4fr_.8fr_.8fr_.8fr_.7fr_1fr_auto]"
             >
               <FInput label="Slab name" value={r.name} onChange={(v) => set(i, { name: v })} placeholder="Off-Peak" />
@@ -259,7 +266,15 @@ export default function TariffSlabsEditor({ site }: { site: SitePublic }) {
             onClick={() => {
               setRows((prev) => [
                 ...prev,
-                { name: "", start: "", end: "", rate: "", currency: prev[prev.length - 1]?.currency || "", effective_from: prev[prev.length - 1]?.effective_from || "" },
+                {
+                  name: "",
+                  start: "",
+                  end: "",
+                  rate: "",
+                  currency: prev[prev.length - 1]?.currency || "",
+                  effective_from: prev[prev.length - 1]?.effective_from || "",
+                  _key: randomId(),
+                },
               ]);
               setDirty(true);
               setSaved(false);

@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { Button, Checkbox } from "@/components/ui/kit";
 import SelectMenu from "@/components/common/SelectMenu";
 import { Field, FieldLabel } from "@/components/common";
+import { randomId } from "@/lib/random";
 import { apiError } from "@/lib/api";
 import { titleize } from "@/lib/format";
 import { workflow as wfApi } from "../../api";
@@ -42,6 +43,11 @@ export interface BuilderField {
   help_text: string;
   pattern: string;
   _collapsed: boolean;
+  /** The editor's handle on this row. Rows can be moved and removed, and both
+   *  `_collapsed` and the focused input belong to the FIELD, not to the third
+   *  slot in the list — keying by position moves them to whatever slides into
+   *  that slot. The wire shape is rebuilt on submit, so this never leaves. */
+  _key: string;
 }
 
 const blankField = (): BuilderField => ({
@@ -54,7 +60,15 @@ const blankField = (): BuilderField => ({
   help_text: "",
   pattern: "",
   _collapsed: false,
+  _key: randomId(),
 });
+
+/** A form field's default as editor text. */
+function defaultText(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
 
 // Backend field → editor row (options list → comma string; validation → flat).
 function hydrateField(f: FormFieldSchema): BuilderField {
@@ -65,11 +79,13 @@ function hydrateField(f: FormFieldSchema): BuilderField {
     options: (f.options || []).map((o) => o.label ?? o.value ?? "").join(", "),
     placeholder: f.placeholder || "",
     // `default_value` is `Any` on the wire; the editor holds text (numbers kept).
-    default_value:
-      typeof f.default_value === "number" ? f.default_value : f.default_value == null ? "" : String(f.default_value),
+    // A structured default gets its JSON: the editor saves back whatever it is
+    // shown, so `[object Object]` here would become the field's actual default.
+    default_value: typeof f.default_value === "number" ? f.default_value : defaultText(f.default_value),
     help_text: f.help_text || "",
     pattern: f.validation?.pattern || "",
     _collapsed: false,
+    _key: randomId(),
   };
 }
 
@@ -179,7 +195,7 @@ export default function FormBuilder({ form, onCancel, onSaved }: FormBuilderProp
         {errors.fields && <p className="mb-2 text-xs text-nb-crit">{errors.fields}</p>}
         <div className="space-y-2">
           {fields.map((f, i) => (
-            <div key={i} className="rounded-lg border border-nb-line bg-[rgba(8,15,34,.5)]">
+            <div key={f._key} className="rounded-lg border border-nb-line bg-[rgba(8,15,34,.5)]">
               <header className="flex items-center gap-2 px-2.5 py-2">
                 <button
                   type="button"

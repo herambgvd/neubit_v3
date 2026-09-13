@@ -16,7 +16,8 @@ import { Button, Checkbox } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { titleize } from "@/lib/format";
 import { PRIORITIES, isPriority } from "../../constants";
-import { MATCHER_OPS, OP_LABEL } from "../../lib/matcher";
+import { randomId } from "@/lib/random";
+import { MATCHER_OPS, OP_LABEL, stringifyValue } from "../../lib/matcher";
 import type {
   CreateTriggerRequest,
   DedupConfig,
@@ -77,7 +78,14 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
   const [enabled, setEnabled] = useState(trigger?.enabled !== false);
   const [conditions, setConditions] = useState<ConditionRow[]>(
     Array.isArray(trigger?.conditions) && trigger.conditions.length
-      ? trigger.conditions.map((c) => ({ path: c.field || "", op: c.operator || "eq", value: c.value == null ? "" : String(c.value) }))
+      // stringifyValue is coerceValue's inverse — the editor must be seeded with
+      // text the submit path can turn back into the value that was stored.
+      ? trigger.conditions.map((c) => ({
+          path: c.field || "",
+          op: c.operator || "eq",
+          value: c.value == null ? "" : stringifyValue(c.operator || "eq", c.value),
+          _key: randomId(),
+        }))
       : [],
   );
   const [dedupStrategy, setDedupStrategy] = useState<DedupStrategy>(trigger?.dedup?.strategy || "per_event_type");
@@ -219,14 +227,14 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-xs font-medium uppercase tracking-wide text-nb-faint">Conditions (all must match)</span>
-          <button type="button" onClick={() => setConditions((cs) => [...cs, { path: "", op: "eq", value: "" }])} className="text-xs text-nb-blueb hover:underline">+ Add condition</button>
+          <button type="button" onClick={() => setConditions((cs) => [...cs, { path: "", op: "eq", value: "", _key: randomId() }])} className="text-xs text-nb-blueb hover:underline">+ Add condition</button>
         </div>
         {conditions.length === 0 ? (
           <p className="text-[11px] text-nb-faint/70">No conditions — the trigger fires on any matching event type.</p>
         ) : (
           <div className="space-y-2">
             {conditions.map((c, i) => (
-              <div key={i} className="flex items-center gap-2">
+              <div key={c._key} className="flex items-center gap-2">
                 <input value={c.path} onChange={(e) => updateCond(i, { path: e.target.value })} placeholder="payload.path" className="h-9 flex-1 rounded-lg border border-nb-line bg-transparent px-2.5 text-sm font-mono text-nb-ink outline-hidden focus:border-nb-teal" />
                 <span className="w-36 shrink-0">
                   <SelectMenu

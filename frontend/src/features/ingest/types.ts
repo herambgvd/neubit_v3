@@ -314,12 +314,20 @@ export interface ConditionDraft {
   path: string;
   op: MatchOp;
   value: string;
+  /** The editor's own handle on this row. A condition has no identity until it
+   *  is saved, so this is what lets React keep a half-typed row with its own
+   *  inputs when a row above it is removed. Never sent — `buildConditions`
+   *  writes the wire shape field by field. */
+  _key: string;
 }
 
 /** A field-map row while it is being edited. */
 export interface FieldMapRow {
   outKey: string;
   jmespath: string;
+  /** As `ConditionDraft._key` — the field map is an object on the wire, so the
+   *  rows only have identity while they are being edited. */
+  _key: string;
 }
 
 /** The unsaved-rule draft the client-side preview evaluates. */

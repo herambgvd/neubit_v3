@@ -43,6 +43,7 @@ import { useEstateCameras } from "@/features/vms/hooks/useEstateCameras";
 import type { EstateCamera } from "@/features/vms/types";
 import { workflow as wfApi } from "./api";
 import { INCIDENT_SOURCES, INCIDENT_STATUSES, PRIORITIES } from "./constants";
+import { asStr } from "./types";
 import type { InstancePublic, NameMap, SopPublic } from "./types";
 import IncidentBulkBar from "./components/incidents/IncidentBulkBar";
 import type { BulkAction } from "./components/incidents/IncidentBulkBar";
@@ -143,8 +144,10 @@ export default function WorkflowPage() {
   const [connected, setConnected] = useState(false);
   useIncidentStream(
     (evt) => {
-      const id = evt.data?.instance_id ?? evt.data?.id;
-      if (id) stampNew(String(id));
+      // The stream frame is untyped JSON; a non-scalar id is not an id, and
+      // stringifying one would collide every incident onto a single map key.
+      const id = asStr(evt.data?.instance_id ?? evt.data?.id);
+      if (id) stampNew(id);
       qc.invalidateQueries({ queryKey: ["wf-instances"] });
       qc.invalidateQueries({ queryKey: ["wf-stats"] });
     },

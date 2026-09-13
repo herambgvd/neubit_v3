@@ -118,6 +118,32 @@ describe("editing a channel", () => {
     expect(cfg.host).toBe("smtp.example.com");
   });
 
+  it("carries an alias key the form has no row for through untouched", async () => {
+    // `config` is wider than the fields this form shows — the connectors accept
+    // aliases, and one of them (a webhook's `headers`) holds an object. It has
+    // no editor row, so it can only be preserved; stringifying it into the form
+    // state would save the literal text "[object Object]" over a working
+    // connector's headers the first time anyone opened this modal to rename it.
+    stubAll({
+      "GET /workflow/notifications/channels": [
+        { ...HOOK, config: { url: "https://h", headers: { "X-Api-Key": "k" }, retries: 3 } },
+      ],
+    });
+    renderWithProviders(<ChannelsTab />);
+    await screen.findAllByText("Ops hook");
+
+    await userEvent.click(screen.getByRole("button", { name: /^edit$/i }));
+    const name = await screen.findByLabelText(/^name/i);
+    await userEvent.clear(name);
+    await userEvent.type(name, "Ops hook 2");
+    await userEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => expect(stub.matching("PATCH /workflow/notifications/channels/c2")).toHaveLength(1));
+    const cfg = stub.body("PATCH /workflow/notifications/channels/c2")!.config as Record<string, unknown>;
+    expect(cfg.headers).toEqual({ "X-Api-Key": "k" });
+    expect(cfg.url).toBe("https://h");
+  });
+
   it("creates a channel with the type's own fields", async () => {
     renderWithProviders(<ChannelsTab />);
     await screen.findAllByText("Ops mailbox");

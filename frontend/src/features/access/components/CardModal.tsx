@@ -233,14 +233,26 @@ function CardholderPicker({ selected, filtered, loading, search, open, onSearch,
         <span className={selected ? "text-foreground" : "text-muted"}>{selected ? label(selected) : "— none —"}</span>
         <span className="flex items-center gap-1">
           {selected && (
+            // A span and not a <button>: it sits inside the picker's own trigger
+            // button, and an interactive element nested in a button is invalid
+            // HTML the browser reparents. So it carries a button's behaviour by
+            // hand — focusable, named, and answering both activation keys.
             <span
               role="button"
               tabIndex={0}
+              aria-label="Clear the selected cardholder"
               onClick={(e) => {
                 e.stopPropagation();
                 onSelect(null);
               }}
-              onKeyDown={(e) => e.key === "Enter" && (e.stopPropagation(), onSelect(null))}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" && e.key !== " ") return;
+                // Space would otherwise scroll the modal and activate the
+                // trigger this sits inside.
+                e.preventDefault();
+                e.stopPropagation();
+                onSelect(null);
+              }}
               className="rounded-sm p-0.5 text-muted hover:text-red-500"
             >
               <Icon icon="heroicons-outline:x-mark" className="text-xs" />

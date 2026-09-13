@@ -12,6 +12,14 @@ import type { ChannelOut } from "../../types";
 
 import { CHANNEL_FIELDS, CHANNEL_META } from "../constants";
 
+/** A stored config value as editor text. `config` is unknown-valued, and only a
+ *  scalar has a text form the operator can meaningfully edit. */
+function textOf(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "object") return "";
+  return String(v);
+}
+
 export function ChannelCard({ channel }: { channel: ChannelOut }) {
   const qc = useQueryClient();
   const fields = CHANNEL_FIELDS[channel.channel] || [];
@@ -87,7 +95,9 @@ export function ChannelCard({ channel }: { channel: ChannelOut }) {
             label={f.label}
             type={f.type || "text"}
             // Text fields hold strings on the wire (a masked secret is "***").
-            value={String(config[f.key] ?? "")}
+            // A non-scalar would be saved back as its own stringification, so it
+            // reads as empty and the operator retypes it rather than losing it.
+            value={textOf(config[f.key])}
             placeholder={f.placeholder}
             onChange={(e) => setField(f.key, e.target.value)}
           />

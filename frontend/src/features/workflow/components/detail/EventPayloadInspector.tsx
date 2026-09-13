@@ -23,7 +23,10 @@ export interface EventPayloadInspectorProps {
 export default function EventPayloadInspector({ payload, eventType, incident = null }: EventPayloadInspectorProps) {
   const [open, setOpen] = useState(false);
   let json = "";
-  try { json = JSON.stringify(payload, null, 2); } catch { json = String(payload); }
+  // The fallback says so rather than printing the envelope's stringification:
+  // this box is labelled JSON, and "[object Object]" reads as the payload's
+  // contents rather than as this console failing to render them.
+  try { json = JSON.stringify(payload, null, 2); } catch { json = "// This payload could not be rendered as JSON."; }
 
   // Reverse cross-link: only meaningful when this incident came from a camera event.
   const isCamera = incident?.event_source === CAMERA_SOURCE;
