@@ -124,6 +124,54 @@ def test_an_emission_factor_is_not_a_tariff_or_a_mass():
         mul_div("*", factor, factor)
 
 
+# ── consumption: an aggregation only one scope implements ────────────────────
+
+
+# The shape a `consumption` input takes, hung off a definition of its own so the
+# scope is the ONLY thing under test: the seeded carbon leaf carries an emission
+# factor too, and that input refuses at device scope for its own reason.
+_REGISTER_KWH = {
+    "key": "site_kwh",
+    "kind": "formula",
+    "applies_to": {"scope": "site"},
+    "inputs": {
+        "energy": {"role": "energy_register", "unit": "kWh",
+                   "aggregation": "consumption"},
+    },
+    "formula": "energy",
+    "output": {"unit": "kWh", "dimension": "energy"},
+}
+
+
+def test_a_consumption_input_registers_at_site_scope():
+    """The half of the pair that proves the refusal below is about the SCOPE and
+    not about anything else in this definition."""
+    registry.typecheck(_REGISTER_KWH)
+
+
+def test_a_consumption_input_is_site_scope_only_and_is_refused_when_written():
+    """`consumption` sums the registers a role binds across a site; the device
+    path binds one point per role and has no such aggregate at all. Accepting
+    the definition here meant it type-checked, stored, and then raised a bare
+    KeyError at EVALUATION — a 500 out of a module that answers in structured
+    refusals. An author can act on this; an operator reading a 500 cannot."""
+    defn = dict(_REGISTER_KWH, applies_to={"scope": "device"})
+    with pytest.raises(registry.RegistrationError) as exc:
+        registry.typecheck(defn)
+    assert "scope = 'site'" in str(exc.value)
+    assert "`consumption`" in str(exc.value)
+
+
+def test_the_dimension_rule_on_consumption_still_bites_at_site_scope():
+    """A consumption of a temperature is nothing, wherever it is declared. The
+    scope check must not have swallowed the older refusal."""
+    defn = dict(_REGISTER_KWH, inputs={
+        "t": {"role": "inlet_water_temp", "unit": "degC", "aggregation": "consumption"},
+    }, formula="t", output={"unit": "degC", "dimension": "temperature"})
+    with pytest.raises(registry.RegistrationError, match="needs dimension `energy`"):
+        registry.typecheck(defn)
+
+
 # ── carbon intensity ─────────────────────────────────────────────────────────
 
 

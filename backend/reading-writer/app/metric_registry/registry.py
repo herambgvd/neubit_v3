@@ -220,7 +220,7 @@ def _emission_factor_qty(name: str, spec: dict, scope: str) -> Qty:
     return q
 
 
-def _role_input_qty(name: str, spec: dict) -> Qty:
+def _role_input_qty(name: str, spec: dict, scope: str) -> Qty:
     """A measured input: the role it binds points by, and what that role carries."""
     role = spec.get("role")
     if role is None:
@@ -247,6 +247,19 @@ def _role_input_qty(name: str, spec: dict) -> Qty:
             f"input `{name}`: aggregation `consumption` is a register "
             f"subtraction and needs dimension `energy`, not `{q.dimension}`"
         )
+    # `consumption` exists on the SITE path only: it sums the registers a role
+    # binds across a site, which is a different shape from the device path's
+    # one-point-per-role binding and is implemented only there. Registered at
+    # device scope it type-checked here and then died in the evaluator on a
+    # missing aggregate column — an uncaught 500 out of a module whose whole
+    # contract is a structured refusal. The definition is refused when it is
+    # WRITTEN instead, which is the only moment an author can act on it.
+    if agg == "consumption" and scope != "site":
+        raise RegistrationError(
+            f"input `{name}`: aggregation `consumption` sums the registers "
+            f"bound to a role across a site, which needs "
+            f"applies_to.scope = 'site'"
+        )
     return q
 
 
@@ -262,7 +275,7 @@ def _check_inputs(inputs: dict, scope: str) -> dict[str, Qty]:
         elif source == "emission_factor":
             env[name] = _emission_factor_qty(name, spec, scope)
         elif source == "points":
-            env[name] = _role_input_qty(name, spec)
+            env[name] = _role_input_qty(name, spec, scope)
         else:
             raise RegistrationError(
                 f"input `{name}`: source must be 'points' (default), "

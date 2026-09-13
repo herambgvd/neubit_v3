@@ -320,6 +320,82 @@ def test_a_covered_span_shorter_than_one_bucket_refuses_instead_of_annualising()
     assert "no interval to annualise over" in out["reason"]
 
 
+# ── two consumption inputs, two covered spans ────────────────────────────────
+
+
+_TWO_METER_EPI = {
+    "kind": "formula",
+    "formula": "annualize(main + sub)",
+    "guards": [],
+    "inputs": {
+        "main": {"role": "energy_total", "unit": "kWh", "aggregation": "consumption"},
+        "sub": {"role": "energy_sub", "unit": "kWh", "aggregation": "consumption"},
+    },
+    "output": {"unit": "kWh", "dimension": "energy"},
+    "applies_to": {"scope": "site"},
+}
+
+_TWO_METERS = [point(1, role="energy_total", tag="MAIN"),
+               point(2, role="energy_sub", tag="SUB")]
+
+
+def _two_meter_db(sub_first, sub_last):
+    return FakeDb(
+        site_roles=_TWO_METERS,
+        aggs=[
+            agg(1, first=0.0, last=400.0, buckets=240,
+                first_bucket=at(1), last_bucket=at(11)),
+            agg(2, first=0.0, last=100.0, buckets=240,
+                first_bucket=sub_first, last_bucket=sub_last),
+        ],
+    )
+
+
+def test_two_consumption_inputs_over_different_spans_refuse_to_be_annualised():
+    """There is no span to scale by. Whichever one is picked, the other input is
+    annualised over a stretch it was not measured over — a sub-meter alive for
+    two of the main meter's ten days would be multiplied by five. The old code
+    picked the LAST input in declaration order, which made the answer depend on
+    the order the inputs happen to be written in."""
+    out = run(ev._evaluate_site_formula(
+        _two_meter_db(at(9), at(11)), None, _TWO_METER_EPI, _SITE,
+        at(1), at(31), "readings_1h",
+    ))
+    assert out["status"] == "blocked"
+    assert out["value"] is None
+    assert "`main` over 10 day(s)" in out["reason"]
+    assert "`sub` over 2 day(s)" in out["reason"]
+    # The refusal still shows what DID resolve, so the screen can say which
+    # meter covered what rather than only that something disagreed.
+    assert [i["input"] for i in out["inputs"]] == ["main", "sub"]
+
+
+def test_two_consumption_inputs_over_the_same_span_annualise_over_it():
+    """The refusal is about DISAGREEMENT, not about there being two meters. Two
+    registers covering the same ten days have one honest span between them."""
+    out = run(ev._evaluate_site_formula(
+        _two_meter_db(at(1), at(11)), None, _TWO_METER_EPI, _SITE,
+        at(1), at(31), "readings_1h",
+    ))
+    assert out["status"] == "ok"
+    assert out["value"] == pytest.approx(500.0 * 365.0 / 10.0)
+    assert out["days_covered"] == pytest.approx(10.0)
+
+
+def test_disagreeing_spans_without_annualize_still_compute_and_report_no_span():
+    """Nothing is scaled, so nothing is wrong: the sum of two registers is the
+    sum of two registers whatever they cover. The top-level span is omitted
+    rather than asserting one of them, and each input keeps its own."""
+    defn = dict(_TWO_METER_EPI, formula="main + sub")
+    out = run(ev._evaluate_site_formula(
+        _two_meter_db(at(9), at(11)), None, defn, _SITE, at(1), at(31), "readings_1h",
+    ))
+    assert out["status"] == "ok"
+    assert out["value"] == pytest.approx(500.0)
+    assert "days_covered" not in out
+    assert [i["days_covered"] for i in out["inputs"]] == [10.0, 2.0]
+
+
 def test_a_missing_area_refuses_before_the_benchmark_is_ever_looked_up():
     """The actionable gap is the unrecorded area, not the standard. Resolving
     the benchmark first would report `no_benchmark` for a site whose real

@@ -354,6 +354,44 @@ def test_an_undefined_component_prints_the_parents_own_documentation():
     )
 
 
+_UNDEFINED_PARENT = {
+    "kind": "composite",
+    "components": [{"metric": "iaq_co2", "weight": 1.0}],
+    "output": {"unit": "", "dimension": "dimensionless"},
+    "display": {
+        "components": {
+            "iaq_co2": {
+                "label": "CO₂ in band",
+                "blocked_by": "no CO₂ sensor is installed on this estate",
+                "source": "CCEI spec §3.3",
+            }
+        }
+    },
+}
+
+
+def test_a_device_composite_refuses_an_undefined_component_instead_of_raising():
+    """The site path already answers this with `not_defined`; the device path
+    let the "no metric is effective" EvaluationError out of the component and
+    failed the WHOLE request — one undefined leaf and the composite could not
+    even say which. A pack normally ships its components ahead of the metrics
+    that compute them, so this is the ordinary state of a growing pack, not an
+    exotic one, and the two paths must mean the same thing by it."""
+    out = run(ev._evaluate_composite(
+        FakeDb(definitions=[]), None, _UNDEFINED_PARENT, pid(1),
+        at(1), at(2), "1h", 0,
+    ))
+    assert out["status"] == "blocked"
+    assert out["value"] is None
+    part = out["components"][0]
+    assert (part["metric"], part["status"], part["weight"]) == ("iaq_co2", "not_defined", 1.0)
+    # The pack's own documentation, exactly as the site path prints it.
+    assert part["reason"] == (
+        "CO₂ in band is not defined — no CO₂ sensor is installed on this "
+        "estate (source: CCEI spec §3.3)"
+    )
+
+
 def test_an_undocumented_undefined_component_falls_back_to_the_bare_fact():
     """The fallback must still be a sentence, and must still name the key."""
     reason = ev._undefined_reason({}, "iaq_co2", at(1))

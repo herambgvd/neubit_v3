@@ -114,6 +114,7 @@ FRAGMENTS = {
     "factor": "FROM site_emission_factors",
     "standard": "FROM benchmark_standards",
     "bench_config": "FROM benchmark_site_config",
+    "definitions": "FROM metric_definitions",
 }
 
 

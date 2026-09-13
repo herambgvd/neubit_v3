@@ -692,6 +692,19 @@ async def _evaluate_composite(
         return _refusal("blocked", f"composite nesting deeper than {_MAX_COMPOSITE_DEPTH} is refused")
     parts = []
     for c in defn["components"]:
+        sub_defn = await registry.effective(db, tenant, c["metric"], end)
+        if sub_defn is None:
+            # A component named but not defined — the same state the site path
+            # reports as `not_defined`, and the same sentence. Letting
+            # `evaluate` raise here failed the WHOLE request on one undefined
+            # leaf, so a pack that ships a component ahead of its metric (the
+            # normal way a pack grows) returned an error instead of a composite
+            # that says which part is missing and why. A refusal beats an
+            # exception on both paths or the two paths mean different things.
+            parts.append({"metric": c["metric"], "weight": c["weight"],
+                          "status": "not_defined", "value": None,
+                          "reason": _undefined_reason(defn, c["metric"], end)})
+            continue
         sub = await evaluate(
             db, tenant, c["metric"],
             device_id=device_id, start=start, end=end, resolution=res,
@@ -1412,7 +1425,13 @@ async def _resolve_site_inputs(
 
     env: dict[str, float] = {}
     report: list[dict] = []
-    covered_days: float | None = None
+    # One span PER consumption input, not one span. Two consumption inputs can
+    # cover different stretches of the same window — a sub-meter installed last
+    # week beside a main meter running all month — and collapsing them into a
+    # single variable made the LAST input in declaration order silently decide
+    # what `annualize()` scaled over. Which input wins is an ordering accident,
+    # so the disagreement is carried out of here and judged where it matters.
+    spans: list[tuple[str, float]] = []
     for name, spec in inputs.items():
         source = spec.get("source", "points")
         if source == "emission_factor":
@@ -1430,9 +1449,11 @@ async def _resolve_site_inputs(
         env[name] = resolved["value"]
         report.append(resolved["report"])
         if resolved.get("days_covered") is not None:
-            covered_days = resolved["days_covered"]
+            spans.append((name, resolved["days_covered"]))
+    distinct = {days for _, days in spans}
     return {"status": "ok", "env": env, "inputs": report,
-            "days_covered": covered_days}
+            "days_covered": spans[0][1] if len(distinct) == 1 else None,
+            "covered_spans": spans}
 
 
 async def _site_benchmark_context(
@@ -1479,6 +1500,7 @@ async def _evaluate_site_formula(
     env = resolved["env"]
     input_report = resolved["inputs"]
     covered_days = resolved["days_covered"]
+    covered_spans = resolved.get("covered_spans") or []
 
     # Benchmark context, resolved AFTER the measured inputs and BEFORE the
     # arithmetic: a missing AREA reports as missing_fact (the actionable gap),
@@ -1496,6 +1518,24 @@ async def _evaluate_site_formula(
 
     # annualize() over a consumption formula scales the COVERED span; a formula
     # with no consumption input keeps the requested window.
+    #
+    # TWO consumption inputs that cover different spans have no one span to
+    # scale by: annualising their combination over either one states an annual
+    # figure for a series that was not measured over it, and taking the shorter
+    # would inflate the longer-covered input by the ratio between them. Both are
+    # numbers that look right on a screen, which is exactly what this module
+    # refuses to produce — so the annual figure is withheld and both spans are
+    # named, because the fix is to ask over a window both meters cover.
+    if len(covered_spans) > 1 and covered_days is None and expr.uses(tree, "annualize"):
+        named = ", ".join(f"`{n}` over {d:g} day(s)" for n, d in covered_spans)
+        out = _refusal(
+            "blocked",
+            f"annualize() has no single covered span to scale over: {named} "
+            f"— annualising series measured over different spans into one "
+            f"number would state a year nothing was measured for",
+        )
+        out["inputs"] = input_report
+        return out
     effective_days = covered_days if covered_days is not None else window_days
     if expr.uses(tree, "annualize") and (not effective_days or effective_days <= 0):
         return _refusal(
@@ -1518,6 +1558,8 @@ async def _evaluate_site_formula(
         "inputs": input_report,
         "arithmetic": f"{defn['formula']} = {expr.render(tree, env)} = {value:g}",
     }
+    # Omitted where two consumption inputs disagree: there is no single covered
+    # span to name, and each input's own already rides in its report row.
     if covered_days is not None:
         out["days_covered"] = covered_days
     if bench_note:
