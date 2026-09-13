@@ -185,12 +185,12 @@ function EstateBar({
       {attention > 0 ? (
         <span className="flex items-center gap-1.5 text-[11px] text-nb-crit">
           <span className="h-1.5 w-1.5 rounded-full bg-nb-crit shadow-[0_0_5px_#f87171]" />
-          {attention} need attention
+          <span>{attention} need attention</span>
         </span>
       ) : (
         <span className="flex items-center gap-1.5 text-[11px] text-nb-good">
           <span className="h-1.5 w-1.5 rounded-full bg-nb-good shadow-[0_0_5px_#34d399]" />
-          All clear
+          <span>All clear</span>
         </span>
       )}
 
