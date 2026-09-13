@@ -90,7 +90,8 @@ export default function HealthPage() {
             actions={
               down > 0 ? (
                 <span className="flex items-center gap-1.5 text-[11px] text-nb-crit" title="Needs attention">
-                  <span className="h-1.5 w-1.5 rounded-full bg-nb-crit shadow-[0_0_5px_#f87171]" />{down}
+                  <span className="h-1.5 w-1.5 rounded-full bg-nb-crit shadow-[0_0_5px_#f87171]" />
+                  {down}
                 </span>
               ) : (
                 <span className="flex items-center gap-1.5 text-[11px] text-nb-good" title="All services up">
