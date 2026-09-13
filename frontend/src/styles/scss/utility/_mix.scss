@@ -101,15 +101,13 @@
   .dashcode-app {
     .ql-editor {
       min-height: 120px;
+      @apply border-slate-200 dark:border-slate-700 border rounded-sm text-base;
     }
     .ql-toolbar.ql-snow {
       @apply border-none p-0 mb-2;
     }
     .ql-container.ql-snow {
       @apply bg-[#FBFBFB] dark:bg-slate-900 border-none text-base;
-    }
-    .ql-editor {
-      @apply border-slate-200 dark:border-slate-700 border rounded-sm text-base;
     }
   }
   .dark {

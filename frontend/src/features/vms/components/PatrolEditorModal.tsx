@@ -29,9 +29,18 @@ import type { FederatedPatrol, FederatedPatrolStop, FederatedPreset } from "../t
 // A stop while it is being edited — dwell binds to a number input, so it may be a
 // string until save coerces it.
 interface StopDraft {
+  /** Identity for the row, not for the recorder — stripped before the save. A
+   *  stop is `{preset_token, dwell_seconds}` and the recorder gives it no id, so
+   *  without this the only key a row has is its position. Move-up/move-down
+   *  reorders these, and a keyed-by-position row keeps the focus and the
+   *  half-typed dwell of whatever now sits at that position. */
+  uid: string;
   preset_token: string;
   dwell_seconds: number | string;
 }
+
+let stopSeq = 0;
+const nextUid = () => `stop-${(stopSeq += 1)}`;
 
 const DEFAULT_DWELL = 5;
 
@@ -58,6 +67,7 @@ export default function PatrolEditorModal({
   );
   const [stops, setStops] = useState<StopDraft[]>(() =>
     (patrol?.stops || []).map((s: FederatedPatrolStop) => ({
+      uid: nextUid(),
       preset_token: s.preset_token,
       dwell_seconds: s.dwell_seconds ?? DEFAULT_DWELL,
     }))
@@ -70,7 +80,7 @@ export default function PatrolEditorModal({
 
   const addStop = () => {
     const first = presets[0];
-    setStops((s) => [...s, { preset_token: first ? first.token : "", dwell_seconds: DEFAULT_DWELL }]);
+    setStops((s) => [...s, { uid: nextUid(), preset_token: first ? first.token : "", dwell_seconds: DEFAULT_DWELL }]);
   };
   const removeStop = (i: number) => setStops((s) => s.filter((_, idx) => idx !== i));
   const patchStop = (i: number, patch: Partial<StopDraft>) =>
@@ -180,7 +190,7 @@ export default function PatrolEditorModal({
               <ul className="space-y-2">
                 {stops.map((s, i) => (
                   <li
-                    key={i}
+                    key={s.uid}
                     className="flex items-center gap-2 rounded-lg border border-card-border bg-card px-2.5 py-2"
                   >
                     <span className="w-6 shrink-0 text-center text-xs font-semibold tabular-nums text-muted">

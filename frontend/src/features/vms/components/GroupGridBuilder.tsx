@@ -26,6 +26,15 @@ interface CameraDragPayload {
   sourceIdx: number | null;
 }
 
+/** Start a camera drag. Module scope, not a closure: it reads nothing from the
+ *  component, and a fresh function per render is a new prop on every draggable
+ *  tile in the grid. */
+function onCameraDragStart(e: DragEvent<HTMLElement>, cameraId: string, sourceIdx: number | null = null) {
+  const payload: CameraDragPayload = { cameraId, sourceIdx };
+  e.dataTransfer.setData(CAMERA_DRAG_MIME, JSON.stringify(payload));
+  e.dataTransfer.effectAllowed = "move";
+}
+
 export interface GroupGridBuilderProps {
   /** The group's grid enum (an unknown string falls back to the default layout). */
   layout: GridLayout | string;
@@ -98,11 +107,6 @@ export default function GroupGridBuilder({ layout, cameras = [], cells = [], onC
     onChange?.(next.slice(0, capacity));
   }
 
-  function onCameraDragStart(e: DragEvent<HTMLElement>, cameraId: string, sourceIdx: number | null = null) {
-    const payload: CameraDragPayload = { cameraId, sourceIdx };
-    e.dataTransfer.setData(CAMERA_DRAG_MIME, JSON.stringify(payload));
-    e.dataTransfer.effectAllowed = "move";
-  }
   function onCellDrop(e: DragEvent<HTMLDivElement>, idx: number) {
     e.preventDefault();
     setDragOverCell(null);

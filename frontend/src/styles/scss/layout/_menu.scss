@@ -35,10 +35,7 @@
     shadow-base2;
   }
   .main-menu > ul > li.menu-item-has-children > .rt-mega-menu {
-    @apply max-w-[1170px]  left-1/2  -translate-x-1/2;
-  }
-  .main-menu > ul > li.menu-item-has-children > .rt-mega-menu {
-    @apply w-full;
+    @apply w-full max-w-[1170px]  left-1/2  -translate-x-1/2;
   }
   .main-menu > ul > li.menu-item-has-children:hover > ul.sub-menu,
   .main-menu > ul > li.menu-item-has-children:hover > .rt-mega-menu {

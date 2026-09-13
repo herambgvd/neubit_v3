@@ -2,7 +2,12 @@
 
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 
-const ThemeContext = createContext({ theme: "dark", toggle: () => {} });
+// One frozen value, not a fresh object per render: a context value rebuilt on
+// every provider render invalidates every `useTheme()` consumer, and this one
+// never changes — the console has a single dark theme and no switch.
+const THEME = { theme: "dark", toggle: () => {} };
+
+const ThemeContext = createContext(THEME);
 
 // DARK-ONLY. The console ships a single dark theme — there is no light mode and no
 // user-facing switch. This provider stays so the `useTheme()` call sites keep
@@ -19,7 +24,7 @@ export function ThemeProvider({ children }: { children?: ReactNode }) {
   }, []);
 
   return (
-    <ThemeContext.Provider value={{ theme: "dark", toggle: () => {} }}>
+    <ThemeContext.Provider value={THEME}>
       {children}
     </ThemeContext.Provider>
   );

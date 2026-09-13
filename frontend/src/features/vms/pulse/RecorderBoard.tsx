@@ -19,7 +19,16 @@ import { Icon } from "@iconify/react";
 import { LoadingBlock } from "@/components/console";
 
 import type { NodeSysmon, PulseVolume } from "../types";
-import { TONE_BAR, TONE_TEXT, recordingLabel, verdictTone, volumeLabel, volumeTone } from "./format";
+import {
+  TONE_BAR,
+  TONE_TEXT,
+  recordingLabel,
+  reportedCount,
+  reportedText,
+  verdictTone,
+  volumeLabel,
+  volumeTone,
+} from "./format";
 
 function num(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -107,10 +116,12 @@ export default function RecorderBoard({ board, loading, error, onIsolate }: Reco
   const sensors = board.sensors_reported !== false;
   const volumes = (board.volumes || []) as PulseVolume[];
   const rows = (cameras.items || []) as Record<string, unknown>[];
-  const rec = recordingLabel(
-    (cameras.recording_gap_free as boolean | null) ?? null,
-    Number(cameras.recording_active || 0),
-  );
+  // Every figure below is read through `reportedCount` / `reportedText`. The
+  // board is the recorder's own JSON, relayed unreshaped — so these fields are
+  // `unknown` in fact, not just in the type, and the narrowing is what keeps a
+  // strange payload from printing "[object Object]" (or "NaN") at an operator.
+  const recordingActive = reportedCount(cameras.recording_active);
+  const rec = recordingLabel((cameras.recording_gap_free as boolean | null) ?? null, recordingActive);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
@@ -129,8 +140,8 @@ export default function RecorderBoard({ board, loading, error, onIsolate }: Reco
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
-        <Metric label="Cameras online" value={`${cameras.online ?? 0} / ${cameras.total ?? 0}`} />
-        <Metric label="Recording" value={String(cameras.recording_active ?? 0)} tone={rec.tone} />
+        <Metric label="Cameras online" value={`${reportedCount(cameras.online)} / ${reportedCount(cameras.total)}`} />
+        <Metric label="Recording" value={String(recordingActive)} tone={rec.tone} />
         <Metric label="CPU" value={metric(sensors, sysNum(system, "cpu_percent", "cpu_pct"))} />
         <Metric label="Memory" value={metric(sensors, sysNum(system, "mem_percent", "mem_pct"))} />
       </div>
@@ -162,8 +173,8 @@ export default function RecorderBoard({ board, loading, error, onIsolate }: Reco
           </h3>
           <div className="space-y-1">
             {rows.map((c) => {
-              const online = String(c.status || "").toLowerCase() === "online";
-              const id = String(c.id || "");
+              const online = reportedText(c.status).toLowerCase() === "online";
+              const id = reportedText(c.id);
               return (
                 <button
                   key={id}
@@ -175,13 +186,13 @@ export default function RecorderBoard({ board, loading, error, onIsolate }: Reco
                     className={`h-2 w-2 shrink-0 rounded-full ${online ? "bg-nb-good" : c.enabled === false ? "bg-nb-faint" : "bg-nb-crit"}`}
                   />
                   <span className="min-w-0 flex-1 truncate text-[12px] text-nb-ink">
-                    {String(c.name || id)}
+                    {reportedText(c.name) || id}
                   </span>
                   {c.recording_active ? (
                     <Icon icon="heroicons:film" className="shrink-0 text-[12px] text-nb-good" title="recording" />
                   ) : null}
                   <span className="shrink-0 font-mono text-[10.5px] text-nb-faint">
-                    {String(c.status || "unknown")}
+                    {reportedText(c.status) || "unknown"}
                   </span>
                 </button>
               );

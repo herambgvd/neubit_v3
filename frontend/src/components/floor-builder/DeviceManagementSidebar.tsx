@@ -39,9 +39,12 @@ interface IotClassified {
 
 function iconForType(type: string | undefined, device?: IotClassified): string {
   if (type === "sensor") {
-    const cat = String(
-      device?.iot_category ?? device?.metadata?.iot_category ?? "",
-    ).toLowerCase();
+    // `metadata` is the gateway's free-form dict, so the value under
+    // `iot_category` is only a string if it happens to be one. `String()` on
+    // anything else gives "[object Object]", which matches no category and
+    // quietly turns a classified sensor into a question mark.
+    const persisted = device?.metadata?.iot_category;
+    const cat = (device?.iot_category ?? (typeof persisted === "string" ? persisted : "")).toLowerCase();
     return IOT_CATEGORY_ICON[cat] || "heroicons-outline:question-mark-circle";
   }
   if (type === "nvr") return "heroicons-outline:server-stack";

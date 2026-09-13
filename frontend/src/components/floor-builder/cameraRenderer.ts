@@ -50,6 +50,16 @@ export interface DeviceRendererArgs {
   worldToScreen: (wx: number, wy: number) => [number, number];
 }
 
+/** A classification read out of a placement's free-form `metadata` dict. That
+ *  dict is `Record<string, unknown>` because the gateway writes it, so the value
+ *  under a key is only a string if it happens to be one — `String()` on anything
+ *  else yields "[object Object]", which then matches no category and silently
+ *  paints an unrelated device as unclassified. */
+function classification(value: unknown, fallback: string | null | undefined): string {
+  const s = typeof value === "string" ? value : fallback || "";
+  return s.toLowerCase();
+}
+
 export function drawCameraPlacement({ ctx, device, isSelected, scale, worldToScreen }: DeviceRendererArgs) {
   const x = device.x ?? 0;
   const y = device.y ?? 0;
@@ -72,8 +82,8 @@ export function drawCameraPlacement({ ctx, device, isSelected, scale, worldToScr
   // inventory row. NEVER derived from the device tag — `4F-3F AC DB` names two
   // floors and no equipment kind.
   const meta = device.metadata || {};
-  const iotCategory = String(meta.iot_category ?? device.iot_category ?? "").toLowerCase();
-  const iotType = String(meta.iot_type ?? device.iot_type ?? "").toLowerCase();
+  const iotCategory = classification(meta.iot_category, device.iot_category);
+  const iotType = classification(meta.iot_type, device.iot_type);
 
   const [sx, sy] = worldToScreen(x, y);
   const half = (fovDeg / 2) * (Math.PI / 180);
@@ -245,7 +255,7 @@ const CATEGORY_ACCENT: Record<string, string> = {
 
 function categoryAccent(device: RenderableDevice): string {
   const meta = device?.metadata || {};
-  const cat = String(meta.iot_category ?? device?.iot_category ?? "").toLowerCase();
+  const cat = classification(meta.iot_category, device?.iot_category);
   // An unclassified device gets the "unclassified" violet rather than being
   // folded into a category it does not belong to. Unclassified is a real state.
   return CATEGORY_ACCENT[cat] || "#a78bfa";

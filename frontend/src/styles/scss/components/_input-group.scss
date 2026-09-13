@@ -64,8 +64,6 @@
   .inputGroup:focus-within .input-group-text {
     @apply border-black-500 dark:border-slate-900;
   }
-  /* .merged .inputGroup:focus-within .input-group-text {
-  } */
   .inputGroup {
     &.is-invalid {
       .input-group-text {

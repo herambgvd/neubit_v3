@@ -27,6 +27,25 @@ export function volumeTone(pct: number | null | undefined): Tone {
   return "good";
 }
 
+/** A count the recorder reported — and 0 only when it reported no number.
+ *
+ *  The System-Monitor board is relayed UNRESHAPED: `pulse/router.py` hands the
+ *  recorder's own JSON straight through, so nothing between the box and this
+ *  string has checked that `cameras.online` is a number. A recorder on another
+ *  schema can put an object there, and `${…}` renders that as "[object Object]"
+ *  in the slot an operator reads a camera count out of. A value that is not a
+ *  number is not a count. */
+export function reportedCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/** A string the recorder reported, or "". Same reasoning as `reportedCount`:
+ *  `String(x)` never fails on an unvalidated payload, it just prints the type's
+ *  name where the camera's name belongs. */
+export function reportedText(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
 /** A percentage as text, or the reason there isn't one. */
 export function pctText(pct: number | null | undefined): string {
   return pct == null ? "not measured" : `${Math.round(pct)}%`;
