@@ -45,6 +45,15 @@ const seg = (on: boolean) =>
   }`;
 const segBox = "flex shrink-0 gap-0.5 rounded-[8px] border border-nb-line bg-[rgba(8,15,34,.7)] p-[3px]";
 
+/** Pages that get a single chip in the strip instead of a segmented control.
+ *  A route not listed here has no solo chip — which is why this is a map and not
+ *  a chain: adding the next one is a line of data, not another arm. */
+const SOLO_PAGES: Record<string, { label: string; icon: string }> = {
+  "/config/linkage": { label: "Linkage", icon: "heroicons-outline:bolt" },
+  "/federation": { label: "Federation", icon: "heroicons-outline:share" },
+  "/storage": { label: "Storage", icon: "heroicons-outline:circle-stack" },
+};
+
 export default function ConsoleStrip() {
   const pathname = usePathname();
   const { can } = useAuth();
@@ -62,17 +71,8 @@ export default function ConsoleStrip() {
   const isPlatform = pathname === "/platform";
   const isVideoWall = pathname === "/config/video-wall";
   const isPatterns = pathname === "/config/patterns";
-  const isLinkage = pathname === "/config/linkage";
-  const isFederation = pathname === "/federation";
-  const isStorage = pathname === "/storage";
   const isBI = pathname.startsWith("/bi/");
-  const SOLO = isLinkage
-    ? { label: "Linkage", icon: "heroicons-outline:bolt" }
-    : isFederation
-      ? { label: "Federation", icon: "heroicons-outline:share" }
-      : isStorage
-        ? { label: "Storage", icon: "heroicons-outline:circle-stack" }
-        : null;
+  const SOLO = SOLO_PAGES[pathname] ?? null;
 
   return (
     // Bare inline content — the global header owns the bar chrome. nav-scroll +

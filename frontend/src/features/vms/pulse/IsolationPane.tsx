@@ -19,7 +19,31 @@ import { Icon } from "@iconify/react";
 import { LoadingBlock } from "@/components/console";
 
 import type { IsolationStage, IsolationTrace } from "../types";
-import { TONE_TEXT, stageTone } from "./format";
+import { TONE_TEXT, isolationVerdict, stageTone } from "./format";
+
+/** A stage card's surface. `good` is absent deliberately: a stage that passed is
+ *  not news, and painting six green cards buries the one that is not. */
+const STAGE_SURFACE: Partial<Record<string, string>> = {
+  bad: "border-[rgba(248,113,113,.45)] bg-[rgba(248,113,113,.08)]",
+  warn: "border-[rgba(251,191,36,.4)] bg-[rgba(251,191,36,.08)]",
+};
+
+/** The headline card's surface. Unlike a stage, a clean verdict IS the news, so
+ *  `good` is green here — and `idle` (inconclusive) stays neutral. */
+const VERDICT_SURFACE: Partial<Record<string, string>> = {
+  bad: "border-[rgba(248,113,113,.45)] bg-[rgba(248,113,113,.08)]",
+  good: "border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.08)]",
+};
+
+const NEUTRAL_SURFACE = "border-nb-line bg-[rgba(6,11,26,.5)]";
+
+/** Evidence is measurement, not verdict: a passing line reads as ordinary text
+ *  rather than green, so the colour in this pane only ever marks a problem. */
+const EVIDENCE_TEXT: Record<string, string> = {
+  bad: "text-nb-crit",
+  warn: "text-nb-warn",
+  ok: "text-nb-soft",
+};
 
 const STAGE_ICON: Record<string, string> = {
   camera: "heroicons:video-camera",
@@ -34,13 +58,7 @@ function Stage({ stage }: Readonly<{ stage: IsolationStage }>) {
   const tone = stageTone(stage.state, stage.measured);
   return (
     <div
-      className={`min-w-[150px] flex-1 rounded-[10px] border px-3 py-2.5 ${
-        tone === "bad"
-          ? "border-[rgba(248,113,113,.45)] bg-[rgba(248,113,113,.08)]"
-          : tone === "warn"
-            ? "border-[rgba(251,191,36,.4)] bg-[rgba(251,191,36,.08)]"
-            : "border-nb-line bg-[rgba(6,11,26,.5)]"
-      }`}
+      className={`min-w-[150px] flex-1 rounded-[10px] border px-3 py-2.5 ${STAGE_SURFACE[tone] ?? NEUTRAL_SURFACE}`}
     >
       <div className="flex items-center gap-1.5">
         <Icon icon={STAGE_ICON[stage.key] || "heroicons:cube"} className={`text-[13px] ${TONE_TEXT[tone]}`} />
@@ -53,15 +71,7 @@ function Stage({ stage }: Readonly<{ stage: IsolationStage }>) {
           {(stage.evidence || []).map((line, i) => (
             <li
               key={i}
-              className={`font-mono text-[10.5px] leading-relaxed ${
-                line.tone === "bad"
-                  ? "text-nb-crit"
-                  : line.tone === "warn"
-                    ? "text-nb-warn"
-                    : line.tone === "ok"
-                      ? "text-nb-soft"
-                      : "text-nb-faint"
-              }`}
+              className={`font-mono text-[10.5px] leading-relaxed ${EVIDENCE_TEXT[line.tone ?? ""] ?? "text-nb-faint"}`}
             >
               {line.text}
             </li>
@@ -101,38 +111,17 @@ export default function IsolationPane({ trace, loading, error, cameraName, onRet
   if (!trace) return null;
 
   const v = trace.verdict || ({} as IsolationTrace["verdict"]);
-  const level = String(v.level || "").toLowerCase();
-  const tone = level === "fault" ? "bad" : level === "ok" ? "good" : "idle";
+  const verdict = isolationVerdict(v.level, v.attribution);
+  const tone = verdict.tone;
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
       <div
-        className={`rounded-[10px] border px-3 py-2.5 ${
-          tone === "bad"
-            ? "border-[rgba(248,113,113,.45)] bg-[rgba(248,113,113,.08)]"
-            : tone === "good"
-              ? "border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.08)]"
-              : "border-nb-line bg-[rgba(6,11,26,.5)]"
-        }`}
+        className={`rounded-[10px] border px-3 py-2.5 ${VERDICT_SURFACE[tone] ?? NEUTRAL_SURFACE}`}
       >
         <div className="flex items-center gap-2">
-          <Icon
-            icon={
-              level === "fault"
-                ? "heroicons:exclamation-triangle"
-                : level === "ok"
-                  ? "heroicons:check-circle"
-                  : "heroicons:question-mark-circle"
-            }
-            className={`text-[15px] ${TONE_TEXT[tone]}`}
-          />
-          <p className={`text-[13px] font-semibold ${TONE_TEXT[tone]}`}>
-            {level === "fault"
-              ? `Fault isolated: ${(v.attribution || "unknown").toUpperCase()}`
-              : level === "ok"
-                ? "No fault found"
-                : "Inconclusive"}
-          </p>
+          <Icon icon={verdict.icon} className={`text-[15px] ${TONE_TEXT[tone]}`} />
+          <p className={`text-[13px] font-semibold ${TONE_TEXT[tone]}`}>{verdict.text}</p>
           {v.nvr_cleared && (
             <span className="rounded-full border border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.1)] px-2 py-0.5 text-[10px] font-medium text-nb-good">
               recorder cleared

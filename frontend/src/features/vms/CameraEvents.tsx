@@ -35,6 +35,21 @@ import EscalateDialog from "./components/EscalateDialog";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
+/** What the feed indicator says and what colour it says it in.
+ *
+ *  The dot and the words were two chains reading the same two flags in opposite
+ *  order, which is one edit away from a green dot next to "Reconnecting…". They
+ *  answer one question, so they are decided in one place.
+ *
+ *  Paused is deliberately its own state rather than a shade of disconnected: the
+ *  operator stopped the feed, so amber "reconnecting" would be this console
+ *  reporting a fault it invented. */
+export function feedVerdict(live: boolean, connected: boolean): { dot: string; text: string } {
+  if (!live) return { dot: "bg-muted", text: "Feed paused" };
+  if (!connected) return { dot: "bg-amber-500", text: "Reconnecting…" };
+  return { dot: "bg-emerald-500", text: "Live feed" };
+}
+
 export default function CameraEventsPage() {
   const qc = useQueryClient();
   const { can } = useAuth();
@@ -103,6 +118,7 @@ export default function CameraEventsPage() {
     cameraId: cameraId || null,
     enabled: live,
   });
+  const feed = feedVerdict(live, connected);
 
   const ackMut = useMutation({
     mutationFn: (id: string) => vms.events.ack(id),
@@ -386,15 +402,9 @@ export default function CameraEventsPage() {
             {live && connected && (
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" />
             )}
-            <span
-              className={`relative inline-flex h-2.5 w-2.5 rounded-full ${
-                live ? (connected ? "bg-emerald-500" : "bg-amber-500") : "bg-muted"
-              }`}
-            />
+            <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${feed.dot}`} />
           </span>
-          <span className="text-[12px] font-semibold text-foreground">
-            {!live ? "Feed paused" : connected ? "Live feed" : "Reconnecting…"}
-          </span>
+          <span className="text-[12px] font-semibold text-foreground">{feed.text}</span>
         </span>
 
         <button
@@ -728,6 +738,13 @@ export default function CameraEventsPage() {
 
 /** A count that FILTERS. The strip used to be four read-only tiles; a number an
  *  operator can see but not act on is decoration on a triage screen. */
+const COUNT_TONES: Record<string, string> = {
+  bad: "text-red-400",
+  warn: "text-amber-400",
+  ok: "text-emerald-400",
+  info: "text-foreground",
+};
+
 function CountChip({
   label,
   value,
@@ -741,14 +758,7 @@ function CountChip({
   active?: boolean;
   onClick: () => void;
 }>) {
-  const toneCls =
-    tone === "bad"
-      ? "text-red-400"
-      : tone === "warn"
-        ? "text-amber-400"
-        : tone === "ok"
-          ? "text-emerald-400"
-          : "text-foreground";
+  const toneCls = COUNT_TONES[tone] ?? COUNT_TONES.info;
   return (
     <button
       type="button"

@@ -65,6 +65,22 @@ export interface ExportDialogProps {
   range?: ExportRange | null;
 }
 
+/** The export job's headline — its icon and its sentence, decided together.
+ *
+ *  Only `done` and `failed` are terminal. Anything else the recorder reports
+ *  keeps the spinner and gets read back in the recorder's own word ("Export
+ *  packaging…"), because a status this dialog has not learned is a job still
+ *  running, not one that finished. */
+export function exportProgress(status: string | null | undefined): { icon: string; iconCls: string; text: string } {
+  if (status === "done") {
+    return { icon: "heroicons-solid:check-circle", iconCls: "text-[#22d3ee]", text: "Export ready" };
+  }
+  if (status === "failed") {
+    return { icon: "heroicons-solid:x-circle", iconCls: "text-red-500", text: "Export failed" };
+  }
+  return { icon: "svg-spinners:180-ring", iconCls: "text-[#f2f6ff]/70", text: `Export ${status || "queued"}…` };
+}
+
 export default function ExportDialog({ open, onClose, nodeId, cameraId, cameraName, range }: Readonly<ExportDialogProps>) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -189,6 +205,7 @@ export default function ExportDialog({ open, onClose, nodeId, cameraId, cameraNa
   };
 
   const status = job?.status;
+  const progress = exportProgress(status);
   const inFlight = status === "queued" || status === "running";
 
   return (
@@ -285,21 +302,9 @@ export default function ExportDialog({ open, onClose, nodeId, cameraId, cameraNa
         {job && (
           <div className="rounded-lg border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.08)]/30 p-4">
             <div className="flex items-center gap-3">
-              {status === "done" ? (
-                <Icon icon="heroicons-solid:check-circle" className="text-2xl text-[#22d3ee]" />
-              ) : status === "failed" ? (
-                <Icon icon="heroicons-solid:x-circle" className="text-2xl text-red-500" />
-              ) : (
-                <Icon icon="svg-spinners:180-ring" className="text-2xl text-[#f2f6ff]/70" />
-              )}
+              <Icon icon={progress.icon} className={`text-2xl ${progress.iconCls}`} />
               <div className="min-w-0">
-                <p className="text-sm font-medium capitalize text-[#f2f6ff]">
-                  {status === "done"
-                    ? "Export ready"
-                    : status === "failed"
-                      ? "Export failed"
-                      : `Export ${status || "queued"}…`}
-                </p>
+                <p className="text-sm font-medium capitalize text-[#f2f6ff]">{progress.text}</p>
                 <p className="truncate text-xs text-[#aec2e8]">
                   Job {String(job.job_id).slice(0, 12)}
                   {job.file_size ? ` · ${fmtBytes(job.file_size)}` : ""}

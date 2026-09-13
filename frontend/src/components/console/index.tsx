@@ -127,6 +127,11 @@ export interface PanelCount {
   tone?: "good" | "crit" | "idle";
 }
 
+const DOT_TONES: Record<string, string> = {
+  good: "bg-nb-good shadow-[0_0_5px_#34d399]",
+  crit: "bg-nb-crit shadow-[0_0_5px_rgba(248,113,113,.6)]",
+};
+
 // The active/idle count dots Sites shows next to its header (green = active,
 // grey = inactive). Shared so every list that reports a split renders it alike.
 export function PanelCounts({ items = [] }: Readonly<{ items?: PanelCount[] }>) {
@@ -135,9 +140,7 @@ export function PanelCounts({ items = [] }: Readonly<{ items?: PanelCount[] }>) 
       {items.map((it, i) => (
         <span key={it.label || i} className="flex items-center gap-1" title={it.label}>
           <span
-            className={`h-1.5 w-1.5 rounded-full ${
-              it.tone === "good" ? "bg-nb-good shadow-[0_0_5px_#34d399]" : it.tone === "crit" ? "bg-nb-crit shadow-[0_0_5px_rgba(248,113,113,.6)]" : "bg-nb-faint"
-            }`}
+            className={`h-1.5 w-1.5 rounded-full ${DOT_TONES[it.tone ?? ""] ?? "bg-nb-faint"}`}
           />
           <span className="text-nb-soft">{it.value}</span>
         </span>

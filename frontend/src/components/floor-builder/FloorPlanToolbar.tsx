@@ -15,6 +15,15 @@ const MODES: { mode: EditorMode; label: string; disabled?: boolean }[] = [
   { mode: EDITOR_MODES.DEVICE_PLACE, label: "Devices" },
 ];
 
+/** A mode pill's skin. The selected mode wins over `disabled` so a parked mode
+ *  that somehow became the current one still shows WHERE the editor is, rather
+ *  than reading as greyed-out and leaving no pill lit at all. */
+function modeSkin(active: boolean, disabled?: boolean): string {
+  if (active) return "bg-foreground text-background shadow-sm";
+  if (disabled) return "text-muted/40 cursor-not-allowed";
+  return "text-muted hover:text-foreground";
+}
+
 export interface FloorPlanToolbarProps {
   editorMode: EditorMode;
   onModeChange?: (mode: EditorMode) => void;
@@ -56,13 +65,7 @@ export function FloorPlanToolbar({
                 disabled={m.disabled}
                 title={m.disabled ? "Device placement — coming soon" : undefined}
                 onClick={() => !m.disabled && onModeChange?.(m.mode)}
-                className={`rounded-full px-4 py-1.5 transition ${
-                  active
-                    ? "bg-foreground text-background shadow-sm"
-                    : m.disabled
-                      ? "text-muted/40 cursor-not-allowed"
-                      : "text-muted hover:text-foreground"
-                }`}
+                className={`rounded-full px-4 py-1.5 transition ${modeSkin(active, m.disabled)}`}
               >
                 {m.label}
                 {m.disabled && (

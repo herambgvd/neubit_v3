@@ -34,6 +34,22 @@ interface RailBranch {
   cameras: EstateCamera[];
 }
 
+/** A branch's heading. The fallbacks are last-resort labels for a row whose
+ *  site or recorder name never arrived — never the id, which tells an operator
+ *  nothing, and never blank, which reads as a broken tree. */
+function branchName(key: string, siteName: string | null | undefined, recorder: boolean): string {
+  if (key === NO_SITE) return "Unassigned";
+  return siteName || (recorder ? "Recorder" : "Site");
+}
+
+/** What a branch of the tree is: a recorder, a site, or the bucket for cameras
+ *  no site claims. The last one gets its own glyph because "Unassigned" is a
+ *  thing to fix in Sites, not a place. */
+function branchIcon(kind: RailBranch["kind"], id: string): string {
+  if (kind === "recorder") return "heroicons-outline:server-stack";
+  return id === NO_SITE ? "heroicons-outline:inbox" : "heroicons-outline:map-pin";
+}
+
 export interface CameraRailProps {
   cameras?: EstateCamera[];
   /** Camera ids already on the wall (rendered with the "on wall" glyph). */
@@ -93,7 +109,7 @@ export default function CameraRail({
         branch = {
           id: key,
           kind: recorder ? "recorder" : "site",
-          name: key === NO_SITE ? "Unassigned" : c.site_name || (recorder ? "Recorder" : "Site"),
+          name: branchName(key, c.site_name, recorder),
           cameras: [],
         };
         byGroup.set(key, branch);
@@ -272,13 +288,7 @@ export default function CameraRail({
                           className={`shrink-0 text-sm text-[#7e93bf] transition-transform ${open ? "rotate-90" : ""}`}
                         />
                         <Icon
-                          icon={
-                            site.kind === "recorder"
-                              ? "heroicons-outline:server-stack"
-                              : site.id === NO_SITE
-                                ? "heroicons-outline:inbox"
-                                : "heroicons-outline:map-pin"
-                          }
+                          icon={branchIcon(site.kind, site.id)}
                           className={`shrink-0 text-sm ${site.kind === "recorder" ? "text-nb-blueb" : "text-[#aec2e8]"}`}
                         />
                         {site.kind === "recorder" ? (

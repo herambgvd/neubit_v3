@@ -99,13 +99,17 @@ const RAID_TONE: Record<RaidTone, string> = {
   muted: "border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted",
 };
 
-// A used% → bar gradient, shared by every usage bar on the page.
+// A used% → bar gradient, shared by every usage bar on the page. Ordered
+// worst-first: the first band a reading falls into wins, so a threshold can be
+// retuned without re-reading the arms it is nested against.
+const USAGE_BANDS: ReadonlyArray<{ over: number; bar: string }> = [
+  { over: 90, bar: "bg-gradient-to-r from-nb-warn to-nb-crit" },
+  { over: 70, bar: "bg-gradient-to-r from-nb-warn to-nb-warn" },
+];
+const CALM_BAR = "bg-gradient-to-r from-nb-blue to-nb-teal";
+
 function barColor(pct: number) {
-  return pct > 90
-    ? "bg-gradient-to-r from-nb-warn to-nb-crit"
-    : pct > 70
-      ? "bg-gradient-to-r from-nb-warn to-nb-warn"
-      : "bg-gradient-to-r from-nb-blue to-nb-teal";
+  return USAGE_BANDS.find((b) => pct > b.over)?.bar ?? CALM_BAR;
 }
 
 export default function StoragePage() {
@@ -305,7 +309,7 @@ function NodeStorageDetail({ node, nvrs }: Readonly<{ node: FederationNode; nvrs
   const total = usage.total_bytes ?? 0;
   const free = usage.free_bytes ?? 0;
   const used = usage.used_bytes ?? (total && free ? total - free : 0);
-  const usedPct = usage.used_percent != null ? usage.used_percent : total > 0 ? (used / total) * 100 : 0;
+  const usedPct = usage.used_percent ?? (total > 0 ? (used / total) * 100 : 0);
   const reachable = usage.reachable !== false && !reachableOffline;
 
   return (
@@ -551,8 +555,10 @@ function PoolCard({ pool }: Readonly<{ pool: NodeStoragePool }>) {
 }
 
 // ── Tier rule row (read-only) ───────────────────────────────────────────────
-const fmtAge = (h: number | null | undefined) =>
-  h == null ? "—" : h >= 24 ? `${Math.round(h / 24)}d` : `${h}h`;
+const fmtAge = (h: number | null | undefined) => {
+  if (h == null) return "—";
+  return h >= 24 ? `${Math.round(h / 24)}d` : `${h}h`;
+};
 
 function TierRuleRow({ rule, poolNames }: Readonly<{ rule: NodeTierRuleRow; poolNames: Record<string, string> }>) {
   const src = poolNames[rule.source_pool_id ?? ""] || rule.source_pool_name || rule.source || "—";

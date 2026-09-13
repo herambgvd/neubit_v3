@@ -31,7 +31,7 @@ vi.mock("./RelayModal", () => ({
   default: ({ cameraName }: { cameraName: string }) => <div>relay dialog for {cameraName}</div>,
 }));
 
-import FederatedCameraActions from "./FederatedCameraActions";
+import FederatedCameraActions, { exportVerdict } from "./FederatedCameraActions";
 
 const CAMERA = {
   id: "fed:recorder-a:cam-1",
@@ -95,5 +95,35 @@ describe("FederatedCameraActions", () => {
     // sure?" about a word the operator has to guess the cost of.
     expect(screen.getByText("Reboot camera?")).toBeInTheDocument();
     expect(screen.getByText(/drop offline for a minute/)).toBeInTheDocument();
+  });
+});
+
+describe("exportVerdict", () => {
+  it("accepts every word the recorder uses for a finished clip", () => {
+    for (const done of ["ready", "done", "complete", "completed", "succeeded", "DONE"]) {
+      expect(exportVerdict(done).text).toBe("Clip ready — download it below.");
+    }
+  });
+
+  it("says an export failed, in red, for the recorder's failure words", () => {
+    for (const bad of ["failed", "error", "Failed"]) {
+      const v = exportVerdict(bad);
+      expect(v.text).toBe("Export failed on the recorder.");
+      expect(v.textCls).toBe("text-nb-crit");
+    }
+  });
+
+  it("keeps a status it has never seen on the spinner, not on the tick", () => {
+    // The dangerous direction: a recorder that reports "packaging" must not read
+    // as a clip ready to download, and must not read as a failure either — the
+    // job is still running and the poll is still going.
+    const v = exportVerdict("packaging");
+    expect(v.iconCls).toContain("animate-spin");
+    expect(v.text).toBe("Working on the recorder… (packaging)");
+  });
+
+  it("names an unstarted job queued rather than leaving a blank in the sentence", () => {
+    expect(exportVerdict(undefined).text).toBe("Working on the recorder… (queued)");
+    expect(exportVerdict("").text).toBe("Working on the recorder… (queued)");
   });
 });

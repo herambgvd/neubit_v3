@@ -29,6 +29,8 @@ export default function TourFormModal({
   busy,
 }: Readonly<TourFormModalProps>) {
   const editing = !!tour;
+  // What the form DOES, kept apart from whether it is busy doing it.
+  const submitLabel = editing ? "Save" : "Create tour";
   const [name, setName] = useState("");
   const [dwell, setDwell] = useState<number | string>(10);
   const [selected, setSelected] = useState<string[]>([]); // ordered preset ids
@@ -72,7 +74,7 @@ export default function TourFormModal({
             Cancel
           </Button>
           <Button variant="primary" onClick={submit} disabled={!valid || busy}>
-            {busy ? "Saving…" : editing ? "Save" : "Create tour"}
+            {busy ? "Saving…" : submitLabel}
           </Button>
         </>
       }

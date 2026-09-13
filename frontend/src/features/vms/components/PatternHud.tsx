@@ -106,6 +106,15 @@ interface HudBtnProps {
   danger?: boolean;
 }
 
+/** A HUD button's skin, in precedence order: the one call-to-action button on
+ *  the bar is filled, a destructive one only reddens on hover, everything else
+ *  is quiet over the video. */
+function hudBtnSkin(accent?: boolean, danger?: boolean): string {
+  if (accent) return "bg-[rgba(34,211,238,.9)] !text-[#0c1530] hover:bg-[#67e8f9]";
+  if (danger) return "hover:bg-red-500/80 hover:text-white";
+  return "hover:bg-white/15 hover:text-white";
+}
+
 function HudBtn({ icon, title, onClick, disabled, accent, danger }: Readonly<HudBtnProps>) {
   return (
     <button
@@ -113,13 +122,7 @@ function HudBtn({ icon, title, onClick, disabled, accent, danger }: Readonly<Hud
       title={title}
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-white/80 transition disabled:opacity-30 ${
-        accent
-          ? "bg-[rgba(34,211,238,.9)] !text-[#0c1530] hover:bg-[#67e8f9]"
-          : danger
-            ? "hover:bg-red-500/80 hover:text-white"
-            : "hover:bg-white/15 hover:text-white"
-      }`}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-white/80 transition disabled:opacity-30 ${hudBtnSkin(accent, danger)}`}
     >
       <Icon icon={icon} className="text-base" />
     </button>

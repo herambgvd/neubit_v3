@@ -164,11 +164,34 @@ function useScrub(onCommit: (frac: number) => void) {
   return { ref, drag, hover, handlers };
 }
 
+/** The playhead's own line. The live edge is a thin red hairline and a seek is a
+ *  thicker cyan one, so "where footage currently is" and "where I am looking"
+ *  never read as the same mark. */
+function playheadCls(dragging: boolean, playback: boolean): string {
+  if (dragging) return "w-0.5 bg-[#67e8f9]";
+  return playback ? "w-0.5 bg-[#22d3ee]" : "w-px bg-[#f87171]";
+}
+
 /** A recorded span in epoch ms, with the recorder's trigger for its colour. */
 interface Span {
   start: number;
   end: number;
   trigger: string | null | undefined;
+}
+
+/** Where a click on the track actually plays from.
+ *
+ *  Inside a recorded span it is exactly where the operator clicked. In a GAP it
+ *  snaps forward to the next span, so a rough drag lands on footage instead of
+ *  appearing to do nothing. Past the last span there is nothing to snap to, so it
+ *  keeps the click: the player then says it has no footage there, which is the
+ *  true answer and not a silent jump backwards in time.
+ *
+ *  Out here because it is the whole behaviour of scrubbing and reads as one
+ *  sentence per case. */
+export function seekTargetMs(at: number, spans: readonly Span[]): number {
+  if (spans.some((s) => at >= s.start && at <= s.end)) return at;
+  return spans.find((s) => s.start >= at)?.start ?? at;
 }
 
 export interface PlayoutBarProps {
@@ -238,10 +261,7 @@ export default function PlayoutBar({ camera, pb, onClose }: Readonly<PlayoutBarP
   const seekFrac = useCallback(
     (frac: number) => {
       if (!federated) return;
-      const at = from + frac * span;
-      const inSpan = spans.some((s) => at >= s.start && at <= s.end);
-      const next = spans.find((s) => s.start >= at);
-      pb.playAt(inSpan ? at : next ? next.start : at);
+      pb.playAt(seekTargetMs(from + frac * span, spans));
     },
     [federated, from, span, spans, pb],
   );
@@ -524,9 +544,7 @@ export default function PlayoutBar({ camera, pb, onClose }: Readonly<PlayoutBarP
         {/* Playhead — the playback position, or the live edge. */}
         {markerFrac != null && markerFrac >= 0 && markerFrac <= 1 && (
           <div
-            className={`pointer-events-none absolute top-0 h-full ${
-              scrub.drag != null ? "w-0.5 bg-[#67e8f9]" : playback ? "w-0.5 bg-[#22d3ee]" : "w-px bg-[#f87171]"
-            }`}
+            className={`pointer-events-none absolute top-0 h-full ${playheadCls(scrub.drag != null, playback)}`}
             style={{ left: `${markerFrac * 100}%`, boxShadow: playback ? "0 0 6px #22d3ee" : "0 0 6px #f87171" }}
           >
             <span

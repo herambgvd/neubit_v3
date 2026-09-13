@@ -33,6 +33,8 @@ interface PatternFormErrors {
 export default function PatternFormModal({ open, pattern, groups = [], onClose, onSaved }: Readonly<PatternFormModalProps>) {
   const qc = useQueryClient();
   const isEdit = !!pattern;
+  // What the form DOES, kept apart from whether it is busy doing it.
+  const submitLabel = isEdit ? "Save changes" : "Create pattern";
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -97,7 +99,7 @@ export default function PatternFormModal({ open, pattern, groups = [], onClose, 
             Cancel
           </Button>
           <Button variant="primary" onClick={submit} disabled={save.isPending}>
-            {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create pattern"}
+            {save.isPending ? "Saving…" : submitLabel}
           </Button>
         </>
       }

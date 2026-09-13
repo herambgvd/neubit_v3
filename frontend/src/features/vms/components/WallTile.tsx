@@ -46,6 +46,26 @@ const EDGE = {
   unknown: "bg-amber-500",
 };
 
+const TILE_IDLE = "border border-[rgba(150,180,245,.22)] hover:border-[#22d3ee]";
+const TILE_DROP = "outline outline-2 outline-[#22d3ee]";
+
+/** An EMPTY cell's edge. The drop target outranks the hint because during a drag
+ *  the operator is looking for the one cell that will take the camera, and two
+ *  cells outlined the same way is the moment it lands in the wrong one. */
+function emptyTileEdge(dropActive: boolean, hinting: boolean): string {
+  if (dropActive) return TILE_DROP;
+  if (hinting) return "outline-dashed outline-1 outline-[rgba(34,211,238,.4)]";
+  return TILE_IDLE;
+}
+
+/** A FILLED cell's edge. Same precedence, and for the same reason: mid-drag,
+ *  where the camera will land matters more than which tile drives the transport. */
+function filledTileEdge(dropActive: boolean, focused: boolean): string {
+  if (dropActive) return TILE_DROP;
+  if (focused) return "border border-[#22d3ee] shadow-[0_0_0_1px_rgba(34,211,238,.45)]";
+  return TILE_IDLE;
+}
+
 // Statuses the estate reports for a camera that CANNOT be streamed right now.
 // A tile in one of these does not dial the recorder at all (see below).
 const DARK_STATUSES = new Set(["offline", "error"]);
@@ -227,13 +247,7 @@ function WallTile({
         onDragLeave={onDragLeave}
         onDrop={onDrop}
         {...asButton(onPickHere ? () => onPickHere(index) : undefined, "Put a camera in this cell")}
-        className={`group/empty relative flex min-h-0 cursor-pointer items-center justify-center overflow-hidden rounded-[11px] bg-black/90 transition ${
-          dropActive
-            ? "outline outline-2 outline-[#22d3ee]"
-            : hinting
-              ? "outline-dashed outline-1 outline-[rgba(34,211,238,.4)]"
-              : "border border-[rgba(150,180,245,.22)] hover:border-[#22d3ee]"
-        }`}
+        className={`group/empty relative flex min-h-0 cursor-pointer items-center justify-center overflow-hidden rounded-[11px] bg-black/90 transition ${emptyTileEdge(dropActive, hinting)}`}
       >
         {/* Quiet centred glyph — always present, very faint. */}
         <Icon
@@ -295,13 +309,7 @@ function WallTile({
       // and saves the operator hunting for a "which camera?" dropdown.
       {...asButton(onFocus ? () => onFocus(index) : undefined, "Focus this tile")}
       onDoubleClick={() => onSpotlight?.(index)}
-      className={`group relative min-h-0 overflow-hidden rounded-[11px] bg-black transition ${
-        dropActive
-          ? "outline outline-2 outline-[#22d3ee]"
-          : focused
-            ? "border border-[#22d3ee] shadow-[0_0_0_1px_rgba(34,211,238,.45)]"
-            : "border border-[rgba(150,180,245,.22)] hover:border-[#22d3ee]"
-      }`}
+      className={`group relative min-h-0 overflow-hidden rounded-[11px] bg-black transition ${filledTileEdge(dropActive, focused)}`}
     >
       {/* PLAYBACK badge — the tile must never look live while it is not. The
           live player paints its own LIVE badge in the same corner, so the two

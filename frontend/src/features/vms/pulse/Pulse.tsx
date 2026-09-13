@@ -45,6 +45,20 @@ import AttentionRow from "./AttentionRow";
 import IsolationPane from "./IsolationPane";
 import PulseStats from "./PulseStats";
 import RecorderBoard from "./RecorderBoard";
+import { verdictTone, type Tone } from "./format";
+
+/** The dot beside a recorder in the board list.
+ *
+ *  It used to fall through to green for any level that was not `down` or
+ *  `degraded`, so a recorder reporting nothing — or a level this console has not
+ *  learned yet — read as healthy. That is the one mistake Pulse exists to not
+ *  make, and `verdictTone` already refuses it; this is only its colours. */
+const NODE_DOT: Record<Tone, string> = {
+  bad: "bg-nb-crit",
+  warn: "bg-nb-warn",
+  good: "bg-nb-good",
+  idle: "bg-nb-faint",
+};
 
 const PERM_READ = "vms.camera.read";
 
@@ -214,13 +228,7 @@ export default function Pulse() {
                     >
                       <div className="flex items-center gap-2">
                         <span
-                          className={`h-2 w-2 shrink-0 rounded-full ${
-                            n.verdict.level === "down"
-                              ? "bg-nb-crit"
-                              : n.verdict.level === "degraded"
-                                ? "bg-nb-warn"
-                                : "bg-nb-good"
-                          }`}
+                          className={`h-2 w-2 shrink-0 rounded-full ${NODE_DOT[verdictTone(n.verdict.level)]}`}
                         />
                         <span className="truncate text-[12.5px] font-semibold text-nb-ink">
                           {n.node_name}

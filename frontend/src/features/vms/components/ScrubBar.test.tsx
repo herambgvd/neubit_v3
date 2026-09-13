@@ -7,7 +7,7 @@
 // swallowing Tab would trap focus inside a video player.
 import { describe, expect, it } from "vitest";
 
-import { seekTarget } from "./ScrubBar";
+import { seekTarget, tickStepHours } from "./ScrubBar";
 
 // An hour-long window starting at a round epoch, with the playhead in the middle.
 const HOUR = 3_600_000;
@@ -53,5 +53,20 @@ describe("seekTarget", () => {
     for (const key of ["Tab", "Enter", " ", "Escape", "a", "ArrowUp", "ArrowDown"]) {
       expect(seekTarget(key, win)).toBeNull();
     }
+  });
+});
+
+describe("tickStepHours", () => {
+  it("keeps hour labels readable by widening the step on wide windows", () => {
+    expect(tickStepHours(HOUR)).toBe(1);
+    expect(tickStepHours(HOUR * 4)).toBe(1);
+    expect(tickStepHours(HOUR * 5)).toBe(2);
+    expect(tickStepHours(HOUR * 12)).toBe(2);
+    expect(tickStepHours(HOUR * 24)).toBe(3);
+  });
+
+  it("labels every hour on a window shorter than one", () => {
+    // A minute-wide window still gets a gridline; a step of 0 would loop forever.
+    expect(tickStepHours(60_000)).toBe(1);
   });
 });

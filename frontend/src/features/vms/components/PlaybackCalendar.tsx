@@ -22,6 +22,15 @@ const MONTHS = [
 const pad = (n: number) => String(n).padStart(2, "0");
 const dayStr = (y: number, m0: number, d: number) => `${y}-${pad(m0 + 1)}-${pad(d)}`;
 
+/** A day cell's skin. A future day is unreachable, so it never shows the today
+ *  ring or the hover — but SELECTED still wins over it, because the calendar can
+ *  be opened on a selection made before midnight rolled the day over. */
+function dayCellSkin({ isSelected, isFuture, isToday }: Readonly<{ isSelected: boolean; isFuture: boolean; isToday: boolean }>): string {
+  if (isSelected) return "bg-[rgba(34,211,238,.15)] font-semibold text-[#67e8f9] ring-1 ring-inset ring-[rgba(34,211,238,.5)]";
+  if (isFuture) return "text-[#7e93bf]/40";
+  return `text-[#f2f6ff] hover:bg-[rgba(34,211,238,.08)] ${isToday ? "ring-1 ring-inset ring-[rgba(150,180,245,.22)]" : ""}`;
+}
+
 export interface PlaybackCalendarProps {
   viewYear: number;
   /** 0-based. */
@@ -116,13 +125,7 @@ export default function PlaybackCalendar({
               type="button"
               disabled={isFuture}
               onClick={() => onSelectDay(ds)}
-              className={`relative flex h-7 items-center justify-center rounded-md text-[12px] tabular-nums transition ${
-                isSelected
-                  ? "bg-[rgba(34,211,238,.15)] font-semibold text-[#67e8f9] ring-1 ring-inset ring-[rgba(34,211,238,.5)]"
-                  : isFuture
-                    ? "text-[#7e93bf]/40"
-                    : `text-[#f2f6ff] hover:bg-[rgba(34,211,238,.08)] ${isToday ? "ring-1 ring-inset ring-[rgba(150,180,245,.22)]" : ""}`
-              }`}
+              className={`relative flex h-7 items-center justify-center rounded-md text-[12px] tabular-nums transition ${dayCellSkin({ isSelected, isFuture, isToday })}`}
             >
               {d}
               {/* footage mark — an accent dot under the number (echoes the

@@ -26,8 +26,17 @@ import type { ReactNode, RefObject } from "react";
 import { Icon } from "@iconify/react";
 
 import { eventTypeLabel, fmtDate, fmtTime, sevPreset, typePreset, type NormalizedVmsEvent } from "../eventLib";
-import { durationLabel, eventInterval } from "../eventState";
+import { durationLabel, eventInterval, type EventInterval } from "../eventState";
 import { useTicker } from "../hooks/useTicker";
+
+/** How a duration reads. An OPEN interval is still counting, so it reads live
+ *  rather than as a settled figure; an unreliable one is italicised because the
+ *  words beside it ("duration unreliable") are the point, not a measurement. */
+function durationCls(iv: EventInterval): string {
+  if (iv.open) return "text-orange-300";
+  if (iv.invalid) return "italic text-muted";
+  return "text-muted";
+}
 
 export interface EventTableProps {
   /** The page's rows — already filtered and paged by the caller. */
@@ -139,7 +148,7 @@ export default function EventTable({
                   </td>
                   <td className="whitespace-nowrap px-2 py-1.5 font-mono">
                     {duration ? (
-                      <span className={iv.open ? "text-orange-300" : iv.invalid ? "italic text-muted" : "text-muted"}>
+                      <span className={durationCls(iv)}>
                         {duration}
                       </span>
                     ) : (

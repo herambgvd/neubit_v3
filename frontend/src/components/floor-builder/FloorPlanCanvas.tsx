@@ -451,7 +451,8 @@ export const FloorPlanCanvas = forwardRef<FloorPlanCanvasHandle, Readonly<FloorP
       const isDropTarget = !!dropHover?.zoneId && zone.zone_id === dropHover.zoneId;
       ctx.fillStyle = (zone.color || "#2563eb") + (isDropTarget ? "55" : "33");
       ctx.fill();
-      ctx.lineWidth = isDropTarget ? 3 : isSelected ? 3 : 2;
+      // Selected and drop-target are both "thick"; only the dash below tells them apart.
+      ctx.lineWidth = isDropTarget || isSelected ? 3 : 2;
       ctx.strokeStyle = zone.color || "#2563eb";
       if (isDropTarget) ctx.setLineDash([8, 5]);
       ctx.stroke();

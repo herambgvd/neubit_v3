@@ -51,6 +51,8 @@ export default function MonitorFormModal({
   busy,
 }: Readonly<MonitorFormModalProps>) {
   const editing = !!monitor;
+  // What the form DOES, kept apart from whether it is busy doing it.
+  const submitLabel = editing ? "Save" : "Add monitor";
   const [form, setForm] = useState<MonitorForm | null>(null);
 
   useEffect(() => {
@@ -100,7 +102,7 @@ export default function MonitorFormModal({
             Cancel
           </Button>
           <Button variant="primary" onClick={submit} disabled={!valid || busy}>
-            {busy ? "Saving…" : editing ? "Save" : "Add monitor"}
+            {busy ? "Saving…" : submitLabel}
           </Button>
         </>
       }

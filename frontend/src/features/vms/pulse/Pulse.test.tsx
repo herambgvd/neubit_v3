@@ -283,4 +283,30 @@ describe("the recorder list", () => {
     const card = (await screen.findByText("south")).closest("div")!.parentElement!;
     expect(within(card).getByText(/timeout after 5s/)).toBeInTheDocument();
   });
+
+  it("does not paint a recorder green for a verdict level it has never seen", async () => {
+    // The dot fell through to green for anything that was not `down` or
+    // `degraded`, so a recorder reporting `unknown` — or reporting nothing —
+    // read as healthy on the one screen opened because something is wrong.
+    stubAll({
+      "GET /vms/pulse/overview": {
+        ...OVERVIEW,
+        nodes: [{ ...NODE, verdict: { level: "unknown", headline: "Recorder did not say", detail: null } }],
+      },
+    });
+    renderWithProviders(<Pulse />);
+
+    const row = (await screen.findByText("north")).parentElement!;
+    const dot = row.querySelector("span.rounded-full")!;
+    expect(dot.className).not.toContain("bg-nb-good");
+    expect(dot.className).toContain("bg-nb-faint");
+  });
+
+  it("still shows a healthy recorder as healthy", async () => {
+    stubAll({ "GET /vms/pulse/overview": OVERVIEW });
+    renderWithProviders(<Pulse />);
+
+    const row = (await screen.findByText("north")).parentElement!;
+    expect(row.querySelector("span.rounded-full")!.className).toContain("bg-nb-good");
+  });
 });

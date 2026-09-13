@@ -67,6 +67,20 @@ function LicenseBanner() {
 }
 
 // Auth-guarded application shell: horizontal top nav + full-width content.
+/** How the main region is sized. `bleed` is edge-to-edge (the wall, the home
+ *  canvas), `pane` is a bounded surface that scrolls its own contents, and
+ *  `page` is the ordinary scrolling document. */
+const MAIN_LAYOUTS = {
+  bleed: "flex-1 min-h-0 w-full overflow-hidden",
+  pane: "flex-1 min-h-0 w-full overflow-hidden px-4 lg:px-5 py-3",
+  page: "app-scroll flex-1 overflow-y-auto w-full px-6 lg:px-8 py-6",
+};
+
+const mainLayout = (bleed: boolean, contained: boolean): keyof typeof MAIN_LAYOUTS => {
+  if (bleed) return "bleed";
+  return contained ? "pane" : "page";
+};
+
 export default function AppLayout({ children }: Readonly<{ children?: ReactNode }>) {
   const { status } = useAuth();
   const router = useRouter();
@@ -154,11 +168,10 @@ export default function AppLayout({ children }: Readonly<{ children?: ReactNode 
     // Sites map is a full-bleed map surface — fills the bounded pane (no page scroll).
     pathname === "/map";
 
-  const mainClass = immersiveWall || home
-    ? "flex-1 min-h-0 w-full overflow-hidden"
-    : contained
-        ? "flex-1 min-h-0 w-full overflow-hidden px-4 lg:px-5 py-3"
-        : "app-scroll flex-1 overflow-y-auto w-full px-6 lg:px-8 py-6";
+  // Three layouts, and only the last one lets the PAGE scroll. A console that
+  // manages its own scrolling inside a bounded pane must not also be scrollable
+  // from the shell, or the operator gets two scrollbars for one list.
+  const mainClass = MAIN_LAYOUTS[mainLayout(immersiveWall || home, contained)];
 
   // fixed inset-0: pin the shell to EXACTLY the viewport, immune to any parent
   // height-collapse. `h-screen` (100vh) was resolving short in this SCSS/flex context

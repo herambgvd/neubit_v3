@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 
 import { renderWithProviders } from "@/test/render";
 
-import RecorderBoard from "./RecorderBoard";
+import RecorderBoard, { cameraDot } from "./RecorderBoard";
 import type { NodeSysmon } from "../types";
 
 /** A recorder that reports its counts as structured objects rather than ints —
@@ -62,5 +62,23 @@ describe("a recorder whose board is not the shape we expect", () => {
     } as unknown as NodeSysmon;
     renderWithProviders(<RecorderBoard board={ok} />);
     expect(screen.getByText("3 / 4")).toBeInTheDocument();
+  });
+});
+
+describe("cameraDot", () => {
+  it("is green only for a camera the recorder reports as online", () => {
+    expect(cameraDot("online", true)).toBe("bg-nb-good");
+    expect(cameraDot("ONLINE", true)).toBe("bg-nb-good");
+  });
+
+  it("greys a camera somebody switched off instead of reddening it", () => {
+    // Red sends an operator hunting a fault. A disabled camera is a setting.
+    expect(cameraDot("offline", false)).toBe("bg-nb-faint");
+  });
+
+  it("reddens anything else, including a status it cannot read", () => {
+    expect(cameraDot("offline", true)).toBe("bg-nb-crit");
+    expect(cameraDot({ state: "up" }, true)).toBe("bg-nb-crit");
+    expect(cameraDot(undefined, undefined)).toBe("bg-nb-crit");
   });
 });

@@ -14,6 +14,16 @@ import type { CameraGroupPublic, EstateCamera } from "../types";
 import { getGroupLayout, groupGridStyle } from "../videoWall";
 import { isPatternItem, type PatternItem } from "./patternTypes";
 
+/** A layout cell's skin, and the reason there are three of them: a cell holding
+ *  an id the estate can no longer resolve is NOT an empty cell. Amber says the
+ *  pattern still points at a camera that has gone — the thing an operator has to
+ *  fix — where grey just says nothing was ever put there. */
+function cellSkin(resolved: boolean, assigned: boolean): string {
+  if (resolved) return "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] text-nb-blueb";
+  if (assigned) return "border-[rgba(251,146,60,.45)] bg-[rgba(251,146,60,.08)] text-nb-warn";
+  return "border-nb-line bg-[rgba(6,11,26,.3)] text-nb-faint";
+}
+
 export interface PatternDetailProps {
   item: PatternItem;
   isPattern: boolean;
@@ -131,13 +141,7 @@ export default function PatternDetail({ item, isPattern, groupById, cameraById, 
                   return (
                     <div
                       key={i}
-                      className={`flex items-center justify-center overflow-hidden rounded-sm border px-1 text-center text-[10px] ${
-                        cam
-                          ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] text-nb-blueb"
-                          : cid
-                            ? "border-[rgba(251,146,60,.45)] bg-[rgba(251,146,60,.08)] text-nb-warn"
-                            : "border-nb-line bg-[rgba(6,11,26,.3)] text-nb-faint"
-                      }`}
+                      className={`flex items-center justify-center overflow-hidden rounded-sm border px-1 text-center text-[10px] ${cellSkin(!!cam, !!cid)}`}
                     >
                       {/* A cell holds a camera id, and an id is not a name. When the
                           estate no longer carries it (camera deleted, recorder

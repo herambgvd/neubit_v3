@@ -102,6 +102,15 @@ const STATS: { to: number; label: string; fmt: (v: number) => string | number }[
   { to: 99.99, label: "Uptime target %", fmt: (v) => v.toFixed(2) },
 ];
 
+/** How many decimals the count-up animation shows, read off the stat's own unit
+ *  so the ticking number lands on the same precision `fmt` prints. First match
+ *  wins. */
+const STAT_DECIMALS: ReadonlyArray<readonly [unit: string, decimals: number]> = [
+  ["%", 2],
+  ["(s)", 1],
+];
+const statDecimals = (label: string) => STAT_DECIMALS.find(([unit]) => label.includes(unit))?.[1] ?? 0;
+
 const INDUSTRIES: [title: string, body: string, Icon: LucideIcon][] = [
   ["Smart Cities", "Safe-city programs and metropolitan command centers.", Globe2],
   ["Airports & Transit", "Aviation, rail and transportation infrastructure.", Network],
@@ -468,7 +477,7 @@ export default function LandingPage() {
         <div className="relative mx-auto max-w-7xl px-6 py-20">
           <div className="grid grid-cols-2 gap-8 lg:grid-cols-4">
             {STATS.map((s) => {
-              const dec = s.label.includes("%") ? 2 : s.label.includes("(s)") ? 1 : 0;
+              const dec = statDecimals(s.label);
               return (
                 <div key={s.label} className="reveal text-center">
                   <div className="font-mono text-4xl font-semibold tabular-nums text-white sm:text-5xl">

@@ -36,6 +36,8 @@ export interface WallFormModalProps {
 
 export default function WallFormModal({ open, wall, onClose, onSubmit, busy }: Readonly<WallFormModalProps>) {
   const editing = !!wall;
+  // What the form DOES, kept apart from whether it is busy doing it.
+  const submitLabel = editing ? "Save changes" : "Create wall";
   const [form, setForm] = useState<WallForm | null>(null);
 
   const sitesQ = useQuery({
@@ -95,7 +97,7 @@ export default function WallFormModal({ open, wall, onClose, onSubmit, busy }: R
             Cancel
           </Button>
           <Button variant="primary" onClick={submit} disabled={!form.name.trim() || busy}>
-            {busy ? "Saving…" : editing ? "Save changes" : "Create wall"}
+            {busy ? "Saving…" : submitLabel}
           </Button>
         </>
       }

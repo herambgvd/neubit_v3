@@ -31,7 +31,7 @@ import { apiError } from "@/lib/api";
 import { fmtRelative } from "@/lib/format";
 import type { FederatedCamera } from "@/lib/types";
 import { vms } from "../api";
-import type { FederationNode } from "../types";
+import type { FederationNode, NodeStorageUsage } from "../types";
 import StatusBadge, { StatusDot } from "./StatusBadge";
 
 export interface FederationNodeDetailProps {
@@ -87,6 +87,20 @@ function Meter({ percent, label }: Readonly<{ percent: number; label: string }>)
   );
 }
 
+/** The recorder's disk usage as a percentage, or null when it did not report one.
+ *
+ *  Null means UNMEASURED and the pane says so in those words, which is why the
+ *  derived arm insists on a total it can divide by rather than on truthy bytes:
+ *  a recorder that reports 0 bytes used has measured its disk and found it empty,
+ *  and calling that "reports no disk usage" hides a reading that exists. */
+export function usedPercent(usage: NodeStorageUsage | null | undefined): number | null {
+  if (typeof usage?.used_percent === "number") return usage.used_percent;
+  const total = usage?.total_bytes;
+  const used = usage?.used_bytes;
+  if (typeof total === "number" && total > 0 && typeof used === "number") return (used / total) * 100;
+  return null;
+}
+
 export default function FederationNodeDetail({
   node,
   cameras,
@@ -123,12 +137,7 @@ export default function FederationNodeDetail({
   });
 
   const usage = storageQ.data;
-  const usedPct =
-    typeof usage?.used_percent === "number"
-      ? usage.used_percent
-      : usage?.total_bytes && usage?.used_bytes
-        ? (usage.used_bytes / usage.total_bytes) * 100
-        : null;
+  const usedPct = usedPercent(usage);
   const arrays = raidQ.data?.arrays || [];
   const nvrs = nvrsQ.data?.items || [];
 

@@ -20,7 +20,7 @@ import { httpError, stubApi, type ApiStub, type Recorded } from "@/test/apiStub"
 import { renderWithProviders } from "@/test/render";
 
 import { HeaderSlotOutlet } from "@/components/shell/HeaderSlot";
-import CameraEventsPage from "./CameraEvents";
+import CameraEventsPage, { feedVerdict } from "./CameraEvents";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ can: () => true, hasModule: () => true }) }));
@@ -801,5 +801,33 @@ describe("the details column", () => {
       .map((el) => el.textContent?.trim())
       .filter((t) => t === "Status" || t === "Event type" || t === "Severity");
     expect(labels[0]).toBe("Status");
+  });
+});
+
+describe("feedVerdict", () => {
+  it("only says the feed is live when it is both running and connected", () => {
+    expect(feedVerdict(true, true)).toEqual({ dot: "bg-emerald-500", text: "Live feed" });
+  });
+
+  it("distinguishes a feed the operator paused from one that dropped", () => {
+    // Amber "Reconnecting…" over a feed somebody deliberately stopped is this
+    // console reporting a fault it invented; grey "Feed paused" is the truth.
+    expect(feedVerdict(false, false).text).toBe("Feed paused");
+    expect(feedVerdict(false, true).text).toBe("Feed paused");
+    expect(feedVerdict(true, false).text).toBe("Reconnecting…");
+  });
+
+  it("never pairs a green dot with words that are not 'Live feed'", () => {
+    // The dot and the label were two chains over the same flags; this is the
+    // failure that arrangement invites.
+    for (const [live, connected] of [
+      [true, true],
+      [true, false],
+      [false, true],
+      [false, false],
+    ] as const) {
+      const v = feedVerdict(live, connected);
+      expect(v.dot === "bg-emerald-500").toBe(v.text === "Live feed");
+    }
   });
 });

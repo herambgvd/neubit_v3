@@ -1142,14 +1142,21 @@ interface CtrlBtnProps {
   plain?: boolean;
 }
 
+/** A transport button's skin: one filled primary (play), outlined secondaries,
+ *  and bare for the rest, so the control an operator reaches for first is the
+ *  only one that stands off the video. */
+function ctrlSkin(primary?: boolean, plain?: boolean): string {
+  if (primary) return "bg-[rgba(34,211,238,.15)] text-[#67e8f9] border border-[rgba(34,211,238,.5)] hover:opacity-90";
+  if (plain) {
+    return "border border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.5)] hover:bg-[rgba(34,211,238,.08)] hover:text-[#67e8f9]";
+  }
+  return "text-[#aec2e8] hover:bg-[rgba(34,211,238,.08)] hover:text-[#67e8f9]";
+}
+
 function CtrlBtn({ icon, title, onClick, disabled, primary, plain }: Readonly<CtrlBtnProps>) {
   const base =
     "inline-flex h-8 w-8 items-center justify-center rounded-lg transition disabled:opacity-40 disabled:pointer-events-none";
-  const skin = primary
-    ? "bg-[rgba(34,211,238,.15)] text-[#67e8f9] border border-[rgba(34,211,238,.5)] hover:opacity-90"
-    : plain
-      ? "border border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.5)] hover:bg-[rgba(34,211,238,.08)] hover:text-[#67e8f9]"
-      : "text-[#aec2e8] hover:bg-[rgba(34,211,238,.08)] hover:text-[#67e8f9]";
+  const skin = ctrlSkin(primary, plain);
   return (
     <button type="button" title={title} onClick={onClick} disabled={disabled} className={`${base} ${skin}`}>
       <Icon icon={icon} className="text-base" />

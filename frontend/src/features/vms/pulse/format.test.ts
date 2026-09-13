@@ -14,6 +14,8 @@ import type { PulseOverview } from "../types";
 import {
   answeredLabel,
   camerasLabel,
+  camerasSubLabel,
+  isolationVerdict,
   pctText,
   recordingLabel,
   stageTone,
@@ -122,5 +124,46 @@ describe("verdict and stage tones", () => {
     expect(stageTone("ok", false)).toBe("idle");
     expect(stageTone("ok", true)).toBe("good");
     expect(stageTone("bad", true)).toBe("bad");
+  });
+});
+
+describe("isolationVerdict", () => {
+  it("names the attribution a fault was isolated to", () => {
+    const v = isolationVerdict("fault", "network");
+    expect(v.tone).toBe("bad");
+    expect(v.text).toBe("Fault isolated: NETWORK");
+  });
+
+  it("still says a fault was isolated when the recorder did not say to what", () => {
+    expect(isolationVerdict("FAULT", null).text).toBe("Fault isolated: UNKNOWN");
+  });
+
+  it("clears the chain only when the recorder actually said ok", () => {
+    const v = isolationVerdict("ok");
+    expect(v.tone).toBe("good");
+    expect(v.text).toBe("No fault found");
+  });
+
+  it("shows a trace that could not decide as inconclusive, never as a pass", () => {
+    // The dangerous one: a level this console has not learned yet must not
+    // inherit the green tick meant for a chain that was actually cleared.
+    for (const level of ["inconclusive", "partial", "", null, undefined]) {
+      const v = isolationVerdict(level);
+      expect(v.tone).toBe("idle");
+      expect(v.text).toBe("Inconclusive");
+    }
+  });
+});
+
+describe("camerasSubLabel", () => {
+  it("counts the cameras that are down when the estate is fully reported", () => {
+    expect(camerasSubLabel(false, 2)).toBe("2 down");
+    expect(camerasSubLabel(false, 0)).toBe("all up");
+  });
+
+  it("refuses to count while a recorder is missing from the roll-up", () => {
+    // "0 down" under a figure that is missing a whole recorder's cameras is the
+    // confident wrong answer; the qualifier is the honest one.
+    expect(camerasSubLabel(true, 0)).toBe("of the recorders that answered");
   });
 });

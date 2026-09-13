@@ -438,6 +438,8 @@ function FederationTrust({ node }: Readonly<{ node: MediaNodePublic }>) {
   const creds = useMemo(() => credsQ.data?.items ?? [], [credsQ.data]);
   const activeCount = creds.filter((c) => !c.revoked_at).length;
   const enrolled = node.has_credential || activeCount > 0;
+  // The act, kept apart from whether it is in flight.
+  const enrollLabel = enrolled ? "Re-enroll" : "Enroll";
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["vms-node-credentials", node.id] });
@@ -599,7 +601,7 @@ function FederationTrust({ node }: Readonly<{ node: MediaNodePublic }>) {
             onClick={() => enroll.mutate()}
             disabled={enroll.isPending}
           >
-            {enroll.isPending ? "Enrolling…" : enrolled ? "Re-enroll" : "Enroll"}
+            {enroll.isPending ? "Enrolling…" : enrollLabel}
           </Button>
         </div>
       )}

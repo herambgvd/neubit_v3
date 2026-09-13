@@ -34,6 +34,20 @@ export type EstateTone = keyof typeof TONES;
 
 const tone = (t?: EstateTone) => TONES[t || "ink"] || TONES.ink;
 
+/** Only the three tones that carry a verdict get a coloured chip outline. `blue`
+ *  and `faint` are decoration, not a verdict, so they stay on the neutral line. */
+const CHIP_BORDERS: Partial<Record<EstateTone, string>> = {
+  crit: "border-nb-crit/50 text-nb-crit",
+  warn: "border-nb-warn/45 text-nb-warn",
+  good: "border-[rgba(52,211,153,.45)] text-nb-good",
+};
+
+const ACTION_ICONS: Partial<Record<EstateTone, string>> = {
+  crit: "border-nb-crit/40 bg-nb-crit/10 text-nb-crit",
+  good: "border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.1)] text-nb-good",
+  warn: "border-nb-warn/40 bg-nb-warn/10 text-nb-warn",
+};
+
 /** The two props the layout frames here take. */
 export interface EstateFrameProps {
   className?: string;
@@ -120,14 +134,7 @@ export interface LeaderChipProps {
 
 export function LeaderChip({ label, value, tone: t = "faint", title }: Readonly<LeaderChipProps>) {
   const absent = value === null || value === undefined;
-  const border =
-    t === "crit"
-      ? "border-nb-crit/50 text-nb-crit"
-      : t === "warn"
-        ? "border-nb-warn/45 text-nb-warn"
-        : t === "good"
-          ? "border-[rgba(52,211,153,.45)] text-nb-good"
-          : "border-nb-line text-nb-soft";
+  const border = CHIP_BORDERS[t] ?? "border-nb-line text-nb-soft";
   return (
     <span
       className={`whitespace-nowrap rounded-[6px] border px-2 py-0.5 font-mono text-[10.5px] ${border}`}
@@ -279,12 +286,7 @@ export function ActionRow({
   onOpen,
   openLabel = "Open →",
 }: Readonly<ActionRowProps>) {
-  const iconCls =
-    iconTone === "crit"
-      ? "border-nb-crit/40 bg-nb-crit/10 text-nb-crit"
-      : iconTone === "good"
-        ? "border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.1)] text-nb-good"
-        : "border-nb-warn/40 bg-nb-warn/10 text-nb-warn";
+  const iconCls = ACTION_ICONS[iconTone] ?? ACTION_ICONS.warn;
   const open = href ? (
     <Link
       href={href}

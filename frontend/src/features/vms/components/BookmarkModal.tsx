@@ -49,6 +49,8 @@ export default function BookmarkModal({
   onSaved,
 }: Readonly<BookmarkModalProps>) {
   const editing = !!bookmark;
+  // What the form DOES, kept apart from whether it is busy doing it.
+  const submitLabel = editing ? "Save" : "Add bookmark";
   const [startTs, setStartTs] = useState("");
   const [endTs, setEndTs] = useState("");
   const [title, setTitle] = useState("");
@@ -133,7 +135,7 @@ export default function BookmarkModal({
             disabled={!canSave || saving}
             onClick={save}
           >
-            {saving ? "Saving…" : editing ? "Save" : "Add bookmark"}
+            {saving ? "Saving…" : submitLabel}
           </Button>
         </>
       }

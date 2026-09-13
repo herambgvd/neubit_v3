@@ -81,6 +81,17 @@ export function camerasLabel(o: PulseOverview): { text: string; qualified: boole
   return { text: `${online} / ${total}`, qualified: o.partial };
 }
 
+/** What sits under the cameras-online figure.
+ *
+ *  While the roll-up is partial it refuses to say how many are down, because the
+ *  number it could compute counts only the recorders that answered — and "2 down"
+ *  under a figure that is missing a whole recorder is the confident wrong answer
+ *  this surface exists to avoid. */
+export function camerasSubLabel(partial: boolean, down: number): string {
+  if (partial) return "of the recorders that answered";
+  return down > 0 ? `${down} down` : "all up";
+}
+
 /** "3 of 4 recorders answered" — only when one did not. */
 export function answeredLabel(o: PulseOverview): string | null {
   if (!o.partial) return null;
@@ -109,6 +120,32 @@ export function stageTone(state: string, measured: boolean): Tone {
   if (s === "warn") return "warn";
   if (s === "ok") return "good";
   return "idle";
+}
+
+/** A fault trace's headline: its tone, its icon and what it actually claims.
+ *
+ *  Separate from `verdictTone` on purpose — a trace speaks fault/ok/inconclusive
+ *  where a recorder speaks down/degraded/ok, and collapsing the two vocabularies
+ *  is how "inconclusive" would start rendering as a clean bill of health.
+ *
+ *  The three were three chains over the same `level`, which is the arrangement
+ *  where a fourth level gets added to one of them and not the others. Anything
+ *  the recorder says that is not `fault` or `ok` lands on inconclusive, because a
+ *  trace that could not decide must not be shown as a pass. */
+export function isolationVerdict(
+  level: string | null | undefined,
+  attribution?: string | null,
+): { tone: Tone; icon: string; text: string } {
+  const l = (level || "").toLowerCase();
+  if (l === "fault") {
+    return {
+      tone: "bad",
+      icon: "heroicons:exclamation-triangle",
+      text: `Fault isolated: ${(attribution || "unknown").toUpperCase()}`,
+    };
+  }
+  if (l === "ok") return { tone: "good", icon: "heroicons:check-circle", text: "No fault found" };
+  return { tone: "idle", icon: "heroicons:question-mark-circle", text: "Inconclusive" };
 }
 
 export const TONE_TEXT: Record<Tone, string> = {

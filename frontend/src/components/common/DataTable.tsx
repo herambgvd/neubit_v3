@@ -62,8 +62,8 @@ function SortCaret({ dir }: Readonly<{ dir: SortDirection | false }>) {
   );
 }
 
-const alignCls = (a?: "left" | "right" | "center") =>
-  a === "right" ? "text-right" : a === "center" ? "text-center" : "text-left";
+const ALIGN: Record<string, string> = { right: "text-right", center: "text-center", left: "text-left" };
+const alignCls = (a?: "left" | "right" | "center") => ALIGN[a ?? ""] ?? ALIGN.left;
 
 export interface DataTableProps<TData> {
   // `ColumnDef<TData, any>` is TanStack's own recommended element type: each

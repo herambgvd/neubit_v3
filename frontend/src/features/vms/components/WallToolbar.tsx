@@ -21,19 +21,24 @@ interface IconBtnProps {
   danger?: boolean;
 }
 
+/** A toolbar button's skin. Precedence, not exclusivity: a `danger` button that
+ *  is currently ACTIVE reads as active — the state it is in outranks the harm it
+ *  could do, because the operator can see it is engaged. */
+function iconBtnSkin(active: boolean, danger: boolean): string {
+  if (active) return "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] text-[#67e8f9]";
+  if (danger) {
+    return "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(248,113,113,.5)] hover:bg-red-500/10 hover:text-[#f87171]";
+  }
+  return "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.6)] hover:text-[#22d3ee]";
+}
+
 function IconBtn({ icon, title, onClick, active = false, spinning = false, danger = false }: Readonly<IconBtnProps>) {
   return (
     <button
       type="button"
       title={title}
       onClick={onClick}
-      className={`inline-flex h-[33px] w-[33px] items-center justify-center rounded-[8px] border transition ${
-        active
-          ? "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
-          : danger
-            ? "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(248,113,113,.5)] hover:bg-red-500/10 hover:text-[#f87171]"
-            : "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.6)] hover:text-[#22d3ee]"
-      }`}
+      className={`inline-flex h-[33px] w-[33px] items-center justify-center rounded-[8px] border transition ${iconBtnSkin(active, danger)}`}
     >
       <Icon icon={icon} className={`text-base ${spinning ? "animate-spin" : ""}`} />
     </button>

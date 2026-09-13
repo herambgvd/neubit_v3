@@ -57,6 +57,21 @@ export function seekTarget(
 
 const HOUR_MS = 3_600_000;
 
+/** How far apart the hour gridlines sit, widest window first.
+ *
+ *  The point is the LABELS, not the lines: at one tick an hour a day-wide window
+ *  prints twenty-four of them into a track a few hundred pixels wide and none of
+ *  them can be read. Out here as data so a band can be retuned without counting
+ *  which arm of a chain it was. */
+const TICK_STEPS: ReadonlyArray<{ overHours: number; stepHours: number }> = [
+  { overHours: 12, stepHours: 3 },
+  { overHours: 4, stepHours: 2 },
+];
+
+export function tickStepHours(span: number): number {
+  return TICK_STEPS.find((s) => span > s.overHours * HOUR_MS)?.stepHours ?? 1;
+}
+
 // ── Shared timeline palette (single source of truth) ─────────────────────────
 // One color map drives BOTH the coverage bars here AND the legend swatches in
 // UnifiedPlayback, so the two never drift. Keyed by the CTOCAM/Lumina event-type
@@ -218,7 +233,7 @@ export default function ScrubBar({
     const d0 = new Date(windowStart);
     d0.setMinutes(0, 0, 0);
     if (d0.getTime() < windowStart) d0.setHours(d0.getHours() + 1);
-    const stepH = span > 12 * HOUR_MS ? 3 : span > 4 * HOUR_MS ? 2 : 1;
+    const stepH = tickStepHours(span);
     for (let t = d0.getTime(); t <= windowEnd; ) {
       out.push(t);
       const d = new Date(t);

@@ -11,7 +11,7 @@ import type { ReactNode } from "react";
 import { Icon } from "@iconify/react";
 
 import type { PulseOverview } from "../types";
-import { TONE_TEXT, answeredLabel, pctText, recordingLabel, volumeTone, type Tone } from "./format";
+import { TONE_TEXT, answeredLabel, camerasSubLabel, pctText, recordingLabel, volumeTone, type Tone } from "./format";
 
 function Stat({
   label,
@@ -74,13 +74,7 @@ export default function PulseStats({
           icon="heroicons:video-camera"
           label="Cameras online"
           value={`${t.cameras_online} / ${t.cameras_total}`}
-          sub={
-            data.partial
-              ? "of the recorders that answered"
-              : camerasDown > 0
-                ? `${camerasDown} down`
-                : "all up"
-          }
+          sub={camerasSubLabel(data.partial, camerasDown)}
           tone={camerasDown > 0 ? "warn" : "good"}
         />
         <Stat

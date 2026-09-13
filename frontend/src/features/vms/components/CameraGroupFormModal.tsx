@@ -40,6 +40,8 @@ interface GroupFormErrors {
 export default function CameraGroupFormModal({ open, group, cameras = [], onClose, onSaved }: Readonly<CameraGroupFormModalProps>) {
   const qc = useQueryClient();
   const isEdit = !!group;
+  // What the form DOES, kept apart from whether it is busy doing it.
+  const submitLabel = isEdit ? "Save changes" : "Create group";
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -209,7 +211,7 @@ export default function CameraGroupFormModal({ open, group, cameras = [], onClos
             Cancel
           </Button>
           <Button variant="primary" type="submit" disabled={save.isPending}>
-            {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Create group"}
+            {save.isPending ? "Saving…" : submitLabel}
           </Button>
         </div>
       </form>

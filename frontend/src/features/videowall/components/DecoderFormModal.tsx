@@ -47,6 +47,8 @@ export default function DecoderFormModal({
   busy,
 }: Readonly<DecoderFormModalProps>) {
   const editing = !!decoder;
+  // What the form DOES, kept apart from whether it is busy doing it.
+  const submitLabel = editing ? "Save" : "Register";
   const [form, setForm] = useState<DecoderForm | null>(null);
 
   useEffect(() => {
@@ -95,7 +97,7 @@ export default function DecoderFormModal({
             Cancel
           </Button>
           <Button variant="primary" onClick={submit} disabled={!valid || busy}>
-            {busy ? "Saving…" : editing ? "Save" : "Register"}
+            {busy ? "Saving…" : submitLabel}
           </Button>
         </>
       }

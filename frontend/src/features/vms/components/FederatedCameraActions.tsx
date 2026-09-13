@@ -45,6 +45,43 @@ const fromLocalInput = (v: string): string | null => (v ? new Date(v).toISOStrin
 const READY = new Set<string>(["ready", "done", "complete", "completed", "succeeded"]);
 const FAILED = new Set<string>(["failed", "error"]);
 
+/** Where a clip export has got to, in the operator's terms — icon, colour and
+ *  sentence together.
+ *
+ *  They were three chains reading the same two flags, and the middle arm of each
+ *  is `ready`, which is the arrangement where somebody adds a state to the words
+ *  and leaves the spinner turning next to "Clip ready".
+ *
+ *  A status the recorder invents is WORKING, not failed and not ready: the poll
+ *  keeps running, which is the honest reading of a job that has not said it
+ *  finished. */
+export function exportVerdict(status: unknown): { icon: string; iconCls: string; textCls: string; text: string } {
+  const s = String(status ?? "").toLowerCase();
+  if (status && FAILED.has(s)) {
+    return {
+      icon: "heroicons:exclamation-triangle",
+      iconCls: "text-nb-crit",
+      textCls: "text-nb-crit",
+      text: "Export failed on the recorder.",
+    };
+  }
+  if (status && READY.has(s)) {
+    return {
+      icon: "heroicons-outline:check-circle",
+      iconCls: "text-nb-teal",
+      textCls: "text-nb-soft",
+      text: "Clip ready — download it below.",
+    };
+  }
+  return {
+    icon: "heroicons-outline:arrow-path",
+    iconCls: "animate-spin text-nb-blueb",
+    textCls: "text-nb-soft",
+    // The recorder's own word for where it is, spelled as it sent it.
+    text: `Working on the recorder… (${String(status ?? "") || "queued"})`,
+  };
+}
+
 type RecordMode = "start" | "stop";
 
 export default function FederatedCameraActions({ camera }: Readonly<FederatedCameraActionsProps>) {
@@ -385,6 +422,7 @@ function FedExportModal({ camera, onClose }: Readonly<FedModalProps>) {
   const status = job?.status;
   const ready = !!status && READY.has(String(status).toLowerCase());
   const failed = !!status && FAILED.has(String(status).toLowerCase());
+  const exported = exportVerdict(status);
 
   // Poll while the job is in flight; cancel on unmount / terminal state.
   useEffect(() => {
@@ -508,23 +546,8 @@ function FedExportModal({ camera, onClose }: Readonly<FedModalProps>) {
         )}
         {job && (
           <div className="flex items-center gap-2 rounded-lg border border-nb-line bg-nb-surface px-3 py-2 text-xs">
-            <Icon
-              icon={
-                failed
-                  ? "heroicons:exclamation-triangle"
-                  : ready
-                    ? "heroicons-outline:check-circle"
-                    : "heroicons-outline:arrow-path"
-              }
-              className={`text-sm ${failed ? "text-nb-crit" : ready ? "text-nb-teal" : "animate-spin text-nb-blueb"}`}
-            />
-            <span className={failed ? "text-nb-crit" : "text-nb-soft"}>
-              {failed
-                ? "Export failed on the recorder."
-                : ready
-                  ? "Clip ready — download it below."
-                  : `Working on the recorder… (${status || "queued"})`}
-            </span>
+            <Icon icon={exported.icon} className={`text-sm ${exported.iconCls}`} />
+            <span className={exported.textCls}>{exported.text}</span>
           </div>
         )}
       </div>

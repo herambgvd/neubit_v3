@@ -30,6 +30,28 @@ import {
   volumeTone,
 } from "./format";
 
+/** The verdict card's surface. `good` and `idle` are absent on purpose: a
+ *  healthy recorder is not news, and a green panel at the top of every board
+ *  trains an operator to stop reading it. */
+const VERDICT_SURFACE: Partial<Record<string, string>> = {
+  bad: "border-[rgba(248,113,113,.4)] bg-[rgba(248,113,113,.08)]",
+  warn: "border-[rgba(251,191,36,.4)] bg-[rgba(251,191,36,.08)]",
+};
+
+/** A camera's dot in the roster.
+ *
+ *  Disabled is grey rather than red: somebody switched that camera off on
+ *  purpose, and red sends an operator hunting a fault that is a setting. Anything
+ *  else offline is red, including a status the recorder invents — an unreadable
+ *  status is not a working camera.
+ *
+ *  Both fields are `unknown` in fact: the board is the recorder's own JSON,
+ *  relayed unreshaped. */
+export function cameraDot(status: unknown, enabled: unknown): string {
+  if (reportedText(status).toLowerCase() === "online") return "bg-nb-good";
+  return enabled === false ? "bg-nb-faint" : "bg-nb-crit";
+}
+
 function num(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -126,13 +148,7 @@ export default function RecorderBoard({ board, loading, error, onIsolate }: Read
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
       {/* the recorder's own verdict, in its own words */}
-      <div className={`rounded-[10px] border px-3 py-2.5 ${
-        tone === "bad"
-          ? "border-[rgba(248,113,113,.4)] bg-[rgba(248,113,113,.08)]"
-          : tone === "warn"
-            ? "border-[rgba(251,191,36,.4)] bg-[rgba(251,191,36,.08)]"
-            : "border-nb-line bg-[rgba(6,11,26,.5)]"
-      }`}>
+      <div className={`rounded-[10px] border px-3 py-2.5 ${VERDICT_SURFACE[tone] ?? "border-nb-line bg-[rgba(6,11,26,.5)]"}`}>
         <p className={`text-[13px] font-semibold ${TONE_TEXT[tone]}`}>
           {verdict.headline || "No verdict reported"}
         </p>
@@ -173,7 +189,6 @@ export default function RecorderBoard({ board, loading, error, onIsolate }: Read
           </h3>
           <div className="space-y-1">
             {rows.map((c) => {
-              const online = reportedText(c.status).toLowerCase() === "online";
               const id = reportedText(c.id);
               return (
                 <button
@@ -183,7 +198,7 @@ export default function RecorderBoard({ board, loading, error, onIsolate }: Read
                   className="flex w-full items-center gap-2 rounded-[8px] border border-transparent px-2 py-1.5 text-left transition hover:border-[rgba(150,180,245,.35)] hover:bg-[rgba(96,165,250,.06)]"
                 >
                   <span
-                    className={`h-2 w-2 shrink-0 rounded-full ${online ? "bg-nb-good" : c.enabled === false ? "bg-nb-faint" : "bg-nb-crit"}`}
+                    className={`h-2 w-2 shrink-0 rounded-full ${cameraDot(c.status, c.enabled)}`}
                   />
                   <span className="min-w-0 flex-1 truncate text-[12px] text-nb-ink">
                     {reportedText(c.name) || id}

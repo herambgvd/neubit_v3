@@ -60,6 +60,14 @@ export interface TalkButtonProps {
   disabled?: boolean;
 }
 
+/** The mic glyph. CONNECTING is its own state and outranks talking: the uplink
+ *  is not open yet, and a solid microphone there says the room can hear the
+ *  operator before it can. */
+function micIcon(connecting: boolean, talking: boolean): string {
+  if (connecting) return "svg-spinners:180-ring";
+  return talking ? "heroicons-solid:microphone" : "heroicons-outline:microphone";
+}
+
 export default function TalkButton({ nodeId, cameraId, disabled = false }: Readonly<TalkButtonProps>) {
   const [talking, setTalking] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -248,10 +256,7 @@ export default function TalkButton({ nodeId, cameraId, disabled = false }: Reado
           : "bg-white/10 text-white/85 hover:bg-white/20"
       }`}
     >
-      <Icon
-        icon={connecting ? "svg-spinners:180-ring" : talking ? "heroicons-solid:microphone" : "heroicons-outline:microphone"}
-        className="text-sm"
-      />
+      <Icon icon={micIcon(connecting, talking)} className="text-sm" />
       {talking ? "Talking" : "Talk"}
     </button>
   );

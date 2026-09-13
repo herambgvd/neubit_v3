@@ -42,6 +42,8 @@ export interface AddRecorderModalProps {
 
 export default function AddRecorderModal({ node, onClose, onSuccess }: Readonly<AddRecorderModalProps>) {
   const editing = !!node;
+  // What the form DOES, kept apart from whether it is busy doing it.
+  const submitLabel = editing ? "Save changes" : "Add recorder";
   const [form, setForm] = useState<RecorderForm>(
     node
       ? {
@@ -107,7 +109,7 @@ export default function AddRecorderModal({ node, onClose, onSuccess }: Readonly<
           <div className="flex-1" />
           <Button variant="secondary" onClick={onClose} disabled={save.isPending}>Cancel</Button>
           <Button variant={editing ? "primary" : "success"} onClick={submit} disabled={save.isPending}>
-            {save.isPending ? "Saving…" : editing ? "Save changes" : "Add recorder"}
+            {save.isPending ? "Saving…" : submitLabel}
           </Button>
         </>
       }

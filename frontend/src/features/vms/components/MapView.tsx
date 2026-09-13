@@ -32,6 +32,17 @@ interface CameraPin {
   y: number;
 }
 
+/** A placed device's dot.
+ *
+ *  Grey is "this console does not know this device" — the placement outlived the
+ *  camera, or the recorder holding it is not answering. It is deliberately not
+ *  red: red is a camera the estate CAN see and reports as down, and an operator
+ *  reading the floor plan needs those two to be different colours. */
+function placementDot(known: boolean, online: boolean): string {
+  if (!known) return "bg-[#7e93bf]";
+  return online ? "bg-[#34d399]" : "bg-[#f87171]";
+}
+
 export default function MapView({ cameras = [], onPick }: Readonly<MapViewProps>) {
   // ?site=<id> — where the estate map's "Floor plan" link lands. Read once, from
   // window.location rather than useSearchParams, to stay out of the Suspense rule
@@ -247,6 +258,7 @@ function FloorPlan({ url, placements, statusById, onPick, emptyPlacements }: Rea
           const cam = statusById.get(p.device_id);
           const on = cam?.status === "online";
           const known = !!cam;
+          const dot = placementDot(known, on);
           const left = fit.ox + p.x * fit.s;
           const top = fit.oy + p.y * fit.s;
           return (
@@ -260,9 +272,7 @@ function FloorPlan({ url, placements, statusById, onPick, emptyPlacements }: Rea
               style={{ left, top }}
             >
               <span
-                className={`block h-3.5 w-3.5 rounded-full border-2 border-white/80 shadow-[0_0_8px_rgba(0,0,0,.7)] ${
-                  !known ? "bg-[#7e93bf]" : on ? "bg-[#34d399]" : "bg-[#f87171]"
-                }`}
+                className={`block h-3.5 w-3.5 rounded-full border-2 border-white/80 shadow-[0_0_8px_rgba(0,0,0,.7)] ${dot}`}
               />
               {cam && (
                 <span className="mt-0.5 whitespace-nowrap rounded-sm bg-black/60 px-1 font-mono text-[9px] text-[#d7f7e9] opacity-0 transition group-hover:opacity-100">
