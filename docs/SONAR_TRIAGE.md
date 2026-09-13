@@ -208,3 +208,48 @@ DOM text — and now a reformat cannot change any of it.
 
 The rule earned its keep even so: it pointed at twenty places where what renders
 depended on invisible whitespace, and none of them depends on it any more.
+
+## Open on purpose: `typescript:S1874` on Web Audio (7 findings)
+
+`frontend/src/features/vms/components/TalkButton.tsx` uses `ScriptProcessorNode`,
+which is deprecated in the spec and is being removed from browsers. The seven
+findings stay open because they are the honest signal that a real migration is
+outstanding — suppressing them would turn a scheduled piece of work into a
+forgotten one.
+
+WHAT IT DOES TODAY. Push-to-talk into a camera's speaker through the recorder: an
+8 kHz `AudioContext` (the browser resamples the mic to G.711's rate, so there is no
+hand-rolled resampler), a 2048-frame `ScriptProcessorNode` converting Float32 to
+PCM16LE, enqueued into a `ReadableStream` that is the body of one long-lived
+streamed POST. Its output buffer is zero-filled deliberately: without that the
+operator's microphone feeds back through their own speakers.
+
+WHAT AN `AudioWorklet` VERSION MUST DO DIFFERENTLY — this is the part worth having
+written down before somebody starts:
+
+  * The processor becomes a separately-served module loaded by URL. It cannot be
+    bundled into the React chunk; under Next it belongs in `public/`, served at a
+    stable unhashed path, and excluded from any transform that would rewrite it —
+    the worklet's global scope has no `window`.
+  * The buffer size stops being a choice. `process()` is called with fixed 128-frame
+    render quanta, so `PROCESSOR_BUFFER = 2048` disappears and the worklet
+    accumulates instead. At 8 kHz, 160 samples is exactly the 20 ms the recorder
+    re-frames to — better granularity than today's 256 ms, not worse.
+  * The PCM16 conversion should move INTO the worklet, so the audio thread posts
+    already-encoded transferable bytes over the MessagePort. Leaving the conversion
+    on the main thread gives up most of the benefit.
+  * `ReadableStream` enqueueing stays on the main thread — the body belongs to
+    `fetch` — so the port handler becomes the enqueue point, and teardown becomes
+    `port.close()` plus returning `false` from `process()`.
+  * THE ANTI-FEEDBACK GUARD HAS TO BE RE-ESTABLISHED AND TESTED ON A DEVICE, not
+    reasoned about. A worklet does not need the destination connection a
+    ScriptProcessor did, so the zero-filled-output trick does not carry across
+    unchanged.
+
+ALSO TRUE TODAY, not only at removal: a `ScriptProcessorNode` runs on the MAIN
+thread, so it already drops frames under UI load.
+
+What was done in the meantime is the cheap half: the capability is checked BEFORE
+the recorder is asked to begin a talk session, so a browser without the node
+refuses loudly instead of opening the microphone, booking the session and writing
+an audit record for a talkspurt that never happened.
