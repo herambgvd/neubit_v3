@@ -24,14 +24,9 @@ def _aware(d: datetime | None) -> datetime | None:
     return d
 
 
-async def compute_alerts(db: AsyncSession) -> list[dict]:
-    now = datetime.now(timezone.utc)
+def _license_alerts(tenants: list, now: datetime) -> list[dict]:
+    """License lifecycle + suspension, per tenant."""
     alerts: list[dict] = []
-
-    tenants = (await db.execute(select(Tenant))).scalars().all()
-    tenant_by_id = {t.id: t for t in tenants}
-
-    # License lifecycle + suspension.
     for t in tenants:
         state = effective_license_state(t, now)
         if state == "expired":
@@ -64,8 +59,12 @@ async def compute_alerts(db: AsyncSession) -> list[dict]:
                 "link": f"/tenants/{t.id}",
                 "ts": t.created_at,
             })
+    return alerts
 
-    # User-quota breaches.
+
+async def _user_quota_alerts(db: AsyncSession, tenant_by_id: dict) -> list[dict]:
+    """Tenants that have reached or passed the seats they are allowed."""
+    alerts: list[dict] = []
     rows = (
         await db.execute(select(User.tenant_id, func.count()).group_by(User.tenant_id))
     ).all()
@@ -75,19 +74,26 @@ async def compute_alerts(db: AsyncSession) -> list[dict]:
         if t is None:
             continue
         cap = (t.limits or {}).get("max_users")
-        if isinstance(cap, int) and cap >= 0 and n >= cap:
-            over = n > cap
-            alerts.append({
-                "key": f"quota-users:{tid}",
-                "severity": "critical" if over else "warning",
-                "category": "quota",
-                "title": f"{t.name}: user quota {'exceeded' if over else 'reached'}",
-                "message": f"{n} of {cap} seats used. Increase the quota or the plan.",
-                "link": f"/tenants/{tid}",
-                "ts": t.created_at,
-            })
+        if not (isinstance(cap, int) and cap >= 0 and n >= cap):
+            continue
+        over = n > cap
+        alerts.append({
+            "key": f"quota-users:{tid}",
+            "severity": "critical" if over else "warning",
+            "category": "quota",
+            "title": f"{t.name}: user quota {'exceeded' if over else 'reached'}",
+            "message": f"{n} of {cap} seats used. Increase the quota or the plan.",
+            "link": f"/tenants/{tid}",
+            "ts": t.created_at,
+        })
+    return alerts
 
-    # Overdue / past-due invoices.
+
+async def _overdue_invoice_alerts(
+    db: AsyncSession, tenant_by_id: dict, now: datetime
+) -> list[dict]:
+    """Invoices past their due date — by status, or by the calendar."""
+    alerts: list[dict] = []
     invoices = (
         await db.execute(select(Invoice).where(Invoice.status.in_(("issued", "overdue"))))
     ).scalars().all()
@@ -106,8 +112,12 @@ async def compute_alerts(db: AsyncSession) -> list[dict]:
             "link": "/billing",
             "ts": due or inv.created_at,
         })
+    return alerts
 
-    # Past-due subscriptions.
+
+async def _past_due_subscription_alerts(db: AsyncSession, tenant_by_id: dict) -> list[dict]:
+    """Subscriptions the billing side has marked past due."""
+    alerts: list[dict] = []
     subs = (
         await db.execute(select(Subscription).where(Subscription.status == "past_due"))
     ).scalars().all()
@@ -122,6 +132,18 @@ async def compute_alerts(db: AsyncSession) -> list[dict]:
             "link": f"/tenants/{s.tenant_id}" if t else "/billing",
             "ts": _aware(s.updated_at) or s.created_at,
         })
+    return alerts
+
+
+async def compute_alerts(db: AsyncSession) -> list[dict]:
+    now = datetime.now(timezone.utc)
+    tenants = (await db.execute(select(Tenant))).scalars().all()
+    tenant_by_id = {t.id: t for t in tenants}
+
+    alerts = _license_alerts(tenants, now)
+    alerts += await _user_quota_alerts(db, tenant_by_id)
+    alerts += await _overdue_invoice_alerts(db, tenant_by_id, now)
+    alerts += await _past_due_subscription_alerts(db, tenant_by_id)
 
     alerts.sort(key=lambda a: (_SEVERITY_RANK.get(a["severity"], 3), -(a["ts"] or now).timestamp()))
     return alerts

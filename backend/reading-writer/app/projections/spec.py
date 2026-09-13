@@ -345,9 +345,18 @@ class Projection(BaseModel):
     # for a projection that is collected but deliberately not chartable yet.
     dataset: dict | None = None
 
-    @model_validator(mode="after")
-    def _check(self) -> "Projection":
-        cols = {c.name for c in self.target.columns}
+    def _check_rollup_columns(self, r, cols: set) -> None:
+        """A rollup may only group by and aggregate columns the target has."""
+        for c in r.group_by:
+            if c not in cols:
+                raise ValueError(f"rollup {r.key!r} groups by {c!r}, which is not a column")
+        for a in r.aggregates:
+            if a.column and a.column not in cols:
+                raise ValueError(f"rollup {r.key!r} aggregates {a.column!r}, not a column")
+
+    def _check_rollups(self, cols: set) -> None:
+        """Each rollup is distinctly named, is not the target itself, and reads
+        columns that exist."""
         keys = set()
         for r in self.rollups:
             if r.key in keys:
@@ -355,29 +364,34 @@ class Projection(BaseModel):
             keys.add(r.key)
             if r.relation == self.target.relation:
                 raise ValueError("a rollup cannot have the same name as the target relation")
-            for c in r.group_by:
-                if c not in cols:
-                    raise ValueError(f"rollup {r.key!r} groups by {c!r}, which is not a column")
-            for a in r.aggregates:
-                if a.column and a.column not in cols:
-                    raise ValueError(f"rollup {r.key!r} aggregates {a.column!r}, not a column")
-        # The dimension/rollup agreement described in `Rollup`'s docstring. Caught
-        # here because only here are both halves visible.
-        if self.dataset:
-            definition = self.dataset.get("definition") or {}
-            dims = [
-                d.get("column")
-                for d in (definition.get("dimensions") or [])
-                if (d.get("source") or "base") == "base"
-            ]
-            for r in self.rollups:
-                missing = [d for d in dims if d and d not in r.group_by]
-                if missing:
-                    raise ValueError(
-                        f"rollup {r.key!r} does not carry dimension column(s) "
-                        f"{', '.join(sorted(missing))}; a chart on that resolution "
-                        "would name a column the rollup does not have"
-                    )
+            self._check_rollup_columns(r, cols)
+
+    def _check_dimension_agreement(self) -> None:
+        """The dimension/rollup agreement described in `Rollup`'s docstring.
+
+        Caught here because only here are both halves visible.
+        """
+        if not self.dataset:
+            return
+        definition = self.dataset.get("definition") or {}
+        dims = [
+            d.get("column")
+            for d in (definition.get("dimensions") or [])
+            if (d.get("source") or "base") == "base"
+        ]
+        for r in self.rollups:
+            missing = [d for d in dims if d and d not in r.group_by]
+            if missing:
+                raise ValueError(
+                    f"rollup {r.key!r} does not carry dimension column(s) "
+                    f"{', '.join(sorted(missing))}; a chart on that resolution "
+                    "would name a column the rollup does not have"
+                )
+
+    @model_validator(mode="after")
+    def _check(self) -> "Projection":
+        self._check_rollups({c.name for c in self.target.columns})
+        self._check_dimension_agreement()
         return self
 
     @property

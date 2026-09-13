@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from functools import partial
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Request
@@ -71,6 +72,63 @@ def _compact(envelope: dict) -> dict:
     }
 
 
+def _incident_frame(envelope: dict) -> tuple[str, dict] | None:
+    """The SSE frame this envelope becomes — or None when it is not an event the
+    UI cares about."""
+    name = _EVENT_NAMES.get(str(envelope.get("type") or ""))
+    if name is None:
+        return None
+    return (name, _compact(envelope))
+
+
+async def _enqueue_incident_frame(queue, tenant_id, envelope: dict) -> None:
+    """The subscription callback: one envelope becomes at most one queued frame."""
+    frame = _incident_frame(envelope)
+    if frame is None:
+        return
+    try:
+        queue.put_nowait(frame)
+    except asyncio.QueueFull:
+        log.warning("SSE incident queue full (tenant=%s) — dropping frame", tenant_id)
+
+
+async def _incidents_relay(request, guard, pattern: str, tenant_id):
+    """One ephemeral NATS subscription, bridged to the browser until it ends."""
+    from . import events_nats
+
+    queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
+    sub = await events_nats.ephemeral_subscribe(pattern, partial(_enqueue_incident_frame, queue, tenant_id))
+    if sub is None:
+        log.info("SSE incident: NATS unavailable — stream open, keepalive only")
+
+    # Prime the connection so onopen fires and proxies flush.
+    yield ": connected\n\n"
+    try:
+        while True:
+            if await request.is_disconnected():
+                break
+            kind, item = await next_sse_frame(queue, KEEPALIVE_SECONDS)
+            if kind == "shutdown":
+                # Going down: end the response instead of looping, or the
+                # open stream wedges the shutdown. EventSource reconnects.
+                yield SSE_SHUTDOWN_FRAME
+                break
+            if kind == "keepalive":
+                if not await guard.still_allowed():
+                    # The 200 went out when the stream opened, so ending the
+                    # body is the only way left to refuse. EventSource
+                    # reconnects and gets a clean 401/403 then.
+                    yield "event: revoked\ndata: {}\n\n"
+                    break
+                yield ": keepalive\n\n"
+                continue
+            name, data = item
+            yield f"event: {name}\ndata: {json.dumps(data)}\n\n"
+    finally:
+        await events_nats.unsubscribe_quietly(sub)
+        log.debug("SSE incident stream closed (tenant=%s)", tenant_id)
+
+
 @realtime_incidents_router.get("/incidents")
 async def incidents_stream(
     request: Request,
@@ -103,58 +161,8 @@ async def incidents_stream(
         # A non-super-admin token with no tenant has nothing to watch.
         pattern = "tenant.__none__.workflow.>"
 
-    async def event_stream():
-        from . import events_nats
-
-        queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
-
-        async def _on_event(envelope: dict) -> None:
-            event_type = envelope.get("type") or ""
-            name = _EVENT_NAMES.get(str(event_type))
-            if name is None:
-                return  # not an event the UI cares about
-            try:
-                queue.put_nowait((name, _compact(envelope)))
-            except asyncio.QueueFull:
-                log.warning("SSE incident queue full (tenant=%s) — dropping frame", tenant_id)
-
-        sub = await events_nats.ephemeral_subscribe(pattern, _on_event)
-        if sub is None:
-            log.info("SSE incidents: NATS unavailable — stream open, keepalive only")
-
-        # Prime the connection so onopen fires and proxies flush.
-        yield ": connected\n\n"
-        try:
-            while True:
-                if await request.is_disconnected():
-                    break
-                kind, item = await next_sse_frame(queue, KEEPALIVE_SECONDS)
-                if kind == "shutdown":
-                    # Going down: end the response instead of looping, or the
-                    # open stream wedges the shutdown. EventSource reconnects.
-                    yield SSE_SHUTDOWN_FRAME
-                    break
-                if kind == "keepalive":
-                    if not await guard.still_allowed():
-                        # The 200 went out when the stream opened, so ending the
-                        # body is the only way left to refuse. EventSource
-                        # reconnects and gets a clean 401/403 then.
-                        yield "event: revoked\ndata: {}\n\n"
-                        break
-                    yield ": keepalive\n\n"
-                    continue
-                name, data = item
-                yield f"event: {name}\ndata: {json.dumps(data)}\n\n"
-        finally:
-            if sub is not None:
-                try:
-                    await sub.unsubscribe()
-                except Exception:  # noqa: BLE001 — best-effort cleanup
-                    pass
-            log.debug("SSE incidents stream closed (tenant=%s)", tenant_id)
-
     return StreamingResponse(
-        event_stream(),
+        _incidents_relay(request, guard, pattern, tenant_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

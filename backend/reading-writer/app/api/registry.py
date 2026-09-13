@@ -327,6 +327,85 @@ class Defaults(BaseModel):
     aggregate: BuilderAggregate | None = None
 
 
+def _check_auto_rules(auto, rel_keys) -> None:
+    """Every `resolution=auto` rule must name a relation this dataset has."""
+    for rule in auto:
+        if rule.relation not in rel_keys:
+            raise ValueError(f"auto rule names unknown relation {rule.relation!r}")
+
+
+def _check_dimension_sources(dimensions, join_keys) -> None:
+    """Every dimension reads from the base relation or a declared join."""
+    for d in dimensions:
+        if d.source != "base" and d.source not in join_keys:
+            raise ValueError(f"dimension {d.key!r} names unknown source {d.source!r}")
+
+
+def _check_filtered_aggregate_dimensions(m, by_agg, dim_keys) -> None:
+    """A filtered aggregate names a DIMENSION KEY, and the generator resolves it
+    through `Definition.dimension()`. Checking it here means a typo is a dataset
+    that refuses to load with a reason, not a 500 the first time somebody charts
+    it."""
+    for phys in by_agg.values():
+        for node in phys.walk():
+            if node.where and node.where.dimension not in dim_keys:
+                raise ValueError(
+                    f"measure {m.key!r} filters on {node.where.dimension!r}, "
+                    "which is not a dimension of this dataset"
+                )
+
+
+def _check_measure_physical(m, rel_keys, dim_keys) -> None:
+    """Each relation a measure maps must exist and must say how to compute every
+    aggregate the measure permits."""
+    for rel, by_agg in m.physical.items():
+        if rel not in rel_keys:
+            raise ValueError(f"measure {m.key!r} maps unknown relation {rel!r}")
+        _check_filtered_aggregate_dimensions(m, by_agg, dim_keys)
+        for agg in m.aggregates:
+            if agg not in by_agg:
+                raise ValueError(
+                    f"measure {m.key!r} permits {agg!r} but relation {rel!r} "
+                    "does not say how to compute it"
+                )
+
+
+def _check_measure(m, rel_keys, dim_keys, engine: str) -> None:
+    """One measure against the dimensions it compares within and the relations
+    it must be computable from."""
+    for c in m.comparable_within:
+        if c not in dim_keys:
+            raise ValueError(f"measure {m.key!r} names unknown dimension {c!r}")
+    if m.unit_dimension and m.unit_dimension not in dim_keys:
+        raise ValueError(f"measure {m.key!r} names unknown unit dimension")
+    if engine != "sql":
+        # A computed dataset has no columns to map. A definition that
+        # supplied one anyway would be describing a relation nothing
+        # reads, and the next person to change that relation would
+        # believe they had changed this dataset.
+        if m.physical:
+            raise ValueError(
+                f"measure {m.key!r} declares a physical mapping, but this "
+                f"dataset's engine is {engine!r} and generates no SQL"
+            )
+        return
+    for rel in rel_keys:
+        if rel not in m.physical:
+            raise ValueError(
+                f"measure {m.key!r} has no physical mapping for relation {rel!r}"
+            )
+    _check_measure_physical(m, rel_keys, dim_keys)
+
+
+def _check_defaults(defaults, dim_keys, measure_keys) -> None:
+    """A default a reader would silently not get is a broken dataset, not a hint."""
+    for d in (defaults.series_by, defaults.label_dimension):
+        if d and d not in dim_keys:
+            raise ValueError(f"defaults name unknown dimension {d!r}")
+    if defaults.measure and defaults.measure not in measure_keys:
+        raise ValueError("defaults name an unknown measure")
+
+
 class Definition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -357,61 +436,12 @@ class Definition(BaseModel):
         rel_keys = {r.key for r in self.relations}
         if len(rel_keys) != len(self.relations):
             raise ValueError("duplicate relation key")
-        for rule in self.auto:
-            if rule.relation not in rel_keys:
-                raise ValueError(f"auto rule names unknown relation {rule.relation!r}")
-        join_keys = {j.key for j in self.joins}
-        for d in self.dimensions:
-            if d.source != "base" and d.source not in join_keys:
-                raise ValueError(f"dimension {d.key!r} names unknown source {d.source!r}")
+        _check_auto_rules(self.auto, rel_keys)
+        _check_dimension_sources(self.dimensions, {j.key for j in self.joins})
         dim_keys = {d.key for d in self.dimensions}
         for m in self.measures:
-            for c in m.comparable_within:
-                if c not in dim_keys:
-                    raise ValueError(f"measure {m.key!r} names unknown dimension {c!r}")
-            if m.unit_dimension and m.unit_dimension not in dim_keys:
-                raise ValueError(f"measure {m.key!r} names unknown unit dimension")
-            if self.engine != "sql":
-                # A computed dataset has no columns to map. A definition that
-                # supplied one anyway would be describing a relation nothing
-                # reads, and the next person to change that relation would
-                # believe they had changed this dataset.
-                if m.physical:
-                    raise ValueError(
-                        f"measure {m.key!r} declares a physical mapping, but this "
-                        f"dataset's engine is {self.engine!r} and generates no SQL"
-                    )
-                continue
-            for rel in rel_keys:
-                if rel not in m.physical:
-                    raise ValueError(
-                        f"measure {m.key!r} has no physical mapping for relation {rel!r}"
-                    )
-            for rel, by_agg in m.physical.items():
-                if rel not in rel_keys:
-                    raise ValueError(f"measure {m.key!r} maps unknown relation {rel!r}")
-                # A filtered aggregate names a DIMENSION KEY, and the generator
-                # resolves it through `Definition.dimension()`. Checking it here
-                # means a typo is a dataset that refuses to load with a reason,
-                # not a 500 the first time somebody charts it.
-                for phys in by_agg.values():
-                    for node in phys.walk():
-                        if node.where and node.where.dimension not in dim_keys:
-                            raise ValueError(
-                                f"measure {m.key!r} filters on {node.where.dimension!r}, "
-                                "which is not a dimension of this dataset"
-                            )
-                for agg in m.aggregates:
-                    if agg not in by_agg:
-                        raise ValueError(
-                            f"measure {m.key!r} permits {agg!r} but relation {rel!r} "
-                            "does not say how to compute it"
-                        )
-        for d in (self.defaults.series_by, self.defaults.label_dimension):
-            if d and d not in dim_keys:
-                raise ValueError(f"defaults name unknown dimension {d!r}")
-        if self.defaults.measure and self.defaults.measure not in {m.key for m in self.measures}:
-            raise ValueError("defaults name an unknown measure")
+            _check_measure(m, rel_keys, dim_keys, self.engine)
+        _check_defaults(self.defaults, dim_keys, {m.key for m in self.measures})
         return self
 
     # ── lookups the generator and the router use ─────────────────────────────

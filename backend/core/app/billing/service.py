@@ -41,6 +41,37 @@ def _monthly_cents(plan: Plan) -> int:
     return plan.price_cents
 
 
+def _as_utc(value):
+    """A naive timestamp out of the store is UTC; say so before comparing it."""
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
+def _invoice_totals(invoices: list, now: datetime) -> dict:
+    """What is owed, what is late, and what was actually paid this month."""
+    cutoff = now - timedelta(days=30)
+    outstanding = 0
+    overdue_count = 0
+    paid_30d = 0
+    for inv in invoices:
+        due = _as_utc(inv.due_at)
+        if inv.status in ("issued", "overdue"):
+            outstanding += inv.amount_cents
+        if inv.status == "overdue" or (
+            inv.status == "issued" and due is not None and due < now
+        ):
+            overdue_count += 1
+        paid_at = _as_utc(inv.paid_at)
+        if inv.status == "paid" and paid_at is not None and paid_at >= cutoff:
+            paid_30d += inv.amount_cents
+    return {
+        "outstanding": outstanding,
+        "overdue_count": overdue_count,
+        "paid_30d": paid_30d,
+    }
+
+
 async def billing_summary(db: AsyncSession) -> dict:
     """Compute headline commercial metrics across all tenants."""
     now = datetime.now(timezone.utc)
@@ -52,26 +83,10 @@ async def billing_summary(db: AsyncSession) -> dict:
     active = [s for s in subs if s.status in ("active", "trialing")]
     mrr = sum(_monthly_cents(plans[s.plan_key]) for s in active if s.plan_key in plans)
 
-    invoices = (await db.execute(select(Invoice))).scalars().all()
-    outstanding = 0
-    overdue_count = 0
-    paid_30d = 0
-    cutoff = now - timedelta(days=30)
-    for inv in invoices:
-        due = inv.due_at
-        if due is not None and due.tzinfo is None:
-            due = due.replace(tzinfo=timezone.utc)
-        is_overdue = inv.status == "overdue" or (inv.status == "issued" and due is not None and due < now)
-        if inv.status in ("issued", "overdue"):
-            outstanding += inv.amount_cents
-        if is_overdue:
-            overdue_count += 1
-        if inv.status == "paid" and inv.paid_at is not None:
-            paid_at = inv.paid_at
-            if paid_at.tzinfo is None:
-                paid_at = paid_at.replace(tzinfo=timezone.utc)
-            if paid_at >= cutoff:
-                paid_30d += inv.amount_cents
+    totals = _invoice_totals((await db.execute(select(Invoice))).scalars().all(), now)
+    outstanding = totals["outstanding"]
+    overdue_count = totals["overdue_count"]
+    paid_30d = totals["paid_30d"]
 
     # Currency is taken from the most common active plan (single-currency assumption).
     currency = "USD"

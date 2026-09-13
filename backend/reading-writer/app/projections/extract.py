@@ -87,48 +87,70 @@ def _as_time(value: Any, col: str) -> dt.datetime:
     return out.astimezone(dt.timezone.utc)
 
 
+def _as_uuid(col: Column, value: Any) -> Any:
+    if isinstance(value, uuid.UUID):
+        return value
+    try:
+        return uuid.UUID(str(value))
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise Malformed(f"bad_uuid:{col.name}") from exc
+
+
+def _as_text(col: Column, value: Any) -> str:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, separators=(",", ":"))
+    return str(value)
+
+
+def _as_bigint(col: Column, value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise Malformed(f"bad_int:{col.name}") from exc
+
+
+def _as_double(col: Column, value: Any) -> float:
+    try:
+        f = float(value)
+    except (TypeError, ValueError) as exc:
+        raise Malformed(f"bad_number:{col.name}") from exc
+    # NaN/Inf are not storable in a way anything downstream can chart, and
+    # writing them as NULL would claim the publisher sent nothing.
+    if not math.isfinite(f):
+        raise Malformed(f"bad_number:{col.name}")
+    return f
+
+
+def _as_bool(col: Column, value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    s = str(value).strip().lower()
+    if s in ("true", "1", "yes", "y", "on"):
+        return True
+    if s in ("false", "0", "no", "n", "off"):
+        return False
+    raise Malformed(f"bad_bool:{col.name}")
+
+
+# The column types a projection may declare. A table rather than a chain, so the
+# set a spec can be written against is one readable list.
+_COERCERS = {
+    "timestamptz": lambda col, v: _as_time(v, col.name),
+    "uuid": _as_uuid,
+    "text": _as_text,
+    "bigint": _as_bigint,
+    "double precision": _as_double,
+    "boolean": _as_bool,
+    "jsonb": lambda col, v: json.dumps(v, separators=(",", ":"), default=str),
+}
+
+
 def _coerce(col: Column, value: Any) -> Any:
-    t = col.type
-    if t == "timestamptz":
-        return _as_time(value, col.name)
-    if t == "uuid":
-        if isinstance(value, uuid.UUID):
-            return value
-        try:
-            return uuid.UUID(str(value))
-        except (ValueError, AttributeError, TypeError) as exc:
-            raise Malformed(f"bad_uuid:{col.name}") from exc
-    if t == "text":
-        if isinstance(value, (dict, list)):
-            return json.dumps(value, separators=(",", ":"))
-        return str(value)
-    if t == "bigint":
-        try:
-            return int(value)
-        except (TypeError, ValueError) as exc:
-            raise Malformed(f"bad_int:{col.name}") from exc
-    if t == "double precision":
-        try:
-            f = float(value)
-        except (TypeError, ValueError) as exc:
-            raise Malformed(f"bad_number:{col.name}") from exc
-        # NaN/Inf are not storable in a way anything downstream can chart, and
-        # writing them as NULL would claim the publisher sent nothing.
-        if not math.isfinite(f):
-            raise Malformed(f"bad_number:{col.name}")
-        return f
-    if t == "boolean":
-        if isinstance(value, bool):
-            return value
-        s = str(value).strip().lower()
-        if s in ("true", "1", "yes", "y", "on"):
-            return True
-        if s in ("false", "0", "no", "n", "off"):
-            return False
-        raise Malformed(f"bad_bool:{col.name}")
-    if t == "jsonb":
-        return json.dumps(value, separators=(",", ":"), default=str)
-    raise Malformed(f"unsupported_type:{col.name}")
+    """The value in the column's own type, or a refusal that names the column."""
+    fn = _COERCERS.get(col.type)
+    if fn is None:
+        raise Malformed(f"unsupported_type:{col.name}")
+    return fn(col, value)
 
 
 def extract(body: bytes | dict, proj: Projection, resolve_tenant) -> dict:
@@ -145,37 +167,40 @@ def extract(body: bytes | dict, proj: Projection, resolve_tenant) -> dict:
 
     row: dict[str, Any] = {}
     for col in proj.target.columns:
-        raw = _walk(decoded, col.source)
-        if col.type == "uuid" and isinstance(raw, str) and not raw.strip():
-            # An EMPTY STRING is not a uuid, and it is not a value either — it is
-            # a publisher that had nothing to say and did not use `omitempty`.
-            # Treating it as absence rather than as a parse failure is the whole
-            # difference between an optional column going NULL and the entire
-            # message being discarded.
-            #
-            # This is the receiving half of the loss pipeline contract §3 names:
-            # a pre-Phase-C outbox row carries only a connection SLUG, marshals
-            # `conn_id` as `""`, and every alert in that replay died here as
-            # `bad_uuid:conn_id` — while the SAME shape in a READING survived,
-            # because the reading-writer's `_as_uuid` already read `""` as None.
-            # Two consumers of one wire disagreeing about what an empty string
-            # means is the bug; this makes them agree.
-            #
-            # A REQUIRED uuid still fails, but now as `missing:<col>`, which is
-            # what actually happened, instead of `bad_uuid:<col>`, which suggests
-            # a malformed value that was never there.
-            raw = None
-        if raw is None:
-            raw = col.default
-        if col.tenant:
-            # Rule 3 of `tenants.py` never returns None, so a tenant column is
-            # never the reason a row is dropped.
-            row[col.name] = resolve_tenant(raw)
-            continue
-        if raw is None:
-            if col.required:
-                raise Malformed(f"missing:{col.name}")
-            row[col.name] = None
-            continue
-        row[col.name] = _coerce(col, raw)
+        row[col.name] = _column_value(col, decoded, resolve_tenant)
     return row
+
+
+def _column_value(col: Column, decoded: dict, resolve_tenant) -> Any:
+    """One column's value, read out of the message and put in the column's type."""
+    raw = _walk(decoded, col.source)
+    if col.type == "uuid" and isinstance(raw, str) and not raw.strip():
+        # An EMPTY STRING is not a uuid, and it is not a value either — it is
+        # a publisher that had nothing to say and did not use `omitempty`.
+        # Treating it as absence rather than as a parse failure is the whole
+        # difference between an optional column going NULL and the entire
+        # message being discarded.
+        #
+        # This is the receiving half of the loss pipeline contract §3 names:
+        # a pre-Phase-C outbox row carries only a connection SLUG, marshals
+        # `conn_id` as `""`, and every alert in that replay died here as
+        # `bad_uuid:conn_id` — while the SAME shape in a READING survived,
+        # because the reading-writer's `_as_uuid` already read `""` as None.
+        # Two consumers of one wire disagreeing about what an empty string
+        # means is the bug; this makes them agree.
+        #
+        # A REQUIRED uuid still fails, but now as `missing:<col>`, which is
+        # what actually happened, instead of `bad_uuid:<col>`, which suggests
+        # a malformed value that was never there.
+        raw = None
+    if raw is None:
+        raw = col.default
+    if col.tenant:
+        # Rule 3 of `tenants.py` never returns None, so a tenant column is
+        # never the reason a row is dropped.
+        return resolve_tenant(raw)
+    if raw is None:
+        if col.required:
+            raise Malformed(f"missing:{col.name}")
+        return None
+    return _coerce(col, raw)

@@ -497,85 +497,74 @@ async def _site_consumption(
     return total
 
 
-async def sites_breakdown(
-    db: AsyncSession, tenant: uuid.UUID | None, params: dict, nofresh: dict
-) -> list[dict]:
-    facts = _rows(await db.execute(_SITE_FACTS_SQL, {"tenant": params["tenant"]}))
-    by_site = {r["site_id"]: r for r in _rows(await db.execute(_BY_SITE_SQL, params))}
-    cats = _rows(await db.execute(_SITE_CATEGORIES_SQL, nofresh))
-    alerts = _rows(
-        await db.execute(
-            _SITE_ALERTS_SQL,
-            {"tenant": params["tenant"], "alert_hours": SITE_ALERT_HOURS},
-        )
-    )
-
-    cats_by_site: dict[object, list[dict]] = {}
+def _categories_by_site(cats: list[dict]) -> dict[object, list[dict]]:
+    """What each site is made of, by point category."""
+    out: dict[object, list[dict]] = {}
     for c in cats:
-        cats_by_site.setdefault(c["site_id"], []).append(
+        out.setdefault(c["site_id"], []).append(
             {
                 "category": c["category"],
                 "devices": int(c["devices"]),
                 "points": int(c["points"]),
             }
         )
-    alerts_by_site: dict[object, dict] = {}
+    return out
+
+
+def _alerts_by_site(alerts: list[dict]) -> dict[object, dict]:
+    """Each site's alert count, kept split by severity as well as totalled."""
+    out: dict[object, dict] = {}
     for a in alerts:
-        bucket = alerts_by_site.setdefault(a["site_id"], {"total": 0, "by_severity": {}})
+        bucket = out.setdefault(a["site_id"], {"total": 0, "by_severity": {}})
         sev = a["severity"] or "unknown"
         bucket["by_severity"][sev] = bucket["by_severity"].get(sev, 0) + int(a["alerts"])
         bucket["total"] += int(a["alerts"])
+    return out
 
-    def row(site_id, fact: dict | None) -> dict:
-        agg = by_site.get(site_id) or {}
-        kwh_points = int(agg.get("kwh_points") or 0)
-        fact = fact or {}
-        return {
-            "site_id": site_id,
-            "site_name": fact.get("site_name") or agg.get("site_name"),
-            "placed": site_id is not None,
-            "is_active": fact.get("is_active"),
-            # Facts the mirror may or may not carry yet. `.get` on purpose —
-            # an absent column is NULL, and NULL renders as "—" with its reason.
-            "gross_floor_area_sqm": fact.get("gross_floor_area_sqm"),
-            "city": fact.get("city") or fact.get("location"),
-            "occupancy": fact.get("occupancy"),
-            "devices": int(agg.get("devices") or 0),
-            "points": int(agg.get("points") or 0),
-            "points_reporting": int(agg.get("points_reporting") or 0),
-            "last_seen_at": agg.get("last_seen_at"),
-            "categories": cats_by_site.get(site_id, []),
-            "alerts": {
-                "hours": SITE_ALERT_HOURS,
-                "total": alerts_by_site.get(site_id, {}).get("total", 0),
-                "by_severity": alerts_by_site.get(site_id, {}).get("by_severity", {}),
-            },
-            # Filled by the CCEI loop below from the metric registry; the
-            # screen reads this SLOT, so a refusal arrives as reason + detail,
-            # never as a fabricated number.
-            "score": None,
-            "score_reason": None,
-            "score_detail": None,
-            "kwh": _site_kwh(kwh_points, None),
-        }
 
-    out = [row(f["site_id"], f) for f in facts]
-    # Sites the point store knows that the mirror does not (should not happen —
-    # placement writes come from core, which also feeds the mirror — but a row
-    # silently dropped from the leaderboard would hide real devices).
-    known = {f["site_id"] for f in facts}
-    for sid, agg in by_site.items():
-        if sid is not None and sid not in known:
-            out.append(row(sid, None))
-    # The unplaced pseudo-row, always last and always present when it is
-    # non-empty — "121 points no site owns" is a fact, not clutter.
-    unplaced = by_site.get(None)
-    if unplaced and int(unplaced.get("points") or 0) > 0:
-        out.append(row(None, None))
+def _site_row(
+    site_id, fact: dict | None, by_site: dict, cats_by_site: dict, alerts_by_site: dict
+) -> dict:
+    """One leaderboard row, with every slot the screen reads already present."""
+    agg = by_site.get(site_id) or {}
+    kwh_points = int(agg.get("kwh_points") or 0)
+    fact = fact or {}
+    return {
+        "site_id": site_id,
+        "site_name": fact.get("site_name") or agg.get("site_name"),
+        "placed": site_id is not None,
+        "is_active": fact.get("is_active"),
+        # Facts the mirror may or may not carry yet. `.get` on purpose —
+        # an absent column is NULL, and NULL renders as "—" with its reason.
+        "gross_floor_area_sqm": fact.get("gross_floor_area_sqm"),
+        "city": fact.get("city") or fact.get("location"),
+        "occupancy": fact.get("occupancy"),
+        "devices": int(agg.get("devices") or 0),
+        "points": int(agg.get("points") or 0),
+        "points_reporting": int(agg.get("points_reporting") or 0),
+        "last_seen_at": agg.get("last_seen_at"),
+        "categories": cats_by_site.get(site_id, []),
+        "alerts": {
+            "hours": SITE_ALERT_HOURS,
+            "total": alerts_by_site.get(site_id, {}).get("total", 0),
+            "by_severity": alerts_by_site.get(site_id, {}).get("by_severity", {}),
+        },
+        # Filled by the CCEI loop below from the metric registry; the
+        # screen reads this SLOT, so a refusal arrives as reason + detail,
+        # never as a fabricated number.
+        "score": None,
+        "score_reason": None,
+        "score_detail": None,
+        "kwh": _site_kwh(kwh_points, None),
+    }
 
-    # Fill measured consumption only where an operator confirmed registers —
-    # everywhere else the blocked state from `row()` stands.
-    for r in out:
+
+async def _fill_measured_consumption(
+    db: AsyncSession, tenant: uuid.UUID | None, rows: list[dict], by_site: dict
+) -> None:
+    """Measured consumption, only where an operator confirmed registers —
+    everywhere else the blocked state `_site_row` set stands."""
+    for r in rows:
         if r["site_id"] is None:
             continue
         kwh_points = int((by_site.get(r["site_id"]) or {}).get("kwh_points") or 0)
@@ -583,18 +572,24 @@ async def sites_breakdown(
             consumption = await _site_consumption(db, tenant, r["site_id"])
             r["kwh"] = _site_kwh(kwh_points, consumption)
 
-    # The SCORE slot reads the metric registry's `ccei` (a composite ROW —
-    # weights are data, contract §21), evaluated per site over the same window
-    # as the other leaderboard figures. The registry's refusal semantics ride
-    # along WHOLE: a site that cannot honestly score gets the reason and every
-    # component's own {status, reason} in `score_detail`, so the dash the
-    # screen renders can explain itself input by input. Nothing here rounds a
-    # refusal into a number.
+
+async def _fill_ccei_scores(
+    db: AsyncSession, tenant: uuid.UUID | None, rows: list[dict]
+) -> None:
+    """The SCORE slot, read from the metric registry's `ccei`.
+
+    A composite ROW — weights are data, contract §21 — evaluated per site over
+    the same window as the other leaderboard figures. The registry's refusal
+    semantics ride along WHOLE: a site that cannot honestly score gets the
+    reason and every component's own {status, reason} in `score_detail`, so the
+    dash the screen renders can explain itself input by input. Nothing here
+    rounds a refusal into a number.
+    """
     from ..metric_registry import evaluator as metric_eval  # lazy: circular import
 
     end = dt.datetime.now(dt.timezone.utc)
     start = end - dt.timedelta(hours=SITE_ALERT_HOURS)
-    for r in out:
+    for r in rows:
         if r["site_id"] is None:
             r["score_reason"] = (
                 "unplaced points belong to no site, and a score is a site's — "
@@ -629,6 +624,41 @@ async def sites_breakdown(
             r["score_reason"] = (
                 f"CCEI v{ev['version']} {item['status']}: {item['reason']}"
             )
+
+
+async def sites_breakdown(
+    db: AsyncSession, tenant: uuid.UUID | None, params: dict, nofresh: dict
+) -> list[dict]:
+    facts = _rows(await db.execute(_SITE_FACTS_SQL, {"tenant": params["tenant"]}))
+    by_site = {r["site_id"]: r for r in _rows(await db.execute(_BY_SITE_SQL, params))}
+    cats_by_site = _categories_by_site(_rows(await db.execute(_SITE_CATEGORIES_SQL, nofresh)))
+    alerts_by_site = _alerts_by_site(
+        _rows(
+            await db.execute(
+                _SITE_ALERTS_SQL,
+                {"tenant": params["tenant"], "alert_hours": SITE_ALERT_HOURS},
+            )
+        )
+    )
+
+    out = [
+        _site_row(f["site_id"], f, by_site, cats_by_site, alerts_by_site) for f in facts
+    ]
+    # Sites the point store knows that the mirror does not (should not happen —
+    # placement writes come from core, which also feeds the mirror — but a row
+    # silently dropped from the leaderboard would hide real devices).
+    known = {f["site_id"] for f in facts}
+    for sid in by_site:
+        if sid is not None and sid not in known:
+            out.append(_site_row(sid, None, by_site, cats_by_site, alerts_by_site))
+    # The unplaced pseudo-row, always last and always present when it is
+    # non-empty — "121 points no site owns" is a fact, not clutter.
+    unplaced = by_site.get(None)
+    if unplaced and int(unplaced.get("points") or 0) > 0:
+        out.append(_site_row(None, None, by_site, cats_by_site, alerts_by_site))
+
+    await _fill_measured_consumption(db, tenant, out, by_site)
+    await _fill_ccei_scores(db, tenant, out)
     return out
 
 

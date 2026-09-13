@@ -458,6 +458,173 @@ async def series(
 # ── Correlation ──────────────────────────────────────────────────────────────
 
 
+def _correlation_points(point_id: list[uuid.UUID]) -> list[uuid.UUID]:
+    """The distinct points asked for, refusing a matrix nobody could read."""
+    ids: list[uuid.UUID] = []
+    for p in point_id:
+        if p not in ids:
+            ids.append(p)
+    if len(ids) < 2:
+        raise ValidationError("correlation needs two distinct points")
+    if len(ids) > q.MAX_CORRELATION_POINTS:
+        raise ValidationError(
+            f"at most {q.MAX_CORRELATION_POINTS} series per request "
+            f"(asked for {len(ids)}); a wider matrix is unreadable before it is expensive"
+        )
+    return ids
+
+
+def _correlation_resolution(
+    resolution: str, start_at: dt.datetime, end_at: dt.datetime
+) -> tuple[str, str]:
+    """Which rollup answers, and why it is the one that answered.
+
+    RAW IS NOT AN OPTION. Correlating raw samples would correlate whatever
+    happened to share a timestamp, which is a different question from the one
+    this screen asks; and contract §5 puts analysis on the rollups.
+    """
+    if resolution == "auto":
+        return q.choose_resolution(start_at, end_at)
+    if resolution in ("1m", "1h"):
+        reason = (
+            "1-minute rollup (readings_1m); materialized-only, so the newest "
+            "~2 minutes may not be included yet"
+            if resolution == "1m"
+            else "1-hour rollup (readings_1h); real-time aggregate, current hour included"
+        )
+        return resolution, reason
+    raise ValidationError(
+        "resolution must be one of: auto, 1m, 1h — correlation is computed on "
+        "the rollups, never on raw readings"
+    )
+
+
+def _point_label(m: dict) -> str:
+    return f"{m['device_tag'] or '?'} / {m['point_tag'] or '?'}"
+
+
+def _correlation_series_row(pid: uuid.UUID, m: dict, st: dict | None) -> dict:
+    """One series' own summary — what it reported, and whether it ever moved."""
+    n = int(st["n"]) if st else 0
+    distinct = int(st["distinct_values"]) if st else 0
+    return {
+        "point_id": pid,
+        "point_tag": m["point_tag"],
+        "device_tag": m["device_tag"],
+        "category": m["category"],
+        "unit": m["unit"],
+        "buckets": n,
+        "distinct_values": distinct,
+        "frozen": n > 0 and distinct <= 1,
+        "min": st["min"] if st else None,
+        "max": st["max"] if st else None,
+        "mean": st["mean"] if st else None,
+        "first_bucket": st["first_bucket"] if st else None,
+        "last_bucket": st["last_bucket"] if st else None,
+    }
+
+
+def _correlation_series(allowed: list[uuid.UUID], meta: dict, stats: dict) -> dict:
+    """Every series' summary, with the two sets a pair's status turns on: the
+    frozen series (no variance) and the silent ones (no buckets at all)."""
+    rows: list[dict] = []
+    frozen: set[uuid.UUID] = set()
+    silent: set[uuid.UUID] = set()
+    for pid in allowed:
+        row = _correlation_series_row(pid, meta[pid], stats.get(pid))
+        if row["frozen"]:
+            frozen.add(pid)
+        if row["buckets"] == 0:
+            silent.add(pid)
+        rows.append(row)
+    return {"series": rows, "frozen": frozen, "silent": silent}
+
+
+def _no_overlap_pair(a, b, meta: dict, silent: set) -> dict:
+    """Absence renders as absence. Say WHICH kind of absence it is: a series that
+    reported nothing at all is a different problem from two series that reported
+    at times that never met."""
+    quiet = [p for p in (a, b) if p in silent]
+    if quiet:
+        why = (
+            f"{' and '.join(_point_label(meta[p]) for p in quiet)} reported no numeric "
+            f"bucket in this window"
+        )
+    else:
+        why = "the two series never filled the same bucket in this window"
+    return {"a": a, "b": b, "n": 0, "r": None, "status": "no_overlap", "reason": why}
+
+
+def _correlation_pair(
+    a, b, row: dict | None, meta: dict, frozen: set, silent: set, resolution: str
+) -> dict:
+    """One pair's coefficient, or the named reason there is none."""
+    n = int(row["n"]) if row else 0
+    if n == 0:
+        return _no_overlap_pair(a, b, meta, silent)
+
+    overlap = {"overlap_start": row["overlap_start"], "overlap_end": row["overlap_end"]}
+    flat = [p for p in (a, b) if p in frozen]
+    if flat:
+        return {
+            "a": a, "b": b, "n": n, "r": None,
+            "status": "undefined_frozen",
+            "reason": (
+                f"undefined — {' and '.join(_point_label(meta[p]) for p in flat)} "
+                f"reported one value for all {n} overlapping buckets, so its "
+                f"standard deviation is zero and Pearson's r has no value "
+                f"(this is not a correlation of zero)"
+            ),
+            **overlap,
+        }
+    if n < q.MIN_CORRELATION_BUCKETS:
+        return {
+            "a": a, "b": b, "n": n, "r": None,
+            "status": "too_few",
+            "reason": (
+                f"only {n} overlapping bucket(s); below "
+                f"{q.MIN_CORRELATION_BUCKETS} a coefficient is determined by "
+                f"the arithmetic rather than by the building"
+            ),
+            **overlap,
+        }
+    r_val = row["r"]
+    if r_val is None:
+        # corr() went NULL for a reason the distinct-value check did not
+        # catch (a series flat only across the OVERLAP, for instance).
+        return {
+            "a": a, "b": b, "n": n, "r": None,
+            "status": "undefined_frozen",
+            "reason": (
+                f"undefined — one of the two series did not vary across the "
+                f"{n} overlapping buckets, so its standard deviation is zero"
+            ),
+            **overlap,
+        }
+    return {
+        "a": a, "b": b, "n": n, "r": float(r_val),
+        "status": "ok",
+        "reason": f"Pearson r over {n} aligned {resolution} buckets",
+        **overlap,
+    }
+
+
+def _correlation_pairs(
+    allowed: list[uuid.UUID], rows: list[dict], meta: dict,
+    frozen: set, silent: set, resolution: str
+) -> list[dict]:
+    """Every unordered pair, once."""
+    found = {(r["a_id"], r["b_id"]): r for r in rows}
+    pairs: list[dict] = []
+    for i, a in enumerate(allowed):
+        for b in allowed[i + 1 :]:
+            row = found.get((a, b)) or found.get((b, a))
+            pairs.append(
+                _correlation_pair(a, b, row, meta, frozen, silent, resolution)
+            )
+    return pairs
+
+
 @bi_router.get(
     "/correlation",
     dependencies=[Depends(require_permission(PERM_READ))],
@@ -491,38 +658,9 @@ async def correlation(
       path at all here, and `auto` is never silently downgraded.
     """
     tenant = _tenant(scope)
-    ids: list[uuid.UUID] = []
-    for p in point_id:
-        if p not in ids:
-            ids.append(p)
-    if len(ids) < 2:
-        raise ValidationError("correlation needs two distinct points")
-    if len(ids) > q.MAX_CORRELATION_POINTS:
-        raise ValidationError(
-            f"at most {q.MAX_CORRELATION_POINTS} series per request "
-            f"(asked for {len(ids)}); a wider matrix is unreadable before it is expensive"
-        )
-
+    ids = _correlation_points(point_id)
     start_at, end_at = _window(start, end, hours)
-
-    # RAW IS NOT AN OPTION. Correlating raw samples would correlate whatever
-    # happened to share a timestamp, which is a different question from the one
-    # this screen asks; and contract §5 puts analysis on the rollups.
-    if resolution == "auto":
-        resolution, reason = q.choose_resolution(start_at, end_at)
-    elif resolution in ("1m", "1h"):
-        _, reason = q.choose_resolution(start_at, end_at)
-        reason = (
-            "1-minute rollup (readings_1m); materialized-only, so the newest "
-            "~2 minutes may not be included yet"
-            if resolution == "1m"
-            else "1-hour rollup (readings_1h); real-time aggregate, current hour included"
-        )
-    else:
-        raise ValidationError(
-            "resolution must be one of: auto, 1m, 1h — correlation is computed on "
-            "the rollups, never on raw readings"
-        )
+    resolution, reason = _correlation_resolution(resolution, start_at, end_at)
 
     # Resolve labels FIRST; this is also the tenant check (see `series`). A point
     # that does not come back is not the caller's and is dropped before a single
@@ -538,138 +676,10 @@ async def correlation(
     rows = await q.correlation_pairs(
         db, tenant, point_ids=allowed, start=start_at, end=end_at, resolution=resolution
     )
-
-    def _label(pid: uuid.UUID) -> str:
-        m = meta[pid]
-        return f"{m['device_tag'] or '?'} / {m['point_tag'] or '?'}"
-
-    series_out: list[dict] = []
-    frozen: set[uuid.UUID] = set()
-    silent: set[uuid.UUID] = set()
-    for pid in allowed:
-        st = stats.get(pid)
-        n = int(st["n"]) if st else 0
-        distinct = int(st["distinct_values"]) if st else 0
-        is_frozen = n > 0 and distinct <= 1
-        if is_frozen:
-            frozen.add(pid)
-        if n == 0:
-            silent.add(pid)
-        series_out.append(
-            {
-                "point_id": pid,
-                "point_tag": meta[pid]["point_tag"],
-                "device_tag": meta[pid]["device_tag"],
-                "category": meta[pid]["category"],
-                "unit": meta[pid]["unit"],
-                "buckets": n,
-                "distinct_values": distinct,
-                "frozen": is_frozen,
-                "min": st["min"] if st else None,
-                "max": st["max"] if st else None,
-                "mean": st["mean"] if st else None,
-                "first_bucket": st["first_bucket"] if st else None,
-                "last_bucket": st["last_bucket"] if st else None,
-            }
-        )
-
-    found = {(r["a_id"], r["b_id"]): r for r in rows}
-    pairs_out: list[dict] = []
-    for i, a in enumerate(allowed):
-        for b in allowed[i + 1 :]:
-            row = found.get((a, b)) or found.get((b, a))
-            n = int(row["n"]) if row else 0
-            flat = [p for p in (a, b) if p in frozen]
-
-            if n == 0:
-                # Absence renders as absence. Say WHICH kind of absence it is:
-                # a series that reported nothing at all is a different problem
-                # from two series that reported at times that never met.
-                quiet = [p for p in (a, b) if p in silent]
-                if quiet:
-                    why = (
-                        f"{' and '.join(_label(p) for p in quiet)} reported no numeric "
-                        f"bucket in this window"
-                    )
-                else:
-                    why = "the two series never filled the same bucket in this window"
-                pairs_out.append(
-                    {"a": a, "b": b, "n": 0, "r": None, "status": "no_overlap", "reason": why}
-                )
-                continue
-
-            if flat:
-                pairs_out.append(
-                    {
-                        "a": a,
-                        "b": b,
-                        "n": n,
-                        "r": None,
-                        "status": "undefined_frozen",
-                        "reason": (
-                            f"undefined — {' and '.join(_label(p) for p in flat)} "
-                            f"reported one value for all {n} overlapping buckets, so its "
-                            f"standard deviation is zero and Pearson's r has no value "
-                            f"(this is not a correlation of zero)"
-                        ),
-                        "overlap_start": row["overlap_start"],
-                        "overlap_end": row["overlap_end"],
-                    }
-                )
-                continue
-
-            if n < q.MIN_CORRELATION_BUCKETS:
-                pairs_out.append(
-                    {
-                        "a": a,
-                        "b": b,
-                        "n": n,
-                        "r": None,
-                        "status": "too_few",
-                        "reason": (
-                            f"only {n} overlapping bucket(s); below "
-                            f"{q.MIN_CORRELATION_BUCKETS} a coefficient is determined by "
-                            f"the arithmetic rather than by the building"
-                        ),
-                        "overlap_start": row["overlap_start"],
-                        "overlap_end": row["overlap_end"],
-                    }
-                )
-                continue
-
-            r_val = row["r"]
-            if r_val is None:
-                # corr() went NULL for a reason the distinct-value check did not
-                # catch (a series flat only across the OVERLAP, for instance).
-                pairs_out.append(
-                    {
-                        "a": a,
-                        "b": b,
-                        "n": n,
-                        "r": None,
-                        "status": "undefined_frozen",
-                        "reason": (
-                            f"undefined — one of the two series did not vary across the "
-                            f"{n} overlapping buckets, so its standard deviation is zero"
-                        ),
-                        "overlap_start": row["overlap_start"],
-                        "overlap_end": row["overlap_end"],
-                    }
-                )
-                continue
-
-            pairs_out.append(
-                {
-                    "a": a,
-                    "b": b,
-                    "n": n,
-                    "r": float(r_val),
-                    "status": "ok",
-                    "reason": f"Pearson r over {n} aligned {resolution} buckets",
-                    "overlap_start": row["overlap_start"],
-                    "overlap_end": row["overlap_end"],
-                }
-            )
+    summary = _correlation_series(allowed, meta, stats)
+    pairs_out = _correlation_pairs(
+        allowed, rows, meta, summary["frozen"], summary["silent"], resolution
+    )
 
     samples: list[dict] = []
     truncated = False
@@ -692,7 +702,7 @@ async def correlation(
         start=start_at,
         end=end_at,
         min_buckets=q.MIN_CORRELATION_BUCKETS,
-        series=series_out,
+        series=summary["series"],
         pairs=pairs_out,
         samples=samples,
         samples_truncated=truncated,
@@ -882,6 +892,123 @@ async def rating_sites(db: Db, scope: Caller) -> SiteFactsListResponse:
     return SiteFactsListResponse(items=await rt.sites(db, _tenant(scope)))
 
 
+def _selected_meters(point_id, by_id: dict) -> dict:
+    """The meters the caller named: the usable ones, and the named ones that
+    cannot count — not at this site, retired, or, the common case, nobody has
+    confirmed they are in kWh."""
+    chosen: list[uuid.UUID] = []
+    unusable: list[str] = []
+    for pid in point_id or []:
+        if pid in by_id and pid not in chosen:
+            chosen.append(pid)
+        elif pid not in by_id:
+            unusable.append(str(pid))
+    return {"chosen": chosen, "unusable": unusable}
+
+
+async def _role_bound_meters(db, tenant, by_id: dict) -> list:
+    """The registers an operator BOUND as `energy_register` in point_roles.
+
+    When this endpoint was written there was no stored fact saying which
+    register is the supply, so the caller had to name them per request. The
+    metric registry changed that: the role IS that fact now — asserted,
+    provenance-carrying, and deliberately excluding twin meters and sub-boards
+    (contract §21). An explicit `point_id` list still overrides, because a
+    caller asking about one specific meter is asking a narrower question, not
+    contradicting the stored fact.
+    """
+    role_rows = (
+        (
+            await db.execute(
+                sa_text(
+                    "SELECT point_id FROM point_roles"
+                    " WHERE role = 'energy_register'"
+                    "   AND (tenant_id = CAST(:tenant AS uuid) OR (:tenant IS NULL AND tenant_id IS NULL))"
+                ),
+                {"tenant": str(tenant) if tenant else None},
+            )
+        )
+        .scalars()
+        .all()
+    )
+    chosen: list[uuid.UUID] = []
+    for pid in role_rows:
+        # Role-bound but not a candidate here = bound at another site, or
+        # unplaced. Silently using it would attribute another site's (or no
+        # site's) energy to this one, so it is simply not chosen.
+        if pid in by_id and pid not in chosen:
+            chosen.append(pid)
+    return chosen
+
+
+def _no_meter_reason(candidates: list) -> str:
+    """Nothing to add up — and the two ways that happens need two answers."""
+    if candidates:
+        return (
+            "No meter selected. Bind the site's supply registers to the "
+            "`energy_register` role on the Metric Roles screen (or pass "
+            "`point_id` explicitly) — the platform stores no other fact saying "
+            "which meter is the supply, and guessing from a tag would be an "
+            "invention."
+        )
+    return (
+        "No point at this site has a CONFIRMED kWh unit. A rating counts "
+        "only registers an operator has confirmed are kilowatt-hours; the "
+        "wire carries no unit, so until somebody confirms one there is "
+        "nothing to add up."
+    )
+
+
+def _epi_from(ok: list[dict], area, site: dict) -> dict:
+    """The annualised EPI and what it cost — or the reason there is no interval
+    to annualise over."""
+    measured = sum(float(m["consumption_kwh"] or 0.0) for m in ok)
+    first = min(m["first_bucket"] for m in ok)
+    last = max(m["last_bucket"] for m in ok)
+    # Days of readings actually covered — NOT the window asked for. A 30-day
+    # request over 20 hours of data must annualise from the 20 hours and say
+    # so, not pretend it saw a month.
+    days_covered = max((last - first).total_seconds() / 86400.0, 0.0)
+    if days_covered <= 0:
+        return {
+            "epi": None, "cost": None,
+            "blocked": [
+                "The selected meters span less than one hourly bucket, so there is "
+                "no interval to annualise over."
+            ],
+        }
+    factor = 365.0 / days_covered
+    annualised = measured * factor
+    value = annualised / float(area)
+    epi = {
+        "epi_kwh_per_sqm_year": value,
+        "measured_kwh": measured,
+        "days_covered": days_covered,
+        "annualised_kwh": annualised,
+        "area_sqm": float(area),
+        "annualisation_factor": factor,
+        "formula": (
+            f"{measured:,.1f} kWh measured over {days_covered:.2f} days "
+            f"× (365 / {days_covered:.2f}) = {annualised:,.1f} kWh/yr, "
+            f"÷ {float(area):,.0f} m² = {value:,.1f} kWh/m²/yr"
+        ),
+    }
+    cost = None
+    tariff = site["energy_tariff_per_kwh"]
+    currency = site["tariff_currency"]
+    if tariff and currency:
+        cost = {
+            "amount": measured * float(tariff),
+            "currency": currency,
+            "tariff_per_kwh": float(tariff),
+            "formula": (
+                f"{measured:,.1f} kWh × {float(tariff):g} {currency}/kWh = "
+                f"{measured * float(tariff):,.2f} {currency} for the measured window"
+            ),
+        }
+    return {"epi": epi, "cost": cost, "blocked": []}
+
+
 @bi_router.get(
     "/rating",
     dependencies=[Depends(require_permission(PERM_READ))],
@@ -924,62 +1051,15 @@ async def rating(
     candidates = await rt.candidate_meters(db, tenant, site_id)
     by_id = {c["point_id"]: c for c in candidates}
 
-    chosen: list[uuid.UUID] = []
-    unusable: list[str] = []
-    for pid in point_id or []:
-        if pid in by_id and pid not in chosen:
-            chosen.append(pid)
-        elif pid not in by_id:
-            # Named but not usable: not at this site, retired, or — the common
-            # case — nobody has confirmed it is in kWh.
-            unusable.append(str(pid))
-
-    # No explicit selection: fall back to the registers an operator BOUND as
-    # `energy_register` in point_roles. When this endpoint was written there was
-    # no stored fact saying which register is the supply, so the caller had to
-    # name them per request. The metric registry changed that: the role IS that
-    # fact now — asserted, provenance-carrying, and deliberately excluding twin
-    # meters and sub-boards (contract §21). An explicit `point_id` list still
-    # overrides, because a caller asking about one specific meter is asking a
-    # narrower question, not contradicting the stored fact.
+    selected = _selected_meters(point_id, by_id)
+    chosen = selected["chosen"]
+    unusable = selected["unusable"]
     if not chosen:
-        role_rows = (
-            (
-                await db.execute(
-                    sa_text(
-                        "SELECT point_id FROM point_roles"
-                        " WHERE role = 'energy_register'"
-                        "   AND (tenant_id = CAST(:tenant AS uuid) OR (:tenant IS NULL AND tenant_id IS NULL))"
-                    ),
-                    {"tenant": str(tenant) if tenant else None},
-                )
-            )
-            .scalars()
-            .all()
-        )
-        for pid in role_rows:
-            # Role-bound but not a candidate here = bound at another site, or
-            # unplaced. Silently using it would attribute another site's (or no
-            # site's) energy to this one, so it is simply not chosen.
-            if pid in by_id and pid not in chosen:
-                chosen.append(pid)
+        chosen = await _role_bound_meters(db, tenant, by_id)
 
     blocked: list[str] = []
     if not chosen:
-        blocked.append(
-            "No meter selected. Bind the site's supply registers to the "
-            "`energy_register` role on the Metric Roles screen (or pass "
-            "`point_id` explicitly) — the platform stores no other fact saying "
-            "which meter is the supply, and guessing from a tag would be an "
-            "invention."
-            if candidates
-            else (
-                "No point at this site has a CONFIRMED kWh unit. A rating counts "
-                "only registers an operator has confirmed are kilowatt-hours; the "
-                "wire carries no unit, so until somebody confirms one there is "
-                "nothing to add up."
-            )
-        )
+        blocked.append(_no_meter_reason(candidates))
     if unusable:
         blocked.append(
             f"{len(unusable)} selected point(s) are not confirmed kWh registers at "
@@ -1017,47 +1097,10 @@ async def rating(
     epi = None
     cost = None
     if ok and area:
-        measured = sum(float(m["consumption_kwh"] or 0.0) for m in ok)
-        first = min(m["first_bucket"] for m in ok)
-        last = max(m["last_bucket"] for m in ok)
-        # Days of readings actually covered — NOT the window asked for. A 30-day
-        # request over 20 hours of data must annualise from the 20 hours and say
-        # so, not pretend it saw a month.
-        days_covered = max((last - first).total_seconds() / 86400.0, 0.0)
-        if days_covered <= 0:
-            blocked.append(
-                "The selected meters span less than one hourly bucket, so there is "
-                "no interval to annualise over."
-            )
-        else:
-            factor = 365.0 / days_covered
-            annualised = measured * factor
-            value = annualised / float(area)
-            epi = {
-                "epi_kwh_per_sqm_year": value,
-                "measured_kwh": measured,
-                "days_covered": days_covered,
-                "annualised_kwh": annualised,
-                "area_sqm": float(area),
-                "annualisation_factor": factor,
-                "formula": (
-                    f"{measured:,.1f} kWh measured over {days_covered:.2f} days "
-                    f"× (365 / {days_covered:.2f}) = {annualised:,.1f} kWh/yr, "
-                    f"÷ {float(area):,.0f} m² = {value:,.1f} kWh/m²/yr"
-                ),
-            }
-            tariff = site["energy_tariff_per_kwh"]
-            currency = site["tariff_currency"]
-            if tariff and currency:
-                cost = {
-                    "amount": measured * float(tariff),
-                    "currency": currency,
-                    "tariff_per_kwh": float(tariff),
-                    "formula": (
-                        f"{measured:,.1f} kWh × {float(tariff):g} {currency}/kWh = "
-                        f"{measured * float(tariff):,.2f} {currency} for the measured window"
-                    ),
-                }
+        computed = _epi_from(ok, area, site)
+        epi = computed["epi"]
+        cost = computed["cost"]
+        blocked.extend(computed["blocked"])
 
     return RatingResponse(
         site=site,

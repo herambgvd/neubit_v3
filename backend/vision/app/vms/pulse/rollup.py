@@ -136,6 +136,74 @@ def offline_cameras(node_id: str, node_name: str, board: dict) -> list[dict]:
     return out
 
 
+def _recorder_verdict_items(node: dict) -> list[dict]:
+    """What the recorder's own verdict says needs an operator."""
+    level = str((node.get("verdict") or {}).get("level") or "").lower()
+    if level == "down":
+        return [{
+            "severity": "critical",
+            "kind": "recorder_down",
+            "item": (node["verdict"].get("headline") or "Recorder engine down"),
+            "where": node["node_name"],
+            "detail": node["verdict"].get("detail"),
+        }]
+    if level == "degraded":
+        return [{
+            "severity": "warning",
+            "kind": "recorder_degraded",
+            "item": (node["verdict"].get("headline") or "Recorder degraded"),
+            "where": node["node_name"],
+            "detail": node["verdict"].get("detail"),
+        }]
+    return []
+
+
+def _recording_gap_items(node: dict) -> list[dict]:
+    """Recording that is NOT gap-free is its own line: the recorder can be green,
+    every camera online, and footage still be missing."""
+    if node["cameras"].get("recording_gap_free") is not False:
+        return []
+    return [{
+        "severity": "critical",
+        "kind": "recording_gaps",
+        "item": "Footage is not being written continuously",
+        "where": node["node_name"],
+        "detail": f"{node['cameras'].get('recording_active') or 0} camera(s) recording",
+    }]
+
+
+def _volume_items(node: dict) -> list[dict]:
+    """Each volume that is too full to keep writing — or too unreadable to know."""
+    items: list[dict] = []
+    for vol in node.get("volumes") or []:
+        pct = vol.get("used_percent")
+        if pct is None:
+            if vol.get("usage_error"):
+                items.append({
+                    "severity": "warning",
+                    "kind": "volume_unreadable",
+                    "item": f"Storage usage unreadable — {vol.get('name')}",
+                    "where": node["node_name"],
+                    "detail": vol.get("usage_error"),
+                })
+            continue
+        if pct >= VOLUME_CRITICAL_PCT:
+            items.append({
+                "severity": "critical", "kind": "volume_full",
+                "item": f"{vol.get('name')} is {pct:.0f}% full",
+                "where": node["node_name"],
+                "detail": vol.get("path"),
+            })
+        elif pct >= VOLUME_WARN_PCT:
+            items.append({
+                "severity": "warning", "kind": "volume_high",
+                "item": f"{vol.get('name')} is {pct:.0f}% full",
+                "where": node["node_name"],
+                "detail": vol.get("path"),
+            })
+    return items
+
+
 def attention_items(nodes: list[dict], offline: list[dict], unreachable: list[dict]) -> list[dict]:
     """What needs an operator, worst first.
 
@@ -155,59 +223,9 @@ def attention_items(nodes: list[dict], offline: list[dict], unreachable: list[di
         })
 
     for node in nodes:
-        level = str((node.get("verdict") or {}).get("level") or "").lower()
-        if level == "down":
-            items.append({
-                "severity": "critical",
-                "kind": "recorder_down",
-                "item": (node["verdict"].get("headline") or "Recorder engine down"),
-                "where": node["node_name"],
-                "detail": node["verdict"].get("detail"),
-            })
-        elif level == "degraded":
-            items.append({
-                "severity": "warning",
-                "kind": "recorder_degraded",
-                "item": (node["verdict"].get("headline") or "Recorder degraded"),
-                "where": node["node_name"],
-                "detail": node["verdict"].get("detail"),
-            })
-        # Recording that is NOT gap-free is its own line: the recorder can be
-        # green, every camera online, and footage still be missing.
-        if node["cameras"].get("recording_gap_free") is False:
-            items.append({
-                "severity": "critical",
-                "kind": "recording_gaps",
-                "item": "Footage is not being written continuously",
-                "where": node["node_name"],
-                "detail": f"{node['cameras'].get('recording_active') or 0} camera(s) recording",
-            })
-        for vol in node.get("volumes") or []:
-            pct = vol.get("used_percent")
-            if pct is None:
-                if vol.get("usage_error"):
-                    items.append({
-                        "severity": "warning",
-                        "kind": "volume_unreadable",
-                        "item": f"Storage usage unreadable — {vol.get('name')}",
-                        "where": node["node_name"],
-                        "detail": vol.get("usage_error"),
-                    })
-                continue
-            if pct >= VOLUME_CRITICAL_PCT:
-                items.append({
-                    "severity": "critical", "kind": "volume_full",
-                    "item": f"{vol.get('name')} is {pct:.0f}% full",
-                    "where": node["node_name"],
-                    "detail": vol.get("path"),
-                })
-            elif pct >= VOLUME_WARN_PCT:
-                items.append({
-                    "severity": "warning", "kind": "volume_high",
-                    "item": f"{vol.get('name')} is {pct:.0f}% full",
-                    "where": node["node_name"],
-                    "detail": vol.get("path"),
-                })
+        items += _recorder_verdict_items(node)
+        items += _recording_gap_items(node)
+        items += _volume_items(node)
 
     for cam in offline:
         items.append({

@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from functools import partial
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Request
@@ -105,6 +106,64 @@ def _compact_popup(envelope: dict) -> dict:
     }
 
 
+def _vms_frame(envelope: dict, camera_id: str | None) -> tuple[str, dict] | None:
+    """The SSE frame this envelope becomes — or None when this subscriber asked
+    for one camera and the event belongs to another."""
+    is_popup = str(envelope.get("type") or "") == "vms.popup"
+    data = _compact_popup(envelope) if is_popup else _compact_event(envelope)
+    if camera_id and data.get("camera_id") != camera_id:
+        return None
+    return (VMS_POPUP_NAME, data) if is_popup else (VMS_EVENT_NAME, data)
+
+
+async def _enqueue_vms_frame(queue, camera_id, tenant_id, envelope: dict) -> None:
+    """The subscription callback: one envelope becomes at most one queued frame."""
+    frame = _vms_frame(envelope, camera_id)
+    if frame is None:
+        return
+    try:
+        queue.put_nowait(frame)
+    except asyncio.QueueFull:
+        log.warning("SSE vms queue full (tenant=%s) — dropping frame", tenant_id)
+
+
+async def _vms_relay(request, guard, pattern: str, camera_id: str | None, tenant_id):
+    """One ephemeral NATS subscription, bridged to the browser until it ends."""
+    from . import events_nats
+
+    queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
+    sub = await events_nats.ephemeral_subscribe(pattern, partial(_enqueue_vms_frame, queue, camera_id, tenant_id))
+    if sub is None:
+        log.info("SSE vms: NATS unavailable — stream open, keepalive only")
+
+    # Prime the connection so onopen fires and proxies flush.
+    yield ": connected\n\n"
+    try:
+        while True:
+            if await request.is_disconnected():
+                break
+            kind, item = await next_sse_frame(queue, KEEPALIVE_SECONDS)
+            if kind == "shutdown":
+                # Going down: end the response instead of looping, or the
+                # open stream wedges the shutdown. EventSource reconnects.
+                yield SSE_SHUTDOWN_FRAME
+                break
+            if kind == "keepalive":
+                if not await guard.still_allowed():
+                    # The 200 went out when the stream opened, so ending the
+                    # body is the only way left to refuse. EventSource
+                    # reconnects and gets a clean 401/403 then.
+                    yield "event: revoked\ndata: {}\n\n"
+                    break
+                yield ": keepalive\n\n"
+                continue
+            name, data = item
+            yield f"event: {name}\ndata: {json.dumps(data)}\n\n"
+    finally:
+        await events_nats.unsubscribe_quietly(sub)
+        log.debug("SSE vms stream closed (tenant=%s)", tenant_id)
+
+
 @realtime_vms_router.get("/vms-events")
 async def vms_events_stream(
     request: Request,
@@ -142,61 +201,8 @@ async def vms_events_stream(
     else:
         pattern = "tenant.__none__.vms.>"
 
-    async def event_stream():
-        from . import events_nats
-
-        queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
-
-        async def _on_event(envelope: dict) -> None:
-            etype = str(envelope.get("type") or "")
-            is_popup = etype == "vms.popup"
-            data = _compact_popup(envelope) if is_popup else _compact_event(envelope)
-            # Drop frames for other cameras.
-            if camera_id and data.get("camera_id") != camera_id:
-                return
-            frame = (VMS_POPUP_NAME, data) if is_popup else (VMS_EVENT_NAME, data)
-            try:
-                queue.put_nowait(frame)
-            except asyncio.QueueFull:
-                log.warning("SSE vms queue full (tenant=%s) — dropping frame", tenant_id)
-
-        sub = await events_nats.ephemeral_subscribe(pattern, _on_event)
-        if sub is None:
-            log.info("SSE vms: NATS unavailable — stream open, keepalive only")
-
-        # Prime the connection so onopen fires and proxies flush.
-        yield ": connected\n\n"
-        try:
-            while True:
-                if await request.is_disconnected():
-                    break
-                kind, item = await next_sse_frame(queue, KEEPALIVE_SECONDS)
-                if kind == "shutdown":
-                    # Going down: end the response instead of looping, or the
-                    # open stream wedges the shutdown. EventSource reconnects.
-                    yield SSE_SHUTDOWN_FRAME
-                    break
-                if kind == "keepalive":
-                    if not await guard.still_allowed():
-                        # The 200 went out when the stream opened, so ending the
-                        # body is the only way left to refuse. EventSource
-                        # reconnects and gets a clean 401/403 then.
-                        yield "event: revoked\ndata: {}\n\n"
-                        break
-                    yield ": keepalive\n\n"
-                    continue
-                name, data = item
-                yield f"event: {name}\ndata: {json.dumps(data)}\n\n"
-        finally:
-            if sub is not None:
-                try:
-                    await sub.unsubscribe()
-                except Exception:  # noqa: BLE001 — best-effort cleanup
-                    pass
-            log.debug("SSE vms stream closed (tenant=%s)", tenant_id)
-
     return StreamingResponse(
-        event_stream(),
+        _vms_relay(request, guard, pattern, camera_id, tenant_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

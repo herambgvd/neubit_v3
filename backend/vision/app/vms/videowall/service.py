@@ -79,6 +79,30 @@ def _inject_rtsp_creds(url: str, username: str, password: str) -> str:
     return f"{proto}://{user}:{pwd}@{rest}"
 
 
+def _preferred_rtsp_path(profiles: dict) -> str | None:
+    """The stream a wall display should pull: main for its quality, then sub,
+    then whatever the camera does publish."""
+    for name in ("main", "sub"):
+        mp = profiles.get(name)
+        if mp and mp.rtsp_path:
+            return mp.rtsp_path
+    for mp in profiles.values():
+        if mp.rtsp_path:
+            return mp.rtsp_path
+    return None
+
+
+def _constructed_rtsp(camera) -> str | None:
+    """Fallback: a Hik-style RTSP from host + rtsp_port (main stream)."""
+    host = camera.onvif_host or (camera.network_info or {}).get("ip")
+    if not host:
+        return None
+    rtsp_port = (camera.network_info or {}).get("rtsp_port") or 554
+    # channel 0 is a valid NVR channel index — explicit None check, never `or 1`.
+    channel = camera.nvr_channel_number if camera.nvr_channel_number is not None else 1
+    return f"rtsp://{host}:{rtsp_port}/Streaming/Channels/{channel:d}01"
+
+
 class VideoWallService:
     """Tenant-scoped video-wall CRUD + shared live-state broadcast."""
 
@@ -480,34 +504,14 @@ class VideoWallService:
                 )
             ).scalars().all()
         }
-        chosen = None
-        for name in ("main", "sub"):  # prefer main-stream quality for a wall display.
-            mp = profiles.get(name)
-            if mp and mp.rtsp_path:
-                chosen = mp.rtsp_path
-                break
-        if chosen is None:
-            for mp in profiles.values():
-                if mp.rtsp_path:
-                    chosen = mp.rtsp_path
-                    break
-
         username = camera.onvif_user or ""
         password = decrypt_secret(camera.onvif_enc_pass) or ""
         use_creds = bool(username and password)
 
-        if chosen:
-            return _inject_rtsp_creds(chosen, username, password) if use_creds else chosen
-
-        # Fallback: construct a Hik-style RTSP from host + rtsp_port (main stream).
-        host = camera.onvif_host or (camera.network_info or {}).get("ip")
-        if not host:
+        chosen = _preferred_rtsp_path(profiles) or _constructed_rtsp(camera)
+        if chosen is None:
             return None
-        rtsp_port = (camera.network_info or {}).get("rtsp_port") or 554
-        # channel 0 is a valid NVR channel index — explicit None check, never `or 1`.
-        channel = camera.nvr_channel_number if camera.nvr_channel_number is not None else 1
-        base = f"rtsp://{host}:{rtsp_port}/Streaming/Channels/{channel:d}01"
-        return _inject_rtsp_creds(base, username, password) if use_creds else base
+        return _inject_rtsp_creds(chosen, username, password) if use_creds else chosen
 
     async def _push_to_decoder(
         self, monitor: WallMonitor, cell_index: int, camera_id: str

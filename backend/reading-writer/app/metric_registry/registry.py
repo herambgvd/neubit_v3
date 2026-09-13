@@ -102,167 +102,182 @@ def _qty_from_spec(spec: dict, where: str) -> Qty:
 _AGGREGATIONS = ("avg", "last", "first", "min", "max", "sum", "consumption")
 
 
-def typecheck(defn: dict) -> None:
-    """Raise RegistrationError unless the definition is coherent. Pure."""
-    kind = defn.get("kind", "formula")
-    if kind not in KINDS:
-        raise RegistrationError(f"kind must be one of {KINDS}")
-    scope = (defn.get("applies_to") or {}).get("scope", "device")
-    if scope not in SCOPES:
-        raise RegistrationError(f"applies_to.scope must be one of {SCOPES}")
-    inputs: dict = defn.get("inputs") or {}
-    guards = defn.get("guards") or []
+def _check_guards(guards: list) -> None:
+    """Every guard named must be one this evaluator actually enforces.
+
+    A guard that is only documentation reads, on the screen, exactly like one
+    that runs.
+    """
     for g in guards:
         if g not in GUARDS:
             raise RegistrationError(f"guard `{g}` is not mechanized; known guards: {', '.join(GUARDS)}")
-    output_spec = defn.get("output") or {}
-    declared = _qty_from_spec(output_spec, "output")
 
-    if kind == "occupancy":
-        # The formula must BE the band test. Anything else would be scored as a
-        # fraction of buckets where an arbitrary expression was non-zero, which
-        # is not what a reader of "% in band" is being told.
-        if not (defn.get("formula") or "").strip():
-            raise RegistrationError("an occupancy metric needs a formula")
-        try:
-            tree = expr.parse(defn["formula"])
-        except expr.ExprError as exc:
-            raise RegistrationError(str(exc)) from exc
-        import ast as _ast
 
-        root = tree.body
-        if not (isinstance(root, _ast.Call) and isinstance(root.func, _ast.Name)
-                and root.func.id == "in_band"):
-            raise RegistrationError(
-                "an occupancy metric's formula must be a single `in_band(x, lo, hi)` "
-                "call — the band is the metric"
-            )
-        if scope != "device":
-            # Honest limit rather than a silent wrong answer: the site-scope
-            # evaluator has no per-bucket path yet, so a site-scope occupancy
-            # would have to aggregate first, which is the exact mistake this
-            # kind exists to avoid. A site rolls these up through a composite,
-            # which fans device-scope components over the site's devices.
-            raise RegistrationError(
-                "occupancy is device-scope only today; roll it up to a site "
-                "through a composite"
-            )
-        if declared.dimension != "dimensionless":
-            raise RegistrationError(
-                f"an occupancy metric outputs a percentage of time and is "
-                f"`dimensionless`, not `{declared.dimension}`"
-            )
+def _check_occupancy_shape(defn: dict, scope: str, declared: Qty) -> None:
+    """The formula must BE the band test.
 
-    if kind == "composite":
-        comps = defn.get("components") or []
-        if not comps:
-            raise RegistrationError("a composite needs at least one component")
-        for c in comps:
-            if not c.get("metric") or not isinstance(c.get("weight"), (int, float)):
-                raise RegistrationError("each component needs a `metric` key and a numeric `weight`")
-        if defn.get("formula"):
-            raise RegistrationError("a composite has components and weights, not a formula")
-        return
+    Anything else would be scored as a fraction of buckets where an arbitrary
+    expression was non-zero, which is not what a reader of "% in band" is
+    being told.
+    """
+    if not (defn.get("formula") or "").strip():
+        raise RegistrationError("an occupancy metric needs a formula")
+    try:
+        tree = expr.parse(defn["formula"])
+    except expr.ExprError as exc:
+        raise RegistrationError(str(exc)) from exc
+    import ast as _ast
 
-    if not inputs:
-        raise RegistrationError(f"a {kind} metric needs at least one input")
+    root = tree.body
+    if not (isinstance(root, _ast.Call) and isinstance(root.func, _ast.Name)
+            and root.func.id == "in_band"):
+        raise RegistrationError(
+            "an occupancy metric's formula must be a single `in_band(x, lo, hi)` "
+            "call — the band is the metric"
+        )
+    if scope != "device":
+        # Honest limit rather than a silent wrong answer: the site-scope
+        # evaluator has no per-bucket path yet, so a site-scope occupancy
+        # would have to aggregate first, which is the exact mistake this
+        # kind exists to avoid. A site rolls these up through a composite,
+        # which fans device-scope components over the site's devices.
+        raise RegistrationError(
+            "occupancy is device-scope only today; roll it up to a site "
+            "through a composite"
+        )
+    if declared.dimension != "dimensionless":
+        raise RegistrationError(
+            f"an occupancy metric outputs a percentage of time and is "
+            f"`dimensionless`, not `{declared.dimension}`"
+        )
+
+
+def _check_composite_components(defn: dict) -> None:
+    """A composite is components and weights — and nothing else."""
+    comps = defn.get("components") or []
+    if not comps:
+        raise RegistrationError("a composite needs at least one component")
+    for c in comps:
+        if not c.get("metric") or not isinstance(c.get("weight"), (int, float)):
+            raise RegistrationError("each component needs a `metric` key and a numeric `weight`")
+    if defn.get("formula"):
+        raise RegistrationError("a composite has components and weights, not a formula")
+
+
+def _site_fact_qty(name: str, spec: dict, scope: str) -> Qty:
+    """A fact about the SITE, read from the site_facts mirror — legal only on a
+    site-scope definition, because a device has no area."""
+    if scope != "site":
+        raise RegistrationError(
+            f"input `{name}` reads a site fact, which needs applies_to.scope = 'site'"
+        )
+    fact = spec.get("fact")
+    fact_def = FACT_DEFS.get(fact or "")
+    if fact_def is None:
+        raise RegistrationError(
+            f"input `{name}` names site fact `{fact}`, which is not in the "
+            f"fact vocabulary ({', '.join(sorted(FACT_DEFS))})"
+        )
+    q = _qty_from_spec(spec, f"input `{name}`")
+    expected = qty_of_unit(fact_def["unit"])
+    if q.dimension != expected.dimension:
+        raise RegistrationError(
+            f"input `{name}`: site fact `{fact}` is `{expected.dimension}`, "
+            f"but the input declares `{q.dimension}`"
+        )
+    if spec.get("aggregation") is not None:
+        raise RegistrationError(
+            f"input `{name}`: a site fact is a single recorded value; "
+            f"it takes no aggregation"
+        )
+    return q
+
+
+def _emission_factor_qty(name: str, spec: dict, scope: str) -> Qty:
+    """The site's grid emission factor.
+
+    NOT a site fact: it is versioned data with its own citation and effective
+    date, mirrored from core into `site_emission_factors`, and the evaluator
+    resolves the row effective at the window's end. Modelling it as a fact
+    would flatten a dated, sourced series into one editable number.
+    """
+    if scope != "site":
+        raise RegistrationError(
+            f"input `{name}` reads the site's emission factor, which "
+            f"needs applies_to.scope = 'site'"
+        )
+    q = _qty_from_spec(spec, f"input `{name}`")
+    if q.dimension != "emission_factor":
+        raise RegistrationError(
+            f"input `{name}`: an emission factor is `emission_factor` "
+            f"(kg CO2 per kWh), not `{q.dimension}`"
+        )
+    if spec.get("aggregation") is not None:
+        raise RegistrationError(
+            f"input `{name}`: an emission factor is one recorded value "
+            f"for the window; it takes no aggregation"
+        )
+    return q
+
+
+def _role_input_qty(name: str, spec: dict) -> Qty:
+    """A measured input: the role it binds points by, and what that role carries."""
+    role = spec.get("role")
+    if role is None:
+        raise RegistrationError(f"input `{name}` needs a `role` to bind points by")
+    role_def = ROLE_DEFS.get(role)
+    if role_def is None:
+        raise RegistrationError(
+            f"input `{name}` names role `{role}`, which is not in the role vocabulary"
+        )
+    q = _qty_from_spec(spec, f"input `{name}`")
+    if q.dimension != role_def["dimension"]:
+        raise RegistrationError(
+            f"input `{name}`: role `{role}` carries `{role_def['dimension']}`, "
+            f"but the input declares `{q.dimension}`"
+        )
+    agg = spec.get("aggregation", "avg")
+    if agg not in _AGGREGATIONS:
+        raise RegistrationError(f"input `{name}`: aggregation `{agg}` is not one of {_AGGREGATIONS}")
+    # last − first per register, monotonic-guarded, summed over every
+    # point bound to the role in scope. Meaningful only for cumulative
+    # ENERGY registers — a consumption of a temperature is nothing.
+    if agg == "consumption" and q.dimension != "energy":
+        raise RegistrationError(
+            f"input `{name}`: aggregation `consumption` is a register "
+            f"subtraction and needs dimension `energy`, not `{q.dimension}`"
+        )
+    return q
+
+
+def _check_inputs(inputs: dict, scope: str) -> dict[str, Qty]:
+    """Every declared input typed, so the formula can be type-checked against them."""
     env: dict[str, Qty] = {}
     for name, spec in inputs.items():
         if not name.isidentifier():
             raise RegistrationError(f"input name `{name}` is not a valid identifier")
         source = spec.get("source", "points")
         if source == "site_fact":
-            # A fact about the SITE, read from the site_facts mirror — legal
-            # only on a site-scope definition, because a device has no area.
-            if scope != "site":
-                raise RegistrationError(
-                    f"input `{name}` reads a site fact, which needs applies_to.scope = 'site'"
-                )
-            fact = spec.get("fact")
-            fact_def = FACT_DEFS.get(fact or "")
-            if fact_def is None:
-                raise RegistrationError(
-                    f"input `{name}` names site fact `{fact}`, which is not in the "
-                    f"fact vocabulary ({', '.join(sorted(FACT_DEFS))})"
-                )
-            q = _qty_from_spec(spec, f"input `{name}`")
-            expected = qty_of_unit(fact_def["unit"])
-            if q.dimension != expected.dimension:
-                raise RegistrationError(
-                    f"input `{name}`: site fact `{fact}` is `{expected.dimension}`, "
-                    f"but the input declares `{q.dimension}`"
-                )
-            if spec.get("aggregation") is not None:
-                raise RegistrationError(
-                    f"input `{name}`: a site fact is a single recorded value; "
-                    f"it takes no aggregation"
-                )
-            env[name] = q
-            continue
-        if source == "emission_factor":
-            # The site's grid emission factor. NOT a site fact: it is versioned
-            # data with its own citation and effective date, mirrored from core
-            # into `site_emission_factors`, and the evaluator resolves the row
-            # effective at the window's end. Modelling it as a fact would flatten
-            # a dated, sourced series into one editable number.
-            if scope != "site":
-                raise RegistrationError(
-                    f"input `{name}` reads the site's emission factor, which "
-                    f"needs applies_to.scope = 'site'"
-                )
-            q = _qty_from_spec(spec, f"input `{name}`")
-            if q.dimension != "emission_factor":
-                raise RegistrationError(
-                    f"input `{name}`: an emission factor is `emission_factor` "
-                    f"(kg CO2 per kWh), not `{q.dimension}`"
-                )
-            if spec.get("aggregation") is not None:
-                raise RegistrationError(
-                    f"input `{name}`: an emission factor is one recorded value "
-                    f"for the window; it takes no aggregation"
-                )
-            env[name] = q
-            continue
-        if source != "points":
+            env[name] = _site_fact_qty(name, spec, scope)
+        elif source == "emission_factor":
+            env[name] = _emission_factor_qty(name, spec, scope)
+        elif source == "points":
+            env[name] = _role_input_qty(name, spec)
+        else:
             raise RegistrationError(
                 f"input `{name}`: source must be 'points' (default), "
                 f"'site_fact' or 'emission_factor'"
             )
-        role = spec.get("role")
-        if role is not None:
-            role_def = ROLE_DEFS.get(role)
-            if role_def is None:
-                raise RegistrationError(
-                    f"input `{name}` names role `{role}`, which is not in the role vocabulary"
-                )
-            q = _qty_from_spec(spec, f"input `{name}`")
-            if q.dimension != role_def["dimension"]:
-                raise RegistrationError(
-                    f"input `{name}`: role `{role}` carries `{role_def['dimension']}`, "
-                    f"but the input declares `{q.dimension}`"
-                )
-        else:
-            raise RegistrationError(f"input `{name}` needs a `role` to bind points by")
-        agg = spec.get("aggregation", "avg")
-        if agg not in _AGGREGATIONS:
-            raise RegistrationError(f"input `{name}`: aggregation `{agg}` is not one of {_AGGREGATIONS}")
-        if agg == "consumption":
-            # last − first per register, monotonic-guarded, summed over every
-            # point bound to the role in scope. Meaningful only for cumulative
-            # ENERGY registers — a consumption of a temperature is nothing.
-            if q.dimension != "energy":
-                raise RegistrationError(
-                    f"input `{name}`: aggregation `consumption` is a register "
-                    f"subtraction and needs dimension `energy`, not `{q.dimension}`"
-                )
-        env[name] = q
+    return env
 
+
+def _check_formula_types(defn: dict, env: dict[str, Qty], declared: Qty) -> None:
+    """The formula parses, uses what it declares, and produces what it promises."""
     try:
         tree = expr.parse(defn.get("formula") or "")
     except expr.ExprError as exc:
         raise RegistrationError(str(exc)) from exc
-    used = expr.names(tree)
-    unused = set(env) - used
+    unused = set(env) - expr.names(tree)
     if unused:
         raise RegistrationError(f"declared input(s) never used by the formula: {', '.join(sorted(unused))}")
     try:
@@ -276,6 +291,30 @@ def typecheck(defn: dict) -> None:
             + f", but the output declares `{declared.dimension}`"
             + (f" in `{declared.unit}`" if declared.unit else "")
         )
+
+
+def typecheck(defn: dict) -> None:
+    """Raise RegistrationError unless the definition is coherent. Pure."""
+    kind = defn.get("kind", "formula")
+    if kind not in KINDS:
+        raise RegistrationError(f"kind must be one of {KINDS}")
+    scope = (defn.get("applies_to") or {}).get("scope", "device")
+    if scope not in SCOPES:
+        raise RegistrationError(f"applies_to.scope must be one of {SCOPES}")
+    _check_guards(defn.get("guards") or [])
+    declared = _qty_from_spec(defn.get("output") or {}, "output")
+
+    if kind == "occupancy":
+        _check_occupancy_shape(defn, scope, declared)
+
+    if kind == "composite":
+        _check_composite_components(defn)
+        return
+
+    inputs: dict = defn.get("inputs") or {}
+    if not inputs:
+        raise RegistrationError(f"a {kind} metric needs at least one input")
+    _check_formula_types(defn, _check_inputs(inputs, scope), declared)
 
 
 # ── Reads ────────────────────────────────────────────────────────────────────

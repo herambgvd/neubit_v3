@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from functools import partial
 from typing import Annotated
 
 import jwt
@@ -116,6 +117,63 @@ def _compact_wall(envelope: dict) -> dict:
     }
 
 
+def _wall_frame(envelope: dict, wall_id: str | None) -> tuple[str, dict] | None:
+    """The SSE frame this envelope becomes — or None when this subscriber is
+    watching one wall and the state belongs to another."""
+    data = _compact_wall(envelope)
+    if wall_id and data.get("wall_id") != wall_id:
+        return None
+    return (WALL_STATE_NAME, data)
+
+
+async def _enqueue_wall_frame(queue, wall_id, tenant_id, envelope: dict) -> None:
+    """The subscription callback: one envelope becomes at most one queued frame."""
+    frame = _wall_frame(envelope, wall_id)
+    if frame is None:
+        return
+    try:
+        queue.put_nowait(frame)
+    except asyncio.QueueFull:
+        log.warning("SSE wall queue full (tenant=%s) — dropping frame", tenant_id)
+
+
+async def _wall_relay(request, guard, pattern: str, wall_id: str | None, tenant_id):
+    """One ephemeral NATS subscription, bridged to the browser until it ends."""
+    from . import events_nats
+
+    queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
+    sub = await events_nats.ephemeral_subscribe(pattern, partial(_enqueue_wall_frame, queue, wall_id, tenant_id))
+    if sub is None:
+        log.info("SSE wall: NATS unavailable — stream open, keepalive only")
+
+    # Prime the connection so onopen fires and proxies flush.
+    yield ": connected\n\n"
+    try:
+        while True:
+            if await request.is_disconnected():
+                break
+            kind, item = await next_sse_frame(queue, KEEPALIVE_SECONDS)
+            if kind == "shutdown":
+                # Going down: end the response instead of looping, or the
+                # open stream wedges the shutdown. EventSource reconnects.
+                yield SSE_SHUTDOWN_FRAME
+                break
+            if kind == "keepalive":
+                if not await guard.still_allowed():
+                    # The 200 went out when the stream opened, so ending the
+                    # body is the only way left to refuse. EventSource
+                    # reconnects and gets a clean 401/403 then.
+                    yield "event: revoked\ndata: {}\n\n"
+                    break
+                yield ": keepalive\n\n"
+                continue
+            name, data = item
+            yield f"event: {name}\ndata: {json.dumps(data)}\n\n"
+    finally:
+        await events_nats.unsubscribe_quietly(sub)
+        log.debug("SSE wall stream closed (tenant=%s)", tenant_id)
+
+
 @realtime_wall_router.get("/wall-events")
 async def wall_events_stream(
     request: Request,
@@ -149,58 +207,8 @@ async def wall_events_stream(
     else:
         pattern = "tenant.__none__.vms.wall.>"
 
-    async def event_stream():
-        from . import events_nats
-
-        queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
-
-        async def _on_event(envelope: dict) -> None:
-            data = _compact_wall(envelope)
-            # Drop frames for other walls.
-            if wall_id and data.get("wall_id") != wall_id:
-                return
-            try:
-                queue.put_nowait((WALL_STATE_NAME, data))
-            except asyncio.QueueFull:
-                log.warning("SSE wall queue full (tenant=%s) — dropping frame", tenant_id)
-
-        sub = await events_nats.ephemeral_subscribe(pattern, _on_event)
-        if sub is None:
-            log.info("SSE wall: NATS unavailable — stream open, keepalive only")
-
-        # Prime the connection so onopen fires and proxies flush.
-        yield ": connected\n\n"
-        try:
-            while True:
-                if await request.is_disconnected():
-                    break
-                kind, item = await next_sse_frame(queue, KEEPALIVE_SECONDS)
-                if kind == "shutdown":
-                    # Going down: end the response instead of looping, or the
-                    # open stream wedges the shutdown. EventSource reconnects.
-                    yield SSE_SHUTDOWN_FRAME
-                    break
-                if kind == "keepalive":
-                    if not await guard.still_allowed():
-                        # The 200 went out when the stream opened, so ending the
-                        # body is the only way left to refuse. EventSource
-                        # reconnects and gets a clean 401/403 then.
-                        yield "event: revoked\ndata: {}\n\n"
-                        break
-                    yield ": keepalive\n\n"
-                    continue
-                name, data = item
-                yield f"event: {name}\ndata: {json.dumps(data)}\n\n"
-        finally:
-            if sub is not None:
-                try:
-                    await sub.unsubscribe()
-                except Exception:  # noqa: BLE001 — best-effort cleanup
-                    pass
-            log.debug("SSE wall stream closed (tenant=%s)", tenant_id)
-
     return StreamingResponse(
-        event_stream(),
+        _wall_relay(request, guard, pattern, wall_id, tenant_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

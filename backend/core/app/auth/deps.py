@@ -46,14 +46,12 @@ _NOT_ACCESS_TOKEN = "not an access token"
 _NO_SUCH_USER = "user not found or inactive"
 
 
-async def get_current_user(
-    cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
-    db: AsyncSession = Depends(get_db),
-) -> User:
-    """The signed-in user. Resolves ``sub`` to a ``users`` row, 401 if there is none.
+def _access_payload(cred: HTTPAuthorizationCredentials | None) -> dict:
+    """The ACCESS token a Bearer header carries, or the 401 it earns.
 
-    Do not add API-key support here — a service credential must not open the UI,
-    and that is enforced by this path not knowing what a key is.
+    One copy so the three entry points cannot come to disagree about what counts
+    as a usable token — a refresh token accepted on one of them would be a way
+    in that never expires the way the route expects.
     """
     if cred is None:
         raise UnauthorizedError(_MISSING_BEARER)
@@ -63,6 +61,19 @@ async def get_current_user(
         raise UnauthorizedError(_BAD_TOKEN)
     if payload.get("type") != "access":
         raise UnauthorizedError(_NOT_ACCESS_TOKEN)
+    return payload
+
+
+async def get_current_user(
+    cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """The signed-in user. Resolves ``sub`` to a ``users`` row, 401 if there is none.
+
+    Do not add API-key support here — a service credential must not open the UI,
+    and that is enforced by this path not knowing what a key is.
+    """
+    payload = _access_payload(cred)
     user = await db.get(User, uuid.UUID(payload["sub"]))  # role selectin-loaded
     if user is None or not user.is_active:
         raise UnauthorizedError(_NO_SUCH_USER)
@@ -159,14 +170,7 @@ async def _resolve_actor(
     rather than falling through — an unknown credential kind must not be
     downgraded to the one with more reach.
     """
-    if cred is None:
-        raise UnauthorizedError(_MISSING_BEARER)
-    try:
-        payload = decode_token(cred.credentials)
-    except jwt.PyJWTError:
-        raise UnauthorizedError(_BAD_TOKEN)
-    if payload.get("type") != "access":
-        raise UnauthorizedError(_NOT_ACCESS_TOKEN)
+    payload = _access_payload(cred)
     act = payload.get("act")
     if act == "apikey":
         return await _resolve_key_actor(payload, db)
@@ -191,9 +195,7 @@ def require_permission(*permissions: str):
         db: AsyncSession = Depends(get_db),
     ) -> User | ApiKeyPrincipal:
         actor = await _resolve_actor(cred, db)
-        missing = [p for p in permissions if not actor.role.grants(p)]
-        if missing:
-            raise ForbiddenError(f"missing permission(s): {', '.join(missing)}")
+        _assert_grants(actor.role, permissions)
         return actor
 
     return _dep
@@ -222,6 +224,34 @@ def is_service_token(cred: HTTPAuthorizationCredentials | None) -> bool:
     return bool(payload.get("is_superadmin")) or "*" in (payload.get("permissions") or [])
 
 
+def _assert_grants(role, permissions) -> None:
+    """Refuse with the permission(s) actually missing, never a bare 403."""
+    missing = [p for p in permissions if not role.grants(p)]
+    if missing:
+        raise ForbiddenError(f"missing permission(s): {', '.join(missing)}")
+
+
+async def _user_behind(payload: dict, db: AsyncSession) -> User | None:
+    """The ``users`` row a token's ``sub`` names — None for a service principal."""
+    try:
+        return await db.get(User, uuid.UUID(str(payload.get("sub"))))
+    except (ValueError, TypeError):
+        return None  # a service `sub` that is not a uuid
+
+
+def _assert_service_principal(privileged: bool, claims: list, permissions) -> None:
+    """A token with no live user behind it: superadmin, or an explicit grant.
+
+    The claims are the fallback for a service principal granted the permission
+    by name rather than as a superadmin.
+    """
+    if privileged:
+        return
+    if all(p in claims for p in permissions):
+        return
+    raise UnauthorizedError(_NO_SUCH_USER)
+
+
 def require_service_permission(*permissions: str):
     """Like ``require_permission``, but also accepts a service token.
 
@@ -236,22 +266,13 @@ def require_service_permission(*permissions: str):
         cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
         db: AsyncSession = Depends(get_db),
     ) -> User | None:
-        if cred is None:
-            raise UnauthorizedError(_MISSING_BEARER)
-        try:
-            payload = decode_token(cred.credentials)
-        except jwt.PyJWTError:
-            raise UnauthorizedError(_BAD_TOKEN)
-        if payload.get("type") != "access":
-            raise UnauthorizedError(_NOT_ACCESS_TOKEN)
+        payload = _access_payload(cred)
         # A service key gets the same live-row check as in require_permission, so
         # a revoked key is refused here too. Without this it falls through to the
         # claims branch below and keeps working until its token expires.
         if payload.get("act") == "apikey":
             actor = await _resolve_key_actor(payload, db)
-            missing = [p for p in permissions if not actor.role.grants(p)]
-            if missing:
-                raise ForbiddenError(f"missing permission(s): {', '.join(missing)}")
+            _assert_grants(actor.role, permissions)
             return None
         claims = payload.get("permissions") or []
         privileged = bool(payload.get("is_superadmin")) or "*" in claims
@@ -267,26 +288,16 @@ def require_service_permission(*permissions: str):
         # made an override of a BUILT-IN render the code default with no error at
         # all. A service principal (no `users` row) still resolves to None below,
         # which is what those routes' fallbacks are for.
-        try:
-            user = await db.get(User, uuid.UUID(str(payload.get("sub"))))
-        except (ValueError, TypeError):
-            user = None  # a service `sub` that is not a uuid
+        user = await _user_behind(payload, db)
         if user is not None and user.is_active:
             # A privileged claim still authorises; the live role is checked only
             # when it is not, so a superadmin without an explicit grant is not
             # locked out of a route their own token already carries.
             if not privileged:
-                missing = [p for p in permissions if not user.role.grants(p)]
-                if missing:
-                    raise ForbiddenError(f"missing permission(s): {', '.join(missing)}")
+                _assert_grants(user.role, permissions)
             return user
-        if privileged:
-            return None
-        # Fall back to the claims themselves for a service principal that has
-        # been granted the key explicitly rather than as a superadmin.
-        if all(p in claims for p in permissions):
-            return None
-        raise UnauthorizedError(_NO_SUCH_USER)
+        _assert_service_principal(privileged, claims, permissions)
+        return None
 
     return _dep
 

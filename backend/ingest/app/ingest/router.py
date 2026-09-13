@@ -416,6 +416,86 @@ MAX_INBOUND_BODY_BYTES = int(os.getenv("VE_INGEST_MAX_BODY_BYTES", 1 * 1024 * 10
 public_router = APIRouter(prefix="/ingest", tags=["Ingest (public)"])
 
 
+def _multi_value_dict(pairs) -> dict:
+    """Key/value pairs as a dict, where a REPEATED key becomes a list.
+
+    A query string and a form body can both repeat a key, and a sender that
+    writes `tag=a&tag=b` means both of them.
+    """
+    out: dict = {}
+    for key, val in pairs:
+        if key not in out:
+            out[key] = val
+        elif isinstance(out[key], list):
+            out[key].append(val)
+        else:
+            out[key] = [out[key], val]
+    return out
+
+
+async def _read_capped(request: Request) -> bytes:
+    """Read the body in chunks, refusing it once it passes the cap.
+
+    This endpoint is unauthenticated and internet-facing, and it used to read
+    the whole body before anything else ran. MAX_RAW_PAYLOAD_CHARS caps what is
+    STORED, not what is read.
+    """
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_INBOUND_BODY_BYTES:
+        bodies_too_large.inc()
+        raise ValidationError("request body too large", code="BODY_TOO_LARGE", status_code=413)
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > MAX_INBOUND_BODY_BYTES:
+            bodies_too_large.inc()
+            raise ValidationError("request body too large", code="BODY_TOO_LARGE", status_code=413)
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _parse_body(raw: bytes, content_type: str) -> dict:
+    """The posted body as a dict.
+
+    Parsed from the bytes ALREADY READ by `_read_capped`, never by asking the
+    request again. That was the bug: draining `request.stream()` for the cap
+    and then calling `await request.json()` reads the stream a second time,
+    which raises "Stream consumed" — and a bare `except Exception` turned it
+    into an empty payload. Every JSON POST answered 202, stored `{}` and
+    published an empty event; a webhook with a schema rejected every delivery
+    for a field the sender had plainly sent.
+
+    An EMPTY body stays a valid empty payload — some senders post nothing and
+    the event is the signal. A form-encoded body is read, because that is a
+    real webhook shape and dropping it silently is what this function exists
+    to stop. Anything else is refused with a reason: "accepted" for a body
+    nobody could read is the worst possible answer, because the sender stops
+    looking and the event never existed.
+    """
+    if not raw:
+        return {}
+    ctype = (content_type or "").split(";")[0].strip().lower()
+    if ctype == "application/x-www-form-urlencoded":
+        return _multi_value_dict(
+            parse_qsl(raw.decode("utf-8", "replace"), keep_blank_values=True)
+        )
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise ValidationError(
+            f"body is not valid JSON: {exc}", code="BODY_UNREADABLE", status_code=422
+        ) from exc
+    # A JSON scalar or array is valid JSON and not a payload this pipeline can
+    # route on; wrapping it silently would invent a shape the operator never
+    # wrote their paths against.
+    if not isinstance(parsed, dict):
+        raise ValidationError(
+            "body must be a JSON object", code="BODY_UNREADABLE", status_code=422
+        )
+    return parsed
+
+
 def build_public_router(bus: EventBus) -> APIRouter:
     """Bind the receiver to the service's EventBus and return the public router.
 
@@ -423,74 +503,6 @@ def build_public_router(bus: EventBus) -> APIRouter:
     ``request_method``. GET reads the payload from query params (repeated keys
     become arrays), POST from the JSON body.
     """
-
-    async def _read_capped(request: Request) -> bytes:
-        """Read the body in chunks, refusing it once it passes the cap.
-
-        This endpoint is unauthenticated and internet-facing, and it used to read
-        the whole body before anything else ran. MAX_RAW_PAYLOAD_CHARS caps what is
-        STORED, not what is read.
-        """
-        declared = request.headers.get("content-length")
-        if declared and declared.isdigit() and int(declared) > MAX_INBOUND_BODY_BYTES:
-            bodies_too_large.inc()
-            raise ValidationError("request body too large", code="BODY_TOO_LARGE", status_code=413)
-        chunks: list[bytes] = []
-        total = 0
-        async for chunk in request.stream():
-            total += len(chunk)
-            if total > MAX_INBOUND_BODY_BYTES:
-                bodies_too_large.inc()
-                raise ValidationError("request body too large", code="BODY_TOO_LARGE", status_code=413)
-            chunks.append(chunk)
-        return b"".join(chunks)
-
-    def _parse_body(raw: bytes, content_type: str) -> dict:
-        """The posted body as a dict.
-
-        Parsed from the bytes ALREADY READ by `_read_capped`, never by asking the
-        request again. That was the bug: draining `request.stream()` for the cap
-        and then calling `await request.json()` reads the stream a second time,
-        which raises "Stream consumed" — and a bare `except Exception` turned it
-        into an empty payload. Every JSON POST answered 202, stored `{}` and
-        published an empty event; a webhook with a schema rejected every delivery
-        for a field the sender had plainly sent.
-
-        An EMPTY body stays a valid empty payload — some senders post nothing and
-        the event is the signal. A form-encoded body is read, because that is a
-        real webhook shape and dropping it silently is what this function exists
-        to stop. Anything else is refused with a reason: "accepted" for a body
-        nobody could read is the worst possible answer, because the sender stops
-        looking and the event never existed.
-        """
-        if not raw:
-            return {}
-        ctype = (content_type or "").split(";")[0].strip().lower()
-        if ctype == "application/x-www-form-urlencoded":
-            form: dict = {}
-            for key, val in parse_qsl(raw.decode("utf-8", "replace"), keep_blank_values=True):
-                if key in form:
-                    if isinstance(form[key], list):
-                        form[key].append(val)
-                    else:
-                        form[key] = [form[key], val]
-                else:
-                    form[key] = val
-            return form
-        try:
-            parsed = json.loads(raw)
-        except (ValueError, UnicodeDecodeError) as exc:
-            raise ValidationError(
-                f"body is not valid JSON: {exc}", code="BODY_UNREADABLE", status_code=422
-            ) from exc
-        # A JSON scalar or array is valid JSON and not a payload this pipeline can
-        # route on; wrapping it silently would invent a shape the operator never
-        # wrote their paths against.
-        if not isinstance(parsed, dict):
-            raise ValidationError(
-                "body must be a JSON object", code="BODY_UNREADABLE", status_code=422
-            )
-        return parsed
 
     @public_router.api_route(
         "/hooks/{slug}",
@@ -506,15 +518,7 @@ def build_public_router(bus: EventBus) -> APIRouter:
         raw_body = await _read_capped(request)
         if request.method.upper() == "GET":
             # Query params → payload. Repeated keys become arrays.
-            payload: dict = {}
-            for key, val in request.query_params.multi_items():
-                if key in payload:
-                    if isinstance(payload[key], list):
-                        payload[key].append(val)
-                    else:
-                        payload[key] = [payload[key], val]
-                else:
-                    payload[key] = val
+            payload = _multi_value_dict(request.query_params.multi_items())
         else:
             payload = _parse_body(raw_body, request.headers.get("content-type", ""))
         svc = ReceiverService(db, bus)

@@ -33,16 +33,8 @@ def _pretty_arch(arch: str | None) -> str:
 
 
 @lru_cache(maxsize=1)
-def _cpu_name() -> str | None:
-    """Best-effort human CPU model name (e.g. "Intel Core i7-9750H", "Apple M2").
-
-    Cached — the name never changes at runtime. Sources, in order:
-      * Linux/x86 — the "model name" line in /proc/cpuinfo
-      * lscpu     — a real "Model name", else "<Vendor> <Arch>" for ARM guests
-                    whose /proc/cpuinfo carries no brand
-      * macOS     — sysctl machdep.cpu.brand_string (native, non-containerised)
-      * fallback  — a prettified arch label (ARM64 / x86-64)
-    """
+def _cpu_name_from_cpuinfo() -> str | None:
+    """Linux/x86 — the "model name" line in /proc/cpuinfo."""
     try:
         with open("/proc/cpuinfo") as fh:
             for line in fh:
@@ -52,6 +44,12 @@ def _cpu_name() -> str | None:
                         return val
     except Exception:
         pass
+    return None
+
+
+def _cpu_name_from_lscpu() -> str | None:
+    """lscpu — a real "Model name", else "<Vendor> <Arch>" for ARM guests whose
+    /proc/cpuinfo carries no brand."""
     try:
         out = subprocess.check_output(["lscpu"], text=True, timeout=1)
         fields = {}
@@ -70,6 +68,11 @@ def _cpu_name() -> str | None:
             return _pretty_arch(arch)
     except Exception:
         pass
+    return None
+
+
+def _cpu_name_from_sysctl() -> str | None:
+    """macOS — sysctl machdep.cpu.brand_string (native, non-containerised)."""
     try:
         if platform.system() == "Darwin":
             out = subprocess.check_output(
@@ -79,6 +82,19 @@ def _cpu_name() -> str | None:
                 return out
     except Exception:
         pass
+    return None
+
+
+def _cpu_name() -> str | None:
+    """Best-effort human CPU model name (e.g. "Intel Core i7-9750H", "Apple M2").
+
+    Cached — the name never changes at runtime. The sources are tried in order,
+    and the last resort is a prettified arch label (ARM64 / x86-64).
+    """
+    for source in (_cpu_name_from_cpuinfo, _cpu_name_from_lscpu, _cpu_name_from_sysctl):
+        name = source()
+        if name:
+            return name
     raw = platform.processor() or platform.machine()
     return _pretty_arch(raw) if raw else None
 

@@ -258,6 +258,49 @@ class UnclassifiedTable(RuntimeError):
     """
 
 
+def _cascade_problems(table) -> list[str]:
+    """A CASCADE claim is only true if the database would actually do it."""
+    fks = [
+        fk
+        for fk in table.foreign_keys
+        if fk.parent.name == "tenant_id" and fk.column.table.name == "tenants"
+    ]
+    if not fks:
+        return [f"{table.name}: classified CASCADE but has no FK to tenants."]
+    if not any((fk.ondelete or "").upper() == "CASCADE" for fk in fks):
+        return [
+            f"{table.name}: classified CASCADE but its tenants FK is "
+            f"ondelete={fks[0].ondelete!r}, not CASCADE."
+        ]
+    return []
+
+
+def _classification_problems(table, d) -> list[str]:
+    """Everything untrue about one table's erasure claim."""
+    problems: list[str] = []
+    has_tenant = "tenant_id" in table.c
+    if d.how == PLATFORM and has_tenant:
+        problems.append(
+            f"{table.name}: classified PLATFORM but has a tenant_id column."
+        )
+    if d.how in (ERASE, CASCADE) and not has_tenant:
+        problems.append(f"{table.name}: classified {d.how} but has no tenant_id column.")
+    if d.how == CASCADE:
+        problems += _cascade_problems(table)
+    if d.how == ERASE_BY_USER and (
+        not d.user_column or d.user_column not in table.c
+    ):
+        problems.append(
+            f"{table.name}: classified ERASE_BY_USER but column "
+            f"{d.user_column!r} is not on the table."
+        )
+    if d.how == ERASE_CUSTOM and d.handler is None:
+        problems.append(f"{table.name}: classified ERASE_CUSTOM with no handler.")
+    if d.how == RETAIN and not (d.why or "").strip():
+        problems.append(f"{table.name}: classified RETAIN with no stated reason.")
+    return problems
+
+
 def check_classification(metadata) -> None:
     """Assert every table core owns is classified, and that each claim is true.
 
@@ -284,37 +327,7 @@ def check_classification(metadata) -> None:
                 f"are erased on offboard, and why."
             )
             continue
-        has_tenant = "tenant_id" in table.c
-        if d.how == PLATFORM and has_tenant:
-            problems.append(
-                f"{table.name}: classified PLATFORM but has a tenant_id column."
-            )
-        if d.how in (ERASE, CASCADE) and not has_tenant:
-            problems.append(f"{table.name}: classified {d.how} but has no tenant_id column.")
-        if d.how == CASCADE:
-            fks = [
-                fk
-                for fk in table.foreign_keys
-                if fk.parent.name == "tenant_id" and fk.column.table.name == "tenants"
-            ]
-            if not fks:
-                problems.append(f"{table.name}: classified CASCADE but has no FK to tenants.")
-            elif not any((fk.ondelete or "").upper() == "CASCADE" for fk in fks):
-                problems.append(
-                    f"{table.name}: classified CASCADE but its tenants FK is "
-                    f"ondelete={fks[0].ondelete!r}, not CASCADE."
-                )
-        if d.how == ERASE_BY_USER and (
-            not d.user_column or d.user_column not in table.c
-        ):
-            problems.append(
-                f"{table.name}: classified ERASE_BY_USER but column "
-                f"{d.user_column!r} is not on the table."
-            )
-        if d.how == ERASE_CUSTOM and d.handler is None:
-            problems.append(f"{table.name}: classified ERASE_CUSTOM with no handler.")
-        if d.how == RETAIN and not (d.why or "").strip():
-            problems.append(f"{table.name}: classified RETAIN with no stated reason.")
+        problems += _classification_problems(table, d)
     if problems:
         raise UnclassifiedTable(
             "core's tenant-erasure classification is incomplete or wrong:\n  - "

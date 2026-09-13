@@ -127,6 +127,25 @@ def validate_phone(v: Optional[str]) -> Optional[str]:
     return v
 
 
+def _validate_coordinate(point) -> None:
+    """One [longitude, latitude] pair, on Earth."""
+    if not isinstance(point, list) or len(point) != 2:
+        raise ValueError("Each coordinate must be [longitude, latitude]")
+    lng, lat = point
+    if not isinstance(lng, (int, float)) or not isinstance(lat, (int, float)):
+        raise ValueError("Coordinates must be numbers")
+    if not (-180 <= lng <= 180) or not (-90 <= lat <= 90):
+        raise ValueError("Coordinates out of range")
+
+
+def _validate_ring(ring) -> None:
+    """One closed ring of a polygon."""
+    if not isinstance(ring, list) or len(ring) < 4:
+        raise ValueError("Each ring must have at least 4 coordinate pairs")
+    for point in ring:
+        _validate_coordinate(point)
+
+
 def validate_geo_polygon(v: Optional[dict]) -> Optional[dict]:
     if v is None:
         return None
@@ -138,16 +157,7 @@ def validate_geo_polygon(v: Optional[dict]) -> Optional[dict]:
     if not isinstance(coords, list) or not coords:
         raise ValueError("geo_polygon.coordinates must be a non-empty array of rings")
     for ring in coords:
-        if not isinstance(ring, list) or len(ring) < 4:
-            raise ValueError("Each ring must have at least 4 coordinate pairs")
-        for point in ring:
-            if not isinstance(point, list) or len(point) != 2:
-                raise ValueError("Each coordinate must be [longitude, latitude]")
-            lng, lat = point
-            if not isinstance(lng, (int, float)) or not isinstance(lat, (int, float)):
-                raise ValueError("Coordinates must be numbers")
-            if not (-180 <= lng <= 180) or not (-90 <= lat <= 90):
-                raise ValueError("Coordinates out of range")
+        _validate_ring(ring)
     return v
 
 

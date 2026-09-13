@@ -195,6 +195,60 @@ async def _devices_for(
     )
 
 
+async def _items_over_sites(
+    db: AsyncSession, tenant, defn: dict, site_id, start, end, res, table, depth
+) -> list[dict]:
+    """One item per site the metric applies to, each carrying its own outcome."""
+    sites = await _sites_for(db, tenant, site_id)
+    if site_id is not None and not sites:
+        raise EvaluationError("no such site in this tenant's reporting store")
+    items = []
+    for site in sites:
+        if defn["kind"] == "composite":
+            item = await _evaluate_site_composite(
+                db, tenant, defn, site, start, end, res, depth
+            )
+        else:
+            item = await _evaluate_site_formula(
+                db, tenant, defn, site, start, end, table
+            )
+        item["site_id"] = str(site["site_id"])
+        if site.get("site_name"):
+            item["site_name"] = site["site_name"]
+        items.append(item)
+    return items
+
+
+async def _items_over_devices(
+    db: AsyncSession, tenant, defn: dict, device_id, site_id,
+    start, end, res, table, depth
+) -> list[dict]:
+    """One item per device the metric applies to, each carrying its own outcome."""
+    if device_id is not None:
+        devices = [{"device_id": device_id, "device_tag": None}]
+    else:
+        devices = await _devices_for(
+            db, tenant, defn.get("applies_to") or {}, site_id=site_id
+        )
+    items = []
+    for d in devices:
+        if defn["kind"] == "composite":
+            item = await _evaluate_composite(
+                db, tenant, defn, d["device_id"], start, end, res, depth
+            )
+        elif defn["kind"] == "occupancy":
+            item = await _evaluate_occupancy(
+                db, tenant, defn, d["device_id"], start, end, table
+            )
+        else:
+            item = await _evaluate_formula(db, tenant, defn, d["device_id"], start, end, table)
+        item["device_id"] = str(d["device_id"])
+        if d.get("device_tag"):
+            item["device_tag"] = d["device_tag"]
+        items.append(item)
+    return items
+
+
 async def evaluate(
     db: AsyncSession,
     tenant: uuid.UUID | None,
@@ -217,46 +271,14 @@ async def evaluate(
     table = "readings_1m" if res == "1m" else "readings_1h"
     scope = (defn.get("applies_to") or {}).get("scope", "device")
 
-    items = []
     if scope == "site":
-        sites = await _sites_for(db, tenant, site_id)
-        if site_id is not None and not sites:
-            raise EvaluationError("no such site in this tenant's reporting store")
-        for site in sites:
-            if defn["kind"] == "composite":
-                item = await _evaluate_site_composite(
-                    db, tenant, defn, site, start, end, res, _depth
-                )
-            else:
-                item = await _evaluate_site_formula(
-                    db, tenant, defn, site, start, end, table
-                )
-            item["site_id"] = str(site["site_id"])
-            if site.get("site_name"):
-                item["site_name"] = site["site_name"]
-            items.append(item)
+        items = await _items_over_sites(
+            db, tenant, defn, site_id, start, end, res, table, _depth
+        )
     else:
-        if device_id is not None:
-            devices = [{"device_id": device_id, "device_tag": None}]
-        else:
-            devices = await _devices_for(
-                db, tenant, defn.get("applies_to") or {}, site_id=site_id
-            )
-        for d in devices:
-            if defn["kind"] == "composite":
-                item = await _evaluate_composite(
-                    db, tenant, defn, d["device_id"], start, end, res, _depth
-                )
-            elif defn["kind"] == "occupancy":
-                item = await _evaluate_occupancy(
-                    db, tenant, defn, d["device_id"], start, end, table
-                )
-            else:
-                item = await _evaluate_formula(db, tenant, defn, d["device_id"], start, end, table)
-            item["device_id"] = str(d["device_id"])
-            if d.get("device_tag"):
-                item["device_tag"] = d["device_tag"]
-            items.append(item)
+        items = await _items_over_devices(
+            db, tenant, defn, device_id, site_id, start, end, res, table, _depth
+        )
 
     return {
         "metric": defn["key"],
@@ -273,19 +295,15 @@ async def evaluate(
     }
 
 
-async def _evaluate_formula(
-    db: AsyncSession,
-    tenant,
-    defn: dict,
-    device_id,
-    start,
-    end,
-    table: str,
+async def _bind_roles_on_device(
+    db: AsyncSession, tenant, device_id, inputs: dict
 ) -> dict:
-    inputs: dict = defn["inputs"]
-    guards: list = defn.get("guards") or []
-    roles_needed = {name: spec["role"] for name, spec in inputs.items()}
+    """The one point behind each input, or why the binding is not decidable.
 
+    A metric will not guess between two points claiming the same role: the
+    ambiguity is the operator's to resolve, and naming both is how they find it.
+    """
+    roles_needed = {name: spec["role"] for name, spec in inputs.items()}
     rows = _rows(
         await db.execute(
             text(_ROLE_POINTS_SQL.format(live=LIVE_POINT)),
@@ -318,55 +336,84 @@ async def _evaluate_formula(
                 f"on this device — a metric cannot pick one; clear the extras",
             )
         bound[name] = candidates[0]
+    return {"status": "ok", "bound": bound}
 
-    # ── unit guards, in order of most fundamental first ──────────────────────
+
+def _unconfirmed_units_refusal(bound: dict[str, dict]) -> dict | None:
+    """Which bound points still carry a unit nobody confirmed."""
+    bad = [n for n, p in bound.items() if p["unit_source"] != "operator"]
+    if not bad:
+        return None
+    named = ", ".join(f"`{bound[n]['point_tag']}` ({n})" for n in bad)
+    return _refusal(
+        "unit_unconfirmed",
+        f"no operator has confirmed a unit for {named} — the metric does "
+        f"not compute on an assumed unit; confirm it on the Units tab",
+    )
+
+
+def _input_unit_refusal(name: str, spec: dict, point: dict) -> dict | None:
+    """Whether one input's confirmed unit is the unit (or dimension) it asks for."""
+    unit = point["unit"]
+    if unit is None:
+        return None  # unguarded definitions may run unit-open; dimension unknown
+    want_unit, want_dim = spec.get("unit"), spec.get("dimension")
+    if want_unit is not None and unit != want_unit:
+        return _refusal(
+            "unit_mismatch",
+            f"input `{name}` requires `{want_unit}` and point "
+            f"`{point['point_tag']}` is confirmed as `{unit}`",
+        )
+    dim = UNIT_DIMENSION.get(unit)
+    if want_dim is not None and dim != want_dim:
+        return _refusal(
+            "unit_mismatch",
+            f"input `{name}` requires dimension `{want_dim}` and "
+            f"`{unit}` is `{dim or 'unknown'}`",
+        )
+    return None
+
+
+def _mixed_units_refusal(bound: dict[str, dict]) -> dict | None:
+    """Inputs that must share a unit but do not — conversion is not modelled."""
+    units = {n: bound[n]["unit"] for n in bound}
+    distinct = set(units.values())
+    if len(distinct) <= 1:
+        return None
+    named = ", ".join(f"{n}=`{u}`" for n, u in units.items())
+    return _refusal(
+        "unit_mismatch",
+        f"inputs are in different units ({named}) and conversion is not "
+        f"modelled — this refuses rather than converts silently",
+    )
+
+
+def _unit_guards_refusal(guards: list, inputs: dict, bound: dict) -> dict | None:
+    """The unit guards, in order of most fundamental first."""
     if "units_confirmed" in guards:
-        bad = [n for n, p in bound.items() if p["unit_source"] != "operator"]
-        if bad:
-            named = ", ".join(f"`{bound[n]['point_tag']}` ({n})" for n in bad)
-            return _refusal(
-                "unit_unconfirmed",
-                f"no operator has confirmed a unit for {named} — the metric does "
-                f"not compute on an assumed unit; confirm it on the Units tab",
-            )
+        refused = _unconfirmed_units_refusal(bound)
+        if refused is not None:
+            return refused
     for name, spec in inputs.items():
-        unit = bound[name]["unit"]
-        if unit is None:
-            continue  # unguarded definitions may run unit-open; dimension unknown
-        dim = UNIT_DIMENSION.get(unit)
-        want_unit, want_dim = spec.get("unit"), spec.get("dimension")
-        if want_unit is not None and unit != want_unit:
-            return _refusal(
-                "unit_mismatch",
-                f"input `{name}` requires `{want_unit}` and point "
-                f"`{bound[name]['point_tag']}` is confirmed as `{unit}`",
-            )
-        if want_dim is not None and dim != want_dim:
-            return _refusal(
-                "unit_mismatch",
-                f"input `{name}` requires dimension `{want_dim}` and "
-                f"`{unit}` is `{dim or 'unknown'}`",
-            )
+        refused = _input_unit_refusal(name, spec, bound[name])
+        if refused is not None:
+            return refused
     if "same_unit" in guards:
-        units = {n: bound[n]["unit"] for n in bound}
-        distinct = set(units.values())
-        if len(distinct) > 1:
-            named = ", ".join(f"{n}=`{u}`" for n, u in units.items())
-            return _refusal(
-                "unit_mismatch",
-                f"inputs are in different units ({named}) and conversion is not "
-                f"modelled — this refuses rather than converts silently",
-            )
+        return _mixed_units_refusal(bound)
+    return None
 
-    # ── read the rollup ──────────────────────────────────────────────────────
-    pids = [str(p["point_id"]) for p in bound.values()]
+
+async def _device_aggregates(
+    db: AsyncSession, tenant, bound: dict, start, end, table: str
+) -> dict:
+    """The rollup aggregate behind every bound point — one query, all of them."""
     aggs = {
         r["point_id"]: r
         for r in _rows(
             await db.execute(
                 text(_AGG_SQL.format(table=table)),
                 {
-                    "pids": pids,
+                    "pids": [str(p["point_id"]) for p in bound.values()],
                     "tenant": str(tenant) if tenant else None,
                     "start": start,
                     "end": end,
@@ -381,26 +428,34 @@ async def _evaluate_formula(
                 f"input `{name}` (`{p['point_tag']}`) has no samples in the "
                 f"window at this resolution — absence is absence, not zero",
             )
+    return {"status": "ok", "aggs": aggs}
 
-    if "non_frozen" in guards:
-        for name, p in bound.items():
-            a = aggs[p["point_id"]]
-            samples = int(a["samples"] or 0)
-            if (
-                samples >= 2
-                and a["agg_min"] is not None
-                and a["agg_min"] == a["agg_max"]
-            ):
-                return _refusal(
-                    "undefined_frozen",
-                    f"input `{name}` (`{p['point_tag']}`) held one distinct value "
-                    f"({a['agg_min']:g}) across {samples} samples — zero variance, "
-                    f"so the metric is undefined here, not zero",
-                )
 
-    # ── arithmetic, shown ────────────────────────────────────────────────────
+def _frozen_input_refusal(guards: list, bound: dict, aggs: dict) -> dict | None:
+    """An input that never moved across the window, where the definition forbids it."""
+    if "non_frozen" not in guards:
+        return None
+    for name, p in bound.items():
+        a = aggs[p["point_id"]]
+        samples = int(a["samples"] or 0)
+        if (
+            samples >= 2
+            and a["agg_min"] is not None
+            and a["agg_min"] == a["agg_max"]
+        ):
+            return _refusal(
+                "undefined_frozen",
+                f"input `{name}` (`{p['point_tag']}`) held one distinct value "
+                f"({a['agg_min']:g}) across {samples} samples — zero variance, "
+                f"so the metric is undefined here, not zero",
+            )
+    return None
+
+
+def _device_input_values(inputs: dict, bound: dict, aggs: dict) -> dict:
+    """Each input's aggregate as a number, with the provenance shown beside it."""
     env: dict[str, float] = {}
-    input_report = []
+    report = []
     for name, spec in inputs.items():
         p = bound[name]
         a = aggs[p["point_id"]]
@@ -412,7 +467,7 @@ async def _evaluate_formula(
                 f"input `{name}` (`{p['point_tag']}`) has no numeric samples in the window",
             )
         env[name] = float(v)
-        input_report.append(
+        report.append(
             {
                 "input": name,
                 "role": spec["role"],
@@ -426,7 +481,45 @@ async def _evaluate_formula(
                 "samples": int(a["samples"] or 0),
             }
         )
+    return {"status": "ok", "env": env, "inputs": report}
 
+
+async def _evaluate_formula(
+    db: AsyncSession,
+    tenant,
+    defn: dict,
+    device_id,
+    start,
+    end,
+    table: str,
+) -> dict:
+    inputs: dict = defn["inputs"]
+    guards: list = defn.get("guards") or []
+
+    binding = await _bind_roles_on_device(db, tenant, device_id, inputs)
+    if binding["status"] != "ok":
+        return binding
+    bound: dict[str, dict] = binding["bound"]
+
+    refused = _unit_guards_refusal(guards, inputs, bound)
+    if refused is not None:
+        return refused
+
+    read = await _device_aggregates(db, tenant, bound, start, end, table)
+    if read["status"] != "ok":
+        return read
+    aggs = read["aggs"]
+
+    refused = _frozen_input_refusal(guards, bound, aggs)
+    if refused is not None:
+        return refused
+
+    values = _device_input_values(inputs, bound, aggs)
+    if values["status"] != "ok":
+        return values
+    env, input_report = values["env"], values["inputs"]
+
+    # ── arithmetic, shown ────────────────────────────────────────────────────
     tree = expr.parse(defn["formula"])
     window_days = (end - start).total_seconds() / 86400.0
     try:
@@ -768,6 +861,145 @@ def linear_band_table(star_coeffs: dict, ac_share: float) -> list[dict]:
     return out
 
 
+def _benchmark_head(std: dict) -> dict:
+    """What is already established about the standard itself.
+
+    It travels onto EVERY return below, refusals included, and grows as each
+    further fact is established. A blocked state must name what EXISTS as well
+    as what is missing — "the standard is loaded and cited, your zone is set,
+    only the AC share is not" is a different situation from "no standard at
+    all", and the screen has to be able to say which. Dropping the citation on
+    the refusal path made a cited standard look uncited.
+    """
+    bands = std["bands"] or {}
+    return {
+        "standard": std["key"], "version": std["version"], "title": std["title"],
+        "kind": bands.get("kind") or "fixed_ranges",
+        "citation": std.get("citation"),
+        "effective_from": (
+            std["effective_from"].isoformat() if std.get("effective_from") else None
+        ),
+    }
+
+
+async def _linear_by_ac_share_bands(
+    db: AsyncSession, tenant, site_id, std: dict, head: dict,
+    cfg: dict, zone_def: dict
+) -> dict:
+    """The 2022 model: straight-line equations in the AC-share percentage, per
+    building size category derived from the recorded built-up area."""
+    bands = std["bands"] or {}
+    zone = head["zone"]
+    area_rows = _rows(
+        await db.execute(
+            text(_SITE_AREA_SQL),
+            {"site": str(site_id),
+             "tenant": str(tenant) if tenant else None},
+        )
+    )
+    area = area_rows[0]["gross_floor_area_sqm"] if area_rows else None
+    if area is None:
+        return {
+            **head, "ok": False,
+            "missing": "gross_floor_area_sqm",
+            "reason": (
+                f"built-up area not recorded for this site — {std['title']} "
+                f"({std['version']}) sizes its equations by BUA (Large > "
+                f"30,000 m²; Medium 10,000–30,000 m²; Small < 10,000 m²); "
+                f"record `gross_floor_area_sqm` in Configurations → Sites"
+            ),
+        }
+    size = size_category_for(float(area))
+    # (the recorded area itself already travels on the response's `site`
+    # object; only the derived category is new information here)
+    head["size_category"] = size
+    ac_share = cfg.get("ac_share_percent")
+    if ac_share is None:
+        return {
+            **head, "ok": False,
+            "missing": "ac_share_percent",
+            "reason": (
+                f"`ac_share_percent` not recorded for this site — "
+                f"{std['title']} ({std['version']}) bands are straight-line "
+                f"equations y = a·b + c in b = the percentage of AC area out "
+                f"of total built-up area; record `ac_share_percent` (0–100) "
+                f"on the site's benchmark config "
+                f"(PUT /bi/rating/benchmark-config)"
+            ),
+        }
+    coeffs = zone_def.get(size)
+    if not coeffs:
+        return {
+            **head, "ok": False,
+            "reason": (
+                f"{std['title']} ({std['version']}) has no equations for zone "
+                f"`{zone}` / size `{size}` — the recorded config names a "
+                f"table the standard does not publish"
+            ),
+        }
+    x = float(ac_share)
+    table = linear_band_table(coeffs, x)
+    # Score edges: the document's best line (5★ equation) → 100, its
+    # worst line (1★ equation) → 0, linear between, clamped — the same
+    # role 2009's 5★ threshold / 1★ upper bound play.
+    by_star = {b["stars"]: b for b in table}
+    best = by_star[5]["equation_value"]
+    worst = by_star[1]["equation_value"]
+    size_label = ((bands.get("size_categories") or {}).get(size) or {}).get(
+        "label", size
+    )
+    return {
+        **head, "ok": True, "best": float(best), "worst": float(worst),
+        "zone": zone, "ac_category": None,
+        "size_category": size, "ac_share_percent": x,
+        "band_table": table,
+        "citation": std["citation"], "unit": bands.get("unit"),
+        "context": (
+            f"zone {zone_def.get('label', zone)} · {size_label} "
+            f"(BUA {float(area):,.0f} m²) · {x:g}% AC area"
+        ),
+    }
+
+
+def _fixed_range_bands(
+    std: dict, head: dict, cfg: dict, zone_def: dict
+) -> dict:
+    """2009's fixed-range model: bands per zone × over/under-50%-AC category."""
+    bands = std["bands"] or {}
+    zone = head["zone"]
+    ac = cfg.get("ac_category") if cfg else None
+    if not ac:
+        return {
+            **head, "ok": False,
+            "missing": "ac_category",
+            "reason": (
+                f"air-conditioned-share category not set for this site — "
+                f"{std['title']} ({std['version']}) publishes different bands for "
+                f">50% and <50% conditioned built-up area"
+            ),
+        }
+    table = zone_def.get(ac)
+    if not table:
+        return {
+            **head, "ok": False,
+            "reason": (
+                f"{std['title']} ({std['version']}) has no band table for zone "
+                f"`{zone}` / category `{ac}` — the recorded config names a table "
+                f"the standard does not publish"
+            ),
+        }
+    # Best edge: the 5-star threshold (below it, the best band). Worst edge:
+    # the 1-star upper bound (above it the scheme awards no star → score 0).
+    best = min(b["max"] for b in table if b.get("max") is not None and b.get("min") is None)
+    worst = max(b["max"] for b in table if b.get("max") is not None)
+    return {
+        **head, "ok": True, "best": float(best), "worst": float(worst),
+        "zone": zone, "ac_category": ac, "band_table": table,
+        "citation": std["citation"], "unit": bands.get("unit"),
+        "context": f"zone {zone_def.get('label', zone)} · {ac}",
+    }
+
+
 async def resolve_benchmark(
     db: AsyncSession, tenant, site_id, *, as_of: dt.datetime | None = None
 ) -> dict:
@@ -805,21 +1037,7 @@ async def resolve_benchmark(
         }
     std = std_rows[0]
     bands = std["bands"] or {}
-    kind = bands.get("kind") or "fixed_ranges"
-    # `head` travels onto EVERY return below, refusals included, and it grows as
-    # each fact is established. A blocked state must name what EXISTS as well as
-    # what is missing — "the standard is loaded and cited, your zone is set, only
-    # the AC share is not" is a different situation from "no standard at all",
-    # and the screen has to be able to say which. Dropping the citation on the
-    # refusal path made a cited standard look uncited.
-    head = {
-        "standard": std["key"], "version": std["version"], "title": std["title"],
-        "kind": kind,
-        "citation": std.get("citation"),
-        "effective_from": (
-            std["effective_from"].isoformat() if std.get("effective_from") else None
-        ),
-    }
+    head = _benchmark_head(std)
     zone = cfg.get("climate_zone") if cfg else None
     if not zone:
         return {
@@ -833,114 +1051,13 @@ async def resolve_benchmark(
         }
     head["zone"] = zone
     head["ac_category"] = cfg.get("ac_category") if cfg else None
-    zones = bands.get("zones") or {}
-    zone_def = zones.get(zone) or {}
+    zone_def = (bands.get("zones") or {}).get(zone) or {}
 
-    if kind == "linear_by_ac_share":
-        # The 2022 model: straight-line equations in the AC-share percentage,
-        # per building size category derived from the recorded built-up area.
-        area_rows = _rows(
-            await db.execute(
-                text(_SITE_AREA_SQL),
-                {"site": str(site_id),
-                 "tenant": str(tenant) if tenant else None},
-            )
+    if head["kind"] == "linear_by_ac_share":
+        return await _linear_by_ac_share_bands(
+            db, tenant, site_id, std, head, cfg, zone_def
         )
-        area = area_rows[0]["gross_floor_area_sqm"] if area_rows else None
-        if area is None:
-            return {
-                **head, "ok": False,
-                "missing": "gross_floor_area_sqm",
-                "reason": (
-                    f"built-up area not recorded for this site — {std['title']} "
-                    f"({std['version']}) sizes its equations by BUA (Large > "
-                    f"30,000 m²; Medium 10,000–30,000 m²; Small < 10,000 m²); "
-                    f"record `gross_floor_area_sqm` in Configurations → Sites"
-                ),
-            }
-        size = size_category_for(float(area))
-        # (the recorded area itself already travels on the response's `site`
-        # object; only the derived category is new information here)
-        head["size_category"] = size
-        ac_share = cfg.get("ac_share_percent")
-        if ac_share is None:
-            return {
-                **head, "ok": False,
-                "missing": "ac_share_percent",
-                "reason": (
-                    f"`ac_share_percent` not recorded for this site — "
-                    f"{std['title']} ({std['version']}) bands are straight-line "
-                    f"equations y = a·b + c in b = the percentage of AC area out "
-                    f"of total built-up area; record `ac_share_percent` (0–100) "
-                    f"on the site's benchmark config "
-                    f"(PUT /bi/rating/benchmark-config)"
-                ),
-            }
-        coeffs = zone_def.get(size)
-        if not coeffs:
-            return {
-                **head, "ok": False,
-                "reason": (
-                    f"{std['title']} ({std['version']}) has no equations for zone "
-                    f"`{zone}` / size `{size}` — the recorded config names a "
-                    f"table the standard does not publish"
-                ),
-            }
-        x = float(ac_share)
-        table = linear_band_table(coeffs, x)
-        # Score edges: the document's best line (5★ equation) → 100, its
-        # worst line (1★ equation) → 0, linear between, clamped — the same
-        # role 2009's 5★ threshold / 1★ upper bound play.
-        by_star = {b["stars"]: b for b in table}
-        best = by_star[5]["equation_value"]
-        worst = by_star[1]["equation_value"]
-        size_label = ((bands.get("size_categories") or {}).get(size) or {}).get(
-            "label", size
-        )
-        return {
-            **head, "ok": True, "best": float(best), "worst": float(worst),
-            "zone": zone, "ac_category": None,
-            "size_category": size, "ac_share_percent": x,
-            "band_table": table,
-            "citation": std["citation"], "unit": bands.get("unit"),
-            "context": (
-                f"zone {zone_def.get('label', zone)} · {size_label} "
-                f"(BUA {float(area):,.0f} m²) · {x:g}% AC area"
-            ),
-        }
-
-    # 2009's fixed-range model: bands per zone × over/under-50%-AC category.
-    ac = cfg.get("ac_category") if cfg else None
-    if not ac:
-        return {
-            **head, "ok": False,
-            "missing": "ac_category",
-            "reason": (
-                f"air-conditioned-share category not set for this site — "
-                f"{std['title']} ({std['version']}) publishes different bands for "
-                f">50% and <50% conditioned built-up area"
-            ),
-        }
-    table = zone_def.get(ac)
-    if not table:
-        return {
-            **head, "ok": False,
-            "reason": (
-                f"{std['title']} ({std['version']}) has no band table for zone "
-                f"`{zone}` / category `{ac}` — the recorded config names a table "
-                f"the standard does not publish"
-            ),
-        }
-    # Best edge: the 5-star threshold (below it, the best band). Worst edge:
-    # the 1-star upper bound (above it the scheme awards no star → score 0).
-    best = min(b["max"] for b in table if b.get("max") is not None and b.get("min") is None)
-    worst = max(b["max"] for b in table if b.get("max") is not None)
-    return {
-        **head, "ok": True, "best": float(best), "worst": float(worst),
-        "zone": zone, "ac_category": ac, "band_table": table,
-        "citation": std["citation"], "unit": bands.get("unit"),
-        "context": f"zone {zone_def.get('label', zone)} · {ac}",
-    }
+    return _fixed_range_bands(std, head, cfg, zone_def)
 
 
 def _band_for(table: list[dict], value: float) -> dict | None:
@@ -992,228 +1109,376 @@ async def _emission_factor_for(db: AsyncSession, tenant, site_id, end: dt.dateti
     return rows[0] if rows else None
 
 
+async def _site_role_candidates(
+    db: AsyncSession, tenant, site_id, inputs: dict
+) -> dict[str, list[dict]]:
+    """The site's confirmed points, grouped by the role an input asks for.
+
+    One query for every role the formula names — a four-input formula must not
+    become four round trips.
+    """
+    roles = {
+        spec["role"] for spec in inputs.values()
+        if spec.get("source", "points") == "points"
+    }
+    if not roles:
+        return {}
+    rows = _rows(
+        await db.execute(
+            text(_SITE_ROLE_POINTS_SQL.format(live=LIVE_POINT)),
+            {
+                "site": str(site_id),
+                "roles": list(roles),
+                "tenant": str(tenant) if tenant else None,
+                "retire_days": RETIRE_AFTER_DAYS,
+            },
+        )
+    )
+    by_role: dict[str, list[dict]] = {}
+    for r in rows:
+        by_role.setdefault(r["role"], []).append(r)
+    return by_role
+
+
+async def _emission_factor_input(
+    db: AsyncSession, tenant, site_id, name: str, end: dt.datetime
+) -> dict:
+    """The site's grid emission factor as a formula input, with its citation."""
+    row = await _emission_factor_for(db, tenant, site_id, end)
+    if row is None:
+        return _refusal(
+            "missing_factor",
+            f"input `{name}`: no grid emission factor is recorded for "
+            f"this site effective on or before "
+            f"{end.date().isoformat()} — record one in Configurations → "
+            f"Sites → Emissions. A national average IS a defensible "
+            f"value, but it is a value somebody has to choose and cite, "
+            f"not one this metric may assume",
+        )
+    return {
+        "status": "ok",
+        "value": float(row["kg_co2_per_kwh"]),
+        "report": {
+            "input": name, "source": "emission_factor",
+            "value": float(row["kg_co2_per_kwh"]), "unit": "kgCO2/kWh",
+            "effective_from": row["effective_from"],
+            "factor_source": row["source"],
+        },
+    }
+
+
+def _site_fact_input(site: dict, name: str, spec: dict) -> dict:
+    """A recorded site fact (area, occupancy) as a formula input."""
+    fact = spec["fact"]
+    fact_def = registry.FACT_DEFS[fact]
+    v = site.get(fact)
+    if v is None:
+        return _refusal(
+            "missing_fact",
+            f"input `{name}`: site fact `{fact}` ({fact_def['label']}) is "
+            f"NOT RECORDED for this site — record it in "
+            f"{fact_def['recorded_at']}; nothing is defaulted or estimated",
+        )
+    return {
+        "status": "ok",
+        "value": float(v),
+        "report": {"input": name, "source": "site_fact", "fact": fact,
+                   "value": float(v), "unit": spec.get("unit")},
+    }
+
+
+def _unit_guard_refusal(
+    name: str, guards: list, candidates: list[dict], want_unit: str | None
+) -> dict | None:
+    """Why these points may not feed this input — or None if they may.
+
+    Both guards exist so that a number never arrives on an assumed unit; they
+    are why this evaluator refuses instead of converting.
+    """
+    if "units_confirmed" in guards:
+        bad = [c for c in candidates if c["unit_source"] != "operator"]
+        if bad:
+            named = ", ".join(f"`{c['point_tag']}`" for c in bad)
+            return _refusal(
+                "unit_unconfirmed",
+                f"input `{name}`: no operator has confirmed a unit for {named} "
+                f"— the metric does not compute on an assumed unit",
+            )
+    if want_unit is not None:
+        off = [c for c in candidates if c["unit"] != want_unit]
+        if off:
+            named = ", ".join(f"`{c['point_tag']}`=`{c['unit']}`" for c in off)
+            return _refusal(
+                "unit_mismatch",
+                f"input `{name}` requires `{want_unit}` and {named}",
+            )
+    return None
+
+
+def _register_delta(c: dict, a: dict | None) -> dict:
+    """What one register contributed over the window, or why it contributed nothing.
+
+    Every non-ok outcome is reported rather than absorbed: a consumption that
+    silently skipped a reset would be indistinguishable from one that never
+    had a reset.
+    """
+    row = {"point_id": str(c["point_id"]), "point_tag": c["point_tag"],
+           "device_tag": c["device_tag"]}
+    if not a or a["agg_first"] is None or a["agg_last"] is None:
+        row.update(status="no_data", reason="no bucket in this window")
+        return row
+    first, last = float(a["agg_first"]), float(a["agg_last"])
+    delta = last - first
+    if delta < 0:
+        # A reset, rollover or replaced device. Excluded and SAID —
+        # never an absolute value (rating.py's rule, same words).
+        row.update(status="register_decreased", first=first, last=last,
+                   reason=f"register went from {first:g} down to "
+                          f"{last:g}; no consumption can be derived")
+        return row
+    buckets = int(a["buckets"] or 0)
+    if delta == 0 and buckets > 1:
+        # first == last across the whole window: the register has
+        # stopped moving. The zero is a real measurement, but a
+        # score built on it grades a dead meter — an EPI of 0.0
+        # falls in the BEST benchmark band. Same discipline as a
+        # frozen formula input: undefined here, never a flattering
+        # number. rating.py makes the same call (register_frozen,
+        # band withheld); the registry refuses one input earlier.
+        row.update(status="register_frozen", first=first, last=last,
+                   buckets=buckets,
+                   reason=f"register held {first:g} across all "
+                          f"{buckets} buckets — the meter has "
+                          f"stopped moving")
+        return row
+    row.update(status="ok", first=first, last=last, delta=delta,
+               buckets=buckets)
+    return row
+
+
+def _refuse_unusable_registers(
+    name: str, role: str, candidates: list[dict], registers: list[dict]
+) -> dict:
+    """No register produced a delta — a stopped meter is not an absent one.
+
+    The two refusals send an operator to two different places, so they stay
+    two refusals.
+    """
+    frozen = [r for r in registers if r["status"] == "register_frozen"]
+    if frozen and len(frozen) == len(registers):
+        out = _refusal(
+            "undefined_frozen",
+            f"input `{name}`: every register in role `{role}` "
+            f"({len(frozen)}) held one value across the window — "
+            f"the meters have stopped moving, so the metric is "
+            f"undefined here, not zero",
+        )
+    else:
+        out = _refusal(
+            "no_data",
+            f"input `{name}`: none of the {len(candidates)} register(s) "
+            f"in role `{role}` produced a usable delta in this window",
+        )
+    out["registers"] = registers
+    return out
+
+
+async def _consumption_input(
+    db: AsyncSession, tenant, name: str, spec: dict,
+    candidates: list[dict], start, end, table: str
+) -> dict:
+    """`last − first` per bound register, summed across the role's registers."""
+    role = spec["role"]
+    aggs = {
+        r["point_id"]: r
+        for r in _rows(
+            await db.execute(
+                text(_AGG_SQL.format(table=table)),
+                {"pids": [str(c["point_id"]) for c in candidates],
+                 "tenant": str(tenant) if tenant else None,
+                 "start": start, "end": end},
+            )
+        )
+    }
+    registers = []
+    total = 0.0
+    usable = 0
+    first_b: dt.datetime | None = None
+    last_b: dt.datetime | None = None
+    for c in candidates:
+        a = aggs.get(c["point_id"])
+        row = _register_delta(c, a)
+        registers.append(row)
+        if row["status"] != "ok":
+            continue
+        total += row["delta"]
+        usable += 1
+        fb, lb = a["first_bucket"], a["last_bucket"]
+        first_b = fb if first_b is None or fb < first_b else first_b
+        last_b = lb if last_b is None or lb > last_b else last_b
+    if usable == 0:
+        return _refuse_unusable_registers(name, role, candidates, registers)
+    # Covered span across the usable registers — what annualize() (if
+    # present) scales over, exactly as /bi/rating does.
+    covered_days = None
+    if first_b is not None and last_b is not None:
+        covered_days = max((last_b - first_b).total_seconds() / 86400.0, 0.0)
+    return {
+        "status": "ok",
+        "value": total,
+        "days_covered": covered_days,
+        "report": {"input": name, "role": role, "aggregation": "consumption",
+                   "value": total, "unit": spec.get("unit"),
+                   "registers": registers, "days_covered": covered_days},
+    }
+
+
+async def _single_point_input(
+    db: AsyncSession, tenant, name: str, spec: dict,
+    candidates: list[dict], start, end, table: str
+) -> dict:
+    """One point's aggregate over the window — the role must bind exactly one."""
+    role = spec["role"]
+    agg = spec.get("aggregation", "avg")
+    if len(candidates) > 1:
+        tags = ", ".join(str(c["point_tag"]) for c in candidates)
+        return _refusal(
+            "ambiguous_role",
+            f"{len(candidates)} points ({tags}) are confirmed in role "
+            f"`{role}` at this site and aggregation `{agg}` needs exactly "
+            f"one — a metric cannot pick; `consumption` is the "
+            f"aggregation that sums registers",
+        )
+    c = candidates[0]
+    a_rows = _rows(
+        await db.execute(
+            text(_AGG_SQL.format(table=table)),
+            {"pids": [str(c["point_id"])],
+             "tenant": str(tenant) if tenant else None,
+             "start": start, "end": end},
+        )
+    )
+    if not a_rows or a_rows[0][f"agg_{agg}"] is None:
+        return _refusal(
+            "no_data",
+            f"input `{name}` (`{c['point_tag']}`) has no samples in the "
+            f"window at this resolution — absence is absence, not zero",
+        )
+    return {
+        "status": "ok",
+        "value": float(a_rows[0][f"agg_{agg}"]),
+        "report": {"input": name, "role": role, "aggregation": agg,
+                   "point_tag": c["point_tag"],
+                   "value": float(a_rows[0][f"agg_{agg}"]), "unit": c["unit"]},
+    }
+
+
+async def _role_points_input(
+    db: AsyncSession, tenant, name: str, spec: dict, guards: list,
+    by_role: dict[str, list[dict]], start, end, table: str
+) -> dict:
+    """A measured input: the points an operator confirmed in the role it names."""
+    role = spec["role"]
+    candidates = by_role.get(role) or []
+    if not candidates:
+        return _refusal(
+            "missing_role",
+            f"no point at this site is confirmed in role `{role}` "
+            f"(input `{name}`) — confirm one on the Metric Roles screen",
+        )
+    refused = _unit_guard_refusal(name, guards, candidates, spec.get("unit"))
+    if refused is not None:
+        return refused
+    if spec.get("aggregation", "avg") == "consumption":
+        return await _consumption_input(
+            db, tenant, name, spec, candidates, start, end, table
+        )
+    return await _single_point_input(
+        db, tenant, name, spec, candidates, start, end, table
+    )
+
+
+async def _resolve_site_inputs(
+    db: AsyncSession, tenant, defn: dict, site: dict, start, end, table: str
+) -> dict:
+    """Every input the formula names, resolved to a number — or the first refusal.
+
+    Inputs resolve before any arithmetic so the refusal an operator sees is the
+    gap they can act on, not the division that fell over three lines later.
+    """
+    inputs: dict = defn["inputs"]
+    guards: list = defn.get("guards") or []
+    by_role = await _site_role_candidates(db, tenant, site["site_id"], inputs)
+
+    env: dict[str, float] = {}
+    report: list[dict] = []
+    covered_days: float | None = None
+    for name, spec in inputs.items():
+        source = spec.get("source", "points")
+        if source == "emission_factor":
+            resolved = await _emission_factor_input(
+                db, tenant, site["site_id"], name, end
+            )
+        elif source == "site_fact":
+            resolved = _site_fact_input(site, name, spec)
+        else:
+            resolved = await _role_points_input(
+                db, tenant, name, spec, guards, by_role, start, end, table
+            )
+        if resolved["status"] != "ok":
+            return resolved
+        env[name] = resolved["value"]
+        report.append(resolved["report"])
+        if resolved.get("days_covered") is not None:
+            covered_days = resolved["days_covered"]
+    return {"status": "ok", "env": env, "inputs": report,
+            "days_covered": covered_days}
+
+
+async def _site_benchmark_context(
+    db: AsyncSession, tenant, site: dict, end: dt.datetime
+) -> dict:
+    """The standard this formula grades against, resolved at the window's end.
+
+    Version selection: the window END picks the standard version, the same way
+    `registry.effective` picks the metric definition — yesterday's window
+    grades under the standard in force yesterday.
+    """
+    resolved = await resolve_benchmark(db, tenant, site["site_id"], as_of=end)
+    if not resolved.get("ok"):
+        out = _refusal("no_benchmark", resolved["reason"])
+        if resolved.get("standard"):
+            out["benchmark"] = {k: resolved.get(k) for k in ("standard", "version")}
+        return out
+    note = {
+        "standard": resolved["standard"], "version": resolved["version"],
+        "kind": resolved.get("kind"),
+        "zone": resolved["zone"], "ac_category": resolved.get("ac_category"),
+        "best_edge": resolved["best"], "worst_edge": resolved["worst"],
+        "citation": resolved["citation"],
+    }
+    for k in ("size_category", "ac_share_percent", "context"):
+        if resolved.get(k) is not None:
+            note[k] = resolved[k]
+    return {
+        "status": "ok",
+        "note": note,
+        "edges": {"best": resolved["best"], "worst": resolved["worst"]},
+    }
+
+
 async def _evaluate_site_formula(
     db: AsyncSession, tenant, defn: dict, site: dict, start, end, table: str
 ) -> dict:
-    inputs: dict = defn["inputs"]
-    guards: list = defn.get("guards") or []
     tree = expr.parse(defn["formula"])
-
-    env: dict[str, float] = {}
-    input_report: list[dict] = []
     window_days = (end - start).total_seconds() / 86400.0
-    covered_days: float | None = None
 
-    role_names = {
-        name: spec for name, spec in inputs.items()
-        if spec.get("source", "points") == "points"
-    }
-    by_role: dict[str, list[dict]] = {}
-    if role_names:
-        rows = _rows(
-            await db.execute(
-                text(_SITE_ROLE_POINTS_SQL.format(live=LIVE_POINT)),
-                {
-                    "site": str(site["site_id"]),
-                    "roles": list({spec["role"] for spec in role_names.values()}),
-                    "tenant": str(tenant) if tenant else None,
-                    "retire_days": RETIRE_AFTER_DAYS,
-                },
-            )
-        )
-        for r in rows:
-            by_role.setdefault(r["role"], []).append(r)
-
-    for name, spec in inputs.items():
-        if spec.get("source", "points") == "emission_factor":
-            row = await _emission_factor_for(db, tenant, site["site_id"], end)
-            if row is None:
-                return _refusal(
-                    "missing_factor",
-                    f"input `{name}`: no grid emission factor is recorded for "
-                    f"this site effective on or before "
-                    f"{end.date().isoformat()} — record one in Configurations → "
-                    f"Sites → Emissions. A national average IS a defensible "
-                    f"value, but it is a value somebody has to choose and cite, "
-                    f"not one this metric may assume",
-                )
-            env[name] = float(row["kg_co2_per_kwh"])
-            input_report.append(
-                {"input": name, "source": "emission_factor",
-                 "value": float(row["kg_co2_per_kwh"]), "unit": "kgCO2/kWh",
-                 "effective_from": row["effective_from"],
-                 "factor_source": row["source"]}
-            )
-            continue
-
-        if spec.get("source", "points") == "site_fact":
-            fact = spec["fact"]
-            fact_def = registry.FACT_DEFS[fact]
-            v = site.get(fact)
-            if v is None:
-                return _refusal(
-                    "missing_fact",
-                    f"input `{name}`: site fact `{fact}` ({fact_def['label']}) is "
-                    f"NOT RECORDED for this site — record it in "
-                    f"{fact_def['recorded_at']}; nothing is defaulted or estimated",
-                )
-            env[name] = float(v)
-            input_report.append(
-                {"input": name, "source": "site_fact", "fact": fact,
-                 "value": float(v), "unit": spec.get("unit")}
-            )
-            continue
-
-        role = spec["role"]
-        agg = spec.get("aggregation", "avg")
-        candidates = by_role.get(role) or []
-        if not candidates:
-            return _refusal(
-                "missing_role",
-                f"no point at this site is confirmed in role `{role}` "
-                f"(input `{name}`) — confirm one on the Metric Roles screen",
-            )
-        if "units_confirmed" in guards:
-            bad = [c for c in candidates if c["unit_source"] != "operator"]
-            if bad:
-                named = ", ".join(f"`{c['point_tag']}`" for c in bad)
-                return _refusal(
-                    "unit_unconfirmed",
-                    f"input `{name}`: no operator has confirmed a unit for {named} "
-                    f"— the metric does not compute on an assumed unit",
-                )
-        want_unit = spec.get("unit")
-        if want_unit is not None:
-            off = [c for c in candidates if c["unit"] != want_unit]
-            if off:
-                named = ", ".join(f"`{c['point_tag']}`=`{c['unit']}`" for c in off)
-                return _refusal(
-                    "unit_mismatch",
-                    f"input `{name}` requires `{want_unit}` and {named}",
-                )
-
-        if agg == "consumption":
-            pids = [str(c["point_id"]) for c in candidates]
-            aggs = {
-                r["point_id"]: r
-                for r in _rows(
-                    await db.execute(
-                        text(_AGG_SQL.format(table=table)),
-                        {"pids": pids,
-                         "tenant": str(tenant) if tenant else None,
-                         "start": start, "end": end},
-                    )
-                )
-            }
-            registers = []
-            total = 0.0
-            usable = 0
-            first_b: dt.datetime | None = None
-            last_b: dt.datetime | None = None
-            for c in candidates:
-                a = aggs.get(c["point_id"])
-                row = {"point_id": str(c["point_id"]), "point_tag": c["point_tag"],
-                       "device_tag": c["device_tag"]}
-                if not a or a["agg_first"] is None or a["agg_last"] is None:
-                    row.update(status="no_data",
-                               reason="no bucket in this window")
-                    registers.append(row)
-                    continue
-                first, last = float(a["agg_first"]), float(a["agg_last"])
-                delta = last - first
-                if delta < 0:
-                    # A reset, rollover or replaced device. Excluded and SAID —
-                    # never an absolute value (rating.py's rule, same words).
-                    row.update(status="register_decreased", first=first, last=last,
-                               reason=f"register went from {first:g} down to "
-                                      f"{last:g}; no consumption can be derived")
-                    registers.append(row)
-                    continue
-                buckets = int(a["buckets"] or 0)
-                if delta == 0 and buckets > 1:
-                    # first == last across the whole window: the register has
-                    # stopped moving. The zero is a real measurement, but a
-                    # score built on it grades a dead meter — an EPI of 0.0
-                    # falls in the BEST benchmark band. Same discipline as a
-                    # frozen formula input: undefined here, never a flattering
-                    # number. rating.py makes the same call (register_frozen,
-                    # band withheld); the registry refuses one input earlier.
-                    row.update(status="register_frozen", first=first, last=last,
-                               buckets=buckets,
-                               reason=f"register held {first:g} across all "
-                                      f"{buckets} buckets — the meter has "
-                                      f"stopped moving")
-                    registers.append(row)
-                    continue
-                row.update(status="ok", first=first, last=last, delta=delta,
-                           buckets=buckets)
-                registers.append(row)
-                total += delta
-                usable += 1
-                fb, lb = a["first_bucket"], a["last_bucket"]
-                first_b = fb if first_b is None or fb < first_b else first_b
-                last_b = lb if last_b is None or lb > last_b else last_b
-            if usable == 0:
-                frozen = [r for r in registers if r["status"] == "register_frozen"]
-                if frozen and len(frozen) == len(registers):
-                    out = _refusal(
-                        "undefined_frozen",
-                        f"input `{name}`: every register in role `{role}` "
-                        f"({len(frozen)}) held one value across the window — "
-                        f"the meters have stopped moving, so the metric is "
-                        f"undefined here, not zero",
-                    )
-                else:
-                    out = _refusal(
-                        "no_data",
-                        f"input `{name}`: none of the {len(candidates)} register(s) "
-                        f"in role `{role}` produced a usable delta in this window",
-                    )
-                out["registers"] = registers
-                return out
-            # Covered span across the usable registers — what annualize() (if
-            # present) scales over, exactly as /bi/rating does.
-            if first_b is not None and last_b is not None:
-                covered_days = max(
-                    (last_b - first_b).total_seconds() / 86400.0, 0.0
-                )
-            env[name] = total
-            input_report.append(
-                {"input": name, "role": role, "aggregation": "consumption",
-                 "value": total, "unit": want_unit,
-                 "registers": registers, "days_covered": covered_days}
-            )
-        else:
-            if len(candidates) > 1:
-                tags = ", ".join(str(c["point_tag"]) for c in candidates)
-                return _refusal(
-                    "ambiguous_role",
-                    f"{len(candidates)} points ({tags}) are confirmed in role "
-                    f"`{role}` at this site and aggregation `{agg}` needs exactly "
-                    f"one — a metric cannot pick; `consumption` is the "
-                    f"aggregation that sums registers",
-                )
-            c = candidates[0]
-            a_rows = _rows(
-                await db.execute(
-                    text(_AGG_SQL.format(table=table)),
-                    {"pids": [str(c["point_id"])],
-                     "tenant": str(tenant) if tenant else None,
-                     "start": start, "end": end},
-                )
-            )
-            if not a_rows or a_rows[0][f"agg_{agg}"] is None:
-                return _refusal(
-                    "no_data",
-                    f"input `{name}` (`{c['point_tag']}`) has no samples in the "
-                    f"window at this resolution — absence is absence, not zero",
-                )
-            v = float(a_rows[0][f"agg_{agg}"])
-            env[name] = v
-            input_report.append(
-                {"input": name, "role": role, "aggregation": agg,
-                 "point_tag": c["point_tag"], "value": v, "unit": c["unit"]}
-            )
+    resolved = await _resolve_site_inputs(db, tenant, defn, site, start, end, table)
+    if resolved["status"] != "ok":
+        return resolved
+    env = resolved["env"]
+    input_report = resolved["inputs"]
+    covered_days = resolved["days_covered"]
 
     # Benchmark context, resolved AFTER the measured inputs and BEFORE the
     # arithmetic: a missing AREA reports as missing_fact (the actionable gap),
@@ -1222,27 +1487,12 @@ async def _evaluate_site_formula(
     benchmark = None
     bench_note = None
     if expr.uses(tree, "benchmark_score"):
-        # Version selection: the window END picks the standard version, the
-        # same way `registry.effective` picks the metric definition —
-        # yesterday's window grades under the standard in force yesterday.
-        resolved = await resolve_benchmark(db, tenant, site["site_id"], as_of=end)
-        if not resolved.get("ok"):
-            out = _refusal("no_benchmark", resolved["reason"])
-            if resolved.get("standard"):
-                out["benchmark"] = {k: resolved.get(k) for k in ("standard", "version")}
-            out["inputs"] = input_report
-            return out
-        bench_note = {
-            "standard": resolved["standard"], "version": resolved["version"],
-            "kind": resolved.get("kind"),
-            "zone": resolved["zone"], "ac_category": resolved.get("ac_category"),
-            "best_edge": resolved["best"], "worst_edge": resolved["worst"],
-            "citation": resolved["citation"],
-        }
-        for k in ("size_category", "ac_share_percent", "context"):
-            if resolved.get(k) is not None:
-                bench_note[k] = resolved[k]
-        benchmark = {"best": resolved["best"], "worst": resolved["worst"]}
+        bench = await _site_benchmark_context(db, tenant, site, end)
+        if bench["status"] != "ok":
+            bench["inputs"] = input_report
+            return bench
+        bench_note = bench["note"]
+        benchmark = bench["edges"]
 
     # annualize() over a consumption formula scales the COVERED span; a formula
     # with no consumption input keeps the requested window.
@@ -1297,6 +1547,82 @@ def _undefined_reason(parent: dict, metric: str, end: dt.datetime) -> str:
     return out
 
 
+def _component_over_devices(metric: str, devices: list[dict]) -> dict:
+    """A device-scope component combined across a site's devices.
+
+    The arithmetic mean of the ok values — or the refusal that replaces it,
+    because ANY device refusal refuses the component.
+    """
+    if not devices:
+        return {"status": "missing_role", "value": None,
+                "reason": f"no applicable device at this site for `{metric}`"}
+    refused = [d for d in devices if d["status"] != "ok"]
+    if refused:
+        named = "; ".join(
+            f"{d.get('device_tag') or d['device_id']} "
+            f"({d['status']}: {d['reason']})" for d in refused
+        )
+        return {
+            "status": "blocked", "value": None,
+            "reason": (
+                f"{len(refused)} of {len(devices)} device(s) refused "
+                f"— a composite of a refusal is a refusal. {named}"
+            ),
+        }
+    vals = [float(d["value"]) for d in devices]
+    mean = sum(vals) / len(vals)
+    return {
+        "status": "ok", "value": mean,
+        "arithmetic": (
+            "mean(" + ", ".join(f"{v:g}" for v in vals) + f") = {mean:g} "
+            f"over {len(vals)} device(s)"
+        ),
+    }
+
+
+async def _site_composite_part(
+    db: AsyncSession, tenant, defn: dict, site: dict, c: dict, start, end, res, depth
+) -> dict:
+    """One component of a site composite, evaluated the way its own scope demands."""
+    sub_defn = await registry.effective(db, tenant, c["metric"], end)
+    if sub_defn is None:
+        # A component named but not defined. "no metric `x` is effective"
+        # is TRUE and useless — it tells an operator that a key is missing,
+        # not what would make it exist. A composite may therefore document
+        # its own components (`display.components[key]`), and a pack that
+        # does gets its sentence printed instead: what the metric is, what
+        # measures it, and what is in the way. See `reporting.ccei_spec`.
+        return {"metric": c["metric"], "weight": c["weight"],
+                "status": "not_defined", "value": None,
+                "reason": _undefined_reason(defn, c["metric"], end)}
+    sub_scope = (sub_defn.get("applies_to") or {}).get("scope", "device")
+    sub = await evaluate(
+        db, tenant, c["metric"],
+        site_id=site["site_id"], start=start, end=end, resolution=res,
+        _depth=depth + 1,
+    )
+    part = {"metric": c["metric"], "version": sub["version"], "weight": c["weight"]}
+    if sub_scope == "site":
+        item = sub["items"][0] if sub["items"] else _refusal(
+            "no_data", "site not present in the reporting mirror")
+        part.update(status=item["status"], value=item.get("value"),
+                    reason=item.get("reason"))
+        if item.get("inputs"):
+            part["inputs"] = item["inputs"]
+        if item.get("benchmark"):
+            part["benchmark"] = item["benchmark"]
+    else:
+        devices = [
+            {"device_id": i.get("device_id"), "device_tag": i.get("device_tag"),
+             "status": i["status"], "value": i.get("value"),
+             "reason": i.get("reason")}
+            for i in sub["items"]
+        ]
+        part["devices"] = devices
+        part.update(**_component_over_devices(c["metric"], devices))
+    return part
+
+
 async def _evaluate_site_composite(
     db: AsyncSession, tenant, defn: dict, site: dict, start, end, res, depth
 ) -> dict:
@@ -1308,68 +1634,7 @@ async def _evaluate_site_composite(
         return _refusal("blocked", f"composite nesting deeper than {_MAX_COMPOSITE_DEPTH} is refused")
     parts = []
     for c in defn["components"]:
-        sub_defn = await registry.effective(db, tenant, c["metric"], end)
-        if sub_defn is None:
-            # A component named but not defined. "no metric `x` is effective"
-            # is TRUE and useless — it tells an operator that a key is missing,
-            # not what would make it exist. A composite may therefore document
-            # its own components (`display.components[key]`), and a pack that
-            # does gets its sentence printed instead: what the metric is, what
-            # measures it, and what is in the way. See `reporting.ccei_spec`.
-            parts.append({"metric": c["metric"], "weight": c["weight"],
-                          "status": "not_defined", "value": None,
-                          "reason": _undefined_reason(defn, c["metric"], end)})
-            continue
-        sub_scope = (sub_defn.get("applies_to") or {}).get("scope", "device")
-        sub = await evaluate(
-            db, tenant, c["metric"],
-            site_id=site["site_id"], start=start, end=end, resolution=res,
-            _depth=depth + 1,
+        parts.append(
+            await _site_composite_part(db, tenant, defn, site, c, start, end, res, depth)
         )
-        part = {"metric": c["metric"], "version": sub["version"], "weight": c["weight"]}
-        if sub_scope == "site":
-            item = sub["items"][0] if sub["items"] else _refusal(
-                "no_data", "site not present in the reporting mirror")
-            part.update(status=item["status"], value=item.get("value"),
-                        reason=item.get("reason"))
-            if item.get("inputs"):
-                part["inputs"] = item["inputs"]
-            if item.get("benchmark"):
-                part["benchmark"] = item["benchmark"]
-        else:
-            devices = [
-                {"device_id": i.get("device_id"), "device_tag": i.get("device_tag"),
-                 "status": i["status"], "value": i.get("value"),
-                 "reason": i.get("reason")}
-                for i in sub["items"]
-            ]
-            part["devices"] = devices
-            if not devices:
-                part.update(status="missing_role", value=None,
-                            reason=f"no applicable device at this site for `{c['metric']}`")
-            else:
-                refused = [d for d in devices if d["status"] != "ok"]
-                if refused:
-                    named = "; ".join(
-                        f"{d.get('device_tag') or d['device_id']} "
-                        f"({d['status']}: {d['reason']})" for d in refused
-                    )
-                    part.update(
-                        status="blocked", value=None,
-                        reason=(
-                            f"{len(refused)} of {len(devices)} device(s) refused "
-                            f"— a composite of a refusal is a refusal. {named}"
-                        ),
-                    )
-                else:
-                    vals = [float(d["value"]) for d in devices]
-                    mean = sum(vals) / len(vals)
-                    part.update(
-                        status="ok", value=mean,
-                        arithmetic=(
-                            "mean(" + ", ".join(f"{v:g}" for v in vals) + f") = {mean:g} "
-                            f"over {len(vals)} device(s)"
-                        ),
-                    )
-        parts.append(part)
     return _compose(defn, parts)

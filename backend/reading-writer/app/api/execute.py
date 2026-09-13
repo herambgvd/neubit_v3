@@ -138,6 +138,105 @@ class _Pass:
         self.series_keys = series_keys
 
 
+async def _resolve_series_keys(
+    db: AsyncSession, ds: Dataset, q: BuilderQuery, *, rel, start, end, tenant
+) -> dict:
+    """Which series this chart will draw, how many it COULD have drawn, and what
+    to call each one."""
+    disc = sqlgen.discover_series(ds, q, rel=rel, start=start, end=end, tenant=tenant)
+    found = await _rows(db, disc)
+    return {
+        "keys": [r[sqlgen.COL_SERIES] for r in found],
+        "labels": [
+            (str(r.get(sqlgen.COL_SERIES_LABEL) or "").strip() or str(r[sqlgen.COL_SERIES]))
+            for r in found
+        ],
+        "matched": int(found[0][sqlgen.COL_TOTAL]) if found else 0,
+        "sql": disc.preview(),
+    }
+
+
+def _pivot_series(data: list[dict], keys: list, value_col: str, *, want_band: bool) -> dict:
+    """The long result set as one row per bucket and one column per series."""
+    col_of = {k: i + 1 for i, k in enumerate(keys)}
+    by_t: dict[dt.datetime, list] = {}
+    band_by_t: dict[dt.datetime, tuple] = {}
+    for r in data:
+        t = r[sqlgen.COL_TIME]
+        row = by_t.get(t)
+        if row is None:
+            # NULL, not 0 — a series with no sample in this bucket did not
+            # measure zero, and ECharts draws the gap because `connectNulls`
+            # is off.
+            row = [t] + [None] * len(keys)
+            by_t[t] = row
+        idx = col_of.get(r[sqlgen.COL_SERIES])
+        if idx is not None:
+            row[idx] = cell(r.get(value_col))
+        if want_band:
+            band_by_t[t] = (cell(r.get(sqlgen.COL_BAND_LO)), cell(r.get(sqlgen.COL_BAND_HI)))
+
+    stamps = sorted(by_t)
+    return {
+        "rows": [by_t[t] for t in stamps],
+        "band": (
+            [list(band_by_t.get(t, (None, None))) for t in stamps] if band_by_t else None
+        ),
+    }
+
+
+async def _split_series_pass(
+    db: AsyncSession, tenant: str | None, ds: Dataset, q: BuilderQuery,
+    *, rel, start: dt.datetime, end: dt.datetime, series_keys: list[Any] | None,
+) -> _Pass:
+    """A split time-series: one column per series, pinned or discovered."""
+    keys = series_keys
+    labels: list[str] = []
+    disc_sql = ""
+    matched = len(keys) if keys is not None else 0
+    if keys is None:
+        disc = await _resolve_series_keys(
+            db, ds, q, rel=rel, start=start, end=end, tenant=tenant
+        )
+        keys, labels = disc["keys"], disc["labels"]
+        matched, disc_sql = disc["matched"], disc["sql"]
+    if not keys:
+        return _Pass(["time"], [], 0, False, None, disc_sql, [])
+
+    gen = sqlgen.build(ds, q, rel=rel, start=start, end=end, tenant=tenant, series_keys=keys)
+    data = await _rows(db, gen)
+    pivot = _pivot_series(
+        data,
+        keys,
+        next(i.out_name for i in q.select if i.measure),
+        want_band=bool(q.band and len(keys) == 1),
+    )
+    columns = _uniq(["time"] + labels) if labels else ["time"] + [str(k) for k in keys]
+    return _Pass(
+        columns, pivot["rows"], matched, matched > len(keys), pivot["band"],
+        gen.preview(), list(keys),
+    )
+
+
+async def _flat_pass(
+    db: AsyncSession, tenant: str | None, ds: Dataset, q: BuilderQuery,
+    *, rel, start: dt.datetime, end: dt.datetime,
+) -> _Pass:
+    """Everything else: the generated SELECT is already the table."""
+    d = ds.definition
+    gen = sqlgen.build(ds, q, rel=rel, start=start, end=end, tenant=tenant)
+    data = await _rows(db, gen)
+
+    names = ([sqlgen.COL_TIME] if q.time_series else []) + [i.out_name for i in q.select]
+    display = (["time"] if q.time_series else []) + [
+        (i.alias or (d.measure(i.measure).label if i.measure else d.dimension(i.dimension).label))
+        for i in q.select
+    ]
+    rows = [[cell(r.get(n)) for n in names] for r in data]
+    matched = int(data[0][sqlgen.COL_TOTAL]) if data and sqlgen.COL_TOTAL in data[0] else len(data)
+    return _Pass(_uniq(display), rows, matched, matched > len(rows), None, gen.preview(), None)
+
+
 async def _run_once(
     db: AsyncSession,
     tenant: str | None,
@@ -157,68 +256,11 @@ async def _run_once(
     silently answer a different question — the columns would not line up, and the
     ones that did would be the wrong pairs.
     """
-    d = ds.definition
-
     if q.time_series and q.series_by:
-        keys = series_keys
-        matched = len(keys) if keys is not None else 0
-        labels: list[str] = []
-        disc_sql = ""
-        if keys is None:
-            disc = sqlgen.discover_series(ds, q, rel=rel, start=start, end=end, tenant=tenant)
-            found = await _rows(db, disc)
-            disc_sql = disc.preview()
-            matched = int(found[0][sqlgen.COL_TOTAL]) if found else 0
-            if not found:
-                return _Pass(["time"], [], 0, False, None, disc_sql, [])
-            keys = [r[sqlgen.COL_SERIES] for r in found]
-            labels = [
-                (str(r.get(sqlgen.COL_SERIES_LABEL) or "").strip() or str(r[sqlgen.COL_SERIES]))
-                for r in found
-            ]
-        if not keys:
-            return _Pass(["time"], [], 0, False, None, disc_sql, [])
-
-        gen = sqlgen.build(ds, q, rel=rel, start=start, end=end, tenant=tenant, series_keys=keys)
-        data = await _rows(db, gen)
-
-        value_col = next(i.out_name for i in q.select if i.measure)
-        col_of = {k: i + 1 for i, k in enumerate(keys)}
-        by_t: dict[dt.datetime, list] = {}
-        band_by_t: dict[dt.datetime, tuple] = {}
-        for r in data:
-            t = r[sqlgen.COL_TIME]
-            row = by_t.get(t)
-            if row is None:
-                # NULL, not 0 — a series with no sample in this bucket did not
-                # measure zero, and ECharts draws the gap because `connectNulls`
-                # is off.
-                row = [t] + [None] * len(keys)
-                by_t[t] = row
-            idx = col_of.get(r[sqlgen.COL_SERIES])
-            if idx is not None:
-                row[idx] = cell(r.get(value_col))
-            if q.band and len(keys) == 1:
-                band_by_t[t] = (cell(r.get(sqlgen.COL_BAND_LO)), cell(r.get(sqlgen.COL_BAND_HI)))
-
-        stamps = sorted(by_t)
-        rows = [by_t[t] for t in stamps]
-        band = [list(band_by_t.get(t, (None, None))) for t in stamps] if band_by_t else None
-        columns = _uniq(["time"] + labels) if labels else ["time"] + [str(k) for k in keys]
-        return _Pass(columns, rows, matched, matched > len(keys), band, gen.preview(), list(keys))
-
-    # ── everything else: the generated SELECT is already the table ───────────
-    gen = sqlgen.build(ds, q, rel=rel, start=start, end=end, tenant=tenant)
-    data = await _rows(db, gen)
-
-    names = ([sqlgen.COL_TIME] if q.time_series else []) + [i.out_name for i in q.select]
-    display = (["time"] if q.time_series else []) + [
-        (i.alias or (d.measure(i.measure).label if i.measure else d.dimension(i.dimension).label))
-        for i in q.select
-    ]
-    rows = [[cell(r.get(n)) for n in names] for r in data]
-    matched = int(data[0][sqlgen.COL_TOTAL]) if data and sqlgen.COL_TOTAL in data[0] else len(data)
-    return _Pass(_uniq(display), rows, matched, matched > len(rows), None, gen.preview(), None)
+        return await _split_series_pass(
+            db, tenant, ds, q, rel=rel, start=start, end=end, series_keys=series_keys
+        )
+    return await _flat_pass(db, tenant, ds, q, rel=rel, start=start, end=end)
 
 
 # ── aligning a comparison to the primary result ──────────────────────────────

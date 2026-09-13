@@ -179,26 +179,14 @@ def _pin_note(cf: ContextFilter, reason: str, kind: str) -> ContextNote:
     return ContextNote(kind=kind, filter_id=cf.id, column=cf.column, reason=reason)  # type: ignore[arg-type]
 
 
-def resolve(spec: BuilderSpec, ctx: QueryContext | None, ds: Dataset) -> list[ContextNote]:
-    """Merge a dashboard context INTO a widget's builder state, in place.
+def _apply_variable_filters(q: BuilderQuery, variables: dict) -> list[ContextNote]:
+    """Resolve the widget's OWN variable-bound filters against the page's variables.
 
-    Returns the notes describing what happened. Runs BEFORE
-    `BuilderQuery.validated()`, so everything it contributes is validated by the
-    same rules as everything the widget author wrote — including the honesty
-    rules: a global filter that pins an incomparable measure to one series makes
-    an otherwise-refused widget legal, and one that does not, does not.
+    This runs even with no context at all, so a widget referencing a variable
+    nobody supplied fails LOUDLY rather than quietly dropping its predicate and
+    charting the whole estate under a title that says one site.
     """
-    q = spec.query
     notes: list[ContextNote] = []
-    d = ds.definition
-    known = {dim.key for dim in d.dimensions}
-    variables = ctx.variables if ctx else {}
-
-    # ── 1. resolve the widget's OWN variable-bound filters ───────────────────
-    #
-    # This runs even with no context at all, so a widget referencing a variable
-    # nobody supplied fails LOUDLY rather than quietly dropping its predicate and
-    # charting the whole estate under a title that says one site.
     kept: list[Filter] = []
     for f in q.filters:
         if not f.variable:
@@ -239,8 +227,14 @@ def resolve(spec: BuilderSpec, ctx: QueryContext | None, ds: Dataset) -> list[Co
             ContextNote(kind="applied", column=f.column, reason=f"variable '{name}'")
         )
     q.filters = kept
+    return notes
 
-    # ── 2. the page's global filters ─────────────────────────────────────────
+
+def _apply_context_filters(
+    q: BuilderQuery, ctx: QueryContext | None, ds: Dataset, known: set[str]
+) -> list[ContextNote]:
+    """Merge the page's global filters into the widget, saying what became of each."""
+    notes: list[ContextNote] = []
     for cf in ctx.filters if ctx else []:
         if q.ignore_all_filters:
             notes.append(_pin_note(cf, "this widget ignores dashboard filters", "opted_out"))
@@ -267,6 +261,37 @@ def resolve(spec: BuilderSpec, ctx: QueryContext | None, ds: Dataset) -> list[Co
             )
         q.filters.append(f)
         notes.append(_pin_note(cf, "applied", "applied"))
+    return notes
+
+
+def _apply_shared_window(q: BuilderQuery, ctx: QueryContext | None) -> list[ContextNote]:
+    """Give the widget the dashboard's window, unless it keeps its own."""
+    if ctx is None or ctx.window is None:
+        return []
+    if q.ignore_window:
+        return [ContextNote(kind="opted_out", reason="this widget keeps its own window")]
+    hours = ctx.window.last_hours
+    if hours is not None and hours > MAX_HOURS:
+        raise ValidationError(f"the window is limited to {MAX_HOURS} hours")
+    q.window = ctx.window
+    return [ContextNote(kind="window", reason="the dashboard's window")]
+
+
+def resolve(spec: BuilderSpec, ctx: QueryContext | None, ds: Dataset) -> list[ContextNote]:
+    """Merge a dashboard context INTO a widget's builder state, in place.
+
+    Returns the notes describing what happened. Runs BEFORE
+    `BuilderQuery.validated()`, so everything it contributes is validated by the
+    same rules as everything the widget author wrote — including the honesty
+    rules: a global filter that pins an incomparable measure to one series makes
+    an otherwise-refused widget legal, and one that does not, does not.
+    """
+    q = spec.query
+    d = ds.definition
+    known = {dim.key for dim in d.dimensions}
+
+    notes = _apply_variable_filters(q, ctx.variables if ctx else {})
+    notes += _apply_context_filters(q, ctx, ds, known)
 
     # A global filter contributed with the widget's combinator set to OR would
     # WIDEN the result rather than narrowing it — "site = A" OR-ed onto a widget's
@@ -281,17 +306,5 @@ def resolve(spec: BuilderSpec, ctx: QueryContext | None, ds: Dataset) -> list[Co
             "AND, or opt it out of dashboard filters."
         )
 
-    # ── 3. the shared window ─────────────────────────────────────────────────
-    if ctx and ctx.window is not None:
-        if q.ignore_window:
-            notes.append(
-                ContextNote(kind="opted_out", reason="this widget keeps its own window")
-            )
-        else:
-            hours = ctx.window.last_hours
-            if hours is not None and hours > MAX_HOURS:
-                raise ValidationError(f"the window is limited to {MAX_HOURS} hours")
-            q.window = ctx.window
-            notes.append(ContextNote(kind="window", reason="the dashboard's window"))
-
+    notes += _apply_shared_window(q, ctx)
     return notes

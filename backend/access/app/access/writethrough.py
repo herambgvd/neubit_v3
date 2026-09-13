@@ -82,63 +82,79 @@ _CARD_CAMEL_TO_SNAKE = {
 CARD_STATUSES = ("Free", "Used", "Canceled", "Lost", "Stolen", "Archived")
 
 
-def _cardholder_to_dds(payload: dict[str, Any]) -> dict[str, Any]:
-    """snake_case request → DDS PascalCase DTO (v2 cardholder/routes._to_dds)."""
-    out: dict[str, Any] = {}
+# The cardholder fields that copy straight across, snake_case → DDS DTO.
+_CH_SNAKE_TO_DDS = {
+    "employee_id": "CardholderIdNumber",
+    "email": "Email",
+    "description": "Description",
+    "pin_code": "PinCode",
+    "department_uid": "DepartmentUID",
+    "security_group_uid": "SecurityGroupUID",
+    "is_supervisor": "IsSupervisor",
+    "need_escort": "NeedEscort",
+}
+
+
+def _dds_name_fields(payload: dict[str, Any]) -> dict[str, Any]:
+    """FirstName/LastName, from whichever of the two shapes the caller sent.
+
+    A single `name` splits on the FIRST space, and a one-word name is a LAST
+    name — what a badge carries is a surname, not a given name.
+    """
     if "first_name" in payload or "last_name" in payload:
         fn = (payload.get("first_name") or "").strip()
         ln = (payload.get("last_name") or "").strip()
         if not ln and fn:
             ln, fn = fn, ""
-        out["FirstName"] = fn
-        out["LastName"] = ln
-    elif "name" in payload and payload["name"]:
-        parts = str(payload["name"]).strip().split(" ", 1)
-        if len(parts) == 1:
-            out["FirstName"] = ""
-            out["LastName"] = parts[0]
-        else:
-            out["FirstName"] = parts[0]
-            out["LastName"] = parts[1]
+        return {"FirstName": fn, "LastName": ln}
+    if not payload.get("name"):
+        return {}
+    parts = str(payload["name"]).strip().split(" ", 1)
+    if len(parts) == 1:
+        return {"FirstName": "", "LastName": parts[0]}
+    return {"FirstName": parts[0], "LastName": parts[1]}
 
-    if payload.get("employee_id") is not None:
-        out["CardholderIdNumber"] = payload["employee_id"]
-    if payload.get("email") is not None:
-        out["Email"] = payload["email"]
-    if payload.get("description") is not None:
-        out["Description"] = payload["description"]
-    if payload.get("pin_code") is not None:
-        out["PinCode"] = payload["pin_code"]
-    if payload.get("department_uid") is not None:
-        out["DepartmentUID"] = payload["department_uid"]
-    if payload.get("security_group_uid") is not None:
-        out["SecurityGroupUID"] = payload["security_group_uid"]
-    if payload.get("is_supervisor") is not None:
-        out["IsSupervisor"] = payload["is_supervisor"]
-    if payload.get("need_escort") is not None:
-        out["NeedEscort"] = payload["need_escort"]
 
-    if "access_groups" in payload and payload["access_groups"] is not None:
-        groups = payload["access_groups"]
-        out["AccessGroupUIDs"] = (
+def _dds_access_groups(payload: dict[str, Any]) -> dict[str, Any]:
+    """DDS takes the group UIDs as one comma-separated string."""
+    if "access_groups" not in payload or payload["access_groups"] is None:
+        return {}
+    groups = payload["access_groups"]
+    return {
+        "AccessGroupUIDs": (
             ",".join(str(g) for g in groups) if isinstance(groups, list) else str(groups)
         )
+    }
 
-    if "valid_from" in payload:
-        vf = payload["valid_from"]
-        if vf:
-            out["IsFromDateActive"] = True
-            out["FromDateValid"] = vf.isoformat() if isinstance(vf, datetime) else str(vf)
-        else:
-            out["IsFromDateActive"] = False
-    if "valid_until" in payload:
-        vu = payload["valid_until"]
-        if vu:
-            out["IsToDateActive"] = True
-            out["ToDateValid"] = vu.isoformat() if isinstance(vu, datetime) else str(vu)
-        else:
-            out["IsToDateActive"] = False
 
+def _dds_date_bound(
+    payload: dict[str, Any], key: str, active_field: str, value_field: str
+) -> dict[str, Any]:
+    """A validity bound, which on the DDS side is a flag as well as a date.
+
+    Clearing one means saying `IsActive = False`, not omitting the field —
+    an omitted bound leaves the one the mirror already holds.
+    """
+    if key not in payload:
+        return {}
+    v = payload[key]
+    if not v:
+        return {active_field: False}
+    return {
+        active_field: True,
+        value_field: v.isoformat() if isinstance(v, datetime) else str(v),
+    }
+
+
+def _cardholder_to_dds(payload: dict[str, Any]) -> dict[str, Any]:
+    """snake_case request → DDS PascalCase DTO (v2 cardholder/routes._to_dds)."""
+    out: dict[str, Any] = dict(_dds_name_fields(payload))
+    for snake, dds in _CH_SNAKE_TO_DDS.items():
+        if payload.get(snake) is not None:
+            out[dds] = payload[snake]
+    out.update(_dds_access_groups(payload))
+    out.update(_dds_date_bound(payload, "valid_from", "IsFromDateActive", "FromDateValid"))
+    out.update(_dds_date_bound(payload, "valid_until", "IsToDateActive", "ToDateValid"))
     if "status" in payload and payload["status"] is not None:
         raw = payload["status"]
         status_str = raw.value if hasattr(raw, "value") else str(raw)
@@ -146,35 +162,45 @@ def _cardholder_to_dds(payload: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _dds_field(dto: dict[str, Any], pascal: str, camel: str) -> Any:
+    """The value under either casing.
+
+    A DDS mirror row reaches us PascalCase from one endpoint and camelCase from
+    another, and a reader that knew only one of them read half the estate as
+    empty.
+    """
+    return dto.get(pascal) or dto.get(camel)
+
+
 def _cardholder_from_dds(dto: dict[str, Any]) -> dict[str, Any]:
     """DDS mirror DTO → frontend shape (v2 cardholder/routes._from_dds)."""
-    first = dto.get("FirstName") or dto.get("firstName") or ""
-    last = dto.get("LastName") or dto.get("lastName") or ""
-    name = f"{first} {last}".strip() or dto.get("Name") or dto.get("name") or "(unknown)"
-    dds_status = dto.get("Status") or dto.get("status") or "Validated"
+    first = _dds_field(dto, "FirstName", "firstName") or ""
+    last = _dds_field(dto, "LastName", "lastName") or ""
+    name = f"{first} {last}".strip() or _dds_field(dto, "Name", "name") or "(unknown)"
+    dds_status = _dds_field(dto, "Status", "status") or "Validated"
     internal_status = _CH_DDS_TO_STATUS.get(str(dds_status), "active")
-    ag_raw = dto.get("AccessGroupUIDs") or dto.get("accessGroupUIDs") or ""
+    ag_raw = _dds_field(dto, "AccessGroupUIDs", "accessGroupUIDs") or ""
     access_groups = [g.strip() for g in ag_raw.split(",") if g.strip()] if ag_raw else []
     valid_from = dto.get("FromDateValid") if dto.get("IsFromDateActive") else None
     valid_until = dto.get("ToDateValid") if dto.get("IsToDateActive") else None
     return {
-        "cardholder_id": dto.get("UID") or dto.get("uid") or "",
+        "cardholder_id": _dds_field(dto, "UID", "uid") or "",
         "name": name,
         "first_name": first,
         "last_name": last,
-        "employee_id": dto.get("CardholderIdNumber") or dto.get("cardholderIdNumber"),
-        "email": dto.get("Email") or dto.get("email"),
+        "employee_id": _dds_field(dto, "CardholderIdNumber", "cardholderIdNumber"),
+        "email": _dds_field(dto, "Email", "email"),
         "cards": [],
         "access_groups": access_groups,
         "valid_from": valid_from,
         "valid_until": valid_until,
         "status": internal_status,
-        "photo_url": dto.get("Photo") or dto.get("photo"),
-        "department_uid": dto.get("DepartmentUID") or dto.get("departmentUID"),
-        "security_group_uid": dto.get("SecurityGroupUID") or dto.get("securityGroupUID"),
-        "is_supervisor": dto.get("IsSupervisor") or dto.get("isSupervisor") or False,
-        "need_escort": dto.get("NeedEscort") or dto.get("needEscort") or False,
-        "description": dto.get("Description") or dto.get("description"),
+        "photo_url": _dds_field(dto, "Photo", "photo"),
+        "department_uid": _dds_field(dto, "DepartmentUID", "departmentUID"),
+        "security_group_uid": _dds_field(dto, "SecurityGroupUID", "securityGroupUID"),
+        "is_supervisor": _dds_field(dto, "IsSupervisor", "isSupervisor") or False,
+        "need_escort": _dds_field(dto, "NeedEscort", "needEscort") or False,
+        "description": _dds_field(dto, "Description", "description"),
     }
 
 

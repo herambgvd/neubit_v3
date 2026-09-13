@@ -341,29 +341,38 @@ def _sources(d: Definition, keys: list[str]) -> set[str]:
     return out
 
 
-def build(
-    ds: Dataset,
-    q: BuilderQuery,
-    *,
-    rel: Relation,
-    start: dt.datetime,
-    end: dt.datetime,
-    tenant: str | None,
-    series_keys: list[Any] | None = None,
-) -> Generated:
-    """Builder state → ONE read-only SELECT.
+class _Projection:
+    """The SELECT list, what each column means to a reader, and how it groups.
 
-    `series_keys` narrows a split time-series to the series that were discovered
-    first (see `discover_series`), which is what keeps a chart's cost bounded when
-    a dataset has three hundred of them.
+    Built together because the three have to stay in step: a column a reader
+    sees that the GROUP BY does not know about is a Postgres error, and a
+    column the `columns` metadata misses is a chart that cannot label itself.
     """
-    d = ds.definition
-    b = _Binds()
 
-    select_sql: list[str] = []
-    columns: list[dict] = []
-    group_sql: list[str] = []
+    def __init__(self) -> None:
+        self.select: list[str] = []
+        self.columns: list[dict] = []
+        self.group: list[str] = []
 
+    def add(self, sql: str, alias: str, column: dict, *, grouped: bool) -> None:
+        self.select.append(f"{sql} AS {quote_ident(alias)}")
+        self.columns.append(column)
+        if grouped:
+            self.group.append(sql)
+
+    def add_group(self, sql: str) -> None:
+        if sql not in self.group:
+            self.group.append(sql)
+
+
+def _planned_dimensions(d: Definition, rel: Relation, q: BuilderQuery) -> list[str]:
+    """Every dimension this query will reference, so the joins can be planned once.
+
+    A DERIVED measure filters on a dimension the widget never named — `delta_t`
+    picks the `OWT` and `IWT` point tags — and that dimension can live on a
+    join. Plan for it, or the generated SQL references an alias that is not in
+    the FROM clause.
+    """
     dim_keys = [i.dimension for i in q.select if i.dimension]
     dim_keys += list(q.group_by)
     dim_keys += [f.column for f in q.filters]
@@ -371,75 +380,72 @@ def build(
         dim_keys.append(q.series_by)
     if q.series_label:
         dim_keys.append(q.series_label)
-    # A DERIVED measure filters on a dimension the widget never named — `delta_t`
-    # picks the `OWT` and `IWT` point tags — and that dimension can live on a
-    # join. Plan for it, or the generated SQL references an alias that is not in
-    # the FROM clause.
     for item in q.select:
         if item.measure:
             dim_keys += _measure_dims(d, rel, item.measure, item.aggregate or "")
     for h in q.having:
         dim_keys += _measure_dims(d, rel, h.measure, h.aggregate)
-    joins = _joins_sql(d, _sources(d, [k for k in dim_keys if k]))
+    return dim_keys
 
-    time_col = qual(BASE, rel.time_column)
 
+def _select_column(d: Definition, item: Any, idx: int) -> dict:
+    """What a selected item is called and what it is, for the reader of the chart."""
+    return {
+        "name": item.out_name,
+        "role": "measure" if item.measure else "dimension",
+        "label": (
+            d.measure(item.measure).label if item.measure else d.dimension(item.dimension).label  # type: ignore[arg-type]
+        ),
+        "aggregate": item.aggregate,
+        "index": idx,
+    }
+
+
+def _add_band_columns(
+    p: _Projection, d: Definition, rel: Relation, q: BuilderQuery, b: "_Binds"
+) -> None:
+    """The min→max envelope, answered by the STORE rather than invented by the
+    chart. Only ever for one measure on a split series (the model refuses the
+    rest), so the extra columns cannot multiply."""
+    if not q.band:
+        return
+    m_item = next(i for i in q.select if i.measure)
+    m = d.measure(m_item.measure or "")
+    if "min" in m.aggregates and "max" in m.aggregates:
+        p.add(_measure_sql(d, rel, m.key, "min", b), COL_BAND_LO,
+              {"name": COL_BAND_LO, "role": "band_lo"}, grouped=False)
+        p.add(_measure_sql(d, rel, m.key, "max", b), COL_BAND_HI,
+              {"name": COL_BAND_HI, "role": "band_hi"}, grouped=False)
+
+
+def _projection(
+    d: Definition, rel: Relation, q: BuilderQuery, time_col: str, b: "_Binds"
+) -> _Projection:
+    """Everything between SELECT and FROM, and the GROUP BY that goes with it."""
+    p = _Projection()
     if q.time_series:
-        select_sql.append(f"{time_col} AS {quote_ident(COL_TIME)}")
-        group_sql.append(time_col)
-        columns.append({"name": COL_TIME, "role": "time"})
-
+        p.add(time_col, COL_TIME, {"name": COL_TIME, "role": "time"}, grouped=True)
     if q.series_by:
-        s_sql = _dim_sql(d, q.series_by)
-        select_sql.append(f"{s_sql} AS {quote_ident(COL_SERIES)}")
-        group_sql.append(s_sql)
-        columns.append({"name": COL_SERIES, "role": "series"})
+        p.add(_dim_sql(d, q.series_by), COL_SERIES,
+              {"name": COL_SERIES, "role": "series"}, grouped=True)
         if q.series_label:
-            l_sql = _dim_sql(d, q.series_label)
-            select_sql.append(f"{l_sql} AS {quote_ident(COL_SERIES_LABEL)}")
-            group_sql.append(l_sql)
-            columns.append({"name": COL_SERIES_LABEL, "role": "series_label"})
-
+            p.add(_dim_sql(d, q.series_label), COL_SERIES_LABEL,
+                  {"name": COL_SERIES_LABEL, "role": "series_label"}, grouped=True)
     for idx, item in enumerate(q.select):
-        expr = _select_sql(d, rel, item, b)
-        alias = item.out_name
-        select_sql.append(f"{expr} AS {quote_ident(alias)}")
-        columns.append(
-            {
-                "name": alias,
-                "role": "measure" if item.measure else "dimension",
-                "label": (
-                    d.measure(item.measure).label if item.measure else d.dimension(item.dimension).label  # type: ignore[arg-type]
-                ),
-                "aggregate": item.aggregate,
-                "index": idx,
-            }
-        )
-        if item.dimension:
-            group_sql.append(expr)
-
-    # The min→max envelope, answered by the STORE rather than invented by the
-    # chart. Only ever for one measure on a split series (the model refuses the
-    # rest), so the extra columns cannot multiply.
-    if q.band:
-        m_item = next(i for i in q.select if i.measure)
-        m = d.measure(m_item.measure or "")
-        if "min" in m.aggregates and "max" in m.aggregates:
-            select_sql.append(
-                f"{_measure_sql(d, rel, m.key, 'min', b)} AS {quote_ident(COL_BAND_LO)}"
-            )
-            select_sql.append(
-                f"{_measure_sql(d, rel, m.key, 'max', b)} AS {quote_ident(COL_BAND_HI)}"
-            )
-            columns.append({"name": COL_BAND_LO, "role": "band_lo"})
-            columns.append({"name": COL_BAND_HI, "role": "band_hi"})
-
+        p.add(_select_sql(d, rel, item, b), item.out_name,
+              _select_column(d, item, idx), grouped=bool(item.dimension))
+    _add_band_columns(p, d, rel, q, b)
     for key in q.group_by:
-        expr = _dim_sql(d, key)
-        if expr not in group_sql:
-            group_sql.append(expr)
+        p.add_group(_dim_sql(d, key))
+    return p
 
-    # ── WHERE ───────────────────────────────────────────────────────────────
+
+def _where_clauses(
+    d: Definition, q: BuilderQuery, b: "_Binds", *, time_col: str,
+    start: dt.datetime, end: dt.datetime, tenant: str | None,
+    series_keys: list[Any] | None,
+) -> list[str]:
+    """The window, the tenant, and whatever the widget asked for."""
     where: list[str] = []
     if d.tenant_column:
         # The tenant bind is here for the same reason it is on every other
@@ -467,25 +473,12 @@ def build(
         where.append(
             f"{_dim_sql(d, q.series_by)} = ANY(CAST({b.add(list(series_keys))} AS {t}[]))"
         )
+    return where
 
-    # ── assemble ────────────────────────────────────────────────────────────
-    parts = [f"SELECT {', '.join(select_sql)}", f"FROM {quote_ident(_base_relation(rel))} AS {quote_ident(BASE)}"]
-    parts += joins
-    parts.append("WHERE " + " AND ".join(where))
 
-    if group_sql:
-        # `count(*) OVER ()` after grouping counts the GROUPS, which is how a
-        # widget can honestly say "showing 8 of 37" instead of presenting a
-        # truncated answer as a complete one.
-        parts[0] = parts[0] + f", count(*) OVER () AS {quote_ident(COL_TOTAL)}"
-        parts.append("GROUP BY " + ", ".join(dict.fromkeys(group_sql)))
-
-    havings = [_having(d, rel, h, b) for h in q.having if h.complete()]
-    if havings:
-        if not group_sql:
-            raise ValidationError("a condition on an aggregate needs a grouping")
-        parts.append("HAVING " + " AND ".join(havings))
-
+def _order_by(q: BuilderQuery) -> list[str]:
+    """What the user ordered by — behind the time key, which a chart cannot do
+    without regardless of what was asked for."""
     order: list[str] = []
     for o in q.order_by:
         if o.select_index >= len(q.select):
@@ -493,9 +486,56 @@ def build(
         item = q.select[o.select_index]
         order.append(f"{quote_ident(item.out_name)} {'ASC' if o.dir == 'asc' else 'DESC'}")
     if q.time_series:
-        # A chart needs its buckets in time order regardless of what the user
-        # ordered by; the time key goes first.
-        order = [f"{quote_ident(COL_TIME)} ASC"] + order
+        return [f"{quote_ident(COL_TIME)} ASC"] + order
+    return order
+
+
+def build(
+    ds: Dataset,
+    q: BuilderQuery,
+    *,
+    rel: Relation,
+    start: dt.datetime,
+    end: dt.datetime,
+    tenant: str | None,
+    series_keys: list[Any] | None = None,
+) -> Generated:
+    """Builder state → ONE read-only SELECT.
+
+    `series_keys` narrows a split time-series to the series that were discovered
+    first (see `discover_series`), which is what keeps a chart's cost bounded when
+    a dataset has three hundred of them.
+    """
+    d = ds.definition
+    b = _Binds()
+
+    joins = _joins_sql(d, _sources(d, [k for k in _planned_dimensions(d, rel, q) if k]))
+    time_col = qual(BASE, rel.time_column)
+    p = _projection(d, rel, q, time_col, b)
+    where = _where_clauses(
+        d, q, b, time_col=time_col, start=start, end=end, tenant=tenant,
+        series_keys=series_keys,
+    )
+
+    # ── assemble ────────────────────────────────────────────────────────────
+    parts = [f"SELECT {', '.join(p.select)}", f"FROM {quote_ident(_base_relation(rel))} AS {quote_ident(BASE)}"]
+    parts += joins
+    parts.append("WHERE " + " AND ".join(where))
+
+    if p.group:
+        # `count(*) OVER ()` after grouping counts the GROUPS, which is how a
+        # widget can honestly say "showing 8 of 37" instead of presenting a
+        # truncated answer as a complete one.
+        parts[0] = parts[0] + f", count(*) OVER () AS {quote_ident(COL_TOTAL)}"
+        parts.append("GROUP BY " + ", ".join(dict.fromkeys(p.group)))
+
+    havings = [_having(d, rel, h, b) for h in q.having if h.complete()]
+    if havings:
+        if not p.group:
+            raise ValidationError("a condition on an aggregate needs a grouping")
+        parts.append("HAVING " + " AND ".join(havings))
+
+    order = _order_by(q)
     if order:
         parts.append("ORDER BY " + ", ".join(order))
 
@@ -504,7 +544,7 @@ def build(
     row_limit = MAX_BUCKET_ROWS if (q.time_series and q.series_by) else q.limit
     parts.append(f"LIMIT {int(row_limit)}")
 
-    return Generated(" ".join(parts), b.params, columns)
+    return Generated(" ".join(parts), b.params, p.columns)
 
 
 MAX_BUCKET_ROWS = 20000

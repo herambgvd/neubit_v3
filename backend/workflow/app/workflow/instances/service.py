@@ -41,6 +41,16 @@ _INSTANCE_CLOSED = "Cannot mutate a closed instance"
 
 
 # ── Workflow instance (the state machine) ──────────────────────────────
+def _close_if_terminal(inst, to_state, now) -> None:
+    """Terminal states close the instance — cancelled and resolved are different ends."""
+    if to_state.is_cancellation:
+        inst.status = InstanceStatus.CANCELLED.value
+        inst.closed_at = now
+    elif to_state.is_terminal:
+        inst.status = InstanceStatus.RESOLVED.value
+        inst.closed_at = now
+
+
 class InstanceService:
     """The running-incident state machine: create, transition, assign, escalate."""
 
@@ -201,15 +211,8 @@ class InstanceService:
         ctx = build_instance_context(inst)
         return [t for t in rows if matches_conditions(ctx, t.conditions or [])]
 
-    async def transition(self, instance_id: str, body, *, actor, actor_name=None) -> WorkflowInstance:
-        # `actor_name` stayed an unfilled parameter: every caller omitted it, so
-        # every step in every incident's history stamped `executed_by_name: null`
-        # and the timeline printed a uuid. The name is on the Principal now, so
-        # the default is to READ IT rather than to leave the field empty.
-        inst = await self._row(instance_id, for_write=True)
-        if InstanceStatus(inst.status) in CLOSED_STATUSES:
-            raise ConflictError(_INSTANCE_CLOSED)
-
+    async def _validated_transition(self, inst, body):
+        """The transition this request names — if the instance may take it now."""
         trans = await self.db.get(Transition, body.transition_id)
         if (not trans or trans.sop_id != inst.sop_id
                 or trans.from_state_id != inst.current_state):
@@ -223,27 +226,46 @@ class InstanceService:
             ctx = build_instance_context(inst)
             if not matches_conditions(ctx, trans.conditions):
                 raise ConflictError("Transition conditions are not satisfied")
+        return trans
+
+    async def _validated_form_labels(self, trans, body) -> dict | None:
+        """Validate the submitted form_data against the transition's form, and
+        keep what each answered field was CALLED — a timeline that prints field
+        ids is unreadable a month later."""
+        if not trans.form_id:
+            return None
+        form = await self.db.get(Form, trans.form_id)
+        if not form or not form.fields:
+            return None
+        form_errors = validate_form_data(form.fields, body.form_data)
+        if form_errors:
+            raise ValidationError(
+                "Form validation failed", details={"fields": form_errors}
+            )
+        if not body.form_data:
+            return None
+        return {
+            str(f.get("id")): f.get("label")
+            for f in form.fields if str(f.get("id")) in body.form_data
+        } or None
+
+    async def transition(self, instance_id: str, body, *, actor, actor_name=None) -> WorkflowInstance:
+        # `actor_name` stayed an unfilled parameter: every caller omitted it, so
+        # every step in every incident's history stamped `executed_by_name: null`
+        # and the timeline printed a uuid. The name is on the Principal now, so
+        # the default is to READ IT rather than to leave the field empty.
+        inst = await self._row(instance_id, for_write=True)
+        if InstanceStatus(inst.status) in CLOSED_STATUSES:
+            raise ConflictError(_INSTANCE_CLOSED)
+
+        trans = await self._validated_transition(inst, body)
 
         from_state = await self.db.get(State, trans.from_state_id)
         to_state = await self.db.get(State, trans.to_state_id)
         if not from_state or not to_state:
             raise ConflictError("Transition endpoints missing")
 
-        # Validate submitted form_data against the transition's form definition.
-        form_labels = None
-        if trans.form_id:
-            form = await self.db.get(Form, trans.form_id)
-            if form and form.fields:
-                form_errors = validate_form_data(form.fields, body.form_data)
-                if form_errors:
-                    raise ValidationError(
-                        "Form validation failed", details={"fields": form_errors}
-                    )
-                if body.form_data:
-                    form_labels = {
-                        str(f.get("id")): f.get("label")
-                        for f in form.fields if str(f.get("id")) in body.form_data
-                    } or None
+        form_labels = await self._validated_form_labels(trans, body)
 
         now = utcnow()
         entry = {
@@ -261,13 +283,7 @@ class InstanceService:
         inst.state_entered_at = now
         inst.updated_at = now
         inst.updated_by = _actor_id(actor)
-        # Terminal states close the instance.
-        if to_state.is_cancellation:
-            inst.status = InstanceStatus.CANCELLED.value
-            inst.closed_at = now
-        elif to_state.is_terminal:
-            inst.status = InstanceStatus.RESOLVED.value
-            inst.closed_at = now
+        _close_if_terminal(inst, to_state, now)
         await self.db.commit()
         await self.db.refresh(inst)
 
@@ -343,6 +359,49 @@ class InstanceService:
                    {"instance_id": inst.instance_id, "level": level, "reason": body.reason})
         return inst
 
+    async def _owned_template(self, template_id, tenant_id):
+        """The referenced notification template — but only one this tenant owns."""
+        if not template_id:
+            return None
+        template = await self.db.get(NotificationTemplate, template_id)
+        if template is not None and template.tenant_id not in (None, tenant_id):
+            return None
+        return template
+
+    async def _notification_wording(self, cfg, template, render_ctx, tenant_id) -> dict:
+        """The subject and body, from the best source that answers.
+
+        A CORE email template wins over the rest: it is the one an operator can
+        actually design (blocks, variables, the branded shell), and rendering
+        lives in core because the override chain and the branding do. Falls back
+        rather than failing — core being unreachable must not swallow the
+        notification, only its formatting. The local sources render through
+        Jinja2 too, so {{ }} placeholders work either way.
+        """
+        core_name = (cfg.get("core_template") or "").strip()
+        if core_name:
+            rendered = await core_templates.render(tenant_id, core_name, render_ctx)
+            if rendered is not None:
+                # A core template renders an HTML document. The SMTP connector
+                # reads `html` to send it as one instead of printing the markup.
+                return {"subject": rendered[0], "body": rendered[1],
+                        "core_name": core_name, "html": True}
+            log.info("core template %r unavailable; using the local wording", core_name)
+
+        if template is not None:
+            return {"subject": render_template(template.subject, render_ctx),
+                    "body": render_template(template.body, render_ctx),
+                    "core_name": core_name or None, "html": None}
+
+        subject_src = cfg.get("email_subject") or "[{{ priority|upper }}] {{ instance_name }}"
+        body_src = cfg.get("email_body") or (
+            "Incident {{ instance_name }} moved from {{ from_state }} "
+            "to {{ to_state }}."
+        )
+        return {"subject": render_template(subject_src, render_ctx),
+                "body": render_template(body_src, render_ctx),
+                "core_name": core_name or None, "html": None}
+
     async def _enqueue_transition_notifications(self, inst, trans, from_name, to_name) -> None:
         cfg = trans.notification_config or {}
         ntype = cfg.get("type", "none")
@@ -353,42 +412,9 @@ class InstanceService:
         render_ctx = build_notification_context(
             inst, from_state=from_name, to_state=to_name, sop_name=inst.sop_name
         )
-
-        # Render the referenced template, else the inline config strings — both
-        # through Jinja2, so {{ }} placeholders work either way.
-        template = None
         template_id = cfg.get("template_id")
-        if template_id:
-            template = await self.db.get(NotificationTemplate, template_id)
-            # Scope guard: only use a template the caller's tenant owns.
-            if template is not None and template.tenant_id not in (None, inst.tenant_id):
-                template = None
-
-        # A CORE email template wins over both: it is the one an operator can
-        # actually design (blocks, variables, the branded shell), and rendering
-        # lives in core because the override chain and the branding do. Falls
-        # back rather than failing — core being unreachable must not swallow the
-        # notification, only its formatting.
-        core_name = (cfg.get("core_template") or "").strip()
-        rendered = None
-        if core_name:
-            rendered = await core_templates.render(inst.tenant_id, core_name, render_ctx)
-            if rendered is None:
-                log.info("core template %r unavailable; using the local wording", core_name)
-
-        if rendered is not None:
-            subject, body_text = rendered
-        elif template is not None:
-            subject = render_template(template.subject, render_ctx)
-            body_text = render_template(template.body, render_ctx)
-        else:
-            subject_src = cfg.get("email_subject") or "[{{ priority|upper }}] {{ instance_name }}"
-            body_src = cfg.get("email_body") or (
-                "Incident {{ instance_name }} moved from {{ from_state }} "
-                "to {{ to_state }}."
-            )
-            subject = render_template(subject_src, render_ctx)
-            body_text = render_template(body_src, render_ctx)
+        template = await self._owned_template(template_id, inst.tenant_id)
+        wording = await self._notification_wording(cfg, template, render_ctx, inst.tenant_id)
 
         # Recipients: explicit addresses in the config (user resolution lives in core).
         default_channel = "email" if ntype in ("email", "both") else "webhook"
@@ -398,15 +424,13 @@ class InstanceService:
             )
             self.db.add(Notification(
                 tenant_id=inst.tenant_id, channel_type=channel_type, recipient=addr,
-                subject=subject, body=body_text, status="pending",
+                subject=wording["subject"], body=wording["body"], status="pending",
                 instance_id=inst.instance_id,
                 extra={
                     "transition_id": trans.transition_id,
                     "template_id": template_id if template is not None else None,
-                    "core_template": core_name or None,
-                    # A core template renders an HTML document. The SMTP connector
-                    # reads this to send it as one instead of printing the markup.
-                    "html": True if rendered is not None else None,
+                    "core_template": wording["core_name"],
+                    "html": wording["html"],
                 },
             ))
         await self.db.commit()

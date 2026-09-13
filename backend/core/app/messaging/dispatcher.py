@@ -29,6 +29,63 @@ from .webhook import send_webhook
 log = get_logger("edge.messaging.dispatcher")
 
 
+async def _notify_in_app(db: AsyncSession, user_ids: list, title: str, body) -> None:
+    """One row per user, always. Isolated so a DB hiccup here does not stop the
+    outbound channels."""
+    for uid in user_ids:
+        try:
+            await inapp.create_notification(db, uid, title, body)
+        except Exception:
+            log.exception("failed to create in-app notification for user %s", uid)
+
+
+async def _notify_email(
+    db: AsyncSession, email_to: list, title: str, body, template, template_ctx, tenant_id
+) -> None:
+    """Render the named template if there is one, else a simple body."""
+    try:
+        if template:
+            subject, html = render(template, template_ctx or {})
+        else:
+            subject, html = title, f"<p>{body or ''}</p>"
+        await send_email(db, email_to, subject, html, tenant_id)
+    except Exception:
+        log.exception("email channel failed during notify")
+
+
+async def _notify_push(
+    db: AsyncSession, user_ids: list, title: str, body, push_data, tenant_id
+) -> None:
+    """Every device token owned by the target users."""
+    try:
+        result = await db.execute(
+            select(DeviceToken.token).where(DeviceToken.user_id.in_(user_ids))
+        )
+        tokens = [t for (t,) in result.all()]
+        if tokens:
+            await send_push(db, tokens, title, body or "", push_data, tenant_id)
+    except Exception:
+        log.exception("push channel failed during notify")
+
+
+async def _notify_webhook(
+    db: AsyncSession, user_ids: list, title: str, body, tenant_id
+) -> None:
+    """POST the event to the configured URL, with its decrypted secret."""
+    try:
+        row = await get_channel(db, "webhook", tenant_id)
+        if row is not None and row.enabled:
+            cfg = await get_config_decrypted(db, "webhook", tenant_id) or {}
+            url = cfg.get("url")
+            if url:
+                payload = {"title": title, "body": body, "user_ids": [str(u) for u in user_ids]}
+                await send_webhook(url, payload, secret=cfg.get("secret"))
+            else:
+                log.info("webhook channel enabled but missing url; skipping")
+    except Exception:
+        log.exception("webhook channel failed during notify")
+
+
 async def notify(
     db: AsyncSession,
     *,
@@ -56,48 +113,10 @@ async def notify(
     user_ids = user_ids or []
     channels = channels or []
 
-    # 1) In-app — always, one row per user. Isolated so a DB hiccup here doesn't
-    #    stop the outbound channels below.
-    for uid in user_ids:
-        try:
-            await inapp.create_notification(db, uid, title, body)
-        except Exception:
-            log.exception("failed to create in-app notification for user %s", uid)
-
-    # 2) Email — render the template if one was named, else a simple body.
+    await _notify_in_app(db, user_ids, title, body)
     if "email" in channels and email_to:
-        try:
-            if template:
-                subject, html = render(template, template_ctx or {})
-            else:
-                subject, html = title, f"<p>{body or ''}</p>"
-            await send_email(db, email_to, subject, html, tenant_id)
-        except Exception:
-            log.exception("email channel failed during notify")
-
-    # 3) Push — gather every device token owned by the target users.
+        await _notify_email(db, email_to, title, body, template, template_ctx, tenant_id)
     if "push" in channels and user_ids:
-        try:
-            result = await db.execute(
-                select(DeviceToken.token).where(DeviceToken.user_id.in_(user_ids))
-            )
-            tokens = [t for (t,) in result.all()]
-            if tokens:
-                await send_push(db, tokens, title, body or "", push_data, tenant_id)
-        except Exception:
-            log.exception("push channel failed during notify")
-
-    # 4) Webhook — POST the event to the configured URL (with its decrypted secret).
+        await _notify_push(db, user_ids, title, body, push_data, tenant_id)
     if "webhook" in channels:
-        try:
-            row = await get_channel(db, "webhook", tenant_id)
-            if row is not None and row.enabled:
-                cfg = await get_config_decrypted(db, "webhook", tenant_id) or {}
-                url = cfg.get("url")
-                if url:
-                    payload = {"title": title, "body": body, "user_ids": [str(u) for u in user_ids]}
-                    await send_webhook(url, payload, secret=cfg.get("secret"))
-                else:
-                    log.info("webhook channel enabled but missing url; skipping")
-        except Exception:
-            log.exception("webhook channel failed during notify")
+        await _notify_webhook(db, user_ids, title, body, tenant_id)

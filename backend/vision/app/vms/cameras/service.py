@@ -75,6 +75,57 @@ def _actor_id(actor) -> str | None:
     return str(getattr(actor, "user_id", "")) or None
 
 
+def _camera_filters(s, *, site_ids, status, brand, site_id, q):
+    """Narrow a camera statement to what the caller asked for, and may see."""
+    # Site access scope: confine a scoped caller to their sites (empty = all).
+    if site_ids:
+        s = s.where(Camera.site_id.in_(site_ids))
+    if status:
+        s = s.where(Camera.status == status)
+    if brand:
+        s = s.where(Camera.brand == brand)
+    if site_id:
+        s = s.where(Camera.site_id == site_id)
+    if q:
+        term = f"%{q}%"
+        s = s.where(or_(Camera.name.ilike(term), Camera.onvif_host.ilike(term)))
+    return s
+
+
+def _apply_onvif(row, o) -> None:
+    """The ONVIF fields the payload actually carried — each one omitted is left
+    as it was, so a partial edit cannot blank a working connection."""
+    if o.host is not None:
+        row.onvif_host = o.host
+    if o.port is not None:
+        row.onvif_port = o.port
+    if o.user is not None:
+        row.onvif_user = o.user
+    if o.password is not None:
+        row.onvif_enc_pass = encrypt_secret(o.password) if o.password else None
+    if o.profile_token is not None:
+        row.onvif_profile_token = o.profile_token
+
+
+def _nodes_being_changed(rows: list, media_node_id) -> dict:
+    """Each camera's PREVIOUS media node, for the ones this assignment moves."""
+    return {r.id: r.media_node_id for r in rows if r.media_node_id != media_node_id}
+
+
+def _apply_bulk_action(r, action: str, retention_days, media_node_id) -> None:
+    """What one bulk action changes on one camera row."""
+    if action == "enable":
+        r.is_enabled = True
+    elif action == "disable":
+        r.is_enabled = False
+    elif action == "retention":
+        if retention_days is None:
+            raise ValidationError("retention_days required for the retention action")
+        r.retention_days = retention_days
+    elif action == "assign_node":
+        r.media_node_id = media_node_id
+
+
 class CameraService:
     """Tenant-scoped CRUD + driver-backed onboarding over ``cameras``."""
 
@@ -290,23 +341,10 @@ class CameraService:
         stmt = scoped(select(Camera), Camera, self.scope)
         count_stmt = scoped(select(func.count()).select_from(Camera), Camera, self.scope)
 
-        def _filters(s):
-            # Site access scope: confine a scoped caller to their sites (empty = all).
-            if self.site_ids:
-                s = s.where(Camera.site_id.in_(self.site_ids))
-            if status:
-                s = s.where(Camera.status == status)
-            if brand:
-                s = s.where(Camera.brand == brand)
-            if site_id:
-                s = s.where(Camera.site_id == site_id)
-            if q:
-                term = f"%{q}%"
-                s = s.where(or_(Camera.name.ilike(term), Camera.onvif_host.ilike(term)))
-            return s
-
-        stmt = _filters(stmt)
-        count_stmt = _filters(count_stmt)
+        narrow = {"site_ids": self.site_ids, "status": status, "brand": brand,
+                  "site_id": site_id, "q": q}
+        stmt = _camera_filters(stmt, **narrow)
+        count_stmt = _camera_filters(count_stmt, **narrow)
 
         # Group filter: membership is a JSON id-list on the group row.
         if group_id:
@@ -369,17 +407,7 @@ class CameraService:
         if body.network_info is not None:
             row.network_info = body.network_info.model_dump(exclude_none=True)
         if body.onvif is not None:
-            o = body.onvif
-            if o.host is not None:
-                row.onvif_host = o.host
-            if o.port is not None:
-                row.onvif_port = o.port
-            if o.user is not None:
-                row.onvif_user = o.user
-            if o.password is not None:
-                row.onvif_enc_pass = encrypt_secret(o.password) if o.password else None
-            if o.profile_token is not None:
-                row.onvif_profile_token = o.profile_token
+            _apply_onvif(row, body.onvif)
         if body.recording is not None:
             r = body.recording
             row.recording_mode = r.mode
@@ -431,24 +459,43 @@ class CameraService:
         await emit_camera_lifecycle(tenant_id, "deregistered", payload)
 
     # ── bulk + reorder ──────────────────────────────────────────────────
+    async def _bulk_delete(self, rows: list) -> dict:
+        """Delete every owned row, then announce each deregistration."""
+        deregistered = [(r.tenant_id, _lifecycle_payload(r)) for r in rows]
+        for r in rows:
+            await self.db.delete(r)
+        await self.db.commit()
+        for tid, payload in deregistered:
+            await emit_camera_lifecycle(tid, "deregistered", payload)
+        return {"affected": len(deregistered)}
+
+    async def _bulk_group(self, rows: list, group_id) -> None:
+        """Add every owned camera to the group, keeping the members it already has."""
+        if not group_id:
+            raise ValidationError("group_id required for the group action")
+        grp = await self.db.get(CameraGroup, group_id)
+        assert_owned(grp, self.scope, message="Camera group not found", allow_shared=False)
+        grp.camera_ids = list(dict.fromkeys([*(grp.camera_ids or []), *[r.id for r in rows]]))
+        grp.updated_at = _utcnow()
+
+    async def _rehost_reassigned(self, rows: list, rehost_old: dict) -> None:
+        """Best-effort re-host of every reassigned camera (never fails the bulk op;
+        footage-locality caveat documented in _rehost_recording)."""
+        for r in rows:
+            if r.id in rehost_old:
+                await self.db.refresh(r)
+                await self._rehost_recording(r, rehost_old[r.id])
+
     async def bulk(
         self, camera_ids: list[str], action: str, *, group_id, retention_days, media_node_id, actor
     ):
         # Load only rows the caller owns (scoped + id filter).
         stmt = scoped(select(Camera), Camera, self.scope).where(Camera.id.in_(camera_ids))
         rows = list((await self.db.execute(stmt)).scalars().all())
-        affected = 0
         actor_id = _actor_id(actor)
 
         if action == "delete":
-            deregistered = [(r.tenant_id, _lifecycle_payload(r)) for r in rows]
-            for r in rows:
-                await self.db.delete(r)
-                affected += 1
-            await self.db.commit()
-            for tid, payload in deregistered:
-                await emit_camera_lifecycle(tid, "deregistered", payload)
-            return {"affected": affected}
+            return await self._bulk_delete(rows)
 
         # ``assign_node``: validate the target node ONCE up-front (same rule as PATCH),
         # then home every owned camera on it. null = unassign (fall back to VE_NVR_URL).
@@ -457,48 +504,25 @@ class CameraService:
         if action == "assign_node":
             if media_node_id is not None:
                 await self._validate_node_usable(media_node_id)
-            for r in rows:
-                if r.media_node_id != media_node_id:
-                    rehost_old[r.id] = r.media_node_id
+            rehost_old = _nodes_being_changed(rows, media_node_id)
 
         for r in rows:
-            if action == "enable":
-                r.is_enabled = True
-            elif action == "disable":
-                r.is_enabled = False
-            elif action == "retention":
-                if retention_days is None:
-                    raise ValidationError("retention_days required for the retention action")
-                r.retention_days = retention_days
-            elif action == "assign_node":
-                r.media_node_id = media_node_id
+            _apply_bulk_action(r, action, retention_days, media_node_id)
             if actor_id:
                 r.updated_by = actor_id
             r.updated_at = _utcnow()
-            affected += 1
 
         if action == "group":
-            if not group_id:
-                raise ValidationError("group_id required for the group action")
-            grp = await self.db.get(CameraGroup, group_id)
-            assert_owned(grp, self.scope, message="Camera group not found", allow_shared=False)
-            merged = list(dict.fromkeys([*(grp.camera_ids or []), *[r.id for r in rows]]))
-            grp.camera_ids = merged
-            grp.updated_at = _utcnow()
+            await self._bulk_group(rows, group_id)
 
         await self.db.commit()
 
-        # Best-effort re-host of every reassigned camera (never fails the bulk op;
-        # footage-locality caveat documented in _rehost_recording).
         if action == "assign_node":
-            for r in rows:
-                if r.id in rehost_old:
-                    await self.db.refresh(r)
-                    await self._rehost_recording(r, rehost_old[r.id])
+            await self._rehost_reassigned(rows, rehost_old)
 
         for r in rows:
             await self._publish_lifecycle(r, "updated")
-        return {"affected": affected}
+        return {"affected": len(rows)}
 
     async def reorder(self, items: list) -> dict:
         ids = [it.id for it in items]

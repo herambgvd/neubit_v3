@@ -260,6 +260,39 @@ class CategoryService:
 # ── Webhook CRUD ───────────────────────────────────────────────────────
 
 
+def _auth_update_fields(row: Webhook, effective_auth: str, new_secret: str | None) -> dict:
+    """The auth columns an update writes — and the refusals that stop it.
+
+    A secret that is not being rotated has to remain USABLE under the type the
+    webhook will have, which is why changing to or from hmac demands a fresh one.
+    """
+    fields: dict = {}
+    if effective_auth != "none":
+        if not new_secret:
+            if not row.auth_secret_hash:
+                raise ValidationError(f"{effective_auth} auth requires auth_secret")
+            # store_secret encodes per type (hmac reversibly, the rest hashed),
+            # so a stored secret can't be reinterpreted under a new type.
+            # Demand a fresh one rather than leaving the receiver rejecting.
+            if effective_auth != row.auth_type and "hmac" in (effective_auth, row.auth_type):
+                raise ValidationError(
+                    f"changing auth_type from {row.auth_type} to {effective_auth} "
+                    "requires a new auth_secret"
+                )
+        else:
+            fields["auth_secret_hash"] = store_secret(
+                row.tenant_id, effective_auth, new_secret
+            )
+
+    # Canonicalize auth fields when the type changes.
+    if effective_auth == "none":
+        fields["auth_username"] = None
+        fields["auth_secret_hash"] = None
+    elif effective_auth in ("bearer", "hmac", "api_key"):
+        fields["auth_username"] = None
+    return fields
+
+
 class WebhookService:
     def __init__(self, db: AsyncSession, scope: Scope) -> None:
         self.db = db
@@ -370,30 +403,8 @@ class WebhookService:
             effective_auth, effective_username, new_secret, on_create=False
         )
 
-        if effective_auth != "none":
-            type_changed = effective_auth != row.auth_type
-            if not new_secret:
-                if not row.auth_secret_hash:
-                    raise ValidationError(f"{effective_auth} auth requires auth_secret")
-                # store_secret encodes per type (hmac reversibly, the rest hashed),
-                # so a stored secret can't be reinterpreted under a new type.
-                # Demand a fresh one rather than leaving the receiver rejecting.
-                if type_changed and "hmac" in (effective_auth, row.auth_type):
-                    raise ValidationError(
-                        f"changing auth_type from {row.auth_type} to {effective_auth} "
-                        "requires a new auth_secret"
-                    )
-            else:
-                update["auth_secret_hash"] = store_secret(
-                    row.tenant_id, effective_auth, new_secret
-                )
+        update.update(_auth_update_fields(row, effective_auth, new_secret))
 
-        # Canonicalize auth fields when the type changes.
-        if effective_auth == "none":
-            update["auth_username"] = None
-            update["auth_secret_hash"] = None
-        elif effective_auth in ("bearer", "hmac", "api_key"):
-            update["auth_username"] = None
         actor_id = _actor_id(actor)
         if actor_id:
             update["updated_by"] = actor_id
@@ -845,6 +856,34 @@ class ReceiverService:
         # run_pipeline stashes the resolved (rule-driven) event_type on the service.
         return (getattr(self, "_resolved_event_type", None) or webhook.event_type or DEFAULT_EVENT_TYPE), row.event_id
 
+    async def _resolve_routing(self, webhook: Webhook, payload: Any, log) -> dict | None:
+        """Which domain, event type and field map this payload publishes under.
+
+        Routing rules are evaluated against the RAW payload — that is the shape
+        the operator wrote their paths against, and the webhook transform may
+        have dropped the field a condition tests. The winning rule's field_map
+        REPLACES the webhook transform rather than chaining onto it: a rule
+        extracts from the vendor body, not from an extraction.
+
+        None when a rule-routed webhook has no route for this payload.
+        """
+        category = await self.db.get(IngestCategory, webhook.category_id)
+        domain = (category.target_domain if category else None) or "ingest"
+        event_type = webhook.event_type or DEFAULT_EVENT_TYPE
+        field_map = webhook.transform or {}
+
+        rules = await _load_rules(self.db, webhook.id, only_enabled=True)
+        if rules:
+            rule, _results = match_first(payload, rules)
+            if rule is None:
+                return None
+            log.matched_rule_id = rule.id
+            event_type = rule.event_type or event_type
+            if rule.target_domain:
+                domain = rule.target_domain
+            field_map = rule.field_map or webhook.transform or {}
+        return {"domain": domain, "event_type": event_type, "field_map": field_map}
+
     async def run_pipeline(
         self,
         webhook: Webhook,
@@ -888,35 +927,19 @@ class ReceiverService:
             log.error = "schema: " + "; ".join(v.errors[:10])
             return await self._record(log)
 
-        # 2. Payload-driven routing, evaluated against the RAW payload — that is
-        #    the shape the operator wrote their paths against, and the webhook
-        #    transform may have dropped the field a condition tests. The winning
-        #    rule's field_map replaces the webhook transform rather than chaining
-        #    onto it: a rule extracts from the vendor body, not from an extraction.
-        category = await self.db.get(IngestCategory, webhook.category_id)
-        cat_domain = (category.target_domain if category else None) or "ingest"
-        domain = cat_domain
-        event_type = webhook.event_type or DEFAULT_EVENT_TYPE
-        field_map = webhook.transform or {}
-
-        rules = await _load_rules(self.db, webhook.id, only_enabled=True)
-        if rules:
-            rule, _results = match_first(payload, rules)
-            if rule is None:
-                # A rule-routed webhook has no route for an unmatched payload.
-                # Publishing under the default type would emit an event no
-                # consumer is configured for, silently.
-                log.status = EventStatus.NO_RULE_MATCH.value
-                log.error = "no rule matched this payload"
-                return await self._record(log)
-            log.matched_rule_id = rule.id
-            event_type = rule.event_type or event_type
-            if rule.target_domain:
-                domain = rule.target_domain
-            field_map = rule.field_map or webhook.transform or {}
+        # 2. Payload-driven routing.
+        route = await self._resolve_routing(webhook, payload, log)
+        if route is None:
+            # A rule-routed webhook has no route for an unmatched payload.
+            # Publishing under the default type would emit an event no
+            # consumer is configured for, silently.
+            log.status = EventStatus.NO_RULE_MATCH.value
+            log.error = "no rule matched this payload"
+            return await self._record(log)
+        domain, event_type = route["domain"], route["event_type"]
 
         # 3. JMESPath transform.
-        t = apply_transform(payload, field_map)
+        t = apply_transform(payload, route["field_map"])
         log.transform_outcome = "ok" if t.ok else "failed"
         if not t.ok:
             log.status = EventStatus.TRANSFORM_FAILED.value

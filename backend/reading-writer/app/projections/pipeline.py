@@ -272,6 +272,60 @@ class Worker:
         self._tasks = []
 
     # ── fetcher ───────────────────────────────────────────────────────────────
+    async def _note_fetch_failure(self, exc: Exception, failures: int) -> None:
+        """A pull that raised.
+
+        This branch used to sleep 1s and retry FOREVER — which, when the durable
+        had been deleted out of band, meant every pull failed identically
+        (ServiceUnavailableError), the projection consumed nothing, and /readyz
+        stayed green throughout. Now a streak of failures (i) turns `consuming`
+        off, which turns /readyz red, and (ii) recreates the consumer, which is
+        the only exit when the durable is gone.
+        """
+        self.m.note_error(exc)
+        self.pm.fetch_failures += 1
+        log.warning(
+            "projection %s: fetch failed (%d in a row): %s",
+            self.row.key, failures, exc,
+        )
+        if failures >= REBIND_AFTER_FAILURES:
+            self.pm.consuming = False
+            await self._rebind()
+        await asyncio.sleep(1.0)
+
+    async def _extract_messages(self, msgs, proj) -> dict:
+        """The projected rows in this pull, and the messages that carried them.
+
+        A message that can never become a row is dead-lettered here rather than
+        travelling on: redelivery cannot change a malformed body.
+        """
+        keep, rows = [], []
+        for msg in msgs:
+            try:
+                rows.append(extract(msg.data, proj, self.tenants.resolve))
+                keep.append(msg)
+            except Malformed as bad:
+                # Park the body in EVENTS_DLQ with the refusal in headers,
+                # then term() so it stops being redelivered — on the FIRST
+                # delivery, because with max_deliver=-1 there is no budget
+                # that would ever park it for us. (This used to ack(), which
+                # dropped the body permanently and silently — contract §18.)
+                self.pm.note_malformed(bad.reason)
+                log.warning(
+                    "projection %s: malformed message on %s: %s — dead-lettering",
+                    self.row.key, msg.subject, bad.reason,
+                )
+                if await dead_letter(
+                    self._js, msg,
+                    consumer=proj.source.durable,
+                    reason=bad.reason,
+                    delivery=_delivery_count(msg),
+                ):
+                    self.pm.messages_dead_lettered += 1
+                with contextlib.suppress(Exception):
+                    await msg.term()
+        return {"keep": keep, "rows": rows}
+
     async def _fetch_loop(self) -> None:
         timeout = max(self.cfg.batch_ms, 1) / 1000.0
         proj = self.row.spec
@@ -308,48 +362,15 @@ class Worker:
                 # streak of failures (i) turns `consuming` off, which turns
                 # /readyz red, and (ii) recreates the consumer, which is the
                 # only exit when the durable is gone.
-                self.m.note_error(exc)
-                self.pm.fetch_failures += 1
                 failures += 1
-                log.warning(
-                    "projection %s: fetch failed (%d in a row): %s",
-                    self.row.key, failures, exc,
-                )
-                if failures >= REBIND_AFTER_FAILURES:
-                    self.pm.consuming = False
-                    await self._rebind()
-                await asyncio.sleep(1.0)
+                await self._note_fetch_failure(exc, failures)
                 continue
 
             failures = 0
             self.pm.consuming = True
             self.pm.messages_received += len(msgs)
-            keep, rows = [], []
-            for msg in msgs:
-                try:
-                    rows.append(extract(msg.data, proj, self.tenants.resolve))
-                    keep.append(msg)
-                except Malformed as bad:
-                    # Can never become a row, and redelivery cannot change that.
-                    # Park the body in EVENTS_DLQ with the refusal in headers,
-                    # then term() so it stops being redelivered — on the FIRST
-                    # delivery, because with max_deliver=-1 there is no budget
-                    # that would ever park it for us. (This used to ack(), which
-                    # dropped the body permanently and silently — contract §18.)
-                    self.pm.note_malformed(bad.reason)
-                    log.warning(
-                        "projection %s: malformed message on %s: %s — dead-lettering",
-                        self.row.key, msg.subject, bad.reason,
-                    )
-                    if await dead_letter(
-                        self._js, msg,
-                        consumer=proj.source.durable,
-                        reason=bad.reason,
-                        delivery=_delivery_count(msg),
-                    ):
-                        self.pm.messages_dead_lettered += 1
-                    with contextlib.suppress(Exception):
-                        await msg.term()
+            parsed = await self._extract_messages(msgs, proj)
+            keep, rows = parsed["keep"], parsed["rows"]
             self.m.unmapped_tenant_keys = len(self.tenants.unmapped)
 
             if rows:
@@ -360,6 +381,74 @@ class Worker:
                 self.pm.queue_depth = self._queue.qsize()
 
     # ── writer ────────────────────────────────────────────────────────────────
+    def _note_write_failure(self, exc: Exception, attempt: int, row_count: int) -> None:
+        """Everything one failed attempt has to record before the next one."""
+        self.pm.batch_write_failures += 1
+        if _is_timeout(exc):
+            # statement_timeout fired: a query that would have hung
+            # forever became an error the retry/NAK path can handle.
+            self.m.writes_timed_out += 1
+        self.m.note_error(exc)
+        log.warning(
+            "projection %s: batch write failed (attempt %s/%s, %s rows): %s",
+            self.row.key, attempt + 1, self.cfg.db_retry_attempts + 1,
+            row_count, exc,
+        )
+
+    async def _write_with_retries(self, sessionmaker, proj, rows):
+        """The batch written, with backoff between attempts — or None if every
+        attempt failed and the batch has to go back to the stream."""
+        for attempt in range(self.cfg.db_retry_attempts + 1):
+            try:
+                # Mark the write in flight so the stall watchdog can see a
+                # write that never returns. `end_write` must run on EVERY exit
+                # path or a completed write would look stuck forever.
+                self.m.begin_write(self.row.key)
+                try:
+                    async with sessionmaker() as session:
+                        return await write_batch(session, proj, rows)
+                finally:
+                    self.m.end_write(self.row.key)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                self._note_write_failure(exc, attempt, len(rows))
+                if attempt < self.cfg.db_retry_attempts:
+                    await asyncio.sleep(self.cfg.db_retry_sec * (2 ** attempt))
+        return None
+
+    async def _ack_written(self, msgs, res) -> None:
+        """Count the write, then ack. The rows ARE stored, so a lost ack only
+        costs a redelivery, which ON CONFLICT DO NOTHING absorbs."""
+        self.m.db_healthy = True
+        self.pm.batches_written += 1
+        self.pm.rows_inserted += res.rows_inserted
+        self.pm.rows_duplicate += res.duplicates
+        self.pm.rows_enriched += res.rows_enriched
+        self.pm.last_write_at = time.time()
+        for msg in msgs:
+            try:
+                await msg.ack()
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "projection %s: ack failed after a successful write: %s",
+                    self.row.key, exc,
+                )
+
+    async def _nak_batch(self, msgs, rows) -> None:
+        """NOTHING was acked. The batch goes back to JetStream and comes round
+        again — this is the property the whole design exists for."""
+        self.m.db_healthy = False
+        self.pm.batches_nakd += 1
+        log.error(
+            "projection %s: batch of %s events NAK'd for redelivery — "
+            "database unavailable",
+            self.row.key, len(rows),
+        )
+        for msg in msgs:
+            with contextlib.suppress(Exception):
+                await msg.nak(delay=self.cfg.db_retry_sec)
+
     async def _write_loop(self) -> None:
         sessionmaker = database.get_sessionmaker()
         proj = self.row.spec
@@ -367,66 +456,11 @@ class Worker:
             msgs, rows = await self._queue.get()
             self.pm.queue_depth = self._queue.qsize()
 
-            res = None
-            for attempt in range(self.cfg.db_retry_attempts + 1):
-                try:
-                    # Mark the write in flight so the stall watchdog can see a
-                    # write that never returns. `end_write` must run on EVERY exit
-                    # path or a completed write would look stuck forever.
-                    self.m.begin_write(self.row.key)
-                    try:
-                        async with sessionmaker() as session:
-                            res = await write_batch(session, proj, rows)
-                    finally:
-                        self.m.end_write(self.row.key)
-                    break
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:  # noqa: BLE001
-                    self.pm.batch_write_failures += 1
-                    if _is_timeout(exc):
-                        # statement_timeout fired: a query that would have hung
-                        # forever became an error the retry/NAK path can handle.
-                        self.m.writes_timed_out += 1
-                    self.m.note_error(exc)
-                    log.warning(
-                        "projection %s: batch write failed (attempt %s/%s, %s rows): %s",
-                        self.row.key, attempt + 1, self.cfg.db_retry_attempts + 1,
-                        len(rows), exc,
-                    )
-                    if attempt < self.cfg.db_retry_attempts:
-                        await asyncio.sleep(self.cfg.db_retry_sec * (2 ** attempt))
-
+            res = await self._write_with_retries(sessionmaker, proj, rows)
             if res is not None:
-                self.m.db_healthy = True
-                self.pm.batches_written += 1
-                self.pm.rows_inserted += res.rows_inserted
-                self.pm.rows_duplicate += res.duplicates
-                self.pm.rows_enriched += res.rows_enriched
-                self.pm.last_write_at = time.time()
-                for msg in msgs:
-                    try:
-                        await msg.ack()
-                    except Exception as exc:  # noqa: BLE001
-                        # The rows ARE stored; a lost ack only costs a redelivery,
-                        # which ON CONFLICT DO NOTHING absorbs.
-                        log.warning(
-                            "projection %s: ack failed after a successful write: %s",
-                            self.row.key, exc,
-                        )
+                await self._ack_written(msgs, res)
             else:
-                # NOTHING was acked. The batch goes back to JetStream and comes
-                # round again — this is the property the whole design exists for.
-                self.m.db_healthy = False
-                self.pm.batches_nakd += 1
-                log.error(
-                    "projection %s: batch of %s events NAK'd for redelivery — "
-                    "database unavailable",
-                    self.row.key, len(rows),
-                )
-                for msg in msgs:
-                    with contextlib.suppress(Exception):
-                        await msg.nak(delay=self.cfg.db_retry_sec)
+                await self._nak_batch(msgs, rows)
 
             self._queue.task_done()
 
@@ -668,25 +702,29 @@ class Projector:
                 pass
 
     # ── lag reporting ─────────────────────────────────────────────────────────
+    def _log_projection(self, key, pm) -> None:
+        """One projection's line: a warning when it is falling behind, else the
+        routine numbers."""
+        if pm.consumer_pending > self.cfg.lag_warn:
+            log.warning(
+                "FALLING BEHIND: projection %s has %s messages pending "
+                "(threshold %s)", key, pm.consumer_pending, self.cfg.lag_warn,
+            )
+        else:
+            log.info(
+                "%s: rows=%s enriched=%s dup=%s batches=%s malformed=%s "
+                "pending=%s queue=%s/%s db=%s",
+                key, pm.rows_inserted, pm.rows_enriched, pm.rows_duplicate,
+                pm.batches_written,
+                pm.messages_malformed, pm.consumer_pending, pm.queue_depth,
+                pm.queue_capacity, "up" if self.m.db_healthy else "DOWN",
+            )
+
     async def _stats_loop(self) -> None:
         while self._running:
             await asyncio.sleep(self.cfg.stats_every_sec)
             for worker in list(self._workers.values()):
                 await worker.poll_stats()
             for key, pm in sorted(self.m.projections.items()):
-                if not pm.running:
-                    continue
-                if pm.consumer_pending > self.cfg.lag_warn:
-                    log.warning(
-                        "FALLING BEHIND: projection %s has %s messages pending "
-                        "(threshold %s)", key, pm.consumer_pending, self.cfg.lag_warn,
-                    )
-                else:
-                    log.info(
-                        "%s: rows=%s enriched=%s dup=%s batches=%s malformed=%s "
-                        "pending=%s queue=%s/%s db=%s",
-                        key, pm.rows_inserted, pm.rows_enriched, pm.rows_duplicate,
-                        pm.batches_written,
-                        pm.messages_malformed, pm.consumer_pending, pm.queue_depth,
-                        pm.queue_capacity, "up" if self.m.db_healthy else "DOWN",
-                    )
+                if pm.running:
+                    self._log_projection(key, pm)

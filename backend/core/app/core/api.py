@@ -202,6 +202,84 @@ def _enforce_secrets(settings: Settings, log) -> None:
         )
 
 
+def _install_middleware(app: FastAPI, settings: Settings, allow_prefixes: tuple) -> None:
+    # Middleware: LAST added is OUTERMOST.
+    # On-prem/single-tenant only. The multi-tenant edition gates per tenant per
+    # request instead, and sets VE_LICENSE_ENFORCE_GLOBAL=false.
+    if settings.license_enforce_global:
+        app.add_middleware(LicenseEnforcementMiddleware, allow_prefixes=allow_prefixes)
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(
+        GlobalRateLimitMiddleware,
+        limit=settings.rate_limit_global_per_minute,
+        # The policy lives on the class — see GlobalRateLimitMiddleware.
+        skip_prefixes=(),
+    )
+    app.add_middleware(MetricsMiddleware)
+    app.add_middleware(RequestLoggingMiddleware)
+    # Near-outermost — the body has to be measured before anything reads it.
+    # Starlette's multipart parser spools parts over 1 MiB to disk, so a
+    # handler-side cap protects the heap and nothing else.
+    app.add_middleware(RequestSizeLimitMiddleware)
+
+    # CORS LAST, so it is the OUTERMOST middleware, and this is a correctness fix
+    # rather than a style preference.
+    #
+    # It used to be added FIRST, which made it the innermost — so every response
+    # produced by a middleware OUTSIDE it never passed back through it and carried
+    # no Access-Control-Allow-Origin. A cross-origin client hitting the rate limit
+    # (429), an expired licence (402) or the body cap (413) did not see any of
+    # those: the browser blocked the response and reported a CORS failure, which
+    # sends the reader to look at configuration instead of at the rate limit they
+    # actually hit. Same-origin traffic through the gateway never showed it, which
+    # is why it survived — but cors_origins exists precisely because other origins
+    # are expected (see docs/MOBILE_CLIENT_CONTRACT.md).
+    #
+    # Outermost also means a preflight OPTIONS is answered here, rather than being
+    # rate-limited and licence-checked on its way to an answer it was always going
+    # to get. The body cap is unaffected: CORS reads headers, never the body.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_origin_regex=settings.cors_origin_regex,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
+def _identity_headers(header: str) -> dict[str, str]:
+    """The identity headers Traefik injects downstream — for a valid ACCESS token
+    only, and empty for anything else, because this target must never reject."""
+    from ..auth.security import decode_token
+
+    if header[:7].lower() != "bearer ":
+        return {}
+    try:
+        payload = decode_token(header[7:])
+    except Exception:
+        return {}  # no headers; the service will 401 if the route is protected
+    if payload.get("type") != "access":
+        return {}
+    out = {"X-User-Id": str(payload.get("sub", ""))}
+    tid = payload.get("tenant_id")
+    if tid:
+        out["X-Tenant-Id"] = str(tid)
+    out["X-Permissions"] = ",".join(payload.get("permissions") or [])
+    return out
+
+
+def _features_payload(lic, enabled) -> dict:
+    """The legacy signed-license view of what this deployment may use."""
+    return {
+        "client": lic.client,
+        "expires_at": lic.expires_at.isoformat() if lic.expires_at else None,
+        "modules": [spec.nav for spec in enabled],
+        "limits": {} if lic._dev else lic.limits,
+        "features": {} if lic._dev else lic.features,
+    }
+
+
 def create_app(
     registry: ModuleRegistry,
     *,
@@ -247,49 +325,7 @@ def create_app(
         f"{prefix}/branding",
     )
 
-    # Middleware: LAST added is OUTERMOST.
-    # On-prem/single-tenant only. The multi-tenant edition gates per tenant per
-    # request instead, and sets VE_LICENSE_ENFORCE_GLOBAL=false.
-    if settings.license_enforce_global:
-        app.add_middleware(LicenseEnforcementMiddleware, allow_prefixes=allow_prefixes)
-    app.add_middleware(SecurityHeadersMiddleware)
-    app.add_middleware(
-        GlobalRateLimitMiddleware,
-        limit=settings.rate_limit_global_per_minute,
-        # The policy lives on the class — see GlobalRateLimitMiddleware.
-        skip_prefixes=(),
-    )
-    app.add_middleware(MetricsMiddleware)
-    app.add_middleware(RequestLoggingMiddleware)
-    # Near-outermost — the body has to be measured before anything reads it.
-    # Starlette's multipart parser spools parts over 1 MiB to disk, so a
-    # handler-side cap protects the heap and nothing else.
-    app.add_middleware(RequestSizeLimitMiddleware)
-
-    # CORS LAST, so it is the OUTERMOST middleware, and this is a correctness fix
-    # rather than a style preference.
-    #
-    # It used to be added FIRST, which made it the innermost — so every response
-    # produced by a middleware OUTSIDE it never passed back through it and carried
-    # no Access-Control-Allow-Origin. A cross-origin client hitting the rate limit
-    # (429), an expired licence (402) or the body cap (413) did not see any of
-    # those: the browser blocked the response and reported a CORS failure, which
-    # sends the reader to look at configuration instead of at the rate limit they
-    # actually hit. Same-origin traffic through the gateway never showed it, which
-    # is why it survived — but cors_origins exists precisely because other origins
-    # are expected (see docs/MOBILE_CLIENT_CONTRACT.md).
-    #
-    # Outermost also means a preflight OPTIONS is answered here, rather than being
-    # rate-limited and licence-checked on its way to an answer it was always going
-    # to get. The body cap is unaffected: CORS reads headers, never the body.
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origins,
-        allow_origin_regex=settings.cors_origin_regex,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    _install_middleware(app, settings, allow_prefixes)
 
     register_error_handlers(app)
 
@@ -310,21 +346,9 @@ def create_app(
     # public routes still pass; enforcement stays in each service's own JWT check.
     @app.get("/internal/auth/verify", include_in_schema=False)
     def internal_auth_verify(request: Request):
-        from ..auth.security import decode_token
-
         resp = Response(status_code=200)
-        header = request.headers.get("Authorization", "")
-        if header[:7].lower() == "bearer ":
-            try:
-                payload = decode_token(header[7:])
-                if payload.get("type") == "access":
-                    resp.headers["X-User-Id"] = str(payload.get("sub", ""))
-                    tid = payload.get("tenant_id")
-                    if tid:
-                        resp.headers["X-Tenant-Id"] = str(tid)
-                    resp.headers["X-Permissions"] = ",".join(payload.get("permissions") or [])
-            except Exception:
-                pass  # no headers; the service will 401 if the route is protected
+        for name, value in _identity_headers(request.headers.get("Authorization", "")).items():
+            resp.headers[name] = value
         return resp
 
     # --- Versioned API (everything under settings.api_prefix) -------------
@@ -357,13 +381,7 @@ def create_app(
         @app.get(features_path, tags=["platform"])
         def features() -> dict:
             """Frontend calls this on load to build its nav from enabled modules."""
-            return {
-                "client": lic.client,
-                "expires_at": lic.expires_at.isoformat() if lic.expires_at else None,
-                "modules": [spec.nav for spec in enabled],
-                "limits": {} if lic._dev else lic.limits,
-                "features": {} if lic._dev else lic.features,
-            }
+            return _features_payload(lic, enabled)
 
     @app.get("/", include_in_schema=False, response_class=HTMLResponse)
     def index() -> str:

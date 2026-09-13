@@ -76,6 +76,33 @@ def _append_token(url: str | None, token: str) -> str | None:
     return f"{url}{sep}token={quote(token, safe='')}"
 
 
+def _stored_rtsp_path(profiles: dict, profile: str) -> str | None:
+    """The stored path, by preference chain: requested → sub → main → any."""
+    for name in (profile, "sub", "main"):
+        mp = profiles.get(name)
+        if mp and mp.rtsp_path:
+            return mp.rtsp_path
+    for mp in profiles.values():
+        if mp.rtsp_path:
+            return mp.rtsp_path
+    return None
+
+
+def _constructed_rtsp(camera: Camera, profile: str) -> str | None:
+    """Fallback: a Hikvision-style RTSP from host + rtsp_port."""
+    host = camera.onvif_host or (camera.network_info or {}).get("ip")
+    if not host:
+        return None
+    rtsp_port = (camera.network_info or {}).get("rtsp_port") or 554
+    # NOTE: channel 0 is a VALID NVR channel index — use an explicit None check,
+    # never `or 1` (that would silently rewrite channel 0 → 1 and pull the wrong
+    # feed; it hid a real bug where a channel-0 camera streamed the wrong source).
+    channel = camera.nvr_channel_number if camera.nvr_channel_number is not None else 1
+    # sub-stream is channel*100+2, main is *01 (Hik convention) — coarse fallback.
+    sub = 2 if profile == "sub" else 1
+    return f"rtsp://{host}:{rtsp_port}/Streaming/Channels/{channel:d}0{sub:d}"
+
+
 class LiveService:
     """Tenant-scoped PlaybackSession issuer over ``playback_sessions``."""
 
@@ -129,42 +156,16 @@ class LiveService:
             .scalars()
             .all()
         }
-        # Preference chain: requested → sub → main → any.
-        chosen = None
-        for name in (profile, "sub", "main"):
-            mp = profiles.get(name)
-            if mp and mp.rtsp_path:
-                chosen = mp.rtsp_path
-                break
-        if chosen is None:
-            for mp in profiles.values():
-                if mp.rtsp_path:
-                    chosen = mp.rtsp_path
-                    break
-
         username = camera.onvif_user or ""
         password = decrypt_secret(camera.onvif_enc_pass) or ""
         # Only embed creds when BOTH are present — a user-only / pass-only RTSP URL
         # is rejected by MediaMTX ("username and password must be both provided").
         use_creds = bool(username and password)
 
-        if chosen:
-            return _inject_rtsp_creds(chosen, username, password) if use_creds else chosen
-
-        # Fallback: construct a Hikvision-style RTSP from host + rtsp_port.
-        host = camera.onvif_host or (camera.network_info or {}).get("ip")
-        if not host:
+        chosen = _stored_rtsp_path(profiles, profile) or _constructed_rtsp(camera, profile)
+        if chosen is None:
             return None
-        rtsp_port = (camera.network_info or {}).get("rtsp_port") or 554
-        # NOTE: channel 0 is a VALID NVR channel index — use an explicit None check,
-        # never `or 1` (that would silently rewrite channel 0 → 1 and pull the wrong
-        # feed; it hid a real bug where a channel-0 camera streamed the wrong source).
-        channel = camera.nvr_channel_number if camera.nvr_channel_number is not None else 1
-        # sub-stream is channel*100+2, main is *01 (Hik convention) — coarse fallback.
-        sub = 2 if profile == "sub" else 1
-        stream_path = f"/Streaming/Channels/{channel:d}0{sub:d}"
-        base = f"rtsp://{host}:{rtsp_port}{stream_path}"
-        return _inject_rtsp_creds(base, username, password) if use_creds else base
+        return _inject_rtsp_creds(chosen, username, password) if use_creds else chosen
 
     # ── start / renew / release ─────────────────────────────────────────
     async def start_live(self, camera_id: str, profile: str, *, actor):

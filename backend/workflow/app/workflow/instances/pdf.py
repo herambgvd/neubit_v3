@@ -36,6 +36,43 @@ def _status_color(status: str) -> str:
     return mapping.get(status, "#475569")
 
 
+def _summary_rows(instance: Any, sop: Any) -> list[list]:
+    """The report's header table: every field, with an em dash where there is
+    nothing rather than a blank a reader would take for a rendering fault."""
+    sop_name = instance.sop_name or (sop.name if sop is not None else None) or "—"
+    assignment = instance.assignment or {}
+    return [
+        ["Instance ID", instance.instance_id],
+        ["SOP", f"{sop_name} (v{instance.sop_version or '—'})"],
+        ["Site", instance.site_id or "—"],
+        ["Current state", instance.current_state_name or "—"],
+        ["Assignee", assignment.get("assigned_to_name") or instance.assigned_to or "—"],
+        ["Created", _fmt(instance.created_at)],
+        ["State entered", _fmt(instance.state_entered_at)],
+        ["SLA deadline", _fmt(instance.sla_deadline)],
+        ["Closed", _fmt(instance.closed_at)],
+        ["Trigger event", instance.event_type or "—"],
+    ]
+
+
+def _history_rows(history: list, body_style: Any) -> list[list]:
+    """The transition table, header first and then one row per transition."""
+    from reportlab.platypus import Paragraph
+
+    data = [["When", "From", "→", "To", "By", "Notes"]]
+    for h in history:
+        d = h if isinstance(h, dict) else dict(h)
+        data.append([
+            _fmt(d.get("executed_at")),
+            d.get("from_state_name") or "—",
+            "→",
+            d.get("to_state_name") or "—",
+            d.get("executed_by_name") or d.get("executed_by") or "—",
+            Paragraph((d.get("notes") or "").replace("\n", "<br/>"), body_style),
+        ])
+    return data
+
+
 def render_incident_pdf(instance: Any, *, sop: Any = None) -> bytes:
     """Render an incident report PDF for a ``WorkflowInstance`` ORM row.
 
@@ -94,21 +131,7 @@ def render_incident_pdf(instance: Any, *, sop: Any = None) -> bytes:
     ))
     story.append(Spacer(1, 4 * mm))
 
-    sop_name = instance.sop_name or (sop.name if sop is not None else None) or "—"
-    assignment = instance.assignment or {}
-    rows = [
-        ["Instance ID", instance.instance_id],
-        ["SOP", f"{sop_name} (v{instance.sop_version or '—'})"],
-        ["Site", instance.site_id or "—"],
-        ["Current state", instance.current_state_name or "—"],
-        ["Assignee", assignment.get("assigned_to_name") or instance.assigned_to or "—"],
-        ["Created", _fmt(instance.created_at)],
-        ["State entered", _fmt(instance.state_entered_at)],
-        ["SLA deadline", _fmt(instance.sla_deadline)],
-        ["Closed", _fmt(instance.closed_at)],
-        ["Trigger event", instance.event_type or "—"],
-    ]
-    tbl = Table(rows, colWidths=[35 * mm, 130 * mm])
+    tbl = Table(_summary_rows(instance, sop), colWidths=[35 * mm, 130 * mm])
     tbl.setStyle(TableStyle([
         ("FONT", (0, 0), (-1, -1), "Helvetica", 9),
         ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 9),
@@ -126,17 +149,7 @@ def render_incident_pdf(instance: Any, *, sop: Any = None) -> bytes:
     if not history:
         story.append(Paragraph("No transitions recorded.", label))
     else:
-        data = [["When", "From", "→", "To", "By", "Notes"]]
-        for h in history:
-            d = h if isinstance(h, dict) else dict(h)
-            data.append([
-                _fmt(d.get("executed_at")),
-                d.get("from_state_name") or "—",
-                "→",
-                d.get("to_state_name") or "—",
-                d.get("executed_by_name") or d.get("executed_by") or "—",
-                Paragraph((d.get("notes") or "").replace("\n", "<br/>"), body),
-            ])
+        data = _history_rows(history, body)
         col_widths = [32 * mm, 28 * mm, 6 * mm, 28 * mm, 28 * mm, 50 * mm]
         ht = Table(data, colWidths=col_widths, repeatRows=1)
         ht.setStyle(TableStyle([

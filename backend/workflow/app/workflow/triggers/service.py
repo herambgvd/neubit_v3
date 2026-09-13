@@ -225,6 +225,24 @@ class AlertFormatService(ChecksReferences):
 # ── Event simulator ────────────────────────────────────────────────────
 
 
+def _no_incident_reason(sop) -> str:
+    """Why a matched rule would still not produce an incident."""
+    if not sop:
+        return "SOP missing"
+    if not sop.is_active:
+        return "SOP inactive"
+    return "SOP has no initial state"
+
+
+def _resolved_priority(configured, sop):
+    """A rule's own priority when it is one the model knows, else the SOP's."""
+    try:
+        return InstancePriority(configured or sop.priority).value
+    except ValueError:
+        return sop.priority
+
+
+
 class SimulatorService:
     """Run a synthetic event through the correlation engine's own matching.
 
@@ -251,14 +269,136 @@ class SimulatorService:
         sop = await self.db.get(SOP, sop_id)
         return sop if sop is not None and owns(sop, self.scope) else None
 
-    async def simulate(self, body, *, actor) -> dict:
+    async def _candidate_triggers(self, envelope: dict) -> list[Trigger]:
+        """The enabled triggers this event could fire, by the engine's own predicate.
+
+        It used to compare a trigger's event_type against the REQUESTED type
+        alone, while the engine matches the transport type OR the payload's
+        semantic one. A camera event arrives as `vms.camera.tamper` carrying
+        `payload.event_type = "tamper"`, so a working rule written as "tamper"
+        reported NO MATCH here — and an operator testing a rule that fires in
+        production would go and change it.
+        """
+        from ..correlation.engine import candidate_event_types
+
+        stmt = scoped(select(Trigger).where(Trigger.enabled.is_(True)), Trigger, self.scope)
+        candidates = candidate_event_types(envelope)
+        return [
+            t for t in (await self.db.execute(stmt)).scalars().all()
+            if not t.event_type or t.event_type in candidates
+        ]
+
+    async def _simulate_trigger(self, trig, envelope: dict, body, tenant_id) -> dict | None:
+        """What one trigger would do with this event — None when it does not match."""
+        from ..correlation.engine import build_incident_from_sop, initial_state
+
+        if not matches_conditions(envelope, trig.conditions or []):
+            return None
+        sop = await self._owned_sop(trig.sop_id)
+        initial = await initial_state(self.db, trig.sop_id) if sop else None
+        would_create = bool(sop and sop.is_active and initial)
+        outcome = {
+            "matched": {
+                "trigger_id": trig.trigger_id, "name": trig.name,
+                "sop_id": trig.sop_id, "would_create": would_create,
+            },
+            "skipped": None,
+            "created_id": None,
+        }
+        if not would_create:
+            outcome["skipped"] = {"trigger_id": trig.trigger_id,
+                                  "reason": _no_incident_reason(sop)}
+            return outcome
+        if body.dry_run:
+            return outcome
+        inst = await build_incident_from_sop(
+            self.db, sop=sop, initial=initial, envelope=envelope,
+            tenant_id=tenant_id, priority=_resolved_priority(trig.priority, sop),
+            status=InstanceStatus.ACTIVE.value,
+            name=f"{sop.name}: {body.event_type}", description=trig.description,
+            source={"source": "simulator", "trigger_id": trig.trigger_id},
+        )
+        trig.last_fired_at = utcnow()
+        trig.fire_count = (trig.fire_count or 0) + 1
+        await self.db.flush()
+        outcome["created_id"] = inst.instance_id
+        return outcome
+
+    async def _simulate_triggers(self, envelope: dict, body, tenant_id) -> dict:
+        """Every enabled trigger against this event, in one report."""
+        matched: list[dict] = []
+        skipped: list[dict] = []
+        created_ids: list[str] = []
+        for trig in await self._candidate_triggers(envelope):
+            outcome = await self._simulate_trigger(trig, envelope, body, tenant_id)
+            if outcome is None:
+                continue
+            matched.append(outcome["matched"])
+            if outcome["skipped"]:
+                skipped.append(outcome["skipped"])
+            if outcome["created_id"]:
+                created_ids.append(outcome["created_id"])
+        return {"matched": matched, "skipped": skipped, "created_ids": created_ids}
+
+    async def _simulate_alert_format(
+        self, alert_code: str | None, envelope: dict, body, tenant_id
+    ) -> dict | None:
+        """What the alert format carrying this code would do — None when none does."""
         from ..correlation.engine import (
             build_incident_from_sop,
-            candidate_event_types,
-            extract_alert_code,
             find_alert_format,
             initial_state,
         )
+
+        if not alert_code:
+            return None
+        fmt = await find_alert_format(self.db, tenant_id, alert_code)
+        if not fmt:
+            return None
+        sop = await self._owned_sop(fmt.sop_id)
+        initial = await initial_state(self.db, fmt.sop_id) if sop else None
+        would_create = bool(fmt.sop_id and sop and sop.is_active and initial)
+        outcome = {
+            "matched": {
+                "format_id": fmt.format_id, "alert_code": fmt.alert_code,
+                "name": fmt.name, "sop_id": fmt.sop_id, "sop_mode": fmt.sop_mode,
+                "would_create": would_create,
+            },
+            "skipped": None,
+            "created_id": None,
+        }
+        if not would_create:
+            reason = "no SOP mapped" if not fmt.sop_id else _no_incident_reason(sop)
+            outcome["skipped"] = {"format_id": fmt.format_id, "reason": reason}
+            return outcome
+        if body.dry_run:
+            return outcome
+        status = (InstanceStatus.ACTIVE.value if fmt.sop_mode == "automatic"
+                  else InstanceStatus.PENDING.value)
+        inst = await build_incident_from_sop(
+            self.db, sop=sop, initial=initial, envelope=envelope,
+            tenant_id=tenant_id, priority=_resolved_priority(fmt.priority, sop),
+            status=status,
+            name=f"{fmt.name}: {body.event_type}", description=fmt.description,
+            source={"source": "simulator.alert_format",
+                    "alert_format_id": fmt.format_id, "alert_code": fmt.alert_code},
+        )
+        await self.db.flush()
+        outcome["created_id"] = inst.instance_id
+        return outcome
+
+    async def _persist_simulation(self, created_ids: list[str], body, tenant_id) -> None:
+        """A simulation keeps only what it actually created; anything else rolls back."""
+        if body.dry_run or not created_ids:
+            await self.db.rollback()
+            return
+        await self.db.commit()
+        for iid in created_ids:
+            await emit(tenant_id, "incident", "created",
+                       {"instance_id": iid, "source": "simulator"})
+
+    async def simulate(self, body, *, actor) -> dict:
+        from ..correlation.engine import extract_alert_code
 
         tenant_id = self._tenant_id()
         # Build a correlation-shaped envelope from the synthetic event.
@@ -273,106 +413,28 @@ class SimulatorService:
         if body.alert_code:
             envelope["alert_code"] = body.alert_code
 
-        matched_triggers: list[dict] = []
-        matched_format: dict | None = None
-        skipped: list[dict] = []
-        created_ids: list[str] = []
+        triggered = await self._simulate_triggers(envelope, body, tenant_id)
+        skipped = triggered["skipped"]
+        created_ids = triggered["created_ids"]
 
-        # ── Trigger matching (the engine's own predicate) ───────────────
-        #
-        # It used to compare a trigger's event_type against `body.event_type`
-        # ALONE, while the engine matches the transport type OR the payload's
-        # semantic one. A camera event arrives as `vms.camera.tamper` carrying
-        # `payload.event_type = "tamper"`, so a working rule written as "tamper"
-        # reported NO MATCH here — and an operator testing a rule that fires in
-        # production would go and change it.
-        stmt = scoped(select(Trigger).where(Trigger.enabled.is_(True)), Trigger, self.scope)
-        candidates = candidate_event_types(envelope)
-        triggers = [
-            t for t in (await self.db.execute(stmt)).scalars().all()
-            if not t.event_type or t.event_type in candidates
-        ]
-        for trig in triggers:
-            if not matches_conditions(envelope, trig.conditions or []):
-                continue
-            sop = await self._owned_sop(trig.sop_id)
-            initial = await initial_state(self.db, trig.sop_id) if sop else None
-            would_create = bool(sop and sop.is_active and initial)
-            matched_triggers.append({
-                "trigger_id": trig.trigger_id, "name": trig.name,
-                "sop_id": trig.sop_id, "would_create": would_create,
-            })
-            if not would_create:
-                reason = ("SOP missing" if not sop else
-                          "SOP inactive" if not sop.is_active else
-                          "SOP has no initial state")
-                skipped.append({"trigger_id": trig.trigger_id, "reason": reason})
-                continue
-            if not body.dry_run:
-                try:
-                    priority = InstancePriority(trig.priority or sop.priority).value
-                except ValueError:
-                    priority = sop.priority
-                inst = await build_incident_from_sop(
-                    self.db, sop=sop, initial=initial, envelope=envelope,
-                    tenant_id=tenant_id, priority=priority,
-                    status=InstanceStatus.ACTIVE.value,
-                    name=f"{sop.name}: {body.event_type}", description=trig.description,
-                    source={"source": "simulator", "trigger_id": trig.trigger_id},
-                )
-                trig.last_fired_at = utcnow()
-                trig.fire_count = (trig.fire_count or 0) + 1
-                await self.db.flush()
-                created_ids.append(inst.instance_id)
+        matched_format = None
+        fmt_outcome = await self._simulate_alert_format(
+            alert_code, envelope, body, tenant_id
+        )
+        if fmt_outcome is not None:
+            matched_format = fmt_outcome["matched"]
+            if fmt_outcome["skipped"]:
+                skipped.append(fmt_outcome["skipped"])
+            if fmt_outcome["created_id"]:
+                created_ids.append(fmt_outcome["created_id"])
 
-        # ── AlertFormat matching ────────────────────────────────────────
-        if alert_code:
-            fmt = await find_alert_format(self.db, tenant_id, alert_code)
-            if fmt:
-                sop = await self._owned_sop(fmt.sop_id)
-                initial = await initial_state(self.db, fmt.sop_id) if sop else None
-                would_create = bool(fmt.sop_id and sop and sop.is_active and initial)
-                matched_format = {
-                    "format_id": fmt.format_id, "alert_code": fmt.alert_code,
-                    "name": fmt.name, "sop_id": fmt.sop_id, "sop_mode": fmt.sop_mode,
-                    "would_create": would_create,
-                }
-                if not would_create:
-                    reason = ("no SOP mapped" if not fmt.sop_id else
-                              "SOP missing" if not sop else
-                              "SOP inactive" if not sop.is_active else
-                              "SOP has no initial state")
-                    skipped.append({"format_id": fmt.format_id, "reason": reason})
-                elif not body.dry_run:
-                    try:
-                        priority = InstancePriority(fmt.priority or sop.priority).value
-                    except ValueError:
-                        priority = sop.priority
-                    status = (InstanceStatus.ACTIVE.value if fmt.sop_mode == "automatic"
-                              else InstanceStatus.PENDING.value)
-                    inst = await build_incident_from_sop(
-                        self.db, sop=sop, initial=initial, envelope=envelope,
-                        tenant_id=tenant_id, priority=priority, status=status,
-                        name=f"{fmt.name}: {body.event_type}", description=fmt.description,
-                        source={"source": "simulator.alert_format",
-                                "alert_format_id": fmt.format_id, "alert_code": fmt.alert_code},
-                    )
-                    await self.db.flush()
-                    created_ids.append(inst.instance_id)
-
-        if not body.dry_run and created_ids:
-            await self.db.commit()
-            for iid in created_ids:
-                await emit(tenant_id, "incident", "created",
-                           {"instance_id": iid, "source": "simulator"})
-        else:
-            await self.db.rollback()
+        await self._persist_simulation(created_ids, body, tenant_id)
 
         return {
             "dry_run": body.dry_run,
             "event_type": body.event_type,
             "alert_code": alert_code,
-            "matched_triggers": matched_triggers,
+            "matched_triggers": triggered["matched"],
             "matched_format": matched_format,
             "skipped": skipped,
             "created_instance_id": created_ids[0] if created_ids else None,

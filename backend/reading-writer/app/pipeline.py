@@ -395,6 +395,60 @@ class Pipeline:
         )
 
     # ── fetcher ───────────────────────────────────────────────────────────────
+    async def _note_fetch_failure(self, exc: Exception, failures: int) -> None:
+        """A pull that raised. The heartbeat is deliberately NOT stamped here.
+
+        This branch used to log, sleep a second, and retry FOREVER. Delete the
+        `reading-writer` durable out of band and that is a permanent wedge that
+        reports success: every pull raises, not one reading is consumed, and
+        /readyz answers 200 throughout because the connection is up, the database
+        answers, and `consumer_pending` — last read from a consumer that no
+        longer exists — sits at 0, which is indistinguishable from caught-up.
+
+        So the silence accumulates and `consuming` turns /readyz red on its own,
+        and a streak recreates the consumer, which is the only exit when the
+        durable is really gone.
+        """
+        self.m.note_error(exc)
+        self.m.fetch_failures += 1
+        log.warning("fetch failed (%d in a row): %s", failures, exc)
+        if failures >= REBIND_AFTER_FAILURES:
+            await self._rebind()
+        await asyncio.sleep(1.0)
+
+    async def _parse_messages(self, msgs) -> dict:
+        """The readings in this pull, and the messages that carried them.
+
+        A message that can never become a row is dead-lettered here rather than
+        travelling on: redelivery cannot change a malformed body.
+        """
+        keep, rows = [], []
+        for msg in msgs:
+            try:
+                rows.append(parse(msg.data, self.tenants.resolve))
+                keep.append(msg)
+            except Malformed as bad:
+                # Park the body in EVENTS_DLQ with the refusal in headers,
+                # then term() so it stops being redelivered — on the FIRST
+                # delivery, because with max_deliver=-1 there is no budget
+                # that would ever park it for us. (This used to ack(), which
+                # dropped the body permanently and silently — contract §18.)
+                self.m.note_malformed(bad.reason)
+                log.warning(
+                    "malformed message on %s: %s — dead-lettering",
+                    msg.subject, bad.reason,
+                )
+                if await dead_letter(
+                    self._js, msg,
+                    consumer=self.cfg.durable,
+                    reason=bad.reason,
+                    delivery=_delivery_count(msg),
+                ):
+                    self.m.messages_dead_lettered += 1
+                with contextlib.suppress(Exception):
+                    await msg.term()
+        return {"keep": keep, "rows": rows}
+
     async def _fetch_loop(self) -> None:
         timeout = max(self.cfg.batch_ms, 1) / 1000.0
         failures = 0  # CONSECUTIVE failed pulls; any answered pull resets it
@@ -457,44 +511,15 @@ class Pipeline:
                 # silence accumulates and `consuming` turns /readyz red on its
                 # own. And a streak recreates the consumer, which is the only
                 # exit when the durable is really gone.
-                self.m.note_error(exc)
-                self.m.fetch_failures += 1
                 failures += 1
-                log.warning("fetch failed (%d in a row): %s", failures, exc)
-                if failures >= REBIND_AFTER_FAILURES:
-                    await self._rebind()
-                await asyncio.sleep(1.0)
+                await self._note_fetch_failure(exc, failures)
                 continue
 
             failures = 0
             self.m.note_fetch_answer()
             self.m.messages_received += len(msgs)
-            keep, rows = [], []
-            for msg in msgs:
-                try:
-                    rows.append(parse(msg.data, self.tenants.resolve))
-                    keep.append(msg)
-                except Malformed as bad:
-                    # Can never become a row, and redelivery cannot change that.
-                    # Park the body in EVENTS_DLQ with the refusal in headers,
-                    # then term() so it stops being redelivered — on the FIRST
-                    # delivery, because with max_deliver=-1 there is no budget
-                    # that would ever park it for us. (This used to ack(), which
-                    # dropped the body permanently and silently — contract §18.)
-                    self.m.note_malformed(bad.reason)
-                    log.warning(
-                        "malformed message on %s: %s — dead-lettering",
-                        msg.subject, bad.reason,
-                    )
-                    if await dead_letter(
-                        self._js, msg,
-                        consumer=self.cfg.durable,
-                        reason=bad.reason,
-                        delivery=_delivery_count(msg),
-                    ):
-                        self.m.messages_dead_lettered += 1
-                    with contextlib.suppress(Exception):
-                        await msg.term()
+            parsed = await self._parse_messages(msgs)
+            keep, rows = parsed["keep"], parsed["rows"]
             self.m.unmapped_tenant_keys = len(self.tenants.unmapped)
 
             if rows:
@@ -512,72 +537,83 @@ class Pipeline:
                 self.m.queue_depth = self._queue.qsize()
 
     # ── writer ────────────────────────────────────────────────────────────────
+    def _note_write_failure(self, exc: Exception, attempt: int, row_count: int) -> None:
+        """Everything one failed attempt has to record before the next one."""
+        self.m.batch_write_failures += 1
+        if _is_timeout(exc):
+            # statement_timeout fired: a query that would have hung
+            # forever became an error the retry/NAK path can handle.
+            self.m.writes_timed_out += 1
+        self.m.note_error(exc)
+        # The transaction rolled back, so any dimension row we thought
+        # we had written is gone. Re-upsert it next time.
+        self.cache.forget_all()
+        log.warning(
+            "batch write failed (attempt %s/%s, %s rows): %s",
+            attempt + 1, self.cfg.db_retry_attempts + 1, row_count, exc,
+        )
+
+    async def _write_with_retries(self, sessionmaker, rows, now_mono):
+        """The batch written, with backoff between attempts — or None if every
+        attempt failed and the batch has to go back to the stream."""
+        for attempt in range(self.cfg.db_retry_attempts + 1):
+            try:
+                # Mark the write in flight so the stall watchdog can see a
+                # write that never returns. `end_write` must run on EVERY exit
+                # path or a completed write would look stuck forever.
+                self.m.begin_write()
+                try:
+                    async with sessionmaker() as session:
+                        return await write_batch(session, rows, self.cache, now_mono)
+                finally:
+                    self.m.end_write()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                self._note_write_failure(exc, attempt, len(rows))
+                if attempt < self.cfg.db_retry_attempts:
+                    await asyncio.sleep(self.cfg.db_retry_sec * (2 ** attempt))
+        return None
+
+    async def _ack_written(self, msgs, res) -> None:
+        """Count the write, then ack. The rows ARE stored, so a lost ack only
+        costs a redelivery, which ON CONFLICT DO NOTHING absorbs."""
+        self.m.db_healthy = True
+        self.m.batches_written += 1
+        self.m.rows_inserted += res.rows_inserted
+        self.m.rows_duplicate += res.duplicates
+        self.m.points_upserted += res.points_upserted
+        self.m.last_write_at = time.time()
+        for msg in msgs:
+            try:
+                await msg.ack()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("ack failed after a successful write: %s", exc)
+
+    async def _nak_batch(self, msgs, rows) -> None:
+        """NOTHING was acked. The batch goes back to JetStream and comes round
+        again — this is the property the whole design exists for."""
+        self.m.db_healthy = False
+        self.m.batches_nakd += 1
+        log.error(
+            "batch of %s readings NAK'd for redelivery — database unavailable",
+            len(rows),
+        )
+        for msg in msgs:
+            with contextlib.suppress(Exception):
+                await msg.nak(delay=self.cfg.db_retry_sec)
+
     async def _write_loop(self) -> None:
         sessionmaker = database.get_sessionmaker()
         while self._running:
             msgs, rows = await self._queue.get()
             self.m.queue_depth = self._queue.qsize()
-            now_mono = time.monotonic()
 
-            written = False
-            for attempt in range(self.cfg.db_retry_attempts + 1):
-                try:
-                    # Mark the write in flight so the stall watchdog can see a
-                    # write that never returns. `end_write` must run on EVERY exit
-                    # path or a completed write would look stuck forever.
-                    self.m.begin_write()
-                    try:
-                        async with sessionmaker() as session:
-                            res = await write_batch(session, rows, self.cache, now_mono)
-                    finally:
-                        self.m.end_write()
-                    written = True
-                    break
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:  # noqa: BLE001
-                    self.m.batch_write_failures += 1
-                    if _is_timeout(exc):
-                        # statement_timeout fired: a query that would have hung
-                        # forever became an error the retry/NAK path can handle.
-                        self.m.writes_timed_out += 1
-                    self.m.note_error(exc)
-                    # The transaction rolled back, so any dimension row we thought
-                    # we had written is gone. Re-upsert it next time.
-                    self.cache.forget_all()
-                    log.warning(
-                        "batch write failed (attempt %s/%s, %s rows): %s",
-                        attempt + 1, self.cfg.db_retry_attempts + 1, len(rows), exc,
-                    )
-                    if attempt < self.cfg.db_retry_attempts:
-                        await asyncio.sleep(self.cfg.db_retry_sec * (2 ** attempt))
-
-            if written:
-                self.m.db_healthy = True
-                self.m.batches_written += 1
-                self.m.rows_inserted += res.rows_inserted
-                self.m.rows_duplicate += res.duplicates
-                self.m.points_upserted += res.points_upserted
-                self.m.last_write_at = time.time()
-                for msg in msgs:
-                    try:
-                        await msg.ack()
-                    except Exception as exc:  # noqa: BLE001
-                        # The rows ARE stored; a lost ack only costs a redelivery,
-                        # which ON CONFLICT DO NOTHING absorbs.
-                        log.warning("ack failed after a successful write: %s", exc)
+            res = await self._write_with_retries(sessionmaker, rows, time.monotonic())
+            if res is not None:
+                await self._ack_written(msgs, res)
             else:
-                # NOTHING was acked. The batch goes back to JetStream and comes
-                # round again — this is the property the whole design exists for.
-                self.m.db_healthy = False
-                self.m.batches_nakd += 1
-                log.error(
-                    "batch of %s readings NAK'd for redelivery — database unavailable",
-                    len(rows),
-                )
-                for msg in msgs:
-                    with contextlib.suppress(Exception):
-                        await msg.nak(delay=self.cfg.db_retry_sec)
+                await self._nak_batch(msgs, rows)
 
             self._queue.task_done()
 

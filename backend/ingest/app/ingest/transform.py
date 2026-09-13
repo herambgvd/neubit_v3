@@ -186,42 +186,48 @@ def _assign_target(out: dict[str, Any], target: str, value: Any) -> None:
     _assign_nested(out, target, value)
 
 
-def _assign_nested(root: dict[str, Any], path: str, value: Any) -> None:
+def _path_tokens(path: str) -> list[str | int]:
+    """A target path as the sequence of keys and indices it names."""
     tokens: list[str | int] = []
     for key, idx in _TARGET_PATH_RE.findall(path):
         tokens.append(key if key else int(idx))
     if not tokens:
         raise ValueError("invalid target path")
+    return tokens
 
+
+def _ensure_container(cur: Any, token: str | int) -> None:
+    """The container must be able to hold this token — and a list must be long
+    enough to have it."""
+    if isinstance(token, int):
+        if not isinstance(cur, list):
+            raise ValueError("array index used on non-array container")
+        while len(cur) <= token:
+            cur.append(None)
+    elif not isinstance(cur, dict):
+        raise ValueError("object key used on non-object container")
+
+
+def _step_into(cur: Any, token: str | int, next_token: str | int) -> Any:
+    """The container at `token`, replaced when what is there cannot hold the
+    NEXT token: a path that says `a[0].b` means `a[0]` is an object, whatever
+    happened to be there before."""
+    want: Any = [] if isinstance(next_token, int) else {}
+    existing = cur[token] if isinstance(token, int) else cur.get(token)
+    if not isinstance(existing, type(want)):
+        cur[token] = want
+    return cur[token]
+
+
+def _assign_nested(root: dict[str, Any], path: str, value: Any) -> None:
+    tokens = _path_tokens(path)
     cur: Any = root
     for i, token in enumerate(tokens):
-        is_last = i == len(tokens) - 1
-        next_token = None if is_last else tokens[i + 1]
-
-        if isinstance(token, int):
-            if not isinstance(cur, list):
-                raise ValueError("array index used on non-array container")
-            while len(cur) <= token:
-                cur.append(None)
-            if is_last:
-                cur[token] = value
-                return
-            want_list = isinstance(next_token, int)
-            if not isinstance(cur[token], list if want_list else dict):
-                cur[token] = [] if want_list else {}
-            cur = cur[token]
-            continue
-
-        if not isinstance(cur, dict):
-            raise ValueError("object key used on non-object container")
-        if is_last:
+        _ensure_container(cur, token)
+        if i == len(tokens) - 1:
             cur[token] = value
             return
-        want_list = isinstance(next_token, int)
-        existing = cur.get(token)
-        if not isinstance(existing, list if want_list else dict):
-            cur[token] = [] if want_list else {}
-        cur = cur[token]
+        cur = _step_into(cur, token, tokens[i + 1])
 
 
 def evaluate_lookup_expr(payload: Any, expr: str | None) -> str | None:

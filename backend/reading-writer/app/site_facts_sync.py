@@ -217,6 +217,43 @@ def _factor_rows(raw) -> list[dict] | None:
     return out
 
 
+def _mirrored_values(tenant, site_id, payload: dict, event: str) -> dict:
+    """The site row this event states.
+
+    Absent → NULL → NOT RECORDED. Nothing is defaulted and nothing is carried
+    over from the previous mirror: core states the whole set on every site
+    event, so the last message is the whole truth.
+    """
+    values = {
+        "tenant_id": tenant,
+        "site_id": site_id,
+        "site_name": payload.get("name"),
+        "is_active": bool(payload.get("is_active", True)),
+        "gross_floor_area_sqm": _num(payload.get("gross_floor_area_sqm")),
+        "energy_tariff_per_kwh": _num(payload.get("energy_tariff_per_kwh")),
+        "tariff_currency": payload.get("tariff_currency") or None,
+        "occupancy": (
+            int(payload["occupancy"])
+            if isinstance(payload.get("occupancy"), (int, float))
+            else None
+        ),
+        "facts_updated_at": _when(payload.get("building_facts_updated_at")),
+        "mirrored_at": dt.datetime.now(dt.timezone.utc),
+    }
+    # `city` (migration 0013) is applied only when the publisher STATED the
+    # key. Core has published it on every site event since 0019, so this
+    # guard exists for one reason: a pre-0019 message still in flight says
+    # nothing about the city, and "missing" must never clobber a value a
+    # later message already mirrored. Stated-but-null DOES clear — that is
+    # core saying the address has no city, and the portfolio renders "—".
+    if "city" in payload:
+        city = payload.get("city")
+        values["city"] = str(city)[:255] if city else None
+    if event == "deleted":
+        values["is_active"] = False
+    return values
+
+
 class SiteFactsSync:
     def __init__(self, stats: SiteFactsStats) -> None:
         self.stats = stats
@@ -314,78 +351,17 @@ class SiteFactsSync:
         with contextlib.suppress(Exception):
             await msg.ack()
 
-    async def _apply(self, event: str, payload: dict, subject: str) -> None:
-        if event not in _EVENTS:
-            self.stats.skipped_other_event += 1
-            return
+    async def _write_mirror(self, values: dict, tenant, site_id, slabs, factors) -> None:
+        """The site row, and any stated list, in one transaction.
 
-        tenant = _uuid(payload.get("tenant_id"))
-        if tenant is None:
-            # Platform-scoped action. `site_facts.tenant_id` is a real uuid;
-            # inventing one would be a fabricated fact about a real building.
-            self.stats.skipped_no_tenant += 1
-            log.info("site event on %s has no tenant; not mirrored", subject)
-            return
-
-        site_id = _uuid(payload.get("site_id"))
-        if site_id is None:
-            self.stats.skipped_malformed += 1
-            return
-
-        values = {
-            "tenant_id": tenant,
-            "site_id": site_id,
-            "site_name": payload.get("name"),
-            "is_active": bool(payload.get("is_active", True)),
-            # Absent → NULL → NOT RECORDED. Nothing is defaulted and nothing is
-            # carried over from the previous mirror: core states the whole set on
-            # every site event, so the last message is the whole truth.
-            "gross_floor_area_sqm": _num(payload.get("gross_floor_area_sqm")),
-            "energy_tariff_per_kwh": _num(payload.get("energy_tariff_per_kwh")),
-            "tariff_currency": payload.get("tariff_currency") or None,
-            "occupancy": (
-                int(payload["occupancy"])
-                if isinstance(payload.get("occupancy"), (int, float))
-                else None
-            ),
-            "facts_updated_at": _when(payload.get("building_facts_updated_at")),
-            "mirrored_at": dt.datetime.now(dt.timezone.utc),
-        }
-        # `city` (migration 0013) is applied only when the publisher STATED the
-        # key. Core has published it on every site event since 0019, so this
-        # guard exists for one reason: a pre-0019 message still in flight says
-        # nothing about the city, and "missing" must never clobber a value a
-        # later message already mirrored. Stated-but-null DOES clear — that is
-        # core saying the address has no city, and the portfolio renders "—".
-        if "city" in payload:
-            city = payload.get("city")
-            values["city"] = str(city)[:255] if city else None
-        if event == "deleted":
-            values["is_active"] = False
-
-        # The INPUT LISTS (tariff slabs, emission factors) follow the same
-        # key-presence rule, then are replaced WHOLESALE per site: core states
-        # the entire list on every event (an empty list is the statement "no
-        # slabs"), so delete+insert needs no COALESCE discipline at all. A list
-        # with any malformed row is refused in full and the previous mirror
-        # kept — half a tariff prices some hours with another hour's rate.
-        slabs = _slab_rows(payload["tariff_slabs"]) if "tariff_slabs" in payload else None
-        if "tariff_slabs" in payload and slabs is None:
-            self.stats.skipped_malformed += 1
-            log.warning("tariff_slabs on %s malformed; keeping previous mirror", subject)
-        factors = (
-            _factor_rows(payload["emission_factors"]) if "emission_factors" in payload else None
-        )
-        if "emission_factors" in payload and factors is None:
-            self.stats.skipped_malformed += 1
-            log.warning("emission_factors on %s malformed; keeping previous mirror", subject)
-
+        A list that was stated is replaced WHOLESALE — see `_apply` — so the
+        delete and the inserts have to land together or not at all.
+        """
         stmt = insert(SiteFact).values(values)
         stmt = stmt.on_conflict_do_update(
             index_elements=[SiteFact.tenant_id, SiteFact.site_id],
             set_={k: stmt.excluded[k] for k in values if k not in ("tenant_id", "site_id")},
         )
-
         sessionmaker = database.get_sessionmaker()
         async with sessionmaker() as session:
             await session.execute(stmt)
@@ -413,6 +389,45 @@ class SiteFactsSync:
                     )
                 self.stats.factor_lists_replaced += 1
             await session.commit()
+
+    async def _apply(self, event: str, payload: dict, subject: str) -> None:
+        if event not in _EVENTS:
+            self.stats.skipped_other_event += 1
+            return
+
+        tenant = _uuid(payload.get("tenant_id"))
+        if tenant is None:
+            # Platform-scoped action. `site_facts.tenant_id` is a real uuid;
+            # inventing one would be a fabricated fact about a real building.
+            self.stats.skipped_no_tenant += 1
+            log.info("site event on %s has no tenant; not mirrored", subject)
+            return
+
+        site_id = _uuid(payload.get("site_id"))
+        if site_id is None:
+            self.stats.skipped_malformed += 1
+            return
+
+        values = _mirrored_values(tenant, site_id, payload, event)
+
+        # The INPUT LISTS (tariff slabs, emission factors) follow the same
+        # key-presence rule, then are replaced WHOLESALE per site: core states
+        # the entire list on every event (an empty list is the statement "no
+        # slabs"), so delete+insert needs no COALESCE discipline at all. A list
+        # with any malformed row is refused in full and the previous mirror
+        # kept — half a tariff prices some hours with another hour's rate.
+        slabs = _slab_rows(payload["tariff_slabs"]) if "tariff_slabs" in payload else None
+        if "tariff_slabs" in payload and slabs is None:
+            self.stats.skipped_malformed += 1
+            log.warning("tariff_slabs on %s malformed; keeping previous mirror", subject)
+        factors = (
+            _factor_rows(payload["emission_factors"]) if "emission_factors" in payload else None
+        )
+        if "emission_factors" in payload and factors is None:
+            self.stats.skipped_malformed += 1
+            log.warning("emission_factors on %s malformed; keeping previous mirror", subject)
+
+        await self._write_mirror(values, tenant, site_id, slabs, factors)
         self.stats.applied += 1
         log.info(
             "mirrored site facts for %s (%s): area=%s tariff=%s occupancy=%s city=%s "

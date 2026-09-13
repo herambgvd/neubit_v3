@@ -213,6 +213,27 @@ class LinkageRuleService:
 # ═══════════════════════════════════════════════════════════════════════════════
 # Engine (background — driven by the NATS consumer)
 # ═══════════════════════════════════════════════════════════════════════════════
+async def _execute_action(executor, ctx, cfg: dict, atype, cam) -> dict:
+    """One action's outcome. A crash becomes a failed result, never a failed fire."""
+    try:
+        res = await executor(ctx, cfg)
+    except Exception as exc:  # noqa: BLE001 — an action never crashes the fire
+        log.warning("linkage action %s crashed: %s", atype, exc)
+        return {"type": atype, "ok": False, "detail": f"crashed: {exc}"}
+    d = res.as_dict()
+    if cam:
+        d["camera_id"] = cam
+    return d
+
+
+def _first_recording_id(results: list[dict]) -> str | None:
+    """The recording this fire started, if any action started one."""
+    for r in results:
+        if r.get("recording_id"):
+            return r["recording_id"]
+    return None
+
+
 class LinkageEngine:
     """Match an event to enabled rules → scope → schedule → cooldown → execute → audit."""
 
@@ -461,6 +482,25 @@ class LinkageEngine:
         return False
 
     # ── execute + audit ────────────────────────────────────────────────────────
+    async def _run_actions(self, ctx, rule, cam, *, skip_cameraless: bool) -> list[dict]:
+        """Every action the rule lists, run against one camera — or against none."""
+        results: list[dict] = []
+        for action in rule.actions or []:
+            if not isinstance(action, dict):
+                continue
+            atype = action.get("type")
+            executor = EXECUTORS.get(atype)
+            if executor is None:
+                results.append({"type": atype, "ok": False, "detail": "unknown action"})
+                continue
+            camera_bound = atype in {"start_recording", "ptz_preset", "trigger_output", "popup", "wall_display"}
+            if not camera_bound and skip_cameraless:
+                continue  # notify runs once, not per camera
+            results.append(
+                await _execute_action(executor, ctx, action.get("config") or {}, atype, cam)
+            )
+        return results
+
     async def _fire_rule(
         self,
         *,
@@ -482,7 +522,6 @@ class LinkageEngine:
         # actions (notify). Use a single representative camera for camera-bound actions;
         # if several resolved, run camera-bound actions per camera.
         results: list[dict] = []
-        first_recording_id: str | None = None
 
         target_cams = camera_ids or [None]  # at least one pass (camera-less actions)
         # De-dupe camera-less passes: if there is no camera, only run non-camera actions
@@ -500,30 +539,7 @@ class LinkageEngine:
                 sessionmaker=self._sessionmaker,
                 reason=reason,
             )
-            for action in rule.actions or []:
-                if not isinstance(action, dict):
-                    continue
-                atype = action.get("type")
-                cfg = action.get("config") or {}
-                executor = EXECUTORS.get(atype)
-                if executor is None:
-                    results.append({"type": atype, "ok": False, "detail": "unknown action"})
-                    continue
-                camera_bound = atype in {"start_recording", "ptz_preset", "trigger_output", "popup", "wall_display"}
-                if not camera_bound and ran_cameraless:
-                    continue  # notify runs once, not per camera
-                try:
-                    res = await executor(ctx, cfg)
-                except Exception as exc:  # noqa: BLE001 — an action never crashes the fire
-                    log.warning("linkage action %s crashed: %s", atype, exc)
-                    results.append({"type": atype, "ok": False, "detail": f"crashed: {exc}"})
-                    continue
-                d = res.as_dict()
-                if cam:
-                    d["camera_id"] = cam
-                results.append(d)
-                if res.recording_id and not first_recording_id:
-                    first_recording_id = res.recording_id
+            results += await self._run_actions(ctx, rule, cam, skip_cameraless=ran_cameraless)
             ran_cameraless = True
 
         await self._audit(
@@ -533,7 +549,7 @@ class LinkageEngine:
             door_ref=door_ref,
             source_event_id=source_event_id,
             results=results,
-            recording_id=first_recording_id,
+            recording_id=_first_recording_id(results),
         )
         log.info(
             "linkage rule '%s' fired (trigger=%s cams=%s resolution=%s actions=%d)",

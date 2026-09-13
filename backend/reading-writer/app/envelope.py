@@ -135,8 +135,8 @@ def _clean(value: Any, limit: int) -> str | None:
     return s[:limit]
 
 
-def parse(data: bytes, resolve_tenant) -> ParsedReading:
-    """Decode a message body. Raises :class:`Malformed` if it cannot become a row."""
+def _decoded_reading(data: bytes) -> dict:
+    """The message body as an object this pipeline could store a row from."""
     try:
         body = json.loads(data)
     except (ValueError, UnicodeDecodeError):
@@ -148,6 +148,46 @@ def parse(data: bytes, resolve_tenant) -> ParsedReading:
     # alert is an event, not a measurement, and has no row here.
     if body.get("event") not in (None, "reading"):
         raise Malformed(f"not_a_reading:{body.get('event')}")
+    return body
+
+
+def _reading_value(env: dict) -> dict:
+    """The reading, in whichever of the two columns it belongs (contract §3/§5).
+
+    `kind == "text"` is authoritative; `v` is ABSENT on those, so a missing `v`
+    with an `s` present is treated as text too (belt and braces — the gateway's
+    marshaller guarantees the first, and this survives it changing).
+    """
+    kind = (env.get("kind") or "").strip().lower()
+    if kind == "text" or ("v" not in env and env.get("s") is not None):
+        txt = env.get("s")
+        if txt is None:
+            raise Malformed("text_reading_without_s")
+        return {"num": None, "txt": str(txt)}
+    v = env.get("v")
+    if v is None:
+        raise Malformed("no_value")
+    try:
+        num = float(v)
+    except (TypeError, ValueError):
+        raise Malformed("v_not_numeric") from None
+    if not math.isfinite(num):  # NaN / Inf
+        raise Malformed("v_not_finite")
+    return {"num": num, "txt": None}
+
+
+def _quality(env: dict) -> int:
+    """The gateway's quality code, clamped to the column that holds it."""
+    try:
+        quality = int(env.get("q") or 0)
+    except (TypeError, ValueError):
+        quality = 0
+    return max(-32768, min(32767, quality))
+
+
+def parse(data: bytes, resolve_tenant) -> ParsedReading:
+    """Decode a message body. Raises :class:`Malformed` if it cannot become a row."""
+    body = _decoded_reading(data)
 
     payload = body.get("payload")
     if not isinstance(payload, dict):
@@ -164,35 +204,9 @@ def parse(data: bytes, resolve_tenant) -> ParsedReading:
 
     ts = _to_ts(env.get("ts"))
     tenant_id = resolve_tenant(body.get("tenant_id"))
-
-    # ── the num/txt split (contract §3/§5) ────────────────────────────────────
-    # `kind == "text"` is authoritative; `v` is ABSENT on those, so a missing `v`
-    # with an `s` present is treated as text too (belt and braces — the gateway's
-    # marshaller guarantees the first, and this survives it changing).
-    kind = (env.get("kind") or "").strip().lower()
-    num: float | None = None
-    txt: str | None = None
-    if kind == "text" or ("v" not in env and env.get("s") is not None):
-        txt = env.get("s")
-        txt = None if txt is None else str(txt)
-        if txt is None:
-            raise Malformed("text_reading_without_s")
-    else:
-        v = env.get("v")
-        if v is None:
-            raise Malformed("no_value")
-        try:
-            num = float(v)
-        except (TypeError, ValueError):
-            raise Malformed("v_not_numeric") from None
-        if not math.isfinite(num):  # NaN / Inf
-            raise Malformed("v_not_finite")
-
-    try:
-        quality = int(env.get("q") or 0)
-    except (TypeError, ValueError):
-        quality = 0
-    quality = max(-32768, min(32767, quality))
+    value = _reading_value(env)
+    num, txt = value["num"], value["txt"]
+    quality = _quality(env)
 
     src = env.get("src") if isinstance(env.get("src"), dict) else {}
     meta = env.get("meta") if isinstance(env.get("meta"), dict) else None

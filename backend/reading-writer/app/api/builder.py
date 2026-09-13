@@ -303,11 +303,8 @@ class BuilderQuery(BaseModel):
 
     # ── validation against a DATASET ─────────────────────────────────────────
 
-    def validated(self, ds: Dataset) -> "BuilderQuery":
-        d = ds.definition
-        if not self.select:
-            raise ValidationError("pick at least one column or measure to show")
-
+    def _check_select_items(self, d: Definition) -> None:
+        """Every selected item exists, and permits the aggregate asked of it."""
         for item in self.select:
             if item.dimension:
                 d.dimension(item.dimension)
@@ -318,6 +315,9 @@ class BuilderQuery(BaseModel):
                         f"'{item.aggregate}' is not available for '{m.label}'. "
                         f"This measure permits: {', '.join(m.aggregates)}."
                     )
+
+    def _check_clause_columns(self, d: Definition) -> None:
+        """Every grouping, filter, condition and ordering names something real."""
         for key in self.group_by:
             d.dimension(key)
         for f in self.filters:
@@ -331,6 +331,9 @@ class BuilderQuery(BaseModel):
         for o in self.order_by:
             if o.select_index >= len(self.select):
                 raise ValidationError("an ordering references a column that is not selected")
+
+    def _check_series_split(self, d: Definition) -> None:
+        """A split chart is a time-series of exactly one measure, or it is not one."""
         if self.series_label:
             d.dimension(self.series_label)
             if not self.series_by:
@@ -348,8 +351,8 @@ class BuilderQuery(BaseModel):
         if self.band and not (self.time_series and self.series_by):
             raise ValidationError("the min/max band applies to a split time-series only")
 
-        start, end = self.window.resolve()
-        hours = (end - start).total_seconds() / 3600.0
+    def _check_window_fits(self, d: Definition, hours: float) -> None:
+        """The store this window lands on has to be able to answer it."""
         rel = d.choose_relation(hours) if self.resolution == "auto" else d.relation(self.resolution)
         if rel.max_window_minutes is not None and hours * 60 > rel.max_window_minutes:
             # No silent downgrade (contract §4). Name the store to ask for instead.
@@ -363,6 +366,18 @@ class BuilderQuery(BaseModel):
                 f"(asked for {int(hours * 60)}); use "
                 + (", ".join(wider) if wider else "a shorter window")
             )
+
+    def validated(self, ds: Dataset) -> "BuilderQuery":
+        d = ds.definition
+        if not self.select:
+            raise ValidationError("pick at least one column or measure to show")
+
+        self._check_select_items(d)
+        self._check_clause_columns(d)
+        self._check_series_split(d)
+
+        start, end = self.window.resolve()
+        self._check_window_fits(d, (end - start).total_seconds() / 3600.0)
 
         if self.compare and not any(s.measure for s in self.select):
             # A period-over-period comparison of dimensions alone has nothing to
@@ -379,6 +394,18 @@ class BuilderQuery(BaseModel):
             raise ValidationError(f"a split time-series draws at most {MAX_SERIES} series")
         return self
 
+    def _pinned_dimensions(self) -> set[str]:
+        """The dimensions this query has already narrowed to ONE series."""
+        pinned = set(self.group_by) | ({self.series_by} if self.series_by else set())
+        for f in self.filters:
+            # An equality filter (or a one-item IN) pins the dimension just as
+            # well as grouping by it does.
+            if f.op == "=" and f.complete():
+                pinned.add(f.column)
+            elif f.op == "in" and len(f.values) == 1:
+                pinned.add(f.column)
+        return pinned
+
     def _check_comparability(self, d: Definition) -> None:
         """Contract §4, generalised: refuse to aggregate incomparable series.
 
@@ -391,15 +418,7 @@ class BuilderQuery(BaseModel):
         The refusal SAYS WHAT TO DO instead; that is the half of the v1 rule that
         makes it usable rather than merely correct.
         """
-        pinned = set(self.group_by) | ({self.series_by} if self.series_by else set())
-        for f in self.filters:
-            # An equality filter (or a one-item IN) pins the dimension just as
-            # well as grouping by it does.
-            if f.op == "=" and f.complete():
-                pinned.add(f.column)
-            elif f.op == "in" and len(f.values) == 1:
-                pinned.add(f.column)
-
+        pinned = self._pinned_dimensions()
         for item in self.select:
             if not item.measure or item.aggregate in COUNTING_AGGREGATES:
                 continue
@@ -453,20 +472,8 @@ _V1_METRIC = {
 _V1_GROUP_DIM = {"point": "point_id", "device": "device_tag", "category": "category"}
 
 
-def migrate_v1(raw: dict) -> dict:
-    """Translate a stored v1 spec into v2 builder state.
-
-    Deliberately total: every v1 spec that used to execute produces a v2 spec that
-    executes, because a saved dashboard going blank is not an acceptable cost of
-    this rewrite.
-    """
-    q = dict(raw.get("query") or {})
-    scope = dict(q.get("scope") or {})
-    metric = q.get("metric", "avg")
-    measure, aggregate = _V1_METRIC.get(metric, ("value", "avg"))
-    kind = q.get("kind", "series")
-    group_by = q.get("group_by", "point")
-
+def _v1_scope_filters(scope: dict, metric: str) -> list[dict]:
+    """A v1 scope as v2 filters — the same rows, said the new way."""
     filters: list[dict] = []
     stype = scope.get("type", "points")
     if stype == "points":
@@ -490,6 +497,45 @@ def migrate_v1(raw: dict) -> dict:
         # v1 restricted value metrics to numeric points: a text point has no
         # `num`, and including it would show a permanently blank row.
         filters.append({"column": "reading_kind", "op": "=", "value": "num"})
+    return filters
+
+
+def _v1_grouped_select(group_by: str, measure: str, aggregate: str, metric: str) -> dict:
+    """v1's grouped aggregate table: what it selected, and what it grouped by."""
+    dim = _V1_GROUP_DIM.get(group_by, "point_id")
+    if dim == "point_id":
+        # v1's per-point aggregate table: label, sublabel, value, samples.
+        return {
+            "select": [
+                {"dimension": "point_tag", "alias": "point"},
+                {"dimension": "device_tag", "alias": "device"},
+                {"measure": measure, "aggregate": aggregate, "alias": metric},
+                {"measure": "samples", "aggregate": "sum", "alias": "samples"},
+            ],
+            "group": ["point_id", "point_tag", "device_tag"],
+        }
+    return {
+        "select": [
+            {"dimension": dim, "alias": group_by},
+            {"measure": "samples", "aggregate": "sum", "alias": "samples"},
+        ],
+        "group": [dim],
+    }
+
+
+def migrate_v1(raw: dict) -> dict:
+    """Translate a stored v1 spec into v2 builder state.
+
+    Deliberately total: every v1 spec that used to execute produces a v2 spec that
+    executes, because a saved dashboard going blank is not an acceptable cost of
+    this rewrite.
+    """
+    q = dict(raw.get("query") or {})
+    metric = q.get("metric", "avg")
+    measure, aggregate = _V1_METRIC.get(metric, ("value", "avg"))
+    kind = q.get("kind", "series")
+    group_by = q.get("group_by", "point")
+    filters = _v1_scope_filters(dict(q.get("scope") or {}), metric)
 
     resolution = q.get("rollup", "auto")
     window = dict(q.get("window") or {"last_hours": 6})
@@ -510,22 +556,8 @@ def migrate_v1(raw: dict) -> dict:
             "band": bool((raw.get("options") or {}).get("band")),
         }
     else:
-        dim = _V1_GROUP_DIM.get(group_by, "point_id")
-        if dim == "point_id":
-            # v1's per-point aggregate table: label, sublabel, value, samples.
-            select = [
-                {"dimension": "point_tag", "alias": "point"},
-                {"dimension": "device_tag", "alias": "device"},
-                {"measure": measure, "aggregate": aggregate, "alias": metric},
-                {"measure": "samples", "aggregate": "sum", "alias": "samples"},
-            ]
-            group = ["point_id", "point_tag", "device_tag"]
-        else:
-            select = [
-                {"dimension": dim, "alias": group_by},
-                {"measure": "samples", "aggregate": "sum", "alias": "samples"},
-            ]
-            group = [dim]
+        grouped = _v1_grouped_select(group_by, measure, aggregate, metric)
+        select, group = grouped["select"], grouped["group"]
         query = {
             "dataset": "iot_readings",
             "resolution": resolution,

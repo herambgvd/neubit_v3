@@ -158,5 +158,19 @@ async def ephemeral_subscribe(
     return await _nc.subscribe(pattern, cb=_cb)
 
 
+async def unsubscribe_quietly(sub: Any) -> None:
+    """Drop an ephemeral subscription on the way out, best-effort.
+
+    The stream it fed is already over, so a teardown that raised would replace a
+    closed connection with a traceback and change nothing else.
+    """
+    if sub is None:
+        return
+    try:
+        await sub.unsubscribe()
+    except Exception:  # noqa: BLE001 — best-effort cleanup
+        pass
+
+
 def is_connected() -> bool:
     return _nc is not None

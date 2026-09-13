@@ -125,6 +125,60 @@ def parse(formula: str) -> ast.expression:
     return tree
 
 
+def _check_bounds(node: ast.Call) -> None:
+    """The ordering each normalization function needs of its two bounds.
+
+    Caught at registration because a reversed pair produces a plausible number
+    at evaluation time, and a plausible wrong score is worse than a refusal.
+    """
+    fn = node.func.id  # type: ignore[union-attr]
+    if fn == "band_score":
+        lo, hi = _literal_pair(node)
+        if not (0 < lo < hi):
+            raise ExprError(
+                f"band_score(x, lo, hi) needs 0 < lo < hi; got lo={lo:g}, hi={hi:g}"
+            )
+    if fn == "in_band":
+        lo, hi = _literal_pair(node)
+        if not (0 <= lo < hi):
+            raise ExprError(
+                f"in_band(x, lo, hi) needs 0 <= lo < hi; got lo={lo:g}, hi={hi:g}"
+            )
+    if fn == "norm_up":
+        floor, target = _literal_pair(node)
+        if not floor < target:
+            raise ExprError(
+                f"norm_up(x, floor, target) is higher-is-better and needs "
+                f"floor < target; got floor={floor:g}, target={target:g}"
+            )
+    if fn == "norm_down":
+        target, worst = _literal_pair(node)
+        if not target < worst:
+            raise ExprError(
+                f"norm_down(x, target, worst) is lower-is-better and needs "
+                f"target < worst; got target={target:g}, worst={worst:g}"
+            )
+
+
+def _check_call(node: ast.Call) -> None:
+    """A call to a function in the language, with the arity and bounds it needs."""
+    if not isinstance(node.func, ast.Name) or node.func.id not in _FUNCS:
+        raise ExprError(
+            f"only {', '.join(_FUNCS)} may be called; "
+            f"`{ast.dump(node.func)[:60]}` may not"
+        )
+    if node.keywords:
+        raise ExprError("keyword arguments are not in the language")
+    arity = _FUNC_ARITY[node.func.id]
+    if len(node.args) != arity:
+        raise ExprError(
+            f"{node.func.id}() takes exactly {arity} argument{'s' if arity != 1 else ''}"
+        )
+    _check_bounds(node)
+    for a in node.args:
+        _check(a)
+
+
 def _check(node: ast.AST) -> None:
     if isinstance(node, ast.BinOp):
         if type(node.op) not in _BINOPS:
@@ -144,46 +198,7 @@ def _check(node: ast.AST) -> None:
     if isinstance(node, ast.Name):
         return
     if isinstance(node, ast.Call):
-        if not isinstance(node.func, ast.Name) or node.func.id not in _FUNCS:
-            raise ExprError(
-                f"only {', '.join(_FUNCS)} may be called; "
-                f"`{ast.dump(node.func)[:60]}` may not"
-            )
-        if node.keywords:
-            raise ExprError("keyword arguments are not in the language")
-        arity = _FUNC_ARITY[node.func.id]
-        if len(node.args) != arity:
-            raise ExprError(
-                f"{node.func.id}() takes exactly {arity} argument{'s' if arity != 1 else ''}"
-            )
-        if node.func.id == "band_score":
-            lo, hi = _literal_pair(node)
-            if not (0 < lo < hi):
-                raise ExprError(
-                    f"band_score(x, lo, hi) needs 0 < lo < hi; got lo={lo:g}, hi={hi:g}"
-                )
-        if node.func.id == "in_band":
-            lo, hi = _literal_pair(node)
-            if not (0 <= lo < hi):
-                raise ExprError(
-                    f"in_band(x, lo, hi) needs 0 <= lo < hi; got lo={lo:g}, hi={hi:g}"
-                )
-        if node.func.id == "norm_up":
-            floor, target = _literal_pair(node)
-            if not floor < target:
-                raise ExprError(
-                    f"norm_up(x, floor, target) is higher-is-better and needs "
-                    f"floor < target; got floor={floor:g}, target={target:g}"
-                )
-        if node.func.id == "norm_down":
-            target, worst = _literal_pair(node)
-            if not target < worst:
-                raise ExprError(
-                    f"norm_down(x, target, worst) is lower-is-better and needs "
-                    f"target < worst; got target={target:g}, worst={worst:g}"
-                )
-        for a in node.args:
-            _check(a)
+        _check_call(node)
         return
     raise ExprError(f"`{type(node).__name__}` is not in the language")
 
@@ -237,6 +252,34 @@ def infer(tree: ast.expression, input_qty: dict[str, Qty]) -> Qty:
     return _infer(tree.body, input_qty)
 
 
+def _infer_call(node: ast.Call, arg: Qty) -> Qty:
+    """What a call produces, given what its argument is."""
+    fn = node.func.id  # type: ignore[union-attr]
+    if fn in ("abs", "annualize"):
+        # both preserve the quantity (dimensionless scaling)
+        return arg
+    if fn == "band_score":
+        # a 0-100 score against a band in the argument's own unit
+        return DIMENSIONLESS
+    if fn == "in_band":
+        # membership of x's own band, in x's own unit — 1 or 0, no unit
+        return DIMENSIONLESS
+    if fn in ("norm_up", "norm_down"):
+        # CCEI spec §3.1/§3.2: any engineering unit onto the 0-100 scale.
+        # Deliberately NOT dimension-checked against the bounds: the bounds
+        # are stated in the argument's own unit by construction, and the
+        # registration-time check that matters (floor < target, target <
+        # worst) already ran in `_check`.
+        return DIMENSIONLESS
+    # benchmark_score: the one benchmark dimension this platform holds
+    if arg.dimension != "energy_per_area":
+        raise DimensionError(
+            f"benchmark_score() grades an EPI and needs `energy_per_area`; "
+            f"the argument is `{arg.dimension}`"
+        )
+    return DIMENSIONLESS
+
+
 def _infer(node: ast.AST, env: dict[str, Qty]) -> Qty:
     if isinstance(node, ast.BinOp):
         op = _BINOPS[type(node.op)]
@@ -254,31 +297,7 @@ def _infer(node: ast.AST, env: dict[str, Qty]) -> Qty:
             raise DimensionError(f"formula names `{node.id}`, which is not a declared input")
         return env[node.id]
     if isinstance(node, ast.Call):
-        fn = node.func.id  # type: ignore[union-attr]
-        arg = _infer(node.args[0], env)
-        if fn in ("abs", "annualize"):
-            # both preserve the quantity (dimensionless scaling)
-            return arg
-        if fn == "band_score":
-            # a 0-100 score against a band in the argument's own unit
-            return DIMENSIONLESS
-        if fn == "in_band":
-            # membership of x's own band, in x's own unit — 1 or 0, no unit
-            return DIMENSIONLESS
-        if fn in ("norm_up", "norm_down"):
-            # CCEI spec §3.1/§3.2: any engineering unit onto the 0-100 scale.
-            # Deliberately NOT dimension-checked against the bounds: the bounds
-            # are stated in the argument's own unit by construction, and the
-            # registration-time check that matters (floor < target, target <
-            # worst) already ran in `_check`.
-            return DIMENSIONLESS
-        # benchmark_score: the one benchmark dimension this platform holds
-        if arg.dimension != "energy_per_area":
-            raise DimensionError(
-                f"benchmark_score() grades an EPI and needs `energy_per_area`; "
-                f"the argument is `{arg.dimension}`"
-            )
-        return DIMENSIONLESS
+        return _infer_call(node, _infer(node.args[0], env))
     raise ExprError(f"`{type(node).__name__}` is not in the language")  # unreachable after _check
 
 
@@ -299,21 +318,79 @@ def evaluate(
     return _eval(tree.body, env, window_days, benchmark)
 
 
+def _eval_binop(op: str, left: float, right: float) -> float:
+    """The four operators, and the one of them that can refuse."""
+    if op == "+":
+        return left + right
+    if op == "-":
+        return left - right
+    if op == "*":
+        return left * right
+    if right == 0:
+        raise EvalRefusal("blocked", "division by zero — the divisor evaluated to 0")
+    return left / right
+
+
+def _band_score(v: float, lo: float, hi: float) -> float:
+    """100 inside the band, sloping to 0 below `lo` and above twice `hi`."""
+    if v < 0:
+        return 0.0
+    if v < lo:
+        return 100.0 * v / lo
+    if v <= hi:
+        return 100.0
+    return max(0.0, 100.0 * (2.0 * hi - v) / hi)
+
+
+def _benchmark_score(v: float, benchmark: dict | None) -> float:
+    """100 at the standard's best edge, 0 at its worst, linear between."""
+    if not benchmark:
+        raise EvalRefusal(
+            "no_benchmark",
+            "benchmark_score() has no resolved benchmark for this evaluation",
+        )
+    best, worst = float(benchmark["best"]), float(benchmark["worst"])
+    if v <= best:
+        return 100.0
+    if v >= worst:
+        return 0.0
+    return 100.0 * (worst - v) / (worst - best)
+
+
+def _eval_call(
+    node: ast.Call, v: float, window_days: float | None, benchmark: dict | None
+) -> float:
+    """A call applied to its already-evaluated argument."""
+    fn = node.func.id  # type: ignore[union-attr]
+    if fn == "abs":
+        return abs(v)
+    if fn == "annualize":
+        if not window_days or window_days <= 0:
+            raise EvalRefusal("blocked", "annualize() needs a window with nonzero length")
+        return v * (365.0 / window_days)
+    if fn == "in_band":
+        lo, hi = _literal_pair(node)
+        return 1.0 if lo <= v <= hi else 0.0
+    if fn == "norm_up":
+        floor, target = _literal_pair(node)
+        return min(100.0, max(0.0, 100.0 * (v - floor) / (target - floor)))
+    if fn == "norm_down":
+        target, worst = _literal_pair(node)
+        return min(100.0, max(0.0, 100.0 * (worst - v) / (worst - target)))
+    if fn == "band_score":
+        lo, hi = _literal_pair(node)
+        return _band_score(v, lo, hi)
+    return _benchmark_score(v, benchmark)
+
+
 def _eval(node: ast.AST, env: dict[str, float], window_days: float | None,
           benchmark: dict | None = None) -> float:
     if isinstance(node, ast.BinOp):
-        op = _BINOPS[type(node.op)]
-        left = _eval(node.left, env, window_days, benchmark)
-        right = _eval(node.right, env, window_days, benchmark)
-        if op == "+":
-            return left + right
-        if op == "-":
-            return left - right
-        if op == "*":
-            return left * right
-        if right == 0:
-            raise EvalRefusal("blocked", "division by zero — the divisor evaluated to 0")
-        return left / right
+        return _eval_binop(
+            _BINOPS[type(node.op)],
+            _eval(node.left, env, window_days, benchmark),
+            _eval(node.right, env, window_days, benchmark),
+        )
     if isinstance(node, ast.UnaryOp):
         v = _eval(node.operand, env, window_days, benchmark)
         return -v if isinstance(node.op, ast.USub) else v
@@ -324,67 +401,37 @@ def _eval(node: ast.AST, env: dict[str, float], window_days: float | None,
             raise EvalRefusal("blocked", f"input `{node.id}` has no value")
         return env[node.id]
     if isinstance(node, ast.Call):
-        fn = node.func.id  # type: ignore[union-attr]
-        v = _eval(node.args[0], env, window_days, benchmark)
-        if fn == "abs":
-            return abs(v)
-        if fn == "annualize":
-            if not window_days or window_days <= 0:
-                raise EvalRefusal("blocked", "annualize() needs a window with nonzero length")
-            return v * (365.0 / window_days)
-        if fn == "in_band":
-            lo, hi = _literal_pair(node)
-            return 1.0 if lo <= v <= hi else 0.0
-        if fn == "norm_up":
-            floor, target = _literal_pair(node)
-            return min(100.0, max(0.0, 100.0 * (v - floor) / (target - floor)))
-        if fn == "norm_down":
-            target, worst = _literal_pair(node)
-            return min(100.0, max(0.0, 100.0 * (worst - v) / (worst - target)))
-        if fn == "band_score":
-            lo, hi = _literal_pair(node)
-            if v < 0:
-                return 0.0
-            if v < lo:
-                return 100.0 * v / lo
-            if v <= hi:
-                return 100.0
-            return max(0.0, 100.0 * (2.0 * hi - v) / hi)
-        # benchmark_score
-        if not benchmark:
-            raise EvalRefusal(
-                "no_benchmark",
-                "benchmark_score() has no resolved benchmark for this evaluation",
-            )
-        best, worst = float(benchmark["best"]), float(benchmark["worst"])
-        if v <= best:
-            return 100.0
-        if v >= worst:
-            return 0.0
-        return 100.0 * (worst - v) / (worst - best)
+        return _eval_call(
+            node,
+            _eval(node.args[0], env, window_days, benchmark),
+            window_days,
+            benchmark,
+        )
     raise EvalRefusal("blocked", f"`{type(node).__name__}` is not in the language")
+
+
+def _render(node: ast.AST, env: dict[str, float]) -> str:
+    if isinstance(node, ast.BinOp):
+        op = _BINOPS[type(node.op)]
+        sym = {"+": "+", "-": "−", "*": "×", "/": "÷"}[op]
+        return f"({_render(node.left, env)} {sym} {_render(node.right, env)})"
+    if isinstance(node, ast.UnaryOp):
+        if isinstance(node.op, ast.USub):
+            return f"-{_render(node.operand, env)}"
+        return _render(node.operand, env)
+    if isinstance(node, ast.Constant):
+        return repr(node.value)
+    if isinstance(node, ast.Name):
+        v = env.get(node.id)
+        return "?" if v is None else f"{v:g}"
+    if isinstance(node, ast.Call):
+        args = ", ".join(_render(a, env) for a in node.args)
+        return f"{node.func.id}({args})"  # type: ignore[union-attr]
+    return "?"
 
 
 def render(tree: ast.expression, env: dict[str, float]) -> str:
     """The formula with the numbers substituted — the auditable working."""
-
-    def r(node: ast.AST) -> str:
-        if isinstance(node, ast.BinOp):
-            op = _BINOPS[type(node.op)]
-            sym = {"+": "+", "-": "−", "*": "×", "/": "÷"}[op]
-            return f"({r(node.left)} {sym} {r(node.right)})"
-        if isinstance(node, ast.UnaryOp):
-            return f"-{r(node.operand)}" if isinstance(node.op, ast.USub) else r(node.operand)
-        if isinstance(node, ast.Constant):
-            return repr(node.value)
-        if isinstance(node, ast.Name):
-            v = env.get(node.id)
-            return "?" if v is None else f"{v:g}"
-        if isinstance(node, ast.Call):
-            args = ", ".join(r(a) for a in node.args)
-            return f"{node.func.id}({args})"  # type: ignore[union-attr]
-        return "?"
-
-    s = r(tree.body)
+    s = _render(tree.body, env)
     # strip one redundant outer paren pair for readability
     return s[1:-1] if s.startswith("(") and s.endswith(")") else s

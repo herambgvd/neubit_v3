@@ -31,44 +31,53 @@ def walk(obj: dict[str, Any], path: str) -> Any:
     return cur
 
 
-def _match_one(actual: Any, op: str, expected: Any) -> bool:
+def _contains(actual: Any, expected: Any) -> bool:
+    """Substring for a string, membership for a collection, False for anything else."""
+    if isinstance(actual, str):
+        return isinstance(expected, str) and expected in actual
+    if isinstance(actual, (list, tuple, set)):
+        return expected in actual
+    return False
+
+
+def _regex(actual: Any, expected: Any) -> bool:
+    """A pattern an operator typed is data, not code: a bad one never matches."""
     try:
-        if op == "eq":
-            return actual == expected
-        if op == "ne":
-            return actual != expected
-        if op == "gt":
-            return actual is not None and actual > expected
-        if op == "gte":
-            return actual is not None and actual >= expected
-        if op == "lt":
-            return actual is not None and actual < expected
-        if op == "lte":
-            return actual is not None and actual <= expected
-        if op == "in":
-            return isinstance(expected, (list, tuple, set)) and actual in expected
-        if op == "not_in":
-            return isinstance(expected, (list, tuple, set)) and actual not in expected
-        if op == "contains":
-            if isinstance(actual, str):
-                return isinstance(expected, str) and expected in actual
-            if isinstance(actual, (list, tuple, set)):
-                return expected in actual
-            return False
-        if op == "starts_with":
-            return isinstance(actual, str) and isinstance(expected, str) and actual.startswith(expected)
-        if op == "ends_with":
-            return isinstance(actual, str) and isinstance(expected, str) and actual.endswith(expected)
-        if op == "regex":
-            try:
-                return isinstance(actual, str) and re.search(str(expected), actual) is not None
-            except re.error:
-                return False
-        if op == "exists":
-            return (actual is not None) == bool(expected)
+        return isinstance(actual, str) and re.search(str(expected), actual) is not None
+    except re.error:
+        return False
+
+
+# The operators a condition may use. A table rather than a chain so the set a
+# trigger can be written against is one readable list.
+_OPERATORS = {
+    "eq": lambda a, e: a == e,
+    "ne": lambda a, e: a != e,
+    "gt": lambda a, e: a is not None and a > e,
+    "gte": lambda a, e: a is not None and a >= e,
+    "lt": lambda a, e: a is not None and a < e,
+    "lte": lambda a, e: a is not None and a <= e,
+    "in": lambda a, e: isinstance(e, (list, tuple, set)) and a in e,
+    "not_in": lambda a, e: isinstance(e, (list, tuple, set)) and a not in e,
+    "contains": _contains,
+    "starts_with": lambda a, e: isinstance(a, str) and isinstance(e, str) and a.startswith(e),
+    "ends_with": lambda a, e: isinstance(a, str) and isinstance(e, str) and a.endswith(e),
+    "regex": _regex,
+    "exists": lambda a, e: (a is not None) == bool(e),
+}
+
+
+def _match_one(actual: Any, op: str, expected: Any) -> bool:
+    """One condition. An operator nobody implements matches nothing, and two
+    values that cannot be compared do not match either — neither is an error a
+    trigger should raise at event time."""
+    fn = _OPERATORS.get(op)
+    if fn is None:
+        return False
+    try:
+        return fn(actual, expected)
     except TypeError:
         return False
-    return False
 
 
 def matches_conditions(envelope: dict[str, Any], conditions: Iterable[dict[str, Any]]) -> bool:
