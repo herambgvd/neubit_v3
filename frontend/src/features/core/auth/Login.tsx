@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type SyntheticEvent } from "react";
 import { toast } from "sonner";
 
 import { api, apiError, tokens } from "@/lib/api";
@@ -45,7 +45,7 @@ export default function LoginPage() {
     return <FullPageLoader label="Redirecting" />;
   }
 
-  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     if (busy) return;
     setError("");
@@ -75,7 +75,7 @@ export default function LoginPage() {
     }
   }
 
-  async function onSubmitCode(e: FormEvent<HTMLFormElement>) {
+  async function onSubmitCode(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     // The MFA form only renders while a challenge token is held (see below).
     if (busy || !mfaToken) return;

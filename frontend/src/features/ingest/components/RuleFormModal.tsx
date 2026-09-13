@@ -14,7 +14,7 @@
 //   3. Fields to extract — repeating {outKey, jmespath} rows → field_map
 //   4. Test — paste sample JSON → per-condition ✓/✗ + overall matched + extracted
 import { useState } from "react";
-import type { ChangeEvent, FormEvent } from "react";
+import type { ChangeEvent, SyntheticEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -180,7 +180,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: Rea
     test.mutate(payload);
   }
 
-  function submit(e?: FormEvent<HTMLFormElement>) {
+  function submit(e?: SyntheticEvent<HTMLFormElement>) {
     e?.preventDefault?.();
     const next: { name?: string; eventType?: string } = {};
     if (!name.trim()) next.name = "Name is required";

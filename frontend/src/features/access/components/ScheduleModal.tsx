@@ -3,7 +3,7 @@
 // Schedule editor with a windows builder. Ported from neubit_v2's schedule-modal.jsx:
 // name (required) + timezone, description, a repeatable time-window builder (day
 // toggles + start/end), and a holidays list (YYYY-MM-DD chips). Rethemed to v3 tokens.
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type SyntheticEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -115,7 +115,7 @@ export default function ScheduleModal({ instanceId, schedule, onClose, onSuccess
     return Object.keys(next).length === 0;
   };
 
-  const submit = (e: FormEvent<HTMLFormElement>) => {
+  const submit = (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (validate()) m.mutate();
   };

@@ -7,7 +7,7 @@
 // (Floors tab). A zone created here would have no geometry: invisible on the plan,
 // not selectable, and not a valid device drop target, with no way to add a shape
 // afterwards. So this form deliberately has no create mode and no floor picker.
-import { useState, type FormEvent } from "react";
+import { useState, type SyntheticEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -49,7 +49,7 @@ export default function ZoneForm({ zone, onCancel, onSaved }: Readonly<ZoneFormP
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function submit(e: FormEvent<HTMLFormElement>) {
+  function submit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!name.trim()) {
       setErrors({ name: "Name is required" });

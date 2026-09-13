@@ -111,6 +111,18 @@ export default function TalkButton({ nodeId, cameraId, disabled = false }: Reado
 
   const start = useCallback(async () => {
     if (disabled || activeRef.current) return;
+
+    // The capture leg rests on ScriptProcessorNode, which is deprecated and on its
+    // way out of browsers (its replacement, AudioWorklet, is a different shape of
+    // pipeline, not a drop-in). The day it goes, the press must REFUSE rather than
+    // open a mic that feeds nothing: an operator who believes the room heard them is
+    // the dangerous failure here. Checked before the recorder is asked, so a browser
+    // that cannot talk never books a talk session or writes the audit record for one.
+    if (!canCaptureTalk()) {
+      toast.error("This browser can no longer capture audio for talk-back — use a supported browser.");
+      return;
+    }
+
     activeRef.current = true;
     setConnecting(true);
 
@@ -260,6 +272,13 @@ export default function TalkButton({ nodeId, cameraId, disabled = false }: Reado
       {talking ? "Talking" : "Talk"}
     </button>
   );
+}
+
+/** Whether this browser still offers the capture node the uplink is built on. Probed
+ *  by name rather than by touching the member, so the check itself does not become
+ *  another use of the deprecated API. */
+function canCaptureTalk(): boolean {
+  return typeof AudioContext === "function" && "createScriptProcessor" in AudioContext.prototype;
 }
 
 /** The uplink endpoint as an absolute path on the same origin the api client uses.

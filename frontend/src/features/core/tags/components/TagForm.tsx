@@ -3,7 +3,7 @@
 // Create / edit form for a tag — name, color (native picker + hex text + preset
 // swatches), description and (edit-only) active toggle. Owns its own local form
 // state + save mutation; calls onSaved(saved) / onCancel back to the parent.
-import { useState, type FormEvent } from "react";
+import { useState, type SyntheticEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -46,7 +46,7 @@ export default function TagForm({ tag, onCancel, onSaved }: Readonly<TagFormProp
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function submit(e: FormEvent<HTMLFormElement>) {
+  function submit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     const next: TagFormErrors = {};
     if (!name.trim()) next.name = "Name is required";

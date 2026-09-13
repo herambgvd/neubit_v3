@@ -4,7 +4,7 @@
 // onboard-instance-modal.jsx: name + site + base URL + auth tabs (basic/jwt) +
 // username/secret + reconciler cron, with URL normalization + validation.
 // Rethemed to v3 tokens; uses shared kit Modal/Button + common Field + Select.
-import { useState, type FormEvent } from "react";
+import { useState, type SyntheticEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Icon } from "@iconify/react";
@@ -100,7 +100,7 @@ export default function OnboardInstanceModal({ onClose, onSuccess }: Readonly<On
     return Object.keys(next).length === 0;
   };
 
-  const submit = (e: FormEvent<HTMLFormElement>) => {
+  const submit = (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (validate()) m.mutate();
   };

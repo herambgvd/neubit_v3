@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent, type UIEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type SyntheticEvent, type UIEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
@@ -475,7 +475,7 @@ function ScaleControl() {
     onError: (err) => toast.error(apiError(err, "Could not scale service")),
   });
 
-  function submit(e: FormEvent<HTMLFormElement>) {
+  function submit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     if (scale.isPending) return;
     if (!name.trim()) {

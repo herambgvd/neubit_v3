@@ -3,7 +3,7 @@
 // Category create / edit modal. Presentational shell via kit <Modal>; the form
 // fields use the shared <Field>.
 import { useState } from "react";
-import type { FormEvent } from "react";
+import type { SyntheticEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -40,7 +40,7 @@ export default function CategoryFormModal({ category, onCancel, onSaved }: Reado
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function submit(e: FormEvent<HTMLFormElement>) {
+  function submit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!name.trim()) {
       setErrors({ name: "Name is required" });

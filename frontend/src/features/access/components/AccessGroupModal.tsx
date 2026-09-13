@@ -4,7 +4,7 @@
 // access-group-modal.jsx: name (required), schedule select (always-allowed by
 // default), description, and a checkbox list of instance doors. On edit it refetches
 // the latest group to hydrate the form. Rethemed to v3 tokens.
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -106,7 +106,7 @@ export default function AccessGroupModal({ instanceId, group, onClose, onSuccess
     return Object.keys(next).length === 0;
   };
 
-  const submit = (e: FormEvent<HTMLFormElement>) => {
+  const submit = (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (validate()) m.mutate();
   };

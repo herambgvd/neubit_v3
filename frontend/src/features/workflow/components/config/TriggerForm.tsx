@@ -10,7 +10,7 @@
 // The condition rows use compact inline inputs (below Field's control height) so
 // they stay bespoke; the primary fields use the shared Field.
 import { useMemo, useState } from "react";
-import type { FormEvent } from "react";
+import type { SyntheticEvent } from "react";
 import { Icon } from "@iconify/react";
 import { Button, Checkbox } from "@/components/ui/kit";
 import { Field } from "@/components/common";
@@ -116,7 +116,7 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
     [trigger, eventType, eventSource, conditions],
   );
 
-  function submit(e: FormEvent<HTMLFormElement>) {
+  function submit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     const next: Partial<Record<ErrorKey, string>> = {};
     if (!name.trim()) next.name = "Name is required";

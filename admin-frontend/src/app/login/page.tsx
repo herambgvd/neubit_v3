@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type SyntheticEvent } from "react";
 import { Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -63,7 +63,7 @@ export default function AdminLoginPage() {
     router.push("/dashboard");
   }
 
-  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     if (busy) return;
     setError("");
@@ -88,7 +88,7 @@ export default function AdminLoginPage() {
     }
   }
 
-  async function onSubmitMfa(e: FormEvent<HTMLFormElement>) {
+  async function onSubmitMfa(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     if (busy) return;
     setError("");

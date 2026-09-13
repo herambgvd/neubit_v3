@@ -4,7 +4,7 @@
 // Ported from neubit_v2's card-modal.jsx: card code (required) + status, a searchable
 // cardholder picker (selecting one auto-sets status Used; status Free clears holder),
 // reader-function UID, technology type (0–255), description. Rethemed to v3 tokens.
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type SyntheticEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -137,7 +137,7 @@ export default function CardModal({ instanceId, card, onClose, onSuccess }: Read
     return Object.keys(next).length === 0;
   };
 
-  const submit = (e: FormEvent<HTMLFormElement>) => {
+  const submit = (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!validate()) return;
     if (isEdit) update.mutate();

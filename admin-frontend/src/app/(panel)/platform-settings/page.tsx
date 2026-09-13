@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ChangeEvent, type ComponentType, type FormEvent, type ReactNode } from "react";
+import { useRef, useState, type ChangeEvent, type ComponentType, type ReactNode, type SyntheticEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ImageUp, Map as MapIcon, Palette, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
@@ -149,7 +149,7 @@ function SettingsForm({ initial }: Readonly<{ initial: Record<string, unknown> }
     onError: (err) => toast.error(apiError(err, "Could not save settings")),
   });
 
-  function onSubmit(e: FormEvent<HTMLFormElement>) {
+  function onSubmit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!save.isPending) save.mutate();
   }
@@ -257,7 +257,7 @@ function MapsForm({ initial }: Readonly<{ initial: Record<string, unknown> }>) {
     onError: (err) => toast.error(apiError(err, "Could not save Google Maps settings")),
   });
 
-  function onSubmit(e: FormEvent<HTMLFormElement>) {
+  function onSubmit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!save.isPending) save.mutate();
   }
@@ -355,7 +355,7 @@ function BrandingForm({ initial }: Readonly<{ initial: Branding }>) {
     onError: (err) => toast.error(apiError(err, "Could not save branding")),
   });
 
-  function onSubmit(e: FormEvent<HTMLFormElement>) {
+  function onSubmit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!save.isPending) save.mutate();
   }

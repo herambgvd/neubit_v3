@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type SyntheticEvent } from "react";
 import { toast } from "sonner";
 
 import { api, apiError } from "@/lib/api";
@@ -33,7 +33,7 @@ export default function ForgotPasswordPage() {
     }
   }, []);
 
-  async function requestReset(e: FormEvent<HTMLFormElement>) {
+  async function requestReset(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     try {
@@ -47,7 +47,7 @@ export default function ForgotPasswordPage() {
     }
   }
 
-  async function doReset(e: FormEvent<HTMLFormElement>) {
+  async function doReset(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     try {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, type SyntheticEvent } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ScrollText, Search } from "lucide-react";
 
@@ -103,7 +103,7 @@ export default function AuditPage() {
   const pageSize = data?.page_size || items.length || 20;
   const pages = Math.max(1, Math.ceil(total / (pageSize || 20)));
 
-  function applyFilter(e: FormEvent<HTMLFormElement>) {
+  function applyFilter(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     setTenantId(tenantInput.trim());
     setPage(1);

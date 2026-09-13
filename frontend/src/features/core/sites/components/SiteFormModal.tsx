@@ -3,7 +3,7 @@
 // Full site create/edit modal — identity, address, coordinates, and contact
 // sections plus an image upload/preview. Auto-generates a location code from the
 // site type on create. On save, creates/updates then optionally uploads the image.
-import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useState, type ChangeEvent, type SyntheticEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -162,7 +162,7 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }: Rea
     return { latitude: lat, longitude: lng };
   }
 
-  function submit(e: FormEvent<HTMLFormElement>) {
+  function submit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     const found = validateSite({ name, emailAddress, latitude, longitude, zipCode, contactPhone });
     setErrors(found);

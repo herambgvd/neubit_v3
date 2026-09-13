@@ -2,7 +2,7 @@
 
 import { Icon } from "@iconify/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type SyntheticEvent } from "react";
 import { toast } from "sonner";
 
 import { api, apiError, tokens } from "@/lib/api";
@@ -34,7 +34,7 @@ export default function SetupPage() {
   const mismatch = form.confirm.length > 0 && form.password !== form.confirm;
   const canSubmit = form.email && form.password && !mismatch && !busy;
 
-  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     try {

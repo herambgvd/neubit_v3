@@ -3,7 +3,7 @@
 // Create/edit form for a floor (name, number, area, floor-plan image, description,
 // active). Handles the floor-plan file pick + preview and the create-with-upload
 // vs update(+optional replace) mutation split. Fills the Floors tab in-place.
-import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useState, type ChangeEvent, type SyntheticEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -85,7 +85,7 @@ export default function FloorForm({ site, floor, onCancel, onSaved }: Readonly<F
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function submit(e: FormEvent<HTMLFormElement>) {
+  function submit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     const next: FloorFormErrors = {};
     if (!name.trim()) next.name = "Name is required";

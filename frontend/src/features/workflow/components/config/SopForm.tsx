@@ -3,7 +3,7 @@
 // Create/edit form for a SOP (name, default priority, SLA, description, active).
 // Fills the detail pane when the SopsTab is in create/edit mode.
 import { useState } from "react";
-import type { FormEvent } from "react";
+import type { SyntheticEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button, Checkbox, Input, Select } from "@/components/ui/kit";
@@ -54,7 +54,7 @@ export default function SopForm({ sop, onCancel, onSaved }: Readonly<SopFormProp
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function submit(e: FormEvent<HTMLFormElement>) {
+  function submit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!name.trim()) { setErrors({ name: "Name is required" }); return; }
     saving.mutate({

@@ -6,7 +6,7 @@
 // bespoke row for the colour swatches (below Field's control API). The parent
 // (FormatsTab) owns the mutation; this form just collects + validates a body.
 import { useState } from "react";
-import type { FormEvent } from "react";
+import type { SyntheticEvent } from "react";
 import { Button, Checkbox } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { titleize } from "@/lib/format";
@@ -51,7 +51,7 @@ export default function FormatForm({ format, sops, pending, onCancel, onSubmit }
     if (errors[k]) setErrors((p) => ({ ...p, [k]: undefined }));
   }
 
-  function submit(e: FormEvent<HTMLFormElement>) {
+  function submit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     const next: Partial<Record<ErrorKey, string>> = {};
     if (!name.trim()) next.name = "Name is required";

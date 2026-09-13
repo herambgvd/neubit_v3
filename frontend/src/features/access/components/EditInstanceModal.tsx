@@ -3,7 +3,7 @@
 // Edit an onboarded instance. Ported from neubit_v2's edit-instance-modal.jsx:
 // diffs each field vs the original and only PATCHes what changed; secret is
 // rotated only when the "Rotate" toggle is on. Rethemed to v3 tokens.
-import { useState, type FormEvent } from "react";
+import { useState, type SyntheticEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trimEnd } from "@/lib/validate";
@@ -113,7 +113,7 @@ export default function EditInstanceModal({ instance, onClose, onSuccess }: Read
     return Object.keys(next).length === 0;
   };
 
-  const submit = (e: FormEvent<HTMLFormElement>) => {
+  const submit = (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (validate()) m.mutate();
   };

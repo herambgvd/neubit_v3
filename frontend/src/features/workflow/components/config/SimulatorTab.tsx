@@ -11,7 +11,7 @@
 // JSON payload instead.
 import Link from "next/link";
 import { useState } from "react";
-import type { FormEvent } from "react";
+import type { SyntheticEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -105,7 +105,7 @@ export default function SimulatorTab() {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function submit(e: FormEvent<HTMLFormElement>) {
+  function submit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     const next: Partial<Record<ErrorKey, string>> = {};
     if (!eventType.trim()) next.eventType = "Event type is required";

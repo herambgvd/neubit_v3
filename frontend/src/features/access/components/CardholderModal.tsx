@@ -4,7 +4,7 @@
 // first/last name (last required), employee id, email, PIN, description, valid
 // from/until, an access-group multi-select, and (edit only) a cards manager.
 // Rethemed to v3 tokens; uses kit Modal/Button + common Field.
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type SyntheticEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -155,7 +155,7 @@ export default function CardholderModal({ instanceId, cardholder, onClose, onSuc
     return Object.keys(next).length === 0;
   };
 
-  const submit = (e: FormEvent<HTMLFormElement>) => {
+  const submit = (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!validate()) return;
     if (isEdit) update.mutate();

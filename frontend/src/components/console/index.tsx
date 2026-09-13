@@ -27,7 +27,7 @@
 // ConsoleStrip modtab; teal stays reserved for Surveillance.
 import { Icon } from "@iconify/react";
 import Link from "next/link";
-import type { ComponentPropsWithoutRef, FormEvent, MouseEvent, ReactNode } from "react";
+import type { ComponentPropsWithoutRef, MouseEvent, ReactNode, SyntheticEvent } from "react";
 
 import { Button, type ButtonProps } from "@/components/ui/kit";
 
@@ -457,7 +457,7 @@ export interface PaneFormProps {
   subtitle?: ReactNode;
   /** Header-right slot (Edit / Delete actions). */
   action?: ReactNode;
-  onSubmit?: (e: FormEvent<HTMLFormElement>) => void;
+  onSubmit?: (e: SyntheticEvent<HTMLFormElement>) => void;
   footer?: ReactNode;
   className?: string;
   children?: ReactNode;

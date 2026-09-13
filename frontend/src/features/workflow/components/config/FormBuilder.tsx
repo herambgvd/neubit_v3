@@ -7,7 +7,7 @@
 // (options → [{value,label}], validation → { required, pattern }, help_text,
 // default_value, order). The right column is the live FormPreview.
 import { useState } from "react";
-import type { FormEvent } from "react";
+import type { SyntheticEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -129,7 +129,7 @@ export default function FormBuilder({ form, onCancel, onSaved }: Readonly<FormBu
       return next;
     });
 
-  function submit(e: FormEvent<HTMLFormElement>) {
+  function submit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     const next: Partial<Record<"name" | "fields", string>> = {};
     if (!name.trim()) next.name = "Name is required";

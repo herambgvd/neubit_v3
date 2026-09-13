@@ -5,7 +5,7 @@
 // Modal (the builder needs room), so it's a portal-based sheet reusing the v3
 // dark tokens. On save it POSTs/PATCHes { name, description, camera_ids, layout,
 // is_active } to /vms/camera-groups.
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
@@ -101,7 +101,7 @@ export default function CameraGroupFormModal({ open, group, cameras = [], onClos
   }, [open, onClose, save.isPending]);
 
 
-  function submit(e: FormEvent<HTMLFormElement>) {
+  function submit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     const next: GroupFormErrors = {};
     if (!name.trim()) next.name = "Name is required";

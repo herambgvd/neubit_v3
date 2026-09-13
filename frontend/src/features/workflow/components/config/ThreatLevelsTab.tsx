@@ -4,7 +4,7 @@
 // current register. Scope select + reason use the shared Field; the level picker
 // grid and posture list are bespoke.
 import { useMemo, useState } from "react";
-import type { FormEvent } from "react";
+import type { SyntheticEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -45,7 +45,7 @@ export default function ThreatLevelsTab() {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  function submit(e: FormEvent<HTMLFormElement>) {
+  function submit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     set.mutate({ site_id: siteId || null, level, reason: reason.trim() || null });
   }

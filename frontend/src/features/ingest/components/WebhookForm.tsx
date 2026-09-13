@@ -8,7 +8,7 @@
 //                     secret field(s) submitted in the body.
 //   request_method  = post (JSON body) | get (query-param payloads).
 import { useState } from "react";
-import type { FormEvent } from "react";
+import type { SyntheticEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -161,7 +161,7 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: 
   const needsUsername = authType === "basic";
   const needsSecret = authType !== "none";
 
-  function submit(e: FormEvent<HTMLFormElement>) {
+  function submit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     const next: WebhookFormErrors = {};
     if (!name.trim()) next.name = "Name is required";

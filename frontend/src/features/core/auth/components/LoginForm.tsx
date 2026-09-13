@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useState, type SyntheticEvent } from "react";
 import { Icon } from "@iconify/react";
 import { isEmail } from "@/lib/validate";
 
@@ -99,7 +99,7 @@ export interface LoginFormProps {
   /** The sign-in error banner; "" hides it. */
   error: string;
   busy: boolean;
-  onSubmit: (e: FormEvent<HTMLFormElement>) => void;
+  onSubmit: (e: SyntheticEvent<HTMLFormElement>) => void;
 }
 
 export function LoginForm({ email, setEmail, password, setPassword, error, busy, onSubmit }: Readonly<LoginFormProps>) {
@@ -109,7 +109,7 @@ export function LoginForm({ email, setEmail, password, setPassword, error, busy,
 
   // const notifySso = (label) => toast(`${label}: single sign-on unavailable`, { description: SSO_MESSAGE });
 
-  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  function handleSubmit(e: SyntheticEvent<HTMLFormElement>) {
     const next = validate(email, password);
     setFieldErrors(next);
     if (Object.keys(next).length) {

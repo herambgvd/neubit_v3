@@ -4,7 +4,7 @@
 // field list from the transition's referenced form definition, validates
 // required fields, then hands the values to onSubmit.
 import { useState } from "react";
-import type { FormEvent } from "react";
+import type { SyntheticEvent } from "react";
 import { Icon } from "@iconify/react";
 import { Button, Overlay } from "@/components/ui/kit";
 import { titleize } from "@/lib/format";
@@ -35,7 +35,7 @@ export default function TransitionFormModal({ transition, states, formList, pend
     if (errors[key]) setErrors((p) => ({ ...p, [key]: undefined }));
   }
 
-  function submit(e: FormEvent<HTMLFormElement>) {
+  function submit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     const next: Record<string, string> = {};
     for (const f of fields) {
