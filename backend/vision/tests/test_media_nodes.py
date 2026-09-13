@@ -12,6 +12,8 @@ with the reachability probe (``probe_node``) monkeypatched — NO network is tou
 
 from __future__ import annotations
 
+import asyncio
+import time
 import uuid
 
 import pytest
@@ -336,4 +338,34 @@ async def test_a_transient_count_failure_is_not_a_credential_error(db, monkeypat
     await node_service._heartbeat_one(node)  # noqa: SLF001
 
     assert node.status == "online"
+    assert node.credential_error is None
+
+
+async def test_the_heartbeat_timeout_actually_bounds_the_camera_count(db, monkeypatch):
+    """The heartbeat passes its timeout down to the camera count, and it BINDS.
+
+    A recorder that answers ``/health`` instantly and then hangs on the estate listing
+    used to stall the cycle for the federation client's own 8s default, sixteen at a
+    time, while every reader of this code saw ``timeout=timeout`` and believed 3s. The
+    parameter was accepted and dropped on the floor. This test hangs for five seconds
+    if that ever comes back.
+    """
+    node = await _node_with_credential(db, used_channels=7)
+    _reachable(monkeypatch)
+
+    async def _hangs(api_url, credential=None):
+        await asyncio.sleep(5)
+        return [{"id": "c1"}]
+
+    monkeypatch.setattr("app.vms.federation.client.list_estate_cameras", _hangs)
+
+    started = time.monotonic()
+    await node_service._heartbeat_one(node, timeout=0.05)  # noqa: SLF001
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 1.0, f"the count ran {elapsed:.2f}s against a 0.05s bound"
+    # A blip leaves the last good reading alone rather than reporting 0 cameras,
+    # and says nothing about a credential that was never refused.
+    assert node.status == "online"
+    assert node.used_channels == 7
     assert node.credential_error is None

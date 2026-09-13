@@ -755,7 +755,11 @@ class NodeHeartbeatMonitor:
                 # recovers). Alert once per stranded camera batch below.
                 continue
             cam.media_node_id = target.id
-            cam.updated_at = _utcnow()
+            # The cycle's clock, not a fresh one: the same instant decided these nodes
+            # were dead, so it is the instant the move happened. ``now`` was already
+            # being passed in and thrown away, which is how the parameter came to read
+            # as a contract nothing honoured.
+            cam.updated_at = now
             # Persist the reassignment, then bump the local load so the next camera
             # balances against this placement. The new node's recorder picks the
             # camera up on its own reconcile tick — nothing here drives a start.
@@ -916,8 +920,16 @@ async def _federated_camera_count(
         return None, None
     from app.vms.federation.client import NodeRefused, list_estate_cameras
 
+    # The bound is wall-clock, not httpx's per-phase timeout, because what this has to
+    # survive is a node that answers ``/health`` in milliseconds and then hangs on the
+    # estate listing. httpx would allow that budget once per phase; the heartbeat has a
+    # cycle to finish and 16 of these in flight, so what it needs is a ceiling on the
+    # whole call. Expiring lands in the broad handler below and leaves ``used_channels``
+    # at its last reading, which is already what a blip is supposed to do.
+    budget = timeout if timeout is not None else heartbeat_timeout_sec()
     try:
-        return len(await list_estate_cameras(node.api_url, credential)), None
+        async with asyncio.timeout(budget):
+            return len(await list_estate_cameras(node.api_url, credential)), None
     except NodeRefused as exc:
         log.info("node %s: credential refused: %s", node.id, exc)
         return None, str(exc)[:512]

@@ -20,6 +20,13 @@ _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$")
 _DOMAIN_PATTERN = r"^[a-z][a-z0-9_]{0,63}$"
 _SLUG_ERROR = "slug must be lowercase alphanumeric with -/_ (3-64 chars)"
 
+#: The subject a delivery is published under when nothing names one. The request
+#: schemas hand it out as a default and the pipeline falls back to it for rows
+#: stored before the column had one, so the two have to be the same string: a
+#: webhook that took the default and one that stored NULL would otherwise publish
+#: on different subjects, and only one of them would reach the subscriber.
+DEFAULT_EVENT_TYPE = "ingest.event"
+
 # The receiver's public origin (e.g. "https://ingest.acme.com"), so the operator
 # UI shows a URL that pastes straight into a vendor's config. Unset → the bare
 # path, which the frontend resolves against its own origin. Local to ingest
@@ -186,7 +193,7 @@ class WebhookCreate(BaseModel):
     transform: dict[str, str] = Field(default_factory=dict)
     # JMESPath naming the device-identifying value in the raw payload.
     device_lookup_expr: Optional[str] = Field(default=None, max_length=512)
-    event_type: str = Field(default="ingest.event", max_length=128)
+    event_type: str = Field(default=DEFAULT_EVENT_TYPE, max_length=128)
     is_active: bool = True
 
     @field_validator("slug")
@@ -448,7 +455,7 @@ class EventRuleCreate(BaseModel):
     match_conditions: list[MatchCondition] = Field(default_factory=list)
     field_map: dict[str, str] = Field(default_factory=dict)
     # The event type this rule EMITS when it wins.
-    event_type: str = Field(default="ingest.event", max_length=128)
+    event_type: str = Field(default=DEFAULT_EVENT_TYPE, max_length=128)
     # Optional per-rule override of the category's routing domain.
     # Same pattern as CategoryCreate. Without it a rule's value — which overrides
     # the category's — went straight into the NATS subject, so a holder of

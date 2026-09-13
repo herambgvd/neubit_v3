@@ -133,12 +133,33 @@ class StorageService:
             row.locked_at = None
         await self.db.commit()
         await self.db.refresh(row)
+        # The per-recording lock has columns for WHO and WHEN and none for WHY — the
+        # range hold (``EvidenceLock``) is the one that stores a reason. The lock body
+        # asks for one anyway, so until this grows a column the reason goes where the
+        # rest of the recording forensics already go, rather than off the end of the
+        # function. A hold whose justification was typed and then discarded is worse
+        # than one that never asked.
+        await self._audit_lock(row, locked=locked, actor=actor, reason=reason)
         return RecordingIntegrityResult(
             id=row.id,
             integrity_status=row.integrity_status,
             checksum=row.checksum,
             locked=row.locked,
             locked_by=row.locked_by,
+        )
+
+    async def _audit_lock(self, row: Recording, *, locked: bool, actor, reason: str | None) -> None:
+        """Put a lock/unlock on core's tamper-evident trail. Best-effort, never raises."""
+        from app.vms.common.core_audit import report_video_audit
+
+        meta: dict = {"recording_id": row.id, "locked": locked}
+        if reason:
+            meta["reason"] = reason
+        await report_video_audit(
+            action="vms.recording.lock" if locked else "vms.recording.unlock",
+            camera_id=row.camera_id,
+            principal=actor,
+            meta=meta,
         )
 
     async def verify(self, rec_id: str) -> RecordingIntegrityResult:

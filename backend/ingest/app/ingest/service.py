@@ -47,6 +47,7 @@ from .models import (
     Webhook,
 )
 from .schemas import (
+    DEFAULT_EVENT_TYPE,
     CategoryCreate,
     CategoryPublic,
     CategoryUpdate,
@@ -426,7 +427,7 @@ class WebhookService:
         category = await self.db.get(IngestCategory, row.category_id)
         cat_domain = (category.target_domain if category else None) or "ingest"
 
-        resolved_event_type = row.event_type or "ingest.event"
+        resolved_event_type = row.event_type or DEFAULT_EVENT_TYPE
         matched_rule_id: str | None = None
         matched_rule_name: str | None = None
         domain = cat_domain
@@ -842,7 +843,7 @@ class ReceiverService:
             # run_pipeline recorded the failure; surface the matching 422.
             raise ValidationError(row.error or "ingest failed", details={"log_id": row.id})
         # run_pipeline stashes the resolved (rule-driven) event_type on the service.
-        return (getattr(self, "_resolved_event_type", None) or webhook.event_type or "ingest.event"), row.event_id
+        return (getattr(self, "_resolved_event_type", None) or webhook.event_type or DEFAULT_EVENT_TYPE), row.event_id
 
     async def run_pipeline(
         self,
@@ -895,7 +896,7 @@ class ReceiverService:
         category = await self.db.get(IngestCategory, webhook.category_id)
         cat_domain = (category.target_domain if category else None) or "ingest"
         domain = cat_domain
-        event_type = webhook.event_type or "ingest.event"
+        event_type = webhook.event_type or DEFAULT_EVENT_TYPE
         field_map = webhook.transform or {}
 
         rules = await _load_rules(self.db, webhook.id, only_enabled=True)

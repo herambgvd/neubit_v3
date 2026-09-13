@@ -106,13 +106,13 @@ async def _evaluate_instance(session, inst, now, bus) -> bool:
                                "notify_role_ids": rule.get("notify_role_ids", [])})
             # Role→user resolution lives in core, so enqueue rows keyed by role/user
             # id and let dispatch resolve them later.
-            _enqueue_escalation_notifications(session, inst, rule, new_pri, now)
+            _enqueue_escalation_notifications(session, inst, rule, new_pri)
             changed = True
             cur = new_pri
     return changed
 
 
-def _enqueue_escalation_notifications(session, inst, rule, new_pri, now) -> None:
+def _enqueue_escalation_notifications(session, inst, rule, new_pri) -> None:
     """Create pending Notification rows for a SOP escalation rule's recipients.
 
     Role → user/address resolution is core data this service cannot reach, so it
