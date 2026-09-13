@@ -114,13 +114,18 @@ export interface SlaInfo {
   tone: "ok" | "warn" | "breach" | "done";
 }
 
+/** When this incident is due. An explicit deadline from the backend wins — it is
+ *  the one that accounts for pauses and for a deadline somebody moved. Only when
+ *  there is none is one derived from sla_hours off the creation time. */
+function slaDeadline(it: Incident): number | null {
+  if (it.sla_deadline) return new Date(it.sla_deadline).getTime();
+  if (it.sla_hours == null || !it.created_at) return null;
+  return new Date(it.created_at).getTime() + Number(it.sla_hours) * 3600000;
+}
+
 export function slaFor(it: Incident, now = Date.now()): SlaInfo | null {
   const status = it.status;
-  const deadline = it.sla_deadline
-    ? new Date(it.sla_deadline).getTime()
-    : it.sla_hours != null && it.created_at
-      ? new Date(it.created_at).getTime() + Number(it.sla_hours) * 3600000
-      : null;
+  const deadline = slaDeadline(it);
   if (deadline == null || Number.isNaN(deadline)) return null;
 
   const remainingMin = (deadline - now) / 60000;
@@ -205,4 +210,20 @@ export function priorityMix(byPriority: Record<string, number> | null | undefine
       .reverse()
       .map((c) => ({ ...c, pct: total ? (c.count / total) * 100 : 0 })),
   };
+}
+
+// ── Procedure steps ───────────────────────────────────────────────────────
+/** Where a step sits relative to the one being worked.
+ *
+ *  Three screens each derived this from a pair of booleans and then branched on
+ *  them in a different order — one asked `done` first, another `current` — which
+ *  is only safe while the two can never both be true. Deriving the phase once
+ *  removes the question. `at < 0` means no step is current, so nothing is done
+ *  either: a procedure that has not started must not render as finished. */
+export type StepPhase = "done" | "current" | "pending";
+
+export function stepPhase(index: number, at: number): StepPhase {
+  if (at < 0) return "pending";
+  if (index < at) return "done";
+  return index === at ? "current" : "pending";
 }

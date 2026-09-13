@@ -38,6 +38,38 @@ export function slaFraction(incident: InstancePublic, now: number): number | nul
   return Math.max(0, Math.min(1, left));
 }
 
+/** The duration is drawn inside the ring's hole, so a longer string has to be
+ *  set smaller or it runs through the stroke. */
+function ringFontSize(length: number): number {
+  if (length > 7) return 16;
+  return length > 5 ? 19 : 22;
+}
+
+/** The ring's colour. `done` and `none` share the grey: a stopped clock and an
+ *  absent one are both "nothing to read here", and neither is a green pass. */
+const RING_STROKE: Record<string, string> = {
+  breach: "#f87171",
+  warn: "#fbbf24",
+  ok: "#34d399",
+  done: "#7f93bd",
+  none: "#7f93bd",
+};
+
+/** The words under the ring, which are the only thing that says what the big
+ *  number MEANS. Four different nothings have to stay apart: no alarm picked, an
+ *  alarm with no time limit at all, one already past its deadline, and one whose
+ *  clock stopped when it closed. Only the last arm is a countdown. */
+export function ringSubtitle(
+  incident: InstancePublic | null | undefined,
+  sla: { overdue: boolean } | null,
+): string {
+  if (!incident) return "no alarm selected";
+  if (!sla) return "no time limit";
+  if (sla.overdue) return "overdue";
+  if (isTerminal(incident.status)) return "closed";
+  return `of ${incident.sla_hours ?? "—"}h`;
+}
+
 function useNow(enabled: boolean, injected?: number): number {
   const [now, setNow] = useState(() => injected ?? Date.now());
   useEffect(() => {
@@ -55,9 +87,7 @@ export default function SlaRing({ incident, now: injected }: Readonly<SlaRingPro
   const sla = incident ? slaFor(incident, now) : null;
   const frac = incident ? slaFraction(incident, now) : null;
 
-  const tone = sla?.tone ?? "none";
-  const stroke =
-    tone === "breach" ? "#f87171" : tone === "warn" ? "#fbbf24" : tone === "ok" ? "#34d399" : "#7f93bd";
+  const stroke = RING_STROKE[sla?.tone ?? "none"] ?? RING_STROKE.none;
 
   // An overdue alarm shows a FULL ring in the breach colour rather than an empty
   // one: "nothing left" and "no clock at all" must not look the same.
@@ -66,15 +96,7 @@ export default function SlaRing({ incident, now: injected }: Readonly<SlaRingPro
   // Just the duration inside the ring: "3h 17m left" is wider than the hole and
   // was drawn straight through the stroke. The words live under it.
   const big = sla ? sla.label.replace(/^Overdue /, "").replace(/^SLA /, "").replace(/ left$/, "") : "—";
-  const sub = !incident
-    ? "no alarm selected"
-    : !sla
-      ? "no time limit"
-      : sla.overdue
-        ? "overdue"
-        : isTerminal(incident.status)
-          ? "closed"
-          : `of ${incident.sla_hours ?? "—"}h`;
+  const sub = ringSubtitle(incident, sla);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card p-3">
@@ -108,7 +130,7 @@ export default function SlaRing({ incident, now: injected }: Readonly<SlaRingPro
             fill="currentColor"
             className="fill-foreground"
             fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
-            fontSize={big.length > 7 ? 16 : big.length > 5 ? 19 : 22}
+            fontSize={ringFontSize(big.length)}
             fontWeight="600"
           >
             {big}

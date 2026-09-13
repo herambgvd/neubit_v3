@@ -14,7 +14,7 @@ import { ActionButton } from "@/components/console";
 import { ConfirmDialog, Input, Toggle, type ConfirmState } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { security } from "../api";
-import SecuritySection from "./SecuritySection";
+import SecuritySection, { configuredSummary } from "./SecuritySection";
 import RoleMapEditor from "./RoleMapEditor";
 import type { RoleMap, SsoConfigIn } from "../types";
 
@@ -149,11 +149,7 @@ export default function SsoCard({ canManage }: Readonly<SsoCardProps>) {
         </label>
       }
       expanded={expanded}
-      summary={
-        configured
-          ? `Configured${form.issuer ? ` — ${form.issuer}` : ""}, currently off`
-          : "Not configured"
-      }
+      summary={configuredSummary(configured, form.issuer)}
       onToggleDetails={canManage && !form.enabled ? () => setShowDetails((v) => !v) : undefined}
     >
       <div className="space-y-4">

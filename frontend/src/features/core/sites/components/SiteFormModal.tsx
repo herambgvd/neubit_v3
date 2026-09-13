@@ -17,7 +17,7 @@ import { sites as sitesApi } from "@/lib/api/sites";
 import type { Address, Coordinates, CreateSiteRequest, SitePublic, SiteType, ThreatLevel } from "@/lib/types";
 import type { MapsConfigOut } from "../../types";
 import { SITE_TYPES, THREAT_LEVELS, capitalize, generateLocationCode } from "../constants";
-import { FInput, FTextarea, FSelect, ImagePreviewCard, Section } from "./FormControls";
+import { FInput, FTextarea, FSelect, ImagePreviewCard, imagePreviewSubtitle, Section } from "./FormControls";
 import GeocodeButton from "./GeocodeButton";
 import PickOnMapButton from "./PickOnMapButton";
 import { mergePickedAddress, pickedAddressMessage, type AddressField } from "../pickedAddress";
@@ -391,13 +391,7 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }: Rea
               <div className="mt-3">
                 <ImagePreviewCard
                   title="Preview"
-                  subtitle={
-                    imageFile
-                      ? `${imageFile.name} · ${(imageFile.size / (1024 * 1024)).toFixed(2)} MiB`
-                      : existingImageUrl
-                        ? "Currently uploaded site image"
-                        : "No site image uploaded yet"
-                  }
+                  subtitle={imagePreviewSubtitle(imageFile, !!existingImageUrl, "site image")}
                   imageUrl={previewUrl}
                   emptyText="Current uploaded image will appear here"
                 />

@@ -344,6 +344,34 @@ export default function EventsFeed({ instanceId, doorIndex }: Readonly<EventsFee
   );
 }
 
+/** The word on an access event's badge.
+ *
+ *  This reads the two PREDICATES rather than `event.result`, because a
+ *  controller sends the verdict as a denied-code or an event-type as often as it
+ *  sends a result string. That is also why it can disagree with RESULT_TONE
+ *  below, which only knows `result`: a `forced` or `tamper` event is labelled
+ *  "Denied" in amber, and one carrying a denied-code with no result string is
+ *  labelled "Denied" in grey. The wording is the controller's own category, so
+ *  it is left as it was found rather than quietly re-decided here.
+ */
+function accessBadgeLabel(event: NormalizedAccessEvent): string {
+  if (isUnknownAccess(event)) return "Denied";
+  if (isAuthorizedAccess(event)) return "Granted";
+  return event.result || "Other";
+}
+
+/** The colour of an access result. A result the controller sends that is not in
+ *  this table is GREY — an event nobody has taught this console to read must not
+ *  borrow the green of a granted entry. */
+const RESULT_TONE: Record<string, string> = {
+  granted: "bg-emerald-500/10 text-emerald-500",
+  opened: "bg-emerald-500/10 text-emerald-500",
+  denied: "bg-red-500/10 text-red-500",
+  unknown_card: "bg-red-500/10 text-red-500",
+  forced: "bg-amber-500/10 text-amber-500",
+  tamper: "bg-amber-500/10 text-amber-500",
+};
+
 interface EventRowProps {
   event: NormalizedAccessEvent;
   cardholderById: CardholderIndex;
@@ -358,14 +386,7 @@ function EventRow({ event, cardholderById, doorById }: Readonly<EventRowProps>) 
   const doorLabel = resolveDoorLabel(event, doorById);
   const cardholderLabel = resolveCardholderLabel(event, cardholderById);
   const cardLabel = resolveCardLabel(event);
-  const tone =
-    result === "granted" || result === "opened"
-      ? "bg-emerald-500/10 text-emerald-500"
-      : result === "denied" || result === "unknown_card"
-        ? "bg-red-500/10 text-red-500"
-        : result === "forced" || result === "tamper"
-          ? "bg-amber-500/10 text-amber-500"
-          : "bg-hover text-muted";
+  const tone = RESULT_TONE[result] ?? "bg-hover text-muted";
 
   return (
     <div className="px-2 py-2 text-xs hover:bg-hover/50">
@@ -378,7 +399,7 @@ function EventRow({ event, cardholderById, doorById }: Readonly<EventRowProps>) 
           <div className="flex items-center gap-2">
             {category === "access" ? (
               <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${tone}`}>
-                {isUnknownAccess(event) ? "Denied" : isAuthorizedAccess(event) ? "Granted" : event.result || "Other"}
+                {accessBadgeLabel(event)}
               </span>
             ) : (
               <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-500">
@@ -587,7 +608,7 @@ function pickScalar(obj: Record<string, unknown> | null | undefined, ...keys: st
  *  neither string nor number has no label to render, hence null. */
 function pickText(obj: Record<string, unknown> | null | undefined, ...keys: string[]): string | null {
   const value = pick(obj, ...keys);
-  return typeof value === "string" ? value : typeof value === "number" ? String(value) : null;
+  return typeof value === "string" || typeof value === "number" ? String(value) : null;
 }
 
 function resolveDoorLabel(event: NormalizedAccessEvent, doorById: DoorIndex): string | null {

@@ -31,9 +31,8 @@ export default function EventPayloadInspector({ payload, eventType, incident = n
   // Reverse cross-link: only meaningful when this incident came from a camera event.
   const isCamera = incident?.event_source === CAMERA_SOURCE;
   const cameraId = asStr(payload?.payload?.camera_id) || null;
-  const cameraHref = isCamera
-    ? `/events${cameraId ? `?camera=${encodeURIComponent(cameraId)}` : ""}`
-    : null;
+  const cameraQuery = cameraId ? `?camera=${encodeURIComponent(cameraId)}` : "";
+  const cameraHref = isCamera ? `/events${cameraQuery}` : null;
 
   return (
     <div className="rounded-xl border border-card-border bg-card">

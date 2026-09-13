@@ -41,10 +41,12 @@ export interface CorrSeries {
   frozen: boolean;
 }
 
-export const fmtR = (r: number | null | undefined) =>
-  r === null || r === undefined || !Number.isFinite(r)
-    ? "—"
-    : (r >= 0 ? "+" : "") + r.toFixed(2);
+export const fmtR = (r: number | null | undefined): string => {
+  if (r === null || r === undefined || !Number.isFinite(r)) return "—";
+  // The sign is always written, so a column of coefficients stays aligned and a
+  // positive correlation never reads as an unsigned magnitude.
+  return `${r >= 0 ? "+" : ""}${r.toFixed(2)}`;
+};
 
 /** Cell background for a DEFINED coefficient. Undefined cells get none. */
 function cellTone(r: number | null, status: string): string {

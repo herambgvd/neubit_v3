@@ -4,6 +4,13 @@
 // name + role sub-line, and a status dot (active/locked/disabled) on the right.
 import { Avatar } from "@/components/ui/kit";
 import type { UserOut } from "../../types";
+import { accountStatus, type AccountStatus } from "../format";
+
+const STATUS_DOT: Record<AccountStatus, string> = {
+  locked: "bg-nb-crit shadow-[0_0_5px_#f87171]",
+  active: "bg-nb-good shadow-[0_0_5px_#34d399]",
+  disabled: "bg-nb-faint",
+};
 
 export interface UserListItemProps {
   user: UserOut;
@@ -13,11 +20,7 @@ export interface UserListItemProps {
 
 export default function UserListItem({ user, selected, onSelect }: Readonly<UserListItemProps>) {
   const u = user;
-  const dot = u.locked
-    ? "bg-nb-crit shadow-[0_0_5px_#f87171]"
-    : u.is_active
-      ? "bg-nb-good shadow-[0_0_5px_#34d399]"
-      : "bg-nb-faint";
+  const dot = STATUS_DOT[accountStatus(u)];
   return (
     <button
       onClick={onSelect}

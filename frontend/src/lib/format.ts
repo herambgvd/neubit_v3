@@ -45,6 +45,12 @@ export const idOf = (o: object | null | undefined, ...keys: string[]): string | 
     | string
     | undefined;
 
+/** `3 sites`, `1 site`, `0 sites`. The count is part of the string because the
+ *  two are never wanted apart, and writing it inline is what drove screens to
+ *  `${n} site${n > 1 ? "s" : ""}` — which labels an empty scope "0 site". */
+export const plural = (n: number, singular: string, many = `${singular}s`): string =>
+  `${n} ${n === 1 ? singular : many}`;
+
 // "Just now" / "5m ago" / "3h ago" / locale date for older.
 export function fmtRelative(ts: DateInput): string {
   if (!ts) return "—";

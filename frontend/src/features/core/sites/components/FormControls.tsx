@@ -133,6 +133,14 @@ export function FCheckbox({ label, value, onChange }: Readonly<FCheckboxProps>) 
   );
 }
 
+/** The line under an image preview: the file waiting to be uploaded, the one
+ *  already stored, or neither. `noun` names the picture so "Currently uploaded
+ *  floor plan" and "No site image uploaded yet" come out of one sentence. */
+export function imagePreviewSubtitle(file: File | null | undefined, hasExisting: boolean, noun: string): string {
+  if (file) return `${file.name} · ${(file.size / (1024 * 1024)).toFixed(2)} MiB`;
+  return hasExisting ? `Currently uploaded ${noun}` : `No ${noun} uploaded yet`;
+}
+
 export interface ImagePreviewCardProps {
   title: string;
   subtitle?: ReactNode;

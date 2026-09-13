@@ -101,6 +101,34 @@ export default function SyncTab({ instanceId }: Readonly<SyncTabProps>) {
   );
 }
 
+/** A sync run's outcome, as one decision rather than two.
+ *
+ *  The colour and the icon used to be separate chains, and the icon's chain had
+ *  no arm for a PARTIAL run or for a status this console does not recognise:
+ *  both fell through to the spinner. A reconcile that finished hours ago with
+ *  half its cardholders missing sat there spinning as though it were still
+ *  working — the one outcome an operator most needs to notice, dressed as the
+ *  one that needs no attention. A finished run never spins here.
+ *
+ *  Unknown is deliberately its own row: a status the controller invents later
+ *  must read as "no idea", not as success and not as in-flight. */
+export function jobVerdict(status: string | null | undefined): { tone: string; icon: string } {
+  const s = String(status || "").toLowerCase();
+  if (s === "success" || s === "completed" || s === "succeeded") {
+    return { tone: "bg-green-500/10 text-green-500", icon: "heroicons-outline:check-circle" };
+  }
+  if (s === "partial") {
+    return { tone: "bg-amber-500/10 text-amber-500", icon: "heroicons-outline:exclamation-circle" };
+  }
+  if (s === "running" || s === "pending") {
+    return { tone: "bg-blue-500/10 text-blue-500", icon: "svg-spinners:180-ring" };
+  }
+  if (s === "failed" || s === "error") {
+    return { tone: "bg-red-500/10 text-red-500", icon: "heroicons-outline:exclamation-circle" };
+  }
+  return { tone: "bg-hover text-muted", icon: "heroicons-outline:question-mark-circle" };
+}
+
 interface JobRowProps {
   job: SyncJobPublic;
   open: boolean;
@@ -108,21 +136,7 @@ interface JobRowProps {
 }
 
 function JobRow({ job, open, onToggle }: Readonly<JobRowProps>) {
-  const s = String(job.status || "").toLowerCase();
-  const isOk = s === "success" || s === "completed" || s === "succeeded";
-  const isRunning = s === "running" || s === "pending";
-  const isFail = s === "failed" || s === "error";
-  const isPartial = s === "partial";
-  const tone = isOk
-    ? "bg-green-500/10 text-green-500"
-    : isPartial
-      ? "bg-amber-500/10 text-amber-500"
-      : isRunning
-        ? "bg-blue-500/10 text-blue-500"
-        : isFail
-          ? "bg-red-500/10 text-red-500"
-          : "bg-hover text-muted";
-  const icon = isOk ? "heroicons-outline:check-circle" : isFail ? "heroicons-outline:exclamation-circle" : "svg-spinners:180-ring";
+  const { tone, icon } = jobVerdict(job.status);
   const counts = job.counts || {};
 
   return (

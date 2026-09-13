@@ -10,11 +10,22 @@ import type { ReactNode } from "react";
 import { Icon } from "@iconify/react";
 import { PaneAction, PaneDeleteAction } from "@/components/console";
 import { Avatar } from "@/components/ui/kit";
+import { plural } from "@/lib/format";
 import type { UserOut } from "../../types";
+import { accountStatus, type AccountStatus } from "../format";
+
 import type { SiteOption } from "./SiteScopeField";
 
-/** The three states the status segment can put an account in. */
-export type AccountStatus = "active" | "disabled" | "locked";
+export type { AccountStatus };
+
+/** Badge for the account's current state. Every arm is a border+background+text
+ *  triple, so as a chain the reader had to count colons to see which one a
+ *  disabled account gets. */
+const STATUS_BADGE: Record<AccountStatus, string> = {
+  locked: "border-[rgba(248,113,113,.5)] bg-[rgba(248,113,113,.1)] text-nb-crit",
+  active: "border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good",
+  disabled: "border-nb-line text-nb-faint",
+};
 
 function Section({ icon, children, note }: Readonly<{ icon: string; children?: ReactNode; note?: ReactNode }>) {
   return (
@@ -56,6 +67,13 @@ export interface UserDetailProps {
   onResetMfa: () => void;
 }
 
+/** Why a status button refuses. `undefined` — no tooltip at all — is the third
+ *  answer and the common one: the button works. */
+function lockoutTitle(selfLockout: boolean, adminLockout: boolean): string | undefined {
+  if (selfLockout) return "You cannot disable or lock your own account";
+  return adminLockout ? "Administrator accounts cannot be disabled or locked" : undefined;
+}
+
 export default function UserDetail({
   user,
   canManage,
@@ -68,7 +86,7 @@ export default function UserDetail({
   onResetMfa,
 }: Readonly<UserDetailProps>) {
   const u = user;
-  const status: AccountStatus = u.locked ? "locked" : u.is_active ? "active" : "disabled";
+  const status = accountStatus(u);
   // Accounts on the built-in Administrator role are the console's last way back
   // in — they stay enabled no matter who is looking at them.
   const isAdminAccount = !!u.role?.is_system;
@@ -93,13 +111,7 @@ export default function UserDetail({
       <button
         type="button"
         disabled={!canManage || blocked}
-        title={
-          selfLockout
-            ? "You cannot disable or lock your own account"
-            : adminLockout
-              ? "Administrator accounts cannot be disabled or locked"
-              : undefined
-        }
+        title={lockoutTitle(selfLockout, adminLockout)}
         onClick={() => onSetStatus(val)}
         className={`px-3 py-1.5 text-[10.5px] tracking-[.5px] transition disabled:opacity-40 ${
           blocked ? "disabled:cursor-not-allowed" : ""
@@ -119,13 +131,7 @@ export default function UserDetail({
           <div className="truncate font-mono text-[11px] text-nb-faint">{u.email}</div>
         </div>
         <span
-          className={`rounded-[7px] border px-2.5 py-1 text-[10px] tracking-[.5px] ${
-            status === "locked"
-              ? "border-[rgba(248,113,113,.5)] bg-[rgba(248,113,113,.1)] text-nb-crit"
-              : status === "active"
-                ? "border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good"
-                : "border-nb-line text-nb-faint"
-          }`}
+          className={`rounded-[7px] border px-2.5 py-1 text-[10px] tracking-[.5px] ${STATUS_BADGE[status]}`}
         >
           {status.toUpperCase()}
         </span>
@@ -226,7 +232,7 @@ export default function UserDetail({
         </Row>
         <Row label="Password age">
           <span className="font-mono text-[12.5px] text-nb-ink">
-            {pwAge == null ? "—" : `${pwAge} day${pwAge === 1 ? "" : "s"}`}
+            {pwAge == null ? "—" : plural(pwAge, "day")}
           </span>
           <span className="ml-2 text-[11px] text-nb-faint">since last change</span>
         </Row>

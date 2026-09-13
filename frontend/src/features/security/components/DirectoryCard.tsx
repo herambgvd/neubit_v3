@@ -12,7 +12,7 @@ import { ActionButton, QuietButton } from "@/components/console";
 import { ConfirmDialog, Input, Toggle, type ConfirmState } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { security } from "../api";
-import SecuritySection from "./SecuritySection";
+import SecuritySection, { configuredSummary } from "./SecuritySection";
 import RoleMapEditor from "./RoleMapEditor";
 import type { DirectoryConfigIn, RoleMap } from "../types";
 
@@ -167,11 +167,7 @@ export default function DirectoryCard({ canManage }: Readonly<DirectoryCardProps
         </label>
       }
       expanded={expanded}
-      summary={
-        configured
-          ? `Configured${form.server_uri ? ` — ${form.server_uri}` : ""}, currently off`
-          : "Not configured"
-      }
+      summary={configuredSummary(configured, form.server_uri)}
       onToggleDetails={canManage && !form.enabled ? () => setShowDetails((v) => !v) : undefined}
     >
       <div className="space-y-4">

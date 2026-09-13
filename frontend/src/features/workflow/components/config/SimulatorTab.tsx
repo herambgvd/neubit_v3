@@ -268,11 +268,10 @@ function ResultPanel({ result }: Readonly<{ result: SimulateEventResponse }>) {
   const triggers = result.matched_triggers || [];
   const skipped = result.skipped || [];
   const fmt = result.matched_format;
-  const createdIds = result.created_instance_ids?.length
-    ? result.created_instance_ids
-    : result.created_instance_id
-      ? [result.created_instance_id]
-      : [];
+  // Older backends answer with a single id; newer ones with a list. Neither
+  // shape is a count of zero on its own.
+  const singleId = result.created_instance_id ? [result.created_instance_id] : [];
+  const createdIds = result.created_instance_ids?.length ? result.created_instance_ids : singleId;
 
   return (
     <div className="space-y-4">

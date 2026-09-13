@@ -52,6 +52,15 @@ const ADDRESS_PARTS: [keyof GeocodeAddress, string][] = [
   ["country", "country"],
 ];
 
+/** The button's tooltip, which is the only place the reason it cannot run is
+ *  written. The order matters: a failed Maps load is reported before the missing
+ *  address fields, because filling those in would not help. */
+function geocodeTitle(loadError: boolean, missing: string[], isLoaded: boolean): string {
+  if (loadError) return "Google Maps failed to load — no internet access, or check the API key";
+  if (missing.length) return `Fill in the ${missing.join(", ")} above first`;
+  return isLoaded ? "Look this address up on Google Maps" : "Loading Google Maps…";
+}
+
 export default function GeocodeButton({ apiKey, address, onResult }: Readonly<GeocodeButtonProps>) {
   // Same loader id as the Sites Map so the script is shared, never injected twice.
   const { isLoaded, loadError } = useJsApiLoader({ googleMapsApiKey: apiKey, id: "neubit-google-map" });
@@ -90,13 +99,7 @@ export default function GeocodeButton({ apiKey, address, onResult }: Readonly<Ge
   }
 
   const disabled = missing.length > 0 || !isLoaded || busy || !!loadError;
-  const title = loadError
-    ? "Google Maps failed to load — no internet access, or check the API key"
-    : missing.length
-      ? `Fill in the ${missing.join(", ")} above first`
-      : !isLoaded
-        ? "Loading Google Maps…"
-        : "Look this address up on Google Maps";
+  const title = geocodeTitle(!!loadError, missing, isLoaded);
 
   return (
     <button

@@ -36,6 +36,7 @@ export default function NotificationsPage() {
     },
     onError: (e) => toast.error(apiError(e)),
   });
+  const unreadCount = unread.length ? ` (${unread.length})` : "";
 
   return (
     <div>
@@ -49,7 +50,7 @@ export default function NotificationsPage() {
             disabled={markAll.isPending || unread.length === 0}
             onClick={() => markAll.mutate()}
           >
-            {markAll.isPending ? "Marking…" : `Mark all read${unread.length ? ` (${unread.length})` : ""}`}
+            {markAll.isPending ? "Marking…" : `Mark all read${unreadCount}`}
           </Button>
         }
       />

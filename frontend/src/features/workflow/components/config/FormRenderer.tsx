@@ -21,6 +21,14 @@ export interface FormRendererProps {
   disabled?: boolean;
 }
 
+/** The HTML input type a field definition asks for. A field type this renderer
+ *  has no special control for falls back to plain text rather than to whatever
+ *  the last arm of a chain happened to be. */
+const INPUT_TYPE: Record<string, string> = {
+  email: "email",
+  phone: "tel",
+};
+
 export default function FormRenderer({ field, value, onChange, error, disabled = false }: Readonly<FormRendererProps>) {
   const id = `ff-${field.id || "x"}`;
   const required = !!field?.validation?.required;
@@ -128,7 +136,7 @@ export default function FormRenderer({ field, value, onChange, error, disabled =
       break;
     }
     default:
-      control = <input id={id} type={field.type === "email" ? "email" : field.type === "phone" ? "tel" : "text"} disabled={disabled} value={asText(value)} onChange={(e) => set(e.target.value)} placeholder={field.placeholder || ""} pattern={pattern} className={`${fieldClass} ${error ? "!border-nb-crit" : ""}`} />;
+      control = <input id={id} type={INPUT_TYPE[field.type] ?? "text"} disabled={disabled} value={asText(value)} onChange={(e) => set(e.target.value)} placeholder={field.placeholder || ""} pattern={pattern} className={`${fieldClass} ${error ? "!border-nb-crit" : ""}`} />;
   }
 
   return (

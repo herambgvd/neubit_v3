@@ -43,6 +43,8 @@ import {
   isTerminal,
   sev,
   slaFor,
+  stepPhase,
+  type StepPhase,
 } from "./components/incidents/lib";
 import StateMachine from "./components/detail/StateMachine";
 import EventPayloadInspector from "./components/detail/EventPayloadInspector";
@@ -50,6 +52,24 @@ import AssignModal from "./components/detail/AssignModal";
 import TransitionFormModal from "./components/detail/TransitionFormModal";
 import ReasonModal from "./components/detail/ReasonModal";
 import type { ReasonAction } from "./components/detail/ReasonModal";
+
+const STEP_MARK_CLS: Record<StepPhase, string> = {
+  done: "border-emerald-500 bg-emerald-500 text-background",
+  current: "border-blue-400 bg-blue-400/20 ring-2 ring-blue-400/30",
+  pending: "border-card-border",
+};
+
+const STEP_MARK: Record<StepPhase, React.ReactNode> = {
+  done: "✓",
+  current: <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />,
+  pending: "",
+};
+
+const STEP_TEXT: Record<StepPhase, string> = {
+  done: "text-muted",
+  current: "font-medium text-foreground",
+  pending: "text-muted/80",
+};
 
 const SLA_TONE: Record<string, string> = {
   ok: "text-emerald-400",
@@ -454,32 +474,21 @@ export default function WorkflowDetailPage() {
         ) : (
           <ol className="grid gap-2">
             {steps.map((st, i) => {
-              const done = at >= 0 && i < at;
-              const current = at === i;
+              const phase = stepPhase(i, at);
+              const current = phase === "current";
+              const done = phase === "done";
               return (
                 <li key={st.state_id} className="flex items-start gap-2.5 text-[13px]">
                   {/* A ROUND mark, not a square one: the squares read as
                       checkboxes an operator was meant to tick. Done is filled
                       green, the current step is a lit ring, the rest are outlines. */}
                   <span
-                    className={`mt-[3px] grid h-[15px] w-[15px] shrink-0 place-items-center rounded-full border text-[9px] ${
-                      done
-                        ? "border-emerald-500 bg-emerald-500 text-background"
-                        : current
-                          ? "border-blue-400 bg-blue-400/20 ring-2 ring-blue-400/30"
-                          : "border-card-border"
-                    }`}
+                    className={`mt-[3px] grid h-[15px] w-[15px] shrink-0 place-items-center rounded-full border text-[9px] ${STEP_MARK_CLS[phase]}`}
                   >
-                    {done ? "✓" : current ? <span className="h-1.5 w-1.5 rounded-full bg-blue-400" /> : ""}
+                    {STEP_MARK[phase]}
                   </span>
                   <span className="min-w-0">
-                    <span
-                      className={
-                        current ? "font-medium text-foreground" : done ? "text-muted" : "text-muted/80"
-                      }
-                    >
-                      {st.name}
-                    </span>
+                    <span className={STEP_TEXT[phase]}>{st.name}</span>
                     {current && (
                       <span className="ml-2 rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-blue-300">
                         now

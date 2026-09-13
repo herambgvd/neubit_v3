@@ -25,12 +25,13 @@ import { useAuth } from "@/lib/auth";
 import type { Page } from "@/lib/types";
 import type { RoleOut, SecurityPolicyOut, UpdateUserIn, UserImportResult, UserOut } from "../types";
 import UserListItem from "./components/UserListItem";
-import UserDetail, { type AccountStatus } from "./components/UserDetail";
+import UserDetail from "./components/UserDetail";
 import UserPosture from "./components/UserPosture";
 import AddUserModal from "./components/AddUserModal";
 import EditUserModal from "./components/EditUserModal";
 import DeleteUserModal from "./components/DeleteUserModal";
 import CloneUserModal from "./components/CloneUserModal";
+import { accountStatus, type AccountStatus } from "./format";
 import type { CloneUserForm, EditUserForm, NewUserForm } from "./validation";
 
 const EMPTY_CREATE: NewUserForm = { email: "", password: "", full_name: "", role_id: "", send_invite: true, site_ids: [] };
@@ -226,7 +227,7 @@ export default function UsersPage() {
   }
   // Account-status segment → the right backend action.
   function setStatus(u: UserOut, next: AccountStatus) {
-    const cur: AccountStatus = u.locked ? "locked" : u.is_active ? "active" : "disabled";
+    const cur = accountStatus(u);
     if (next === cur) return;
     // Never let the signed-in admin lock themselves out of their own console,
     // and never let an Administrator account (the way back in) be shut off.

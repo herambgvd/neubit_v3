@@ -78,6 +78,14 @@ interface Sel {
   category: string | null;
 }
 
+/** Why a point cannot be added to the correlation. `undefined` — no tooltip —
+ *  is the third answer: the point is pickable. The text case is checked first
+ *  because it is permanent, where the series cap clears when one is removed. */
+function whyNotPickable(numeric: boolean, full: boolean): string | undefined {
+  if (!numeric) return "text readings have no numeric series to correlate";
+  return full ? `at most ${MAX_SERIES} series` : undefined;
+}
+
 export default function Insights() {
   const [search, setSearch] = useState("");
   const [deviceId, setDeviceId] = useState<string | null>(null);
@@ -236,13 +244,7 @@ export default function Insights() {
                               type="button"
                               disabled={!numeric || full}
                               onClick={() => toggle(p)}
-                              title={
-                                !numeric
-                                  ? "text readings have no numeric series to correlate"
-                                  : full
-                                    ? `at most ${MAX_SERIES} series`
-                                    : undefined
-                              }
+                              title={whyNotPickable(numeric, full)}
                               className={`flex w-full items-center gap-2 rounded-[7px] border px-2 py-1 text-left transition ${
                                 picked
                                   ? "border-[rgba(167,139,250,.5)] bg-[rgba(167,139,250,.14)]"

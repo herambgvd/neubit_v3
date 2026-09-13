@@ -13,6 +13,14 @@ export interface RolePanelProps {
   onClone: () => void;
 }
 
+/** What the Scope stat says. A role with the permission catalogue's every entry
+ *  is not the same as one that was granted a subset which happens to be all of
+ *  them today, and a role with nothing granted is worth its own word. */
+function scopeLabel(all: boolean, granted: number): string {
+  if (all) return "Full control";
+  return granted === 0 ? "None" : "Scoped";
+}
+
 export default function RolePanel({ role, groups, canManage, onClone }: Readonly<RolePanelProps>) {
   const granted = new Set<string>(role.permissions || []);
   const all = granted.has("*");
@@ -36,7 +44,7 @@ export default function RolePanel({ role, groups, canManage, onClone }: Readonly
       <div className="rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-1">
         <Stat label="Capabilities granted" value={all ? "ALL" : `${full} / ${totalCaps}`} tone="good" />
         <Stat label="Areas touched" value={`${areas} / ${Object.keys(groups).length}`} tone="blue" />
-        <Stat label="Scope" value={all ? "Full control" : full === 0 ? "None" : "Scoped"} tone="ink" />
+        <Stat label="Scope" value={scopeLabel(all, full)} tone="ink" />
       </div>
 
       {canManage && (

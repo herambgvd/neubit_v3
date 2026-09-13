@@ -85,12 +85,11 @@ function ScheduledList({ instanceId, sub }: Readonly<ScheduledListProps>) {
   // union of what they return; the table reads it generically either way.
   const q = useQuery<ScheduleListResponse | HardwareListResponse>({
     queryKey: ["ac-scheduled", instanceId, sub],
-    queryFn: () =>
-      sub === "weekly"
-        ? gates.schedules.list(instanceId, { limit: 200 })
-        : gates.scheduled.list(instanceId, sub === "mags" ? "scheduled_mags" : "scheduled_readers", {
-            limit: 200,
-          }),
+    queryFn: () => {
+      if (sub === "weekly") return gates.schedules.list(instanceId, { limit: 200 });
+      const kind = sub === "mags" ? "scheduled_mags" : "scheduled_readers";
+      return gates.scheduled.list(instanceId, kind, { limit: 200 });
+    },
     enabled: !!instanceId,
   });
   // Weekly Programs come back as `SchedulePublic`, the other two as raw controller

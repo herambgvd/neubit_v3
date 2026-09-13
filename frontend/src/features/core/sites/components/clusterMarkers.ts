@@ -8,6 +8,7 @@
 // Written as plain DOM rather than React portals because there is one node per
 // visible feature and they are rebuilt on every pan: 300 portals re-rendering on
 // a drag is what made the older marker layer stutter.
+import { plural } from "@/lib/format";
 import { PIN_H, PIN_SCALE, PIN_SCALE_SELECTED, PIN_TIP_Y, PIN_W, pinSvg } from "./pin";
 
 /** Colour by what an operator should do about it, not by the threat level a
@@ -59,8 +60,8 @@ export function paintCluster(el: HTMLDivElement, info: ClusterInfo): void {
   ].join(";");
   el.textContent = String(info.count);
   const trouble = [
-    info.alarms ? `${info.alarms} alarm${info.alarms === 1 ? "" : "s"}` : null,
-    info.offline ? `${info.offline} camera${info.offline === 1 ? "" : "s"} offline` : null,
+    info.alarms ? plural(info.alarms, "alarm") : null,
+    info.offline ? `${plural(info.offline, "camera")} offline` : null,
   ].filter(Boolean);
   el.title = `${info.count} sites${trouble.length ? ` · ${trouble.join(" · ")}` : ""}`;
 }
@@ -92,6 +93,14 @@ export function pinElement(): HTMLDivElement {
   return el;
 }
 
+/** Which pin sits on top when two overlap. The selected pin always wins — it is
+ *  the one the operator just clicked — and a site with alarms outranks a quiet
+ *  one, because a pin hidden under a neighbour is a pin nobody reads. */
+function pinZIndex(info: PinInfo): string {
+  if (info.selected) return "3";
+  return info.alarms ? "2" : "1";
+}
+
 /** Repaint an existing pin in place. Returns the offset MapLibre should use so
  *  the tip — not the box bottom — sits on the coordinate. */
 export function paintPin(el: HTMLElement, info: PinInfo): [number, number] {
@@ -99,7 +108,7 @@ export function paintPin(el: HTMLElement, info: PinInfo): [number, number] {
   el.title = `${info.name} · ${info.label}`;
   el.style.width = `${PIN_W * scale}px`;
   el.style.height = `${PIN_H * scale}px`;
-  el.style.zIndex = info.selected ? "3" : info.alarms ? "2" : "1";
+  el.style.zIndex = pinZIndex(info);
 
   const art = el.querySelector(".site-pin-art") as HTMLDivElement;
   art.innerHTML = pinSvg(info.color, info.selected);

@@ -24,6 +24,15 @@ export interface NewTemplateModalProps {
   creating?: boolean;
 }
 
+/** Why this name cannot be used, or "" when it can. The order is the order a
+ *  person would check in: is there a name, is it a legal one, is it free. */
+export function nameError(trimmed: string, taken: readonly string[]): string {
+  if (!trimmed) return "A name is required.";
+  if (!NAME_RE.test(trimmed)) return "Lower-case letters, digits and underscores only — start with a letter.";
+  if (taken.includes(trimmed)) return "A template with that name already exists.";
+  return "";
+}
+
 export default function NewTemplateModal({
   open,
   onClose,
@@ -36,13 +45,7 @@ export default function NewTemplateModal({
   const [submitted, setSubmitted] = useState(false);
 
   const trimmed = name.trim().toLowerCase();
-  const error = !trimmed
-    ? "A name is required."
-    : !NAME_RE.test(trimmed)
-      ? "Lower-case letters, digits and underscores only — start with a letter."
-      : taken.includes(trimmed)
-        ? "A template with that name already exists."
-        : "";
+  const error = nameError(trimmed, taken);
 
   function submit() {
     setSubmitted(true);

@@ -154,6 +154,17 @@ function RuleRow({ rule, onEdit, onToggle, onDelete }: Readonly<RuleRowProps>) {
   );
 }
 
+/** How each match operator reads in the list. An operator the backend grows
+ *  later falls back to its own wire name — unreadable, but never a wrong
+ *  reading of what the rule matches. */
+const OP_LABEL: Record<string, (value: unknown) => string> = {
+  exists: () => "exists",
+  not_exists: () => "missing",
+  equals: (v) => `= ${JSON.stringify(v)}`,
+  not_equals: (v) => `≠ ${JSON.stringify(v)}`,
+  contains: (v) => `contains ${JSON.stringify(v)}`,
+};
+
 // One-line condition summary for the list (ported from v2).
 function summarizeConditions(
   conds: MatchCondition[] | null | undefined,
@@ -163,13 +174,7 @@ function summarizeConditions(
   }
   const first = conds[0];
   const rest = conds.length - 1;
-  const opLabel =
-    first.op === "exists" ? "exists"
-    : first.op === "not_exists" ? "missing"
-    : first.op === "equals" ? `= ${JSON.stringify(first.value)}`
-    : first.op === "not_equals" ? `≠ ${JSON.stringify(first.value)}`
-    : first.op === "contains" ? `contains ${JSON.stringify(first.value)}`
-    : first.op;
+  const opLabel = OP_LABEL[first.op]?.(first.value) ?? first.op;
   const short = `${first.path} ${opLabel}${rest > 0 ? ` (+${rest} more)` : ""}`;
   const full = conds
     .map((c: MatchCondition) => `${c.path} ${c.op}${c.value !== undefined && c.value !== null ? " " + JSON.stringify(c.value) : ""}`)

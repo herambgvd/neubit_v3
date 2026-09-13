@@ -7,6 +7,7 @@
 import { Icon } from "@iconify/react";
 import { PaneAction, PaneDeleteAction } from "@/components/console";
 import { EmptyState } from "@/components/ui/kit";
+import { plural } from "@/lib/format";
 import type { PermissionGroups, RoleOut } from "../../types";
 
 export interface RoleDetailProps {
@@ -45,7 +46,7 @@ export default function RoleDetail({ role, groups, catalogLoading, canManage, on
                 {role.is_system ? "System" : "Custom"}
               </span>
               <span>
-                {all ? "All permissions" : `${granted.size} permission${granted.size === 1 ? "" : "s"}`}
+                {all ? "All permissions" : plural(granted.size, "permission")}
               </span>
             </div>
           </div>

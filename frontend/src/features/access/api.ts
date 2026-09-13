@@ -84,7 +84,16 @@ function qs(params: QueryParams = {}): string {
 // routes one day map rows server-side, delete these and read `Paged<…>` directly.
 
 /** A DTO value as text; anything that is not a string/number reads as "". */
-const text = (v: unknown): string => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
+const text = (v: unknown): string => (typeof v === "string" || typeof v === "number" ? String(v) : "");
+
+/** The card's technology as a number, or null. The controller sends it as a
+ *  number, as a numeric string, and as "" — and "" must not become 0, which is
+ *  a technology id in its own right. */
+const technologyType = (v: unknown): number | null => {
+  if (typeof v === "number") return v;
+  const n = Number(text(v));
+  return text(v) !== "" && !Number.isNaN(n) ? n : null;
+};
 
 // `_CH_DDS_TO_STATUS` (writethrough.py).
 const CH_DDS_TO_STATUS: Record<string, AccessCardholderStatus> = {
@@ -160,7 +169,7 @@ function cardFromMirror(row: MirrorRow): AccessCard {
     card_type: text(out.card_type) || null,
     cardholder_uid: text(out.cardholder_uid) || null,
     reader_function_uid: text(out.reader_function_uid) || null,
-    technology_type: typeof tt === "number" ? tt : text(tt) !== "" && !Number.isNaN(Number(tt)) ? Number(tt) : null,
+    technology_type: technologyType(tt),
     description: text(out.description) || null,
   };
 }

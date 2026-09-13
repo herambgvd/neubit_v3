@@ -60,6 +60,13 @@ export interface SopCanvasProps {
   sopId: string;
 }
 
+/** What the pointer says the canvas will do. Panning outranks connect mode: a
+ *  drag already in flight is panning whatever tool is armed. */
+function canvasCursor(panning: boolean, connecting: boolean): string {
+  if (panning) return "grabbing";
+  return connecting ? "crosshair" : "grab";
+}
+
 export default function SopCanvas({ sopId }: Readonly<SopCanvasProps>) {
   const qc = useQueryClient();
   const statesKey = ["wf-states", sopId];
@@ -248,7 +255,7 @@ export default function SopCanvas({ sopId }: Readonly<SopCanvasProps>) {
         onPointerLeave={endInteractions}
         className="relative flex-1 min-w-0 min-h-0 overflow-hidden select-none rounded-lg border border-nb-line"
         style={{
-          cursor: panning ? "grabbing" : connect ? "crosshair" : "grab",
+          cursor: canvasCursor(panning, !!connect),
           backgroundColor: "var(--hover)",
           backgroundImage: "radial-gradient(var(--card-border) 1px, transparent 1px)",
           backgroundSize: `${24 * scale}px ${24 * scale}px`,

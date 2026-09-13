@@ -5,6 +5,7 @@
 // since the backend treats an empty site_ids list as "all sites". Only real sites
 // from GET /sites are offered; nothing is fabricated.
 import { Icon } from "@iconify/react";
+import { plural } from "@/lib/format";
 
 /** The slice of a site the scope picker needs. */
 export interface SiteOption {
@@ -42,7 +43,7 @@ export default function SiteScopeField({ sites, value, onChange, disabled }: Rea
               : "border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.1)] text-nb-blueb"
           }`}
         >
-          {unrestricted ? "All sites" : `${selected.size} site${selected.size > 1 ? "s" : ""}`}
+          {unrestricted ? "All sites" : plural(selected.size, "site")}
         </span>
       </div>
       {sites.length === 0 ? (

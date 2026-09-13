@@ -25,6 +25,15 @@ export interface EditUserModalProps {
 // read-only, the pencil opens this form). Role and the Active switch are locked for
 // your own account and for Administrator accounts — the same guards the detail
 // pane's status segment applies, so the console can never lock itself out.
+/** The line under the Active switch. Two of the three are the reason it will
+ *  not move; the third is what the switch does. Getting the order wrong would
+ *  tell an admin editing their own account why SOMEBODY ELSE cannot be disabled. */
+function activeToggleNote(isSelf: boolean, isAdminAccount: boolean): string {
+  if (isSelf) return "You cannot disable your own account.";
+  if (isAdminAccount) return "Administrator accounts cannot be disabled.";
+  return "Disabled users cannot sign in.";
+}
+
 export default function EditUserModal({
   editing,
   isSelf,
@@ -125,11 +134,7 @@ export default function EditUserModal({
           <div>
             <div className="text-sm font-medium text-nb-ink">Active</div>
             <div className="text-xs text-nb-faint">
-              {isSelf
-                ? "You cannot disable your own account."
-                : isAdminAccount
-                  ? "Administrator accounts cannot be disabled."
-                  : "Disabled users cannot sign in."}
+              {activeToggleNote(isSelf, isAdminAccount)}
             </div>
           </div>
           <Toggle

@@ -13,7 +13,7 @@ import { FieldLabel, fieldClass } from "@/components/common";
 import { apiError, fileUrl } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
 import type { FloorPublic, SitePublic } from "@/lib/types";
-import { FInput, FTextarea, FCheckbox, ImagePreviewCard } from "./FormControls";
+import { FInput, FTextarea, FCheckbox, ImagePreviewCard, imagePreviewSubtitle } from "./FormControls";
 
 export interface FloorFormProps {
   site: SitePublic;
@@ -160,13 +160,7 @@ export default function FloorForm({ site, floor, onCancel, onSaved }: Readonly<F
           <div className="mt-3">
             <ImagePreviewCard
               title="Preview"
-              subtitle={
-                floorplanFile
-                  ? `${floorplanFile.name} · ${(floorplanFile.size / (1024 * 1024)).toFixed(2)} MiB`
-                  : existingFloorplanUrl
-                    ? "Currently uploaded floor plan"
-                    : "No floor plan uploaded yet"
-              }
+              subtitle={imagePreviewSubtitle(floorplanFile, !!existingFloorplanUrl, "floor plan")}
               imageUrl={previewUrl}
               emptyText="Current uploaded image will appear here"
             />

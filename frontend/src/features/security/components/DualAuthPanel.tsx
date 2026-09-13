@@ -34,6 +34,15 @@ const STATUS_STYLE: Record<string, string> = {
   expired: "bg-white/5 text-nb-muted",
 };
 
+/** What a decided request says happened. An outcome this console does not
+ *  recognise reads as "decided by" — vague on purpose, because guessing
+ *  "approved" for an unknown status would say a sensitive action was let
+ *  through when nobody here knows that it was. */
+const DECISION_VERB: Record<string, string> = {
+  approved: "approved",
+  denied: "denied",
+};
+
 export default function DualAuthPanel() {
   const qc = useQueryClient();
   const { can } = useAuth();
@@ -141,7 +150,7 @@ export default function DualAuthPanel() {
                     {r.decided_by_email && (
                       <>
                         {" · "}
-                        {r.status === "approved" ? "approved" : r.status === "denied" ? "denied" : "decided"} by{" "}
+                        {DECISION_VERB[r.status ?? ""] ?? "decided"} by{" "}
                         {r.decided_by_email}
                       </>
                     )}

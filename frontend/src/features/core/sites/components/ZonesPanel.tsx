@@ -22,6 +22,14 @@ import { THREAT_PILL } from "../constants";
 import ZoneForm from "./ZoneForm";
 import SelectMenu from "@/components/common/SelectMenu";
 
+/** Why this list is empty. "No zones yet" is the wrong thing to say when the
+ *  site has no floors — zones are drawn on a plan, so there is nowhere to put
+ *  one — and the wrong thing again when a floor filter is hiding them. */
+function emptyZonesText(floorCount: number, floorFilter: string | null | undefined): string {
+  if (floorCount === 0) return "No zones yet. Create a floor first.";
+  return floorFilter ? "No zones on this floor yet." : "No zones yet.";
+}
+
 export default function ZonesPanel({ site }: Readonly<{ site: SitePublic }>) {
   const qc = useQueryClient();
   const floorsQ = useQuery({
@@ -94,11 +102,7 @@ export default function ZonesPanel({ site }: Readonly<{ site: SitePublic }>) {
         </div>
       ) : items.length === 0 ? (
         <div className="rounded-lg border border-dashed border-nb-line px-6 py-10 text-center text-sm text-nb-muted">
-          {floors.length === 0
-            ? "No zones yet. Create a floor first."
-            : floorFilter
-              ? "No zones on this floor yet."
-              : "No zones yet."}
+          {emptyZonesText(floors.length, floorFilter)}
           <div className="mt-1 text-xs">
             Zones are drawn on the plan — open a floor from the{" "}
             <strong className="text-nb-ink">Floors</strong> tab and use{" "}

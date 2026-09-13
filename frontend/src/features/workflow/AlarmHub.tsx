@@ -46,6 +46,9 @@ import {
   prioWeight,
   sev,
   slaFor,
+  stepPhase,
+  type SlaInfo,
+  type StepPhase,
 } from "./components/incidents/lib";
 import { useIncidentStream } from "./hooks/useIncidentStream";
 
@@ -109,6 +112,27 @@ function NeighbourCell({ camera }: Readonly<{ camera: EstateCamera }>) {
     </Cell>
   );
 }
+
+/** The SLA clock's colour. Typed by `SlaInfo["tone"]` so the table has to grow
+ *  an arm whenever the enum does.
+ *
+ *  This was a three-arm ternary — breach, warn, everything-else-is-green — and
+ *  "everything else" included `done`. A CLOSED alarm still carries an SLA, and a
+ *  closed alarm that BREACHED its SLA before it closed was painted the same
+ *  emerald as one met on time. The rail and the record both grey `done` out on
+ *  purpose: the clock has stopped, so there is nothing left to read off it. */
+const SLA_TONE: Record<SlaInfo["tone"], string> = {
+  ok: "text-emerald-300",
+  warn: "text-amber-300",
+  breach: "text-red-300",
+  done: "text-muted",
+};
+
+const STEP_DOT: Record<StepPhase, string> = {
+  done: "bg-emerald-500",
+  current: "bg-blue-400",
+  pending: "bg-card-border",
+};
 
 export default function AlarmHub() {
   const qc = useQueryClient();
@@ -244,11 +268,7 @@ export default function AlarmHub() {
                   {s!.label}
                 </span>
                 {sla && (
-                  <span
-                    className={`font-mono text-[11px] ${
-                      sla.tone === "breach" ? "text-red-300" : sla.tone === "warn" ? "text-amber-300" : "text-emerald-300"
-                    }`}
-                  >
+                  <span className={`font-mono text-[11px] ${SLA_TONE[sla.tone]}`}>
                     {sla.label}
                   </span>
                 )}
@@ -309,15 +329,11 @@ export default function AlarmHub() {
                 </span>
                 <ol className="grid min-h-0 content-start gap-1 overflow-y-auto">
                   {steps.map((st, i) => {
-                    const done = stepAt >= 0 && i < stepAt;
-                    const now = stepAt === i;
+                    const phase = stepPhase(i, stepAt);
+                    const now = phase === "current";
                     return (
                       <li key={st.state_id} className="flex items-center gap-2 text-[12px]">
-                        <span
-                          className={`h-2 w-2 shrink-0 rounded-full ${
-                            done ? "bg-emerald-500" : now ? "bg-blue-400" : "bg-card-border"
-                          }`}
-                        />
+                        <span className={`h-2 w-2 shrink-0 rounded-full ${STEP_DOT[phase]}`} />
                         <span className={now ? "text-foreground" : "text-muted"}>{st.name}</span>
                       </li>
                     );

@@ -19,6 +19,7 @@ import {
   fmtDuration,
   fmtRelative,
   idOf,
+  plural,
   titleize,
   type ItemsOf,
 } from "./format";
@@ -209,5 +210,19 @@ describe("fmtDuration", () => {
     expect(fmtDuration(0)).toBe("—");
     expect(fmtDuration(-1)).toBe("—");
     expect(fmtDuration("x")).toBe("—");
+  });
+});
+
+describe("plural", () => {
+  it("agrees with the count, including zero", () => {
+    expect(plural(1, "site")).toBe("1 site");
+    expect(plural(2, "site")).toBe("2 sites");
+    // The hand-written `n > 1 ? "s" : ""` this replaces read "0 site".
+    expect(plural(0, "site")).toBe("0 sites");
+  });
+
+  it("takes an explicit plural for the words that do not take an s", () => {
+    expect(plural(1, "entry", "entries")).toBe("1 entry");
+    expect(plural(3, "entry", "entries")).toBe("3 entries");
   });
 });

@@ -29,6 +29,18 @@ export interface TriggerTestModalProps {
   onClose: () => void;
 }
 
+/** What the dry run proved about THIS trigger.
+ *
+ *  "Matched" and "would fire" are not the same answer, and collapsing them is
+ *  how a trigger that matches but is suppressed gets signed off as working. */
+export function triggerVerdict(matched: { would_create?: boolean } | undefined): { tone: Tone; text: string } {
+  if (!matched) return { tone: "bad", text: "No match — this trigger would NOT fire for this event." };
+  if (matched.would_create) {
+    return { tone: "ok", text: "Matched — this trigger would fire and raise an incident." };
+  }
+  return { tone: "warn", text: "Matched, but no incident would be created (see reason below)." };
+}
+
 export default function TriggerTestModal({ open, trigger, onClose }: Readonly<TriggerTestModalProps>) {
   const [eventType, setEventType] = useState("");
   const [payloadText, setPayloadText] = useState(SAMPLE_PAYLOAD);
@@ -71,11 +83,7 @@ export default function TriggerTestModal({ open, trigger, onClose }: Readonly<Tr
   // Locate THIS trigger in the simulate response.
   const matched = result?.matched_triggers?.find((t) => t.trigger_id === trigId);
   const skipped = result?.skipped?.find((s) => s.trigger_id === trigId);
-  const verdict: { tone: Tone; text: string } = matched
-    ? matched.would_create
-      ? { tone: "ok", text: "Matched — this trigger would fire and raise an incident." }
-      : { tone: "warn", text: "Matched, but no incident would be created (see reason below)." }
-    : { tone: "bad", text: "No match — this trigger would NOT fire for this event." };
+  const verdict = triggerVerdict(matched);
 
   const toneCls: Record<Tone, string> = {
     ok: "border-[rgba(52,211,153,.40)] bg-[rgba(52,211,153,.10)] text-nb-good",

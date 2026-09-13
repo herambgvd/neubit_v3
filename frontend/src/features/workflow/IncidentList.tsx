@@ -83,6 +83,12 @@ function useDebounced<T>(value: T, delay = 300): T {
   return v;
 }
 
+const TONE_CLS: Record<string, string> = {
+  bad: "text-red-400",
+  warn: "text-amber-400",
+  ok: "text-emerald-400",
+};
+
 export default function WorkflowPage() {
   const qc = useQueryClient();
   const [qInput, setQInput] = useState("");
@@ -738,14 +744,7 @@ function CountChip({
   title?: string;
   onClick?: () => void;
 }>) {
-  const toneCls =
-    tone === "bad"
-      ? "text-red-400"
-      : tone === "warn"
-        ? "text-amber-400"
-        : tone === "ok"
-          ? "text-emerald-400"
-          : "text-foreground";
+  const toneCls = TONE_CLS[tone ?? ""] ?? "text-foreground";
   const clickable = typeof onClick === "function";
   return (
     <button

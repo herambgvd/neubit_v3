@@ -187,14 +187,17 @@ function SiteRow({ site, alertHours }: any) {
           )
           .join(" · ")
       : site.score_reason;
+  // Each missing fact says so in the line AND explains itself on hover. A blank
+  // where a figure belongs reads as zero; "area —" reads as nobody has said.
+  const areaText = area != null ? `${Number(area).toLocaleString()} m²` : "area —";
+  const gaps = [
+    area != null ? null : "area not recorded — set it under Configurations → Sites.",
+    site.city ? null : "city not carried by the site mirror yet.",
+  ].filter(Boolean);
   const meta = unplaced
     ? "no site owns these points — pin devices on the floor plan under Sites"
-    : `${area != null ? `${Number(area).toLocaleString()} m²` : "area —"} · ${site.city ?? "city —"}`;
-  const metaTitle = unplaced
-    ? undefined
-    : `${area != null ? "" : "area not recorded — set it under Configurations → Sites. "}${
-        site.city ? "" : "city not carried by the site mirror yet."
-      }`.trim() || undefined;
+    : `${areaText} · ${site.city ?? "city —"}`;
+  const metaTitle = unplaced ? undefined : gaps.join(" ") || undefined;
   const kwhTitle =
     site.kwh?.status === "measured"
       ? site.kwh.reason

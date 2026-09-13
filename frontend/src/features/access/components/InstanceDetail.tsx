@@ -12,7 +12,7 @@ import { Icon } from "@iconify/react";
 import { TabBar } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { asItems, fmtDateTime } from "@/lib/format";
-import type { SitePublic } from "@/lib/types";
+import type { AccessDoorPublic, SitePublic } from "@/lib/types";
 import { gates } from "../api";
 import HealthBadge from "./HealthBadge";
 import EventsFeed from "./EventsFeed";
@@ -32,6 +32,19 @@ const TABS = [
   { key: "hardware", label: "Hardware", icon: "heroicons-outline:cpu-chip" },
   { key: "sync", label: "Sync History", icon: "heroicons-outline:clock" },
 ];
+
+/** Which tab renders what. Keyed by the same `key` the tab bar above uses, so a
+ *  tab that is added to TABS and not to this table renders nothing rather than
+ *  quietly falling through to whichever panel the chain happened to end on. */
+const TAB_PANELS: Record<string, (p: { instanceId: string; doorIndex: AccessDoorPublic[] }) => ReactNode> = {
+  events: ({ instanceId, doorIndex }) => <EventsFeed instanceId={instanceId} doorIndex={doorIndex} />,
+  cardholders: ({ instanceId }) => <CardholdersTab instanceId={instanceId} />,
+  cards: ({ instanceId }) => <CardsTab instanceId={instanceId} />,
+  access_groups: ({ instanceId }) => <AccessGroupsTab instanceId={instanceId} />,
+  scheduled: ({ instanceId }) => <ScheduledTab instanceId={instanceId} />,
+  hardware: ({ instanceId }) => <HardwareTab instanceId={instanceId} />,
+  sync: ({ instanceId }) => <SyncTab instanceId={instanceId} />,
+};
 
 export interface InstanceDetailProps {
   instanceId: string;
@@ -127,21 +140,7 @@ export default function InstanceDetail({ instanceId, sites }: Readonly<InstanceD
 
       {/* Body */}
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        {activeTab === "events" ? (
-          <EventsFeed instanceId={instance.id} doorIndex={doorIndex} />
-        ) : activeTab === "cardholders" ? (
-          <CardholdersTab instanceId={instance.id} />
-        ) : activeTab === "cards" ? (
-          <CardsTab instanceId={instance.id} />
-        ) : activeTab === "access_groups" ? (
-          <AccessGroupsTab instanceId={instance.id} />
-        ) : activeTab === "scheduled" ? (
-          <ScheduledTab instanceId={instance.id} />
-        ) : activeTab === "hardware" ? (
-          <HardwareTab instanceId={instance.id} />
-        ) : activeTab === "sync" ? (
-          <SyncTab instanceId={instance.id} />
-        ) : null}
+        {TAB_PANELS[activeTab]?.({ instanceId: instance.id, doorIndex }) ?? null}
       </div>
     </section>
   );

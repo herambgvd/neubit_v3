@@ -81,6 +81,15 @@ export interface RuleFormModalProps {
   onSaved?: () => void;
 }
 
+/** A condition's literal as editable text. An object is shown as its JSON so a
+ *  rule matching a structured value can still be edited by hand; nothing-at-all
+ *  is shown as "" rather than as the words "null" or "undefined", which would
+ *  be saved back as a literal to match against. */
+function conditionText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
+}
+
 export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: Readonly<RuleFormModalProps>) {
   const isEdit = !!rule;
 
@@ -99,12 +108,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: Rea
       path: c.path || "",
       op: c.op || "exists",
       // The row edits the literal as text; parseValue turns it back on submit.
-      value:
-        c.value === null || c.value === undefined
-          ? ""
-          : typeof c.value === "object"
-            ? JSON.stringify(c.value)
-            : String(c.value),
+      value: conditionText(c.value),
       _key: randomId(),
     })),
   );

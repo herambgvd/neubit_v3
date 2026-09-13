@@ -39,6 +39,7 @@ import Link from "next/link";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { plural } from "@/lib/format";
 import type { Entitlements, Page } from "@/lib/types";
 import type {
   DirectoryConfigOut,
@@ -164,11 +165,50 @@ function Row({ label, value, tone = "ink", note }: Readonly<{ label: ReactNode; 
 }
 
 const dash = "—";
+
+/** The licence's own word for its state, and the colour that word is read in.
+ *  A state this console has never heard of is FAINT, not green: an unrecognised
+ *  licence state is exactly the case where "looks fine" is the wrong guess. */
+const LICENSE_TONE: Record<string, KpiTone> = {
+  active: "good",
+  grace: "warn",
+  expired: "crit",
+};
+
+/** OFF / CONFIGURED / ENABLED for an integration that can exist but be switched
+ *  off. CONFIGURED is its own word on purpose: a directory that is filled in but
+ *  not enabled is the one an operator believes is already authenticating them. */
+export function configuredLabel(cfg: { enabled?: boolean | null } | null | undefined): string {
+  if (!cfg) return "OFF";
+  return cfg.enabled ? "ENABLED" : "CONFIGURED";
+}
+
+/** Who the two-factor requirement covers. "all / none" said nothing; either a
+ *  policy names roles, or it applies to everyone, or there is no requirement. */
+export function twoFactorScope(required: boolean | null | undefined, roles: string[] | null | undefined): string {
+  if (!required) return "Not required";
+  return roles?.length ? roles.join(", ") : "Everyone";
+}
+
+/** Audit retention. Zero means KEEP FOREVER — the one value where printing the
+ *  number would say the opposite of what the setting does. */
+export function retentionLabel(days: unknown): string {
+  if (days == null) return dash;
+  return Number(days) > 0 ? `${String(days)} days` : "Forever";
+}
+
 const fmtDate = (s: string | null | undefined): string => {
   if (!s) return dash;
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? dash : d.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
 };
+
+/** The line under the licence state. "perpetual" is an answer; a dash means no
+ *  licence has been read yet, and the two must not print the same. */
+export function licenseExpiry(lic: { expires_at?: string | null } | null | undefined): string {
+  if (!lic) return dash;
+  return lic.expires_at ? `expires ${fmtDate(lic.expires_at)}` : "perpetual";
+}
 
 export default function SystemAssurance() {
   const { can } = useAuth();
@@ -187,7 +227,7 @@ export default function SystemAssurance() {
   // License
   const lic = features.data;
   const licState = lic?.license_state; // active | grace | expired
-  const licTone: KpiTone = licState === "active" ? "good" : licState === "grace" ? "warn" : licState === "expired" ? "crit" : "faint";
+  const licTone: KpiTone = (licState && LICENSE_TONE[licState]) || "faint";
   const modules = lic?.modules || [];
   const enabledMods = modules.filter((m) => m.enabled);
 
@@ -210,19 +250,10 @@ export default function SystemAssurance() {
   // this screen fetches. Say so whenever it is a sample: a bare "8/8" on a tenant
   // with 400 users reads as full coverage and is not.
   const mfaValue = users.data ? `${enrolled}/${uItems.length}` : dash;
-  const mfaSub = !users.data
-    ? undefined
-    : sampled
-      ? `sample — first ${uItems.length} of ${uTotal} users`
-      : `${uTotal} user${uTotal === 1 ? "" : "s"}`;
+  const mfaScope = sampled ? `sample — first ${uItems.length} of ${uTotal} users` : plural(uTotal, "user");
+  const mfaSub = users.data ? mfaScope : undefined;
 
-  // "all / none" said nothing. Either a policy names roles, or it applies to
-  // everyone, or there is no requirement to scope.
-  const roleScope = !require2fa
-    ? "Not required"
-    : policy.data?.require_2fa_roles?.length
-      ? policy.data.require_2fa_roles.join(", ")
-      : "Everyone";
+  const roleScope = twoFactorScope(require2fa, policy.data?.require_2fa_roles);
 
   return (
     <section className="shrink-0">
@@ -282,13 +313,13 @@ export default function SystemAssurance() {
               <Row label="Idle timeout" value={idle ? `${idle} min` : "Not set"} tone={idle ? "ink" : "faint"} />
               <Row
                 label="Directory (LDAP/AD)"
-                value={dir ? (dir.enabled ? "ENABLED" : "CONFIGURED") : "OFF"}
+                value={configuredLabel(dir)}
                 tone={dir?.enabled ? "good" : "faint"}
                 note={dir?.last_sync_at ? `synced ${fmtDate(dir.last_sync_at)}` : undefined}
               />
               <Row
                 label="Single sign-on"
-                value={ssoCfg ? (ssoCfg.enabled ? "ENABLED" : "CONFIGURED") : "OFF"}
+                value={configuredLabel(ssoCfg)}
                 tone={ssoCfg?.enabled ? "good" : "faint"}
                 note={ssoCfg?.issuer || undefined}
               />
@@ -311,7 +342,7 @@ export default function SystemAssurance() {
               {licState ? licState.toUpperCase() : dash}
             </span>
             <span className="text-[11px] text-nb-faint">
-              {lic?.expires_at ? `expires ${fmtDate(lic.expires_at)}` : lic ? "perpetual" : dash}
+              {licenseExpiry(lic)}
             </span>
           </div>
           <Row label="Plan" value={lic?.plan ? String(lic.plan).toUpperCase() : dash} tone="ink" />
@@ -340,7 +371,7 @@ export default function SystemAssurance() {
         >
           <Row
             label="Audit log"
-            value={auditDays != null ? (Number(auditDays) > 0 ? `${auditDays} days` : "Forever") : dash}
+            value={retentionLabel(auditDays)}
             tone="ink"
           />
           <Row

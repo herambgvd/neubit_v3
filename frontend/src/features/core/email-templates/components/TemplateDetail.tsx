@@ -30,6 +30,15 @@ const TABS: { key: View; label: string; icon: string }[] = [
   { key: "preview", label: "Preview", icon: "heroicons-outline:eye" },
 ];
 
+/** The same button does two different things, and the word on it is the only
+ *  thing that says which: a built-in is reverted to the shipped copy, a custom
+ *  template is deleted outright. Two independent questions — which kind, and is
+ *  the request in flight — so a 2x2 rather than a chain. */
+const REVERT_LABEL = {
+  builtin: { idle: "Revert to default", busy: "Reverting…" },
+  custom: { idle: "Delete template", busy: "Deleting…" },
+} as const;
+
 export default function TemplateDetail({
   name,
   onGone,
@@ -148,13 +157,7 @@ export default function TemplateDetail({
               }
               onClick={() => revert.mutate()}
             >
-              {revert.isPending
-                ? isBuiltin
-                  ? "Reverting…"
-                  : "Deleting…"
-                : isBuiltin
-                  ? "Revert to default"
-                  : "Delete template"}
+              {REVERT_LABEL[isBuiltin ? "builtin" : "custom"][revert.isPending ? "busy" : "idle"]}
             </QuietButton>
           )}
           <ActionButton

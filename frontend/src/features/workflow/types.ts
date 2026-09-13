@@ -601,4 +601,4 @@ export const isRecord = (v: unknown): v is Record<string, unknown> =>
 
 /** The value as a string when it is one (or a number), else null. */
 export const asStr = (v: unknown): string | null =>
-  typeof v === "string" ? v : typeof v === "number" ? String(v) : null;
+  typeof v === "string" || typeof v === "number" ? String(v) : null;

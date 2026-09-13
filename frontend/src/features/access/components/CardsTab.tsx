@@ -148,7 +148,7 @@ export default function CardsTab({ instanceId }: Readonly<CardsTabProps>) {
                       </span>
                     </td>
                     <td className="px-3 py-2 text-muted">
-                      {ch ? ch.name || ch.employee_id || shortId(c.cardholder_uid) : c.cardholder_uid ? <span className="font-mono">{shortId(c.cardholder_uid)}</span> : "—"}
+                      <AssignedTo holder={ch} uid={c.cardholder_uid} />
                     </td>
                     <td className="px-3 py-2 text-muted">{c.description || "—"}</td>
                     <td className="px-3 py-2 text-right">
@@ -197,6 +197,18 @@ export default function CardsTab({ instanceId }: Readonly<CardsTabProps>) {
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} pending={remove.isPending} />
     </div>
   );
+}
+
+/** Who holds this card. The middle case earns its own render: a card assigned
+ *  to a uid the cardholder mirror has not seen is NOT an unassigned card, so it
+ *  shows the controller's raw uid in mono rather than the em dash. */
+function AssignedTo({
+  holder,
+  uid,
+}: Readonly<{ holder?: { name?: string | null; employee_id?: string | null } | null; uid?: string | null }>) {
+  if (holder) return <>{holder.name || holder.employee_id || shortId(uid)}</>;
+  if (uid) return <span className="font-mono">{shortId(uid)}</span>;
+  return <>—</>;
 }
 
 function shortId(id: string | null | undefined): string {

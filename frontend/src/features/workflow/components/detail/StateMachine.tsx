@@ -83,6 +83,28 @@ export interface StateMachineProps {
   title?: string;
 }
 
+/** How a state box is drawn. The state being worked wins over a terminal one —
+ *  an incident sitting IN its terminal state is still where the operator is, and
+ *  drawing it grey would lose the only "you are here" mark on the diagram. */
+type BoxPhase = "current" | "terminal" | "open";
+
+function boxPhase(current: boolean, terminal: boolean): BoxPhase {
+  if (current) return "current";
+  return terminal ? "terminal" : "open";
+}
+
+const BOX_FILL: Record<BoxPhase, string> = {
+  current: "fill-blue-500/10 stroke-blue-500",
+  terminal: "fill-hover stroke-card-border",
+  open: "fill-card stroke-card-border",
+};
+
+const LABEL_FILL: Record<BoxPhase, string> = {
+  current: "fill-blue-500",
+  terminal: "fill-muted",
+  open: "fill-foreground",
+};
+
 export default function StateMachine({
   states,
   transitions,
@@ -155,13 +177,7 @@ export default function StateMachine({
                       width={BOX_W}
                       height={BOX_H}
                       rx={10}
-                      className={
-                        cur
-                          ? "fill-blue-500/10 stroke-blue-500"
-                          : s.is_terminal
-                            ? "fill-hover stroke-card-border"
-                            : "fill-card stroke-card-border"
-                      }
+                      className={BOX_FILL[boxPhase(cur, !!s.is_terminal)]}
                       strokeWidth={cur ? 2 : 1}
                     />
                     <text
@@ -169,13 +185,7 @@ export default function StateMachine({
                       y={cur ? BOX_H / 2 - 4 : BOX_H / 2}
                       textAnchor="middle"
                       dominantBaseline="middle"
-                      className={
-                        cur
-                          ? "fill-blue-500"
-                          : s.is_terminal
-                            ? "fill-muted"
-                            : "fill-foreground"
-                      }
+                      className={LABEL_FILL[boxPhase(cur, !!s.is_terminal)]}
                       style={{ fontSize: 13, fontWeight: cur ? 600 : 500 }}
                     >
                       {stateName(s)}

@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import { apiError } from "@/lib/api";
 import { workflow as wfApi } from "../../api";
 import type { InstancePublic, StatePublic, TransitionPublic } from "../../types";
-import { isTerminal } from "./lib";
+import { isTerminal, stepPhase, type StepPhase } from "./lib";
 
 export interface ProcedureStepsProps {
   incident: InstancePublic | null;
@@ -46,6 +46,18 @@ export function orderedSteps(states: StatePublic[]): StatePublic[] {
     .filter((s) => !s.is_cancellation)
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 }
+
+const STEP_DOT: Record<StepPhase, string> = {
+  done: "border-emerald-500 bg-emerald-500",
+  current: "border-blue-400 bg-blue-400",
+  pending: "border-card-border",
+};
+
+const STEP_TEXT: Record<StepPhase, string> = {
+  done: "text-muted",
+  current: "text-foreground",
+  pending: "text-muted/80",
+};
 
 export default function ProcedureSteps({ incident, onDone }: Readonly<ProcedureStepsProps>) {
   const qc = useQueryClient();
@@ -116,21 +128,13 @@ export default function ProcedureSteps({ incident, onDone }: Readonly<ProcedureS
               </li>
             )}
             {states.map((s, i) => {
-              const done = at >= 0 && i < at;
-              const current = at === i;
+              const phase = stepPhase(i, at);
+              const current = phase === "current";
               return (
                 <li key={s.state_id} className="flex items-start gap-2 text-[12px]">
-                  <span
-                    className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full border ${
-                      done
-                        ? "border-emerald-500 bg-emerald-500"
-                        : current
-                          ? "border-blue-400 bg-blue-400"
-                          : "border-card-border"
-                    }`}
-                  />
+                  <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full border ${STEP_DOT[phase]}`} />
                   <span className="min-w-0">
-                    <span className={current ? "text-foreground" : done ? "text-muted" : "text-muted/80"}>
+                    <span className={STEP_TEXT[phase]}>
                       {s.name}
                     </span>
                     {current && s.description && (

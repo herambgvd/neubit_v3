@@ -9,6 +9,14 @@ import { Icon } from "@iconify/react";
 
 import { SectionCard, SectionHead } from "@/components/console";
 
+/** The one line a collapsed card shows. "Not configured" and "Configured …,
+ *  currently off" are the two states an admin most often confuses, and the
+ *  detail — the server URI, the SSO issuer — is what proves which one it is. */
+export function configuredSummary(configured: boolean, detail: string | null | undefined): string {
+  if (!configured) return "Not configured";
+  return `Configured${detail ? ` — ${detail}` : ""}, currently off`;
+}
+
 export interface SecuritySectionProps {
   title: ReactNode;
   desc?: ReactNode;
