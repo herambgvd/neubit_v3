@@ -82,8 +82,18 @@ run_suite() {
   python -m pytest -p no:cacheprovider ${COV_ARGS[@]+"${COV_ARGS[@]}"} "$@"
 }
 
-run_suite "$@"
-status=$?
+# `tee`, so the run still streams live AND the output survives for the block at
+# the bottom. A suite that prints nothing until it finishes reads as a hang, so
+# streaming is not negotiable here.
+RUN_LOG="$(mktemp -t neubit-tests)"
+trap 'rm -f "$RUN_LOG"' EXIT
+# `set +e` around the run, because `set -e` would abort the script the moment the
+# suite fails — which is the one run where the lines below matter most. It is also
+# why a failing run never rewrote its coverage XML.
+set +e
+run_suite "$@" 2>&1 | tee "$RUN_LOG"
+status=${PIPESTATUS[0]}
+set -e
 
 # The XML records the path coverage saw INSIDE the container. SonarQube resolves a
 # report's filenames against its <source>, and that path does not exist on the
@@ -97,4 +107,23 @@ f.write_text(re.sub(r"<source>.*?</source>", "<source>backend/vision/app</source
 PYFIX
   echo "==> coverage: backend/vision/coverage/coverage.xml"
 fi
+
+# WHICH TEST FAILED, as the LAST thing on stdout.
+#
+# pytest already names its failures, in a "short test summary info" block — which
+# then has the rest of a coverage report printed after it. A flaky test was lost
+# exactly that way: the run was watched through `| tail -1`, the summary scrolled
+# past, and all that survived was "1 failed, 664 passed". Nobody could say which
+# one, and it did not recur.
+#
+# So the names are repeated here, at the end, where truncation cannot reach them.
+if [[ $status -ne 0 ]]; then
+  failed="$(grep -E '^(FAILED|ERROR) ' "$RUN_LOG" || true)"
+  if [[ -n "$failed" ]]; then
+    echo
+    echo "==> FAILED (repeated so a truncated log still names them):"
+    printf '%s\n' "$failed"
+  fi
+fi
+
 exit $status

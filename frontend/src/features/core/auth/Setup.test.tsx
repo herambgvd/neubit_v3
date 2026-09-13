@@ -40,12 +40,26 @@ const renderSetup = () =>
     </AuthProvider>
   );
 
+/**
+ * `delay: null` — type without handing control back between keystrokes.
+ *
+ * These four fields are 38 characters, and user-event's default parks a macrotask
+ * boundary after every one of them. On an idle machine that is free; on one
+ * running the rest of the suite in parallel it is 38 waits of however long this
+ * worker takes to be scheduled again, and that is unbounded. Measured here, the
+ * hand-backs alone are about a third of what the typing costs.
+ *
+ * It changes nothing these tests observe: every character still fires its full
+ * key/input sequence, and what they pin is the body that is finally submitted.
+ * Nothing below depends on time passing between keystrokes.
+ */
 async function fill({ name = "Jane Doe", email = "admin@acme.com", password = "hunter22", confirm = "hunter22" } = {}) {
+  const user = userEvent.setup({ delay: null });
   await screen.findByLabelText("Full name");
-  if (name) await userEvent.type(screen.getByLabelText("Full name"), name);
-  if (email) await userEvent.type(screen.getByLabelText("Work email"), email);
-  if (password) await userEvent.type(screen.getByLabelText("Password"), password);
-  if (confirm) await userEvent.type(screen.getByLabelText("Confirm password"), confirm);
+  if (name) await user.type(screen.getByLabelText("Full name"), name);
+  if (email) await user.type(screen.getByLabelText("Work email"), email);
+  if (password) await user.type(screen.getByLabelText("Password"), password);
+  if (confirm) await user.type(screen.getByLabelText("Confirm password"), confirm);
 }
 
 describe("creating the first administrator", () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ComponentPropsWithoutRef, type ReactNode } from "react";
+import { memo, useEffect, useState, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { Eye, Fingerprint, Radar, Flame, Sparkles, Workflow, type LucideIcon } from "lucide-react";
 
@@ -189,6 +189,70 @@ export interface AuthShellProps {
   children?: ReactNode;
 }
 
+/* ------------------------------------------------------------------ */
+/* Brand panel — the decorative half, and none of it depends on the form */
+/* ------------------------------------------------------------------ */
+/**
+ * Memoised on purpose. Without this, every keystroke in the sign-in or first-run
+ * form re-renders a Framer Motion console — a video wall, an event feed, a clock
+ * — that cannot have changed, because the only thing it reads is `productName`.
+ * In a browser that is work done behind a password field; in jsdom it measured a
+ * quarter of what typing a form costs, which is the kind of waste that puts a
+ * test asserting on a request body up against a wall-clock timeout.
+ */
+const BrandPanel = memo(function BrandPanel({ productName }: { productName: string }) {
+  return (
+    <aside className="relative hidden h-full min-h-0 flex-col gap-6 overflow-hidden border-r border-white/[0.06] p-10 lg:flex xl:p-12">
+      <Link href="/" className="inline-flex shrink-0 items-center gap-3">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo/neubit_logo.svg" alt={productName} className="h-8 w-auto invert brightness-0" />
+      </Link>
+
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+        className="max-w-lg"
+      >
+        <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.03] px-3.5 py-1.5 font-mono text-[11px] tracking-wide text-white/60 backdrop-blur-sm">
+          <span
+            className="h-1.5 w-1.5 animate-pulse rounded-full"
+            style={{ background: ACCENT, boxShadow: `0 0 8px ${ACCENT}` }}
+          />
+          <span>UNIFIED COMMAND &amp; CONTROL</span>
+        </div>
+        <h2 className="mt-4 text-3xl font-semibold leading-[1.1] tracking-tight xl:text-4xl">
+          Command. Control. <span style={{ color: ACCENT }}>Intelligence.</span>
+        </h2>
+        <p className="mt-3 text-sm leading-relaxed text-white/55">
+          The intelligence layer for enterprise command &amp; control — where every event triggers the
+          right action, instantly.
+        </p>
+
+        <div className="mt-6">
+          <MiniConsole />
+        </div>
+
+        <div className="mt-6 flex flex-wrap items-center gap-2">
+          {PILLARS.map(({ icon: Icon, label }) => (
+            <span
+              key={label}
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.1] bg-white/[0.025] px-3 py-1 font-mono text-[11px] text-white/60"
+            >
+              <Icon className="h-3 w-3" style={{ color: ACCENT }} />
+              {label}
+            </span>
+          ))}
+        </div>
+      </motion.div>
+
+      <div className="mt-auto shrink-0 pt-2 font-mono text-[11px] text-white/35">
+        © {new Date().getFullYear()} {productName}. All rights reserved.
+      </div>
+    </aside>
+  );
+});
+
 export default function AuthShell({ eyebrow, title, subtitle, productName = "Neubit", children }: AuthShellProps) {
   return (
     <div className="relative h-screen w-full overflow-hidden bg-[#0a0a0a] text-white antialiased selection:bg-emerald-500/20">
@@ -216,54 +280,7 @@ export default function AuthShell({ eyebrow, title, subtitle, productName = "Neu
 
       <div className="relative z-10 grid h-full lg:grid-cols-[1.05fr_1fr]">
         {/* Brand panel */}
-        <aside className="relative hidden h-full min-h-0 flex-col gap-6 overflow-hidden border-r border-white/[0.06] p-10 lg:flex xl:p-12">
-          <Link href="/" className="inline-flex shrink-0 items-center gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo/neubit_logo.svg" alt={productName} className="h-8 w-auto invert brightness-0" />
-          </Link>
-
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="max-w-lg"
-          >
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.03] px-3.5 py-1.5 font-mono text-[11px] tracking-wide text-white/60 backdrop-blur-sm">
-              <span
-                className="h-1.5 w-1.5 animate-pulse rounded-full"
-                style={{ background: ACCENT, boxShadow: `0 0 8px ${ACCENT}` }}
-              />
-              <span>UNIFIED COMMAND &amp; CONTROL</span>
-            </div>
-            <h2 className="mt-4 text-3xl font-semibold leading-[1.1] tracking-tight xl:text-4xl">
-              Command. Control. <span style={{ color: ACCENT }}>Intelligence.</span>
-            </h2>
-            <p className="mt-3 text-sm leading-relaxed text-white/55">
-              The intelligence layer for enterprise command &amp; control — where every event triggers the
-              right action, instantly.
-            </p>
-
-            <div className="mt-6">
-              <MiniConsole />
-            </div>
-
-            <div className="mt-6 flex flex-wrap items-center gap-2">
-              {PILLARS.map(({ icon: Icon, label }) => (
-                <span
-                  key={label}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.1] bg-white/[0.025] px-3 py-1 font-mono text-[11px] text-white/60"
-                >
-                  <Icon className="h-3 w-3" style={{ color: ACCENT }} />
-                  {label}
-                </span>
-              ))}
-            </div>
-          </motion.div>
-
-          <div className="mt-auto shrink-0 pt-2 font-mono text-[11px] text-white/35">
-            © {new Date().getFullYear()} {productName}. All rights reserved.
-          </div>
-        </aside>
+        <BrandPanel productName={productName} />
 
         {/* Form panel — internal scroll fallback only (tiny screens); the PAGE
             never scrolls (root is h-screen overflow-hidden). */}
