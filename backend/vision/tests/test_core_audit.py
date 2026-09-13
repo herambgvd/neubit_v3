@@ -101,7 +101,8 @@ async def test_posts_to_core_with_bearer_and_body(monkeypatch):
     assert call["url"] == "http://core:8000/api/v1/security/audit/video"
     # Bearer header present.
     auth = call["headers"].get("Authorization", "")
-    assert auth.startswith("Bearer ") and len(auth) > len("Bearer ")
+    assert auth.startswith("Bearer ")
+    assert len(auth) > len("Bearer "), "the scheme with no token behind it"
     # Body carries the required fields.
     body = call["json"]
     assert body["action"] == "vms.export.request"

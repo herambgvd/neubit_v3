@@ -184,7 +184,8 @@ async def test_storage_rollup_and_forecast(seeded, monkeypatch):
     assert cap.used_bytes == 8_000
     assert cap.capacity_bytes == 10_000
     assert cap.used_pct == 80.0
-    assert cap.days_to_full is not None and cap.days_to_full > 0
+    assert cap.days_to_full is not None
+    assert cap.days_to_full > 0
     inf = pools["pool-inf"]
     assert inf.capacity_bytes is None
     assert inf.used_pct is None
@@ -203,7 +204,9 @@ async def test_alarms_rollup(seeded, monkeypatch):
     sev = {b.key: b.count for b in a.by_severity}
     assert sev == {"info": 2, "critical": 2}
     typ = {b.key: b.count for b in a.by_type}
-    assert typ["motion"] == 2 and typ["tamper"] == 1 and typ["recording_error"] == 1
+    assert typ["motion"] == 2
+    assert typ["tamper"] == 1
+    assert typ["recording_error"] == 1
     assert len(a.recent) == 4
     # recent newest-first.
     assert a.recent[0].occurred_at >= a.recent[-1].occurred_at
@@ -260,7 +263,8 @@ async def test_empty_tenant_returns_zeros(db, monkeypatch):
     empty = uuid.uuid4()
     out = await DashboardService(db, _scope(empty), bearer=None).summary()
     assert out.cameras.total == 0
-    assert out.recording.recording == 0 and out.recording.idle == 0
+    assert out.recording.recording == 0
+    assert out.recording.idle == 0
     assert out.storage.pools == []
     assert out.storage.total_used_bytes == 0
     assert out.alarms.total == 0

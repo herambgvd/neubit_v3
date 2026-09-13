@@ -94,7 +94,8 @@ def test_a_legacy_row_still_decrypts():
 
 def test_a_legacy_row_is_not_mistaken_for_the_new_format():
     legacy = _legacy_encrypt("old-password")
-    assert legacy.startswith("enc:") and not legacy.startswith("enc:v1:")
+    assert legacy.startswith("enc:")
+    assert not legacy.startswith("enc:v1:")
     assert decrypt_secret(TENANT_A, legacy) == "old-password"
 
 

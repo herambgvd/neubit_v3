@@ -133,7 +133,8 @@ async def test_persist_segment_creates_recording(db, camera):
     assert abs((row.duration or 0) - 60.0) < 0.01
     assert row.trigger_type == "continuous"
     assert str(row.tenant_id) == str(TENANT)
-    assert row.start_time is not None and row.end_time is not None
+    assert row.start_time is not None
+    assert row.end_time is not None
 
 
 async def test_persist_segment_dedupes_by_path(db, camera):
@@ -226,15 +227,17 @@ async def test_list_filters_and_scoping(db, camera):
     assert allr.total == 2
 
     motion = await svc.list_(camera.id, trigger="motion")
-    assert motion.total == 1 and motion.items[0].trigger_type == "motion"
+    assert motion.total == 1
+    assert motion.items[0].trigger_type == "motion"
 
     windowed = await svc.list_(camera.id, from_=datetime(2026, 7, 9, 10, 30, tzinfo=timezone.utc))
     assert windowed.total == 1  # only the 11:00 one
 
 
 async def test_list_other_tenant_cannot(db, camera):
+    theirs = _svc(db, _StubNvr(), tenant=OTHER_TENANT)
     with pytest.raises(NotFoundError):
-        await _svc(db, _StubNvr(), tenant=OTHER_TENANT).list_(camera.id)
+        await theirs.list_(camera.id)
 
 
 # ── schedule-window logic (pure) ───────────────────────────────────────────

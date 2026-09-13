@@ -264,9 +264,10 @@ def test_deleting_the_initial_state_makes_the_sop_unlaunchable():
                                            actor=ACTOR)
                 await svc.delete(initial.state_id)
 
+                instances = InstanceService(session, SCOPE_A)
+                launch = IS.CreateInstanceRequest(sop_id=sop.sop_id)
                 with pytest.raises(ConflictError):
-                    await InstanceService(session, SCOPE_A).create(
-                        IS.CreateInstanceRequest(sop_id=sop.sop_id), actor=ACTOR)
+                    await instances.create(launch, actor=ACTOR)
             async with sm() as check:
                 assert await check.get(State, initial.state_id) is None
         finally:
@@ -320,11 +321,10 @@ def test_a_transition_whose_endpoint_was_deleted_is_refused_not_crashed():
 
                 await states.delete(end.state_id)
 
+                instances = InstanceService(session, SCOPE_A)
+                dangling = IS.TransitionInstanceRequest(transition_id=trans.transition_id)
                 with pytest.raises(ConflictError):
-                    await InstanceService(session, SCOPE_A).transition(
-                        inst.instance_id,
-                        IS.TransitionInstanceRequest(transition_id=trans.transition_id),
-                        actor=ACTOR)
+                    await instances.transition(inst.instance_id, dangling, actor=ACTOR)
             async with sm() as check:
                 row = await check.get(WorkflowInstance, inst.instance_id)
                 assert row.current_state == start.state_id, "instance moved anyway"
@@ -448,13 +448,15 @@ def test_listing_states_of_another_tenants_sop_is_not_found():
         try:
             async with sm() as session:
                 sop_a = await _new_sop(session)
+                b_states = StateService(session, SCOPE_B)
+                b_transitions = TransitionService(session, SCOPE_B)
+                sneaky = _state_body("Sneaky")
                 with pytest.raises(NotFoundError):
-                    await StateService(session, SCOPE_B).list_(sop_a.sop_id)
+                    await b_states.list_(sop_a.sop_id)
                 with pytest.raises(NotFoundError):
-                    await TransitionService(session, SCOPE_B).list_(sop_a.sop_id)
+                    await b_transitions.list_(sop_a.sop_id)
                 with pytest.raises(NotFoundError):
-                    await StateService(session, SCOPE_B).create(
-                        sop_a.sop_id, _state_body("Sneaky"), actor=ACTOR)
+                    await b_states.create(sop_a.sop_id, sneaky, actor=ACTOR)
             async with sm() as check:
                 rows = await StateService(check, SCOPE_A).list_(sop_a.sop_id)
                 assert rows == []

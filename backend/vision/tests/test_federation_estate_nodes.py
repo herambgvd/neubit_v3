@@ -87,7 +87,8 @@ async def test_the_row_carries_what_the_console_shows(app, nodes):
     # a field that drifts.
     assert "host" not in north
     assert "rtsp_base" not in north
-    assert north["capacity_channels"] == 64 and north["used_channels"] == 12
+    assert north["capacity_channels"] == 64
+    assert north["used_channels"] == 12
     assert north["enrolled_at"]
 
 

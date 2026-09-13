@@ -409,7 +409,8 @@ async def test_motion_search_relays_the_not_ai_disclosure_whole(app, node, recor
     body = r.json()
     assert r.status_code == 200
     assert "NOT AI" in body["method"]
-    assert body["complete"] is False and body["notes"] == ["frame budget reached"]
+    assert body["complete"] is False
+    assert body["notes"] == ["frame budget reached"]
     assert body["examined_to"] == "2026-01-01T00:30:00Z"
     # It is a node call on the bare estate route, NOT under /onvif/ — it reads the
     # recording index and never touches the camera.
@@ -435,7 +436,8 @@ async def test_relay_latching_null_survives(app, node, recorder):
         r = await c.post(FED + "/io/relays/RelayToken_1/state",
                          json={"state": "active"}, headers=_admin())
     body = r.json()
-    assert body["latching"] is None and body["mode_unknown"] is True
+    assert body["latching"] is None
+    assert body["mode_unknown"] is True
 
 
 async def test_talk_uplink_streams_the_body_through(app, node, recorder):

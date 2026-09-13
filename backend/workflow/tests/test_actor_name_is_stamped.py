@@ -107,7 +107,8 @@ def test_the_change_history_carries_the_name_too():
             await engine.dispose()
 
     row = _run(go())
-    assert row.history and row.history[-1]["set_by_name"] == "Priya Nair"
+    assert row.history
+    assert row.history[-1]["set_by_name"] == "Priya Nair"
     assert row.history[-1]["from_level"] == "elevated"
 
 

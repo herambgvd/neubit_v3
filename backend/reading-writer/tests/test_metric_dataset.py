@@ -242,15 +242,14 @@ def test_a_widget_that_names_no_metric_is_told_which_ones_exist(monkeypatch):
 
     monkeypatch.setattr(md.metric_registry, "list_definitions", fake_list)
     q = _spec(select=[{"measure": "evaluations", "aggregate": "sum"}]).query
+    evaluating = md._evaluate(
+        None, None, q,
+        resolution="1h",
+        start=dt.datetime(2026, 9, 1, tzinfo=dt.timezone.utc),
+        end=dt.datetime(2026, 9, 2, tzinfo=dt.timezone.utc),
+    )
     with pytest.raises(ValidationError) as exc:
-        asyncio.run(
-            md._evaluate(
-                None, None, q,
-                resolution="1h",
-                start=dt.datetime(2026, 9, 1, tzinfo=dt.timezone.utc),
-                end=dt.datetime(2026, 9, 2, tzinfo=dt.timezone.utc),
-            )
-        )
+        asyncio.run(evaluating)
     assert "ccei" in str(exc.value)
 
 
@@ -261,31 +260,28 @@ def test_too_many_metrics_at_once_is_refused():
             {"column": "metric", "op": "in", "values": [f"m{i}" for i in range(md.MAX_METRICS + 1)]}
         ],
     ).query
+    evaluating = md._evaluate(
+        None, None, q,
+        resolution="1h",
+        start=dt.datetime(2026, 9, 1, tzinfo=dt.timezone.utc),
+        end=dt.datetime(2026, 9, 2, tzinfo=dt.timezone.utc),
+    )
     with pytest.raises(ValidationError) as exc:
-        asyncio.run(
-            md._evaluate(
-                None, None, q,
-                resolution="1h",
-                start=dt.datetime(2026, 9, 1, tzinfo=dt.timezone.utc),
-                end=dt.datetime(2026, 9, 2, tzinfo=dt.timezone.utc),
-            )
-        )
+        asyncio.run(evaluating)
     assert str(md.MAX_METRICS) in str(exc.value)
 
 
 def test_a_shown_dimension_outside_the_grouping_is_refused(monkeypatch):
     """SQL's own rule. Answering it from an arbitrary member of the group is how
     one site's number ends up labelled with another site's name."""
+    spec = _spec(
+        select=[{"dimension": "device_tag"}, {"measure": "evaluations", "aggregate": "sum"}],
+        group_by=["metric"],
+        filters=[{"column": "metric", "op": "=", "value": "chiller_delta_t"}],
+    )
+    result = _result(_ok(4.0))
     with pytest.raises(ValidationError) as exc:
-        _run(
-            monkeypatch,
-            _spec(
-                select=[{"dimension": "device_tag"}, {"measure": "evaluations", "aggregate": "sum"}],
-                group_by=["metric"],
-                filters=[{"column": "metric", "op": "=", "value": "chiller_delta_t"}],
-            ),
-            _result(_ok(4.0)),
-        )
+        _run(monkeypatch, spec, result)
     assert "not grouped by" in str(exc.value)
 
 

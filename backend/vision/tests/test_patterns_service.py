@@ -110,8 +110,10 @@ async def test_pattern_list_is_active_filter(db):
 async def test_pattern_duplicate_name_conflicts(db):
     svc = _psvc(db)
     await svc.create(PatternCreate(name="Dup"), actor=_Actor())
+    same_name = PatternCreate(name="Dup")
+    actor = _Actor()
     with pytest.raises(ConflictError):
-        await svc.create(PatternCreate(name="Dup"), actor=_Actor())
+        await svc.create(same_name, actor=actor)
 
 
 async def test_pattern_tenant_isolation(db):

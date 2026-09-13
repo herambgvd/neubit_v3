@@ -152,7 +152,8 @@ async def test_a_log_tail_is_passed_through_and_bounded(app, world):
         zero = await c.get(
             f"{INFRA}/containers/core/logs", headers=bearer(world["sa"]), params={"tail": 0}
         )
-    assert ok.status_code == 200 and ok.json()["lines"] == ["boot", "ready"]
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["lines"] == ["boot", "ready"]
     assert ("logs", "core", 500) in RecordingAgent.calls
     assert too_many.status_code == 422
     assert zero.status_code == 422

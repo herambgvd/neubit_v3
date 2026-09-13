@@ -102,13 +102,15 @@ async def test_a_key_cannot_hold_the_wildcard_by_any_route(app, db):
             f"{PREFIX}/auth/api-keys", headers=bearer(actor),
             json={"name": "everything", "scopes": ["*"]},
         )
-        assert r.status_code == 422 and "wildcard" in r.text
+        assert r.status_code == 422, r.text
+        assert "wildcard" in r.text
 
         r = await c.post(
             f"{PREFIX}/auth/api-keys", headers=bearer(actor),
             json={"name": "everything", "role_id": str(admin_role.id)},
         )
-        assert r.status_code == 422 and "wildcard" in r.text
+        assert r.status_code == 422, r.text
+        assert "wildcard" in r.text
 
 
 async def test_a_key_cannot_be_wider_than_its_creator(app, db):
@@ -121,7 +123,8 @@ async def test_a_key_cannot_be_wider_than_its_creator(app, db):
             f"{PREFIX}/auth/api-keys", headers=bearer(actor),
             json={"name": "sneaky", "scopes": ["bi.read", "user.manage"]},
         )
-        assert r.status_code == 422 and "user.manage" in r.text
+        assert r.status_code == 422, r.text
+        assert "user.manage" in r.text
         # A scope the creator does hold is still grantable: the rule narrows rather
         # than refuses.
         assert (await _mint(c, actor, scopes=["bi.read"]))["scopes"] == ["bi.read"]
@@ -136,7 +139,8 @@ async def test_a_scope_nothing_enforces_is_refused(app, db):
             f"{PREFIX}/auth/api-keys", headers=bearer(actor),
             json={"name": "typo", "scopes": ["bi.raed"]},
         )
-        assert r.status_code == 422 and "bi.raed" in r.text
+        assert r.status_code == 422, r.text
+        assert "bi.raed" in r.text
 
 
 # --- the exchange ------------------------------------------------------------
@@ -151,7 +155,8 @@ async def test_exchange_yields_an_ordinary_access_token_carrying_only_the_scopes
         r = await _exchange(c, created["key"])
         assert r.status_code == 200, r.text
         body = r.json()
-        assert body["token_type"] == "bearer" and body["scopes"] == ["bi.read"]
+        assert body["token_type"] == "bearer"
+        assert body["scopes"] == ["bi.read"]
         # 15 minutes, not the 12 hours a person gets: this is how long a revoked key
         # still works at the satellites.
         assert body["expires_in"] == 15 * 60
@@ -256,7 +261,8 @@ async def test_a_key_is_confined_to_its_scopes_on_core_routes(app, db):
             json={"email": "made-by-a-key@x.io", "password": "Passw0rd!",
                   "full_name": "Nope", "role_id": str(role.id)},
         )
-        assert r.status_code == 403 and "user.manage" in r.text
+        assert r.status_code == 403, r.text
+        assert "user.manage" in r.text
 
         # ...and cannot mint itself a wider key either.
         r = await c.post(
@@ -329,7 +335,8 @@ async def test_revocation_is_immediate_and_touches_no_user_account(app, db):
         assert (await c.get(f"{PREFIX}/auth/me", headers=bearer(actor))).status_code == 200
 
     key = (await db.execute(select(ApiKey))).scalar_one()
-    assert key.is_active is False and key.revoked_at is not None
+    assert key.is_active is False
+    assert key.revoked_at is not None
 
 
 # --- the audit trail ---------------------------------------------------------
@@ -348,7 +355,8 @@ async def test_a_keys_action_is_not_recorded_as_a_persons(app, db):
     rows = (await db.execute(select(AuditLog).order_by(AuditLog.ts))).scalars().all()
     by_key = [r for r in rows if r.actor_type == "apikey"]
     by_person = [r for r in rows if r.actor_type == "user"]
-    assert len(by_key) == 1 and len(by_person) == 1
+    assert len(by_key) == 1
+    assert len(by_person) == 1
 
     (machine,) = by_key
     assert machine.action == "apikey.create"
@@ -362,7 +370,8 @@ async def test_a_keys_action_is_not_recorded_as_a_persons(app, db):
     assert machine.meta["scopes"] == ["bi.read"]
 
     (person,) = by_person
-    assert person.actor_email == "keyadmin@x.io" and person.actor_type == "user"
+    assert person.actor_email == "keyadmin@x.io"
+    assert person.actor_type == "user"
 
 
 async def test_system_actions_are_classified_as_system_not_as_users(db):
@@ -402,7 +411,9 @@ async def test_service_method_refuses_a_key_with_no_scopes_at_all(db):
     from app.core.errors import ValidationError
     from app.auth.schemas import ApiKeyCreateIn
 
+    # Only the resolve call belongs inside the `with`: building the request and the
+    # service must not be what raises, or this would pass without ever asking.
+    request = ApiKeyCreateIn(name="inert", scopes=[])
+    service = AuthService(db)
     with pytest.raises(ValidationError):
-        await AuthService(db)._resolve_scopes(
-            ApiKeyCreateIn(name="inert", scopes=[]), None, None
-        )
+        await service._resolve_scopes(request, None, None)

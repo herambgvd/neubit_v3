@@ -241,7 +241,8 @@ async def test_a_quote_in_a_key_cannot_break_out_of_the_disposition_header():
     _, headers = _serving_headers('exports/we"ird.pdf')
     value = headers["Content-Disposition"]
     assert value.count('"') == 2
-    assert "\n" not in value and "\r" not in value
+    assert "\n" not in value
+    assert "\r" not in value
 
 
 async def test_files_responses_are_sandboxed_by_csp(app, user):

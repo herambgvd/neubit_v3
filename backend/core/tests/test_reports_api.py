@@ -141,7 +141,8 @@ async def test_downloading_a_finished_report_needs_the_export_permission(app, wo
     assert refused.status_code == 403, refused.text
     # The same reader still sees the job itself: a narrower refusal, not a broken
     # route.
-    assert listed.status_code == 200 and listed.json()["status"] == "done"
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["status"] == "done"
     assert allowed.status_code == 200, allowed.text
     assert "acme-q1.csv" in allowed.json()["url"]
 

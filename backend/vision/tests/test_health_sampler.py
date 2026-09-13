@@ -90,11 +90,13 @@ async def test_sample_one_offline_when_unreachable(monkeypatch):
     sample = await sample_one(db, cam, timeout=0.1)
 
     assert cam.status == "offline"
-    assert cam.last_error and "unreachable" in cam.last_error
+    assert cam.last_error
+    assert "unreachable" in cam.last_error
     assert sample.status == "offline"
     assert sample.bitrate_kbps is None  # P2 metric — null in P1
     assert db.added == [sample]
-    assert len(emitted) == 1 and emitted[0]["status"] == "offline"
+    assert len(emitted) == 1
+    assert emitted[0]["status"] == "offline"
 
 
 @pytest.mark.asyncio

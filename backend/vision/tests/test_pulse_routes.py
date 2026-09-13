@@ -95,7 +95,8 @@ async def test_one_sick_recorder_degrades_the_view_instead_of_emptying_it(app, n
     assert r.status_code == 200
     body = r.json()
     assert body["partial"] is True
-    assert body["totals"]["recorders"] == 2 and body["totals"]["recorders_answered"] == 1
+    assert body["totals"]["recorders"] == 2
+    assert body["totals"]["recorders_answered"] == 1
     assert body["unreachable"][0]["name"] == "south"
     # Named at the top of the list, because everything else about it is unknown.
     assert body["attention"][0]["kind"] == "recorder_unreachable"

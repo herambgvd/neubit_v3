@@ -73,7 +73,8 @@ async def test_a_report_url_is_signed_and_an_avatar_url_is_not():
     storage = LocalStorage()
     report_url = await storage.url("reports/abc.csv")
     avatar_url = await storage.url("avatars/xyz.png")
-    assert "sig=" in report_url and "exp=" in report_url
+    assert "sig=" in report_url
+    assert "exp=" in report_url
     # Signing avatars would break every <img> the console renders with no token.
     assert "sig=" not in avatar_url
 

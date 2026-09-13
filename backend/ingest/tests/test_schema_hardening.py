@@ -42,7 +42,8 @@ PAYLOAD = {"a": 1}
 def test_a_malformed_schema_is_an_error_not_a_crash(schema, label):
     result = validate_payload(PAYLOAD, schema)
     assert result.ok is False, label
-    assert result.errors and "invalid schema" in result.errors[0], label
+    assert result.errors, label
+    assert "invalid schema" in result.errors[0], label
 
 
 @pytest.mark.parametrize(

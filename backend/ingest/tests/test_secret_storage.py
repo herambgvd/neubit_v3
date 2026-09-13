@@ -68,7 +68,8 @@ def test_a_legacy_row_still_decrypts():
     offline at once, and the symptom would be 'bad signature' from senders that
     changed nothing."""
     legacy = _legacy_encrypt("old-secret")
-    assert legacy.startswith("enc:") and not legacy.startswith("enc:v1:")
+    assert legacy.startswith("enc:")
+    assert not legacy.startswith("enc:v1:")
     assert decrypt_secret(TENANT_A, legacy) == "old-secret"
 
 

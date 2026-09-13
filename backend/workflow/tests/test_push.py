@@ -121,8 +121,9 @@ def test_no_recipient_raises():
     ctx = DeliveryContext(
         tenant_id="t", recipient="", subject="s", body="b", metadata={}, channel_config={},
     )
+    sending = conn.send(ctx)
     with pytest.raises(RuntimeError):
-        _run(conn.send(ctx))
+        _run(sending)
 
 
 def test_fcm_no_credential_degrades_gracefully():
@@ -140,8 +141,9 @@ def test_fcm_no_credential_degrades_gracefully():
         tenant_id="t", recipient="u", subject="s", body="b", metadata={},
         channel_config={},  # no service_account
     )
+    sending = conn.send(ctx)
     with pytest.raises(RuntimeError) as exc:
-        _run(conn.send(ctx))
+        _run(sending)
     assert "failed" in str(exc.value).lower()
     assert pruned == []  # a missing-credential is not a token-invalidation
 
@@ -155,8 +157,9 @@ def test_apns_no_credential_degrades_gracefully():
         tenant_id="t", recipient="u", subject="s", body="b", metadata={},
         channel_config={},  # no apns key_id/team_id/topic/auth_key
     )
+    sending = conn.send(ctx)
     with pytest.raises(RuntimeError):
-        _run(conn.send(ctx))
+        _run(sending)
 
 
 async def _noop():

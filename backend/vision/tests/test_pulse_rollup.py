@@ -185,7 +185,8 @@ def test_an_offline_camera_reaches_the_attention_list_with_where_to_go():
                 "status": "offline", "last_error": "no route to host"}]
     out = rollup.overview(views(board()), unreachable=[], offline=offline)
     item = next(a for a in out["attention"] if a["kind"] == "camera_offline")
-    assert item["camera_id"] == "c2" and item["node_id"] == "n1"
+    assert item["camera_id"] == "c2"
+    assert item["node_id"] == "n1"
     assert item["where"] == "north"
 
 

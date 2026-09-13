@@ -117,11 +117,14 @@ async def test_start_live_issues_session_with_token_urls(db, camera):
     out = await _svc(db, stub).start_live(camera.id, "sub", actor=_Actor())
 
     # nvr was asked to ensure the sub-stream RTSP.
-    assert stub.ensured and stub.ensured[0]["profile"] == "sub"
+    assert stub.ensured
+    assert stub.ensured[0]["profile"] == "sub"
     assert stub.ensured[0]["rtsp_url"].startswith("rtsp://")
     # URLs carry the media token as ?token= (browser HLS/WHEP auth).
-    assert "?token=" in out.hls_url and "?token=" in out.webrtc_url
-    assert out.token and out.ready is True
+    assert "?token=" in out.hls_url
+    assert "?token=" in out.webrtc_url
+    assert out.token
+    assert out.ready is True
     # SQLite drops tzinfo on read-back (Postgres keeps it — column is timestamptz);
     # normalise to naive-UTC for the comparison so the test is backend-agnostic.
     exp = out.expires_at
@@ -147,13 +150,16 @@ async def test_start_live_persists_only_token_hash(db, camera):
     assert row.token_hash == media_token.token_hash(out.token)
     # Raw token is NEVER at rest.
     assert out.token not in (row.token_hash or "")
-    assert row.mediamtx_name and row.node == "mediamtx-0"
+    assert row.mediamtx_name
+    assert row.node == "mediamtx-0"
 
 
 async def test_start_live_nvr_down_is_502_not_500(db, camera):
     stub = _StubNvr(fail=True)
+    svc = _svc(db, stub)
+    actor = _Actor()
     with pytest.raises(LiveUpstreamError) as ei:
-        await _svc(db, stub).start_live(camera.id, "sub", actor=_Actor())
+        await svc.start_live(camera.id, "sub", actor=actor)
     assert ei.value.status_code == 502
 
 
@@ -162,16 +168,18 @@ async def test_start_live_no_rtsp_is_502(db):
     cam = Camera(id=str(uuid.uuid4()), tenant_id=TENANT, name="No RTSP", connection_type="rtsp")
     db.add(cam)
     await db.commit()
+    svc = _svc(db, _StubNvr())
+    actor = _Actor()
     with pytest.raises(LiveUpstreamError):
-        await _svc(db, _StubNvr()).start_live(cam.id, "sub", actor=_Actor())
+        await svc.start_live(cam.id, "sub", actor=actor)
 
 
 async def test_start_live_tenant_isolation(db, camera):
     # A different tenant cannot see the camera → NotFound (not 500/502).
+    theirs = _svc(db, _StubNvr(), tenant=OTHER_TENANT)
+    actor = _Actor()
     with pytest.raises(NotFoundError):
-        await _svc(db, _StubNvr(), tenant=OTHER_TENANT).start_live(
-            camera.id, "sub", actor=_Actor()
-        )
+        await theirs.start_live(camera.id, "sub", actor=actor)
 
 
 # ── verify (hot path) ──────────────────────────────────────────────────────
@@ -184,8 +192,9 @@ async def test_verify_valid_token(db, camera):
 
 
 async def test_verify_bad_token_raises_401(db):
+    svc = _svc(db, _StubNvr())
     with pytest.raises(UnauthorizedError):
-        await _svc(db, _StubNvr()).verify("not.a.jwt")
+        await svc.verify("not.a.jwt")
 
 
 async def test_verify_expired_token_raises_401(db, camera):
@@ -198,8 +207,9 @@ async def test_verify_expired_token_raises_401(db, camera):
         _secret(),
         algorithm="HS256",
     )
+    svc = _svc(db, _StubNvr())
     with pytest.raises(UnauthorizedError):
-        await _svc(db, _StubNvr()).verify(tok)
+        await svc.verify(tok)
 
 
 async def test_verify_rejects_access_token(db):
@@ -208,8 +218,9 @@ async def test_verify_rejects_access_token(db):
 
     now = int(datetime.now(timezone.utc).timestamp())
     tok = jwt.encode({"type": "access", "sub": "u", "exp": now + 300}, _secret(), algorithm="HS256")
+    svc = _svc(db, _StubNvr())
     with pytest.raises(UnauthorizedError):
-        await _svc(db, _StubNvr()).verify(tok)
+        await svc.verify(tok)
 
 
 async def test_verify_check_camera_tenant_mismatch(db, camera):
@@ -230,8 +241,9 @@ async def test_verify_check_camera_tenant_mismatch(db, camera):
         _secret(),
         algorithm="HS256",
     )
+    svc = _svc(db, _StubNvr())
     with pytest.raises(NotFoundError):
-        await _svc(db, _StubNvr()).verify(tok, check_camera=True)
+        await svc.verify(tok, check_camera=True)
 
 
 # ── renew + release ────────────────────────────────────────────────────────
@@ -262,8 +274,10 @@ async def test_release_deletes_row_and_drops_path(db, camera):
 
 async def test_release_other_tenant_cannot(db, camera):
     out = await _svc(db, _StubNvr()).start_live(camera.id, "sub", actor=_Actor())
+    theirs = _svc(db, _StubNvr(), tenant=OTHER_TENANT)
+    actor = _Actor()
     with pytest.raises(NotFoundError):
-        await _svc(db, _StubNvr(), tenant=OTHER_TENANT).release(out.session_id, actor=_Actor())
+        await theirs.release(out.session_id, actor=actor)
 
 
 # ── url/token helpers ──────────────────────────────────────────────────────

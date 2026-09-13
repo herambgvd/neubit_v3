@@ -157,7 +157,8 @@ async def test_crud_update_and_delete(db):
     upd = await svc.update(
         pub.id, LinkageRuleUpdate(is_active=False, cooldown_seconds=60), actor=_Actor()
     )
-    assert upd.is_active is False and upd.cooldown_seconds == 60
+    assert upd.is_active is False
+    assert upd.cooldown_seconds == 60
     await svc.delete(pub.id)
     with pytest.raises(NotFoundError):
         await svc.get(pub.id)
@@ -187,7 +188,8 @@ async def test_engine_matches_and_fires_actions(engine, maker, db, camera, spy):
     assert fired == 1
     # Both actions ran, targeting the event camera.
     names = [c[0] for c in spy]
-    assert "start_recording" in names and "popup" in names
+    assert "start_recording" in names
+    assert "popup" in names
     assert all(c[2] == camera.id for c in spy)
     # A fire-audit row was written with per-action outcomes.
     async with maker() as s:
@@ -199,7 +201,8 @@ async def test_engine_ignores_nonmatching_type(engine, maker, db, camera, spy):
     await _mk_rule(db, trigger_event_type="tamper")
     eng = LinkageEngine(maker)
     fired = await eng.handle_camera_event(_cam_event_env(camera.id, event_type="motion"))
-    assert fired == 0 and spy == []
+    assert fired == 0
+    assert spy == []
 
 
 async def test_engine_cooldown_blocks_rapid_second_fire(engine, maker, db, camera, spy):
@@ -207,7 +210,8 @@ async def test_engine_cooldown_blocks_rapid_second_fire(engine, maker, db, camer
     eng = LinkageEngine(maker)
     first = await eng.handle_camera_event(_cam_event_env(camera.id))
     second = await eng.handle_camera_event(_cam_event_env(camera.id))
-    assert first == 1 and second == 0  # cooldown blocks the second
+    assert first == 1
+    assert second == 0, "the cooldown must block the second fire"
     # Only one fire's worth of action calls (2 actions).
     assert len([c for c in spy if c[0] == "popup"]) == 1
 
@@ -295,7 +299,8 @@ async def test_access_door_forced_resolves_camera_explicit_map(engine, maker, db
     # Audit records the door_ref + camera.
     async with maker() as s:
         row = (await s.execute(LinkageFire.__table__.select())).fetchone()
-    assert row.door_ref == "DOOR-1" and row.camera_id == camera.id
+    assert row.door_ref == "DOOR-1"
+    assert row.camera_id == camera.id
 
 
 async def test_access_door_catchall_camera(engine, maker, db, camera, spy):
@@ -522,4 +527,5 @@ async def test_an_unreachable_recorder_is_a_clean_skip(maker, db, camera, monkey
 
     monkeypatch.setattr(actions_mod.fed, "goto_ptz_preset_node", _down)
     out = await actions_mod.action_ptz_preset(_ctx(maker, camera), {"preset_token": "p3"})
-    assert not out.ok and "connection refused" in out.detail
+    assert not out.ok
+    assert "connection refused" in out.detail

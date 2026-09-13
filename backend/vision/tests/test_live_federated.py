@@ -105,7 +105,8 @@ async def test_it_relays_the_session_the_owning_recorder_mints(db, monkeypatch):
     assert calls == [("http://rec-a:8000", CAM, "sub", "key-rec-a")]
     assert out["hls_url"] == "https://rec/a.m3u8"
     # Which recorder answered — two nodes' sessions must be tellable apart.
-    assert out["node_id"] == str(node.id) and out["node_name"] == "rec-a"
+    assert out["node_id"] == str(node.id)
+    assert out["node_name"] == "rec-a"
 
 
 async def test_the_second_call_does_not_re_ask_every_recorder(db, monkeypatch):
@@ -127,8 +128,9 @@ async def test_a_camera_no_recorder_has_is_not_found(db, monkeypatch):
     _estate(monkeypatch, {"http://rec-a:8000": ["some-other-camera"]})
     calls = _mint(monkeypatch)
 
+    svc = LiveService(db, _scope())
     with pytest.raises(NotFoundError):
-        await LiveService(db, _scope()).start_live(CAM, "sub", actor=None)
+        await svc.start_live(CAM, "sub", actor=None)
     assert calls == [], "asked a recorder to mint for a camera it does not have"
 
 
@@ -151,8 +153,9 @@ async def test_a_refusing_recorder_drops_the_cached_placement(db, monkeypatch):
     _estate(monkeypatch, {"http://rec-a:8000": [CAM]})
     _mint(monkeypatch, fails=True)
 
+    svc = LiveService(db, _scope())
     with pytest.raises(LiveUpstreamError):
-        await LiveService(db, _scope()).start_live(CAM, "sub", actor=None)
+        await svc.start_live(CAM, "sub", actor=None)
     assert CAM not in owning._CACHE, "kept a placement the recorder just disproved"  # noqa: SLF001
 
 
@@ -166,6 +169,7 @@ async def test_another_tenants_recorder_is_not_asked(db, monkeypatch):
     await db.commit()
     asked = _estate(monkeypatch, {"http://theirs:8000": [CAM]})
 
+    svc = LiveService(db, _scope())
     with pytest.raises(NotFoundError):
-        await LiveService(db, _scope()).start_live(CAM, "sub", actor=None)
+        await svc.start_live(CAM, "sub", actor=None)
     assert asked == [], "asked another tenant's recorder for a camera"

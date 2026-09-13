@@ -240,7 +240,8 @@ async def test_erase_removes_everything_it_says_it_does(db):
     assert await count(Notification) == 1  # only the neighbour's
     assert await count(DeviceToken) == 1
     assert await count(AlertState) == 1
-    assert removed["notifications"] == 1 and removed["device_tokens"] == 1
+    assert removed["notifications"] == 1
+    assert removed["device_tokens"] == 1
     assert removed["alert_states"] == 1
 
 
@@ -287,7 +288,8 @@ async def test_retained_records_survive_and_stay_attributable(db):
     trail = (
         await db.execute(select(AuditLog).where(AuditLog.tenant_id == doomed.id))
     ).scalars().all()
-    assert len(trail) == 1 and trail[0].actor_email == "a@doomed.io"
+    assert len(trail) == 1
+    assert trail[0].actor_email == "a@doomed.io"
 
 
 async def test_a_platform_broadcast_survives_but_stops_naming_the_erased_tenant(db):
@@ -405,10 +407,9 @@ async def test_the_cascade_fixture_really_enforces_foreign_keys(fk_db):
     """Without the pragma every cascade test below would pass by doing nothing."""
     from sqlalchemy.exc import IntegrityError
 
+    orphan = _tables()["security_policies"].insert().values(tenant_id=uuid.uuid4())
     with pytest.raises(IntegrityError):
-        await fk_db.execute(
-            _tables()["security_policies"].insert().values(tenant_id=uuid.uuid4())
-        )
+        await fk_db.execute(orphan)
 
 
 @pytest.mark.parametrize("table_name", _CASCADE_TABLES)

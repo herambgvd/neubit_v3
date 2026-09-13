@@ -88,16 +88,20 @@ def test_source_filter_camera_vs_access_vs_manual():
                 svc = InstanceService(session, Scope(tenant_id=TENANT_A, is_superadmin=False))
 
                 cam, n = await svc.list_(source="vision")
-                assert n == 1 and [r.name for r in cam] == ["cam"]
+                assert n == 1
+                assert [r.name for r in cam] == ["cam"]
 
                 acc, n = await svc.list_(source="access")
-                assert n == 1 and acc[0].name == "access"
+                assert n == 1
+                assert acc[0].name == "access"
 
                 ing, n = await svc.list_(source="ingest")
-                assert n == 1 and ing[0].name == "ingest"
+                assert n == 1
+                assert ing[0].name == "ingest"
 
                 man, n = await svc.list_(source="manual")
-                assert n == 1 and man[0].name == "manual"
+                assert n == 1
+                assert man[0].name == "manual"
 
                 allrows, n = await svc.list_()
                 assert n == 4
@@ -124,11 +128,13 @@ def test_event_id_matches_camera_event_id_and_envelope_id():
 
                 # Lookup by the CAMERA event id (the cross-link the UI uses).
                 by_cam, n = await svc.list_(event_id="vms-42")
-                assert n == 1 and by_cam[0].name == "from-cam"
+                assert n == 1
+                assert by_cam[0].name == "from-cam"
 
                 # Lookup by the bus-envelope id also works.
                 by_bus, n = await svc.list_(event_id="bus-9")
-                assert n == 1 and by_bus[0].name == "from-cam"
+                assert n == 1
+                assert by_bus[0].name == "from-cam"
 
                 # A camera event with no incident → no match.
                 none, n = await svc.list_(event_id="vms-does-not-exist")
@@ -182,7 +188,8 @@ def test_filters_respect_tenant_scope():
                 svc_a = InstanceService(session, Scope(tenant_id=TENANT_A, is_superadmin=False))
                 # Tenant A never sees tenant B's rows, even matching the filter shape.
                 cam, n = await svc_a.list_(source="vision")
-                assert n == 1 and cam[0].name == "a-cam"
+                assert n == 1
+                assert cam[0].name == "a-cam"
                 # Tenant A cannot fetch tenant B's incident by B's camera-event id.
                 none, n = await svc_a.list_(event_id="vms-b")
                 assert n == 0

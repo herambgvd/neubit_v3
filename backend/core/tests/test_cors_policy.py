@@ -70,7 +70,8 @@ def test_the_regex_is_anchored():
     """Starlette full-matches, but an unanchored pattern here would be a trap for
     whoever edits it next."""
     pattern = Settings().cors_origin_regex
-    assert pattern.startswith("^") and pattern.endswith("$"), pattern
+    assert pattern.startswith("^"), pattern
+    assert pattern.endswith("$"), pattern
 
 
 def test_the_kernel_agrees():

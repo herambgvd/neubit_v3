@@ -195,8 +195,9 @@ async def test_sso_rejects_when_no_role_and_no_auto_provision(db):
     id_token = _unsigned_jwt({"email": "eve@corp.io", "name": "Eve"})
     from app.core.errors import UnauthorizedError
 
+    idp = _MockIdp(id_token)
     with pytest.raises(UnauthorizedError):
-        await svc.sso_exchange(cfg, code="c", http=_MockIdp(id_token), verify_id_token=_decode_unverified)
+        await svc.sso_exchange(cfg, code="c", http=idp, verify_id_token=_decode_unverified)
 
 
 # --- Dual authorization (four-eyes) -----------------------------------------
@@ -217,12 +218,13 @@ async def test_dual_auth_approve_flow(db):
     )
     assert decided.status == "approved"
     # Consume it right before the action; a second consume fails.
-    consumed = await svc.check_and_consume(scope_of(approver), "vms.export", "cam-1", req.id)
+    scope = scope_of(approver)
+    consumed = await svc.check_and_consume(scope, "vms.export", "cam-1", req.id)
     assert consumed.status == "consumed"
     from app.core.errors import ConflictError
 
     with pytest.raises(ConflictError):
-        await svc.check_and_consume(scope_of(approver), "vms.export", "cam-1", req.id)
+        await svc.check_and_consume(scope, "vms.export", "cam-1", req.id)
 
 
 async def test_dual_auth_self_approval_blocked(db):
@@ -232,8 +234,9 @@ async def test_dual_auth_self_approval_blocked(db):
     req = await svc.create_dual_auth(user, DualAuthRequestIn(action="vms.export"))
     from app.core.errors import ValidationError
 
+    scope = scope_of(user)
     with pytest.raises(ValidationError):
-        await svc.decide_dual_auth(user, scope_of(user), req.id, approve=True, note=None)
+        await svc.decide_dual_auth(user, scope, req.id, approve=True, note=None)
 
 
 async def test_dual_auth_deny_blocks_consume(db):
@@ -246,8 +249,9 @@ async def test_dual_auth_deny_blocks_consume(db):
     await svc.decide_dual_auth(approver, scope_of(approver), req.id, approve=False, note="no")
     from app.core.errors import UnauthorizedError
 
+    scope = scope_of(approver)
     with pytest.raises(UnauthorizedError):
-        await svc.check_and_consume(scope_of(approver), "recording.delete", "r1", req.id)
+        await svc.check_and_consume(scope, "recording.delete", "r1", req.id)
 
 
 async def test_dual_auth_action_mismatch_rejected(db):
@@ -260,9 +264,10 @@ async def test_dual_auth_action_mismatch_rejected(db):
     await svc.decide_dual_auth(approver, scope_of(approver), req.id, approve=True, note=None)
     from app.core.errors import ValidationError
 
+    scope = scope_of(approver)
     with pytest.raises(ValidationError):
         # approval was for vms.export, not tenant.delete
-        await svc.check_and_consume(scope_of(approver), "tenant.delete", "cam-1", req.id)
+        await svc.check_and_consume(scope, "tenant.delete", "cam-1", req.id)
 
 
 # --- directory/SSO role resolution is tenant-scoped ---------------------------
@@ -300,7 +305,8 @@ async def test_role_lookup_never_borrows_another_tenants_role(db):
     svc = SecurityService(db)
     assert await svc._role_by_name("Analyst", ta.id) is None
     got = await svc._role_by_name("Analyst", tb.id)
-    assert got is not None and got.tenant_id == tb.id
+    assert got is not None
+    assert got.tenant_id == tb.id
 
 
 async def test_role_lookup_survives_two_tenants_using_the_same_role_name(db):
@@ -336,7 +342,8 @@ async def test_a_shared_system_role_is_still_resolvable_and_loses_to_a_tenants_o
     await _role_in(db, "Viewer", ["vms.export"], None)  # shared system role
     svc = SecurityService(db)
     shared = await svc._role_by_name("Viewer", ta.id)
-    assert shared is not None and shared.tenant_id is None
+    assert shared is not None
+    assert shared.tenant_id is None
 
     own = await _role_in(db, "Viewer", ["*"], ta.id)
     assert (await svc._role_by_name("Viewer", ta.id)).id == own.id

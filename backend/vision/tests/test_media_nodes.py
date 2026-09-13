@@ -124,15 +124,20 @@ async def test_register_online_then_crud(db, reachable):
 async def test_duplicate_name_conflicts(db, reachable):
     svc = MediaNodeService(db, _scope(TENANT_A))
     await svc.create(MediaNodeCreate(name="dup", api_url="http://a:8000"))
+    same_name = MediaNodeCreate(name="dup", api_url="http://b:8000")
     with pytest.raises(ConflictError):
-        await svc.create(MediaNodeCreate(name="dup", api_url="http://b:8000"))
+        await svc.create(same_name)
 
 
 async def test_invalid_status_rejected(db, reachable):
     svc = MediaNodeService(db, _scope(TENANT_A))
     node = await svc.create(MediaNodeCreate(name="n", api_url="http://a:8000"))
+    # The schema deliberately types `status` as a plain string; the SERVICE is what
+    # checks it against NODE_STATUSES. Building the patch inside the `with` would
+    # have let a schema-level refusal pass for a service-level one.
+    patch = MediaNodeUpdate(status="bogus")
     with pytest.raises(ValidationError):
-        await svc.update(node.id, MediaNodeUpdate(status="bogus"))
+        await svc.update(node.id, patch)
 
 
 # ── tenant isolation ─────────────────────────────────────────────────────────────

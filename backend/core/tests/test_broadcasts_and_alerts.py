@@ -107,7 +107,8 @@ async def test_a_broadcast_aimed_at_one_tenant_is_invisible_to_another(app, worl
     async with api_client(app) as c:
         for_a = await c.get(f"{PREFIX}/broadcasts/active", headers=bearer(world["a"]))
         for_b = await c.get(f"{PREFIX}/broadcasts/active", headers=bearer(world["b"]))
-    assert for_a.status_code == 200 and for_b.status_code == 200
+    assert for_a.status_code == 200, for_a.text
+    assert for_b.status_code == 200, for_b.text
     assert [b["id"] for b in for_a.json()] == [str(mine.id)]
     assert for_b.json() == []
 
@@ -179,7 +180,8 @@ async def test_an_operator_can_publish_edit_and_retract_a_broadcast(app, world):
         listed = await c.get(ADMIN_BC, headers=bearer(world["sa"]))
 
     assert created.json()["target_tenant_ids"] == [str(world["ta"].id)]
-    assert edited.status_code == 200 and edited.json()["body"] == "postponed"
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["body"] == "postponed"
     assert [b["body"] for b in seen_by_tenant.json()] == ["postponed"]
     assert removed.status_code == 204
     assert gone.json() == []

@@ -134,7 +134,8 @@ async def test_creating_a_cardholder_writes_through_and_maps_back(app, session, 
     action, collection, body = controller["log"][0]
     assert (action, collection) == ("create", "cardholders")
     # snake_case in, DDS PascalCase out.
-    assert body["FirstName"] == "Asha" and body["LastName"] == "Rao"
+    assert body["FirstName"] == "Asha"
+    assert body["LastName"] == "Rao"
     assert body["Email"] == "asha@example.com"
     # and DDS PascalCase back to snake_case for the caller.
     got = r.json()

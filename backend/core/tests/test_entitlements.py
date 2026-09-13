@@ -130,13 +130,19 @@ async def test_token_entitlements_expired_license_state(db, admin_role):
 async def test_token_entitlements_empty_for_superadmin(db, admin_role):
     sa = await make_user(db, "sa@platform.com", admin_role, superadmin=True)
     features, limits, license_state, tenant_status = await token_entitlements(db, sa)
-    assert features == {} and limits == {} and license_state == "active" and tenant_status == "active"
+    assert features == {}
+    assert limits == {}
+    assert license_state == "active"
+    assert tenant_status == "active"
 
 
 async def test_token_entitlements_empty_for_tenantless_user(db, admin_role):
     user = await make_user(db, "nt@acme.com", admin_role)  # tenant_id is None
     features, limits, license_state, tenant_status = await token_entitlements(db, user)
-    assert features == {} and limits == {} and license_state == "active" and tenant_status == "active"
+    assert features == {}
+    assert limits == {}
+    assert license_state == "active"
+    assert tenant_status == "active"
 
 
 # --- token claims -----------------------------------------------------------

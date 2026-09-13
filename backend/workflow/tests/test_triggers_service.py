@@ -372,21 +372,21 @@ def test_alert_codes_are_unique_within_a_tenant_but_not_across_them():
         try:
             async with sm() as session:
                 body = T.CreateAlertFormatRequest(alert_code="DUP", name="Dup")
-                await AlertFormatService(session, SCOPE_A).create(body, actor=ACTOR)
+                a_formats = AlertFormatService(session, SCOPE_A)
+                await a_formats.create(body, actor=ACTOR)
                 with pytest.raises(ConflictError):
-                    await AlertFormatService(session, SCOPE_A).create(body, actor=ACTOR)
+                    await a_formats.create(body, actor=ACTOR)
                 # Another tenant may hold the same code.
                 b_row = await AlertFormatService(session, SCOPE_B).create(body, actor=ACTOR)
                 assert b_row.alert_code == "DUP"
 
-                other = await AlertFormatService(session, SCOPE_A).create(
+                other = await a_formats.create(
                     T.CreateAlertFormatRequest(alert_code="OTHER", name="Other"), actor=ACTOR)
+                steal_the_code = T.UpdateAlertFormatRequest(alert_code="DUP")
                 with pytest.raises(ConflictError):
-                    await AlertFormatService(session, SCOPE_A).update(
-                        other.format_id,
-                        T.UpdateAlertFormatRequest(alert_code="DUP"), actor=ACTOR)
+                    await a_formats.update(other.format_id, steal_the_code, actor=ACTOR)
                 # Renaming to its own code is not a clash with itself.
-                same = await AlertFormatService(session, SCOPE_A).update(
+                same = await a_formats.update(
                     other.format_id,
                     T.UpdateAlertFormatRequest(alert_code="OTHER", name="Renamed"), actor=ACTOR)
                 assert same.name == "Renamed"
@@ -430,10 +430,11 @@ def test_a_trigger_cannot_be_created_against_another_tenants_sop():
             async with sm() as session:
                 b_sop = await _sop(session, tenant=TENANT_B, name="B's SOP")
                 await session.commit()
+                a_triggers = TriggerService(session, SCOPE_A)
+                sneaky = T.CreateTriggerRequest(name="Sneaky", sop_id=b_sop.sop_id,
+                                                event_type="x")
                 with pytest.raises(NotFoundError):
-                    await TriggerService(session, SCOPE_A).create(
-                        T.CreateTriggerRequest(name="Sneaky", sop_id=b_sop.sop_id,
-                                               event_type="x"), actor=ACTOR)
+                    await a_triggers.create(sneaky, actor=ACTOR)
             async with sm() as check:
                 assert (await check.execute(select(Trigger))).scalars().all() == []
         finally:
@@ -455,9 +456,9 @@ def test_a_trigger_cannot_be_repointed_at_another_tenants_sop():
                 trig = await svc.create(
                     T.CreateTriggerRequest(name="Mine", sop_id=a_sop.sop_id, event_type="x"),
                     actor=ACTOR)
+                repoint = T.UpdateTriggerRequest(sop_id=b_sop.sop_id)
                 with pytest.raises(NotFoundError):
-                    await svc.update(trig.trigger_id,
-                                     T.UpdateTriggerRequest(sop_id=b_sop.sop_id), actor=ACTOR)
+                    await svc.update(trig.trigger_id, repoint, actor=ACTOR)
         finally:
             await engine.dispose()
 
@@ -504,14 +505,15 @@ def test_an_alert_format_cannot_be_pointed_at_another_tenants_sop():
                 await session.flush()
                 await session.commit()
                 svc = AlertFormatService(session, SCOPE_A)
+                steal = T.CreateAlertFormatRequest(
+                    alert_code="STEAL", name="Steal", sop_id=b_sop.sop_id)
                 with pytest.raises(NotFoundError):
-                    await svc.create(T.CreateAlertFormatRequest(
-                        alert_code="STEAL", name="Steal", sop_id=b_sop.sop_id), actor=ACTOR)
+                    await svc.create(steal, actor=ACTOR)
                 fmt = await svc.create(T.CreateAlertFormatRequest(
                     alert_code="MINE", name="Mine", sop_id=a_sop.sop_id), actor=ACTOR)
+                repoint = T.UpdateAlertFormatRequest(sop_id=b_sop.sop_id)
                 with pytest.raises(NotFoundError):
-                    await svc.update(fmt.format_id,
-                                     T.UpdateAlertFormatRequest(sop_id=b_sop.sop_id), actor=ACTOR)
+                    await svc.update(fmt.format_id, repoint, actor=ACTOR)
                 fmt_id, a_id = fmt.format_id, a_sop.sop_id
             async with sm() as check:
                 # The refused create left nothing behind, and the refused update

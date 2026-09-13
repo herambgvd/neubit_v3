@@ -53,8 +53,12 @@ async def test_unconfigured_peer_refuses_with_the_reason_not_a_crash(monkeypatch
     for key in ("VE_DASHFORGE_BASE_URL", "VE_DASHFORGE_EMAIL", "VE_DASHFORGE_PASSWORD"):
         monkeypatch.delenv(key, raising=False)
     try:
+        # Constructing the client must NOT be what refuses — a client that blew up
+        # on an empty base URL would satisfy this test without the mint call ever
+        # reaching the named-503 path it exists to protect.
+        client = DashForgeClient()
         with pytest.raises(DashForgeUnavailable) as e:
-            await DashForgeClient().mint_embed_token(
+            await client.mint_embed_token(
                 workspace_ref="1", dashboard_ref="2", scope=None
             )
         assert "not configured" in str(e.value)

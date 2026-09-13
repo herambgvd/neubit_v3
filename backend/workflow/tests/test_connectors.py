@@ -118,8 +118,9 @@ def test_both_connectors_are_registered_under_their_channel_type():
 def test_email_without_a_host_anywhere_raises(smtp):
     """No channel host and no env host. Raising is right — the alternative is a row
     marked delivered to nowhere — and the message must name BOTH places to look."""
+    sending = EmailConnector().send(_ctx())
     with pytest.raises(RuntimeError) as e:
-        _run(EmailConnector().send(_ctx()))
+        _run(sending)
     assert "VE_SMTP_HOST" in str(e.value)
     assert not smtp
 
@@ -130,7 +131,8 @@ def test_email_starttls_on_587(smtp):
         "username": "u", "password": "p", "from_address": "alerts@example.test",
     })))
     call = smtp[0]
-    assert call["hostname"] == "mail.example.test" and call["port"] == 587
+    assert call["hostname"] == "mail.example.test"
+    assert call["port"] == 587
     assert call["start_tls"] is True, "587 must upgrade — AUTH before it is plaintext"
     assert call["use_tls"] is False, "587 is not an implicit-TLS port"
 
@@ -152,7 +154,8 @@ def test_email_use_tls_false_disables_starttls(smtp):
     _run(EmailConnector().send(_ctx(channel_config={
         "host": "relay.lan", "port": 25, "use_tls": False,
     })))
-    assert smtp[0]["start_tls"] is False and smtp[0]["use_tls"] is False
+    assert smtp[0]["start_tls"] is False
+    assert smtp[0]["use_tls"] is False
 
 
 def test_email_channel_config_beats_the_env(monkeypatch, smtp):
@@ -199,8 +202,9 @@ def test_email_propagates_a_provider_failure(monkeypatch, smtp):
         raise OSError("connection refused")
 
     monkeypatch.setattr(aiosmtplib, "send", boom)
+    sending = EmailConnector().send(_ctx(channel_config={"host": "m.test"}))
     with pytest.raises(OSError):
-        _run(EmailConnector().send(_ctx(channel_config={"host": "m.test"})))
+        _run(sending)
 
 
 # ── webhook ────────────────────────────────────────────────────────────
@@ -208,8 +212,9 @@ def test_email_propagates_a_provider_failure(monkeypatch, smtp):
 
 def test_webhook_without_a_url_anywhere_raises(http):
     posts, _ = http
+    sending = WebhookConnector().send(_ctx(recipient=""))
     with pytest.raises(RuntimeError):
-        _run(WebhookConnector().send(_ctx(recipient="")))
+        _run(sending)
     assert not posts
 
 
@@ -257,8 +262,9 @@ def test_webhook_propagates_a_non_2xx(http):
 
     posts, state = http
     state["raise"] = httpx.HTTPStatusError("500", request=None, response=None)
+    sending = WebhookConnector().send(_ctx(channel_config={"url": "https://h.test/x"}))
     with pytest.raises(httpx.HTTPStatusError):
-        _run(WebhookConnector().send(_ctx(channel_config={"url": "https://h.test/x"})))
+        _run(sending)
 
 
 # ── HTML bodies (rendered email templates) ─────────────────────────────
@@ -280,7 +286,8 @@ def test_html_body_is_sent_as_an_html_part_with_a_text_alternative(smtp, monkeyp
     assert "<h2>Gate breach</h2>" in html_part.get_content()
     # The plain part carries the WORDS, not the tags.
     text = [p for p in msg.walk() if p.get_content_type() == "text/plain"][0].get_content()
-    assert "Gate breach" in text and "Person in a restricted zone" in text
+    assert "Gate breach" in text
+    assert "Person in a restricted zone" in text
     assert "<h2>" not in text
 
 

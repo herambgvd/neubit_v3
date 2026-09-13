@@ -197,8 +197,9 @@ def test_tenant_b_cannot_touch_tenant_a_by_id(entity, seeder, service_cls, op_la
         try:
             async with sm() as session:
                 a_id, _ = await seeder(session, TENANT_A)
+                b_service = service_cls(session, SCOPE_B)
                 with pytest.raises(NotFoundError):
-                    await op(service_cls(session, SCOPE_B), a_id)
+                    await op(b_service, a_id)
         finally:
             await engine.dispose()
 
@@ -233,8 +234,9 @@ def test_a_listing_shows_only_the_callers_tenant(entity, seeder, service_cls):
                         {"state": State, "transition": Transition}[entity], a_id)
                     seen_a = ids(await service_cls(session, SCOPE_A).list_(a_row.sop_id))
                     assert seen_a == {a_id}
+                    b_service = service_cls(session, SCOPE_B)
                     with pytest.raises(NotFoundError):
-                        await service_cls(session, SCOPE_B).list_(a_row.sop_id)
+                        await b_service.list_(a_row.sop_id)
                     return
 
                 seen_a = ids(await service_cls(session, SCOPE_A).list_())

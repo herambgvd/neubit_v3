@@ -314,8 +314,11 @@ async def test_an_unknown_backend_refuses_to_boot():
     """A typo in VE_RATE_LIMIT_BACKEND must not be answered by picking one."""
     from app.core.config import Settings
 
-    with pytest.raises(RuntimeError):
-        ratelimit.configure_rate_limiter(Settings(rate_limit_backend="redsi"))
+    settings = Settings(rate_limit_backend="redsi")
+    # The typo itself must be in the refusal, or "it raised RuntimeError" would
+    # also be satisfied by an unrelated boot failure.
+    with pytest.raises(RuntimeError, match="redsi"):
+        ratelimit.configure_rate_limiter(settings)
 
 
 # --- the call sites still work ------------------------------------------------
@@ -337,8 +340,9 @@ async def test_the_login_dependency_goes_through_the_process_limiter(store, monk
     )
     await ratelimit.login_rate_limit(_Req("1.1.1.1"))
     await ratelimit.login_rate_limit(_Req("1.1.1.1"))
+    third = _Req("1.1.1.1")
     with pytest.raises(RateLimitError):
-        await ratelimit.login_rate_limit(_Req("1.1.1.1"))
+        await ratelimit.login_rate_limit(third)
     assert store.execs == 3
 
 
@@ -356,8 +360,9 @@ async def test_login_and_api_key_do_not_share_a_budget(store, monkeypatch):
         )(),
     )
     await ratelimit.login_rate_limit(_Req("2.2.2.2"))
+    second = _Req("2.2.2.2")
     with pytest.raises(RateLimitError):
-        await ratelimit.login_rate_limit(_Req("2.2.2.2"))
+        await ratelimit.login_rate_limit(second)
     await ratelimit.api_key_rate_limit(_Req("2.2.2.2"))  # its own budget, untouched
 
 

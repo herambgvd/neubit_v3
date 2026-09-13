@@ -225,4 +225,5 @@ async def test_watermark_is_forwarded_when_asked_for(app, node, recorder):
     sent = json.loads(recorder.calls[-1]["content"])
     assert sent["watermark"] is True
     # The window and camera still travel intact alongside it.
-    assert sent["camera_id"] == CAM and sent["from"].startswith("2026-07-09T10:00")
+    assert sent["camera_id"] == CAM
+    assert sent["from"].startswith("2026-07-09T10:00")

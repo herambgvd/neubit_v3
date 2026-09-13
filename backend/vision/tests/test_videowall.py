@@ -110,7 +110,8 @@ async def camera(db):
 async def test_wall_crud(svc):
     wall = await svc.create_wall(WallCreate(name="Control Room", rows=2, cols=3), actor=ACTOR)
     assert wall.name == "Control Room"
-    assert wall.rows == 2 and wall.cols == 3
+    assert wall.rows == 2
+    assert wall.cols == 3
     assert wall.state == {}
 
     got = await svc.get_wall(wall.id)
@@ -120,7 +121,8 @@ async def test_wall_crud(svc):
     assert listed.total == 1
 
     upd = await svc.update_wall(wall.id, WallUpdate(name="CR-1", cols=4), actor=ACTOR)
-    assert upd.name == "CR-1" and upd.cols == 4
+    assert upd.name == "CR-1"
+    assert upd.cols == 4
 
     await svc.delete_wall(wall.id, actor=ACTOR)
     assert (await svc.list_walls()).total == 0
@@ -131,7 +133,9 @@ async def test_monitor_crud(svc):
     mon = await svc.create_monitor(
         wall.id, MonitorCreate(name="Screen 1", position=0, kind="browser", layout=4), actor=ACTOR
     )
-    assert mon.wall_id == wall.id and mon.layout == 4 and mon.kind == "browser"
+    assert mon.wall_id == wall.id
+    assert mon.layout == 4
+    assert mon.kind == "browser"
 
     mons = await svc.list_monitors(wall.id)
     assert mons.total == 1
@@ -157,7 +161,8 @@ async def test_push_cell_updates_state_and_broadcasts(svc, camera, capture):
     # Broadcast one frame on the per-wall subject with the new full state.
     assert len(capture) == 1
     tid, wid, payload = capture[0]
-    assert tid == TENANT and wid == wall.id
+    assert tid == TENANT
+    assert wid == wall.id
     assert payload["state"] == {mon.id: {"2": camera.id}}
     assert payload["action"] == "push"
 
@@ -217,7 +222,8 @@ async def test_tour_create_start_stop(svc, camera, capture):
     tour = await svc.create_tour(
         wall.id, TourCreate(name="Rounds", preset_ids=[p1.id], dwell_seconds=15), actor=ACTOR
     )
-    assert tour.preset_ids == [p1.id] and tour.dwell_seconds == 15
+    assert tour.preset_ids == [p1.id]
+    assert tour.dwell_seconds == 15
     assert tour.is_running is False
 
     started = await svc.set_tour_running(wall.id, tour.id, True, actor=ACTOR)

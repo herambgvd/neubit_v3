@@ -27,12 +27,14 @@ async def test_policy_crud_gated(app, db):
         assert r.status_code == 403
         # Sec admin can read + update.
         r = await c.get(f"{PREFIX}/security/policy", headers=bearer(admin))
-        assert r.status_code == 200 and r.json()["require_2fa"] is False
+        assert r.status_code == 200, r.text
+        assert r.json()["require_2fa"] is False
         r = await c.put(
             f"{PREFIX}/security/policy", headers=bearer(admin),
             json={"require_2fa": True, "require_2fa_roles": ["Ops"]},
         )
-        assert r.status_code == 200 and r.json()["require_2fa"] is True
+        assert r.status_code == 200, r.text
+        assert r.json()["require_2fa"] is True
 
 
 async def test_directory_and_sso_crud_hide_secrets(app, db):
@@ -81,7 +83,8 @@ async def test_dual_auth_full_flow_over_http(app, db):
         # 3. a different privileged user approves
         r = await c.post(f"{PREFIX}/security/dual-auth/{req_id}/approve",
                          headers=bearer(approver), json={"note": "ok"})
-        assert r.status_code == 200 and r.json()["status"] == "approved"
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "approved"
 
         # 4. consume it right before the action; second consume fails
         r = await c.post(
@@ -89,7 +92,8 @@ async def test_dual_auth_full_flow_over_http(app, db):
             headers=bearer(requester),
             params={"action": "vms.export", "target_id": "cam-1"},
         )
-        assert r.status_code == 200 and r.json()["status"] == "consumed"
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "consumed"
         r = await c.post(
             f"{PREFIX}/security/dual-auth/{req_id}/consume",
             headers=bearer(requester),

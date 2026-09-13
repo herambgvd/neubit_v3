@@ -172,7 +172,8 @@ async def test_subscribing_twice_moves_the_tenant_rather_than_stacking_a_second_
         second = await c.put(url, headers=bearer(world["sa"]), json={"plan_key": "pro"})
         current = await c.get(url, headers=bearer(world["sa"]))
         summary = await c.get(f"{BILLING}/summary", headers=bearer(world["sa"]))
-    assert first.status_code == 200 and second.status_code == 200, second.text
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
     assert first.json()["id"] == second.json()["id"], "a second subscription row was created"
     assert current.json()["plan_key"] == "pro"
     assert summary.json()["active_subscriptions"] == 1
@@ -247,7 +248,8 @@ async def test_invoice_numbers_are_sequential_and_unique_within_a_year(app, worl
             f"{BILLING}/tenants/{world['tb'].id}/invoices",
             headers=bearer(world["sa"]), json={"amount_cents": 7000},
         )
-    assert a.status_code == 201 and b.status_code == 201, b.text
+    assert a.status_code == 201, a.text
+    assert b.status_code == 201, b.text
     year = dt.datetime.now(dt.timezone.utc).year
     assert a.json()["number"] == f"INV-{year}-0001"
     assert b.json()["number"] == f"INV-{year}-0002"
@@ -290,7 +292,8 @@ async def test_a_voided_invoice_can_never_be_marked_paid(app, world):
         inv_id = inv.json()["id"]
         voided = await c.post(f"{BILLING}/invoices/{inv_id}/void", headers=bearer(world["sa"]))
         paid = await c.post(f"{BILLING}/invoices/{inv_id}/mark-paid", headers=bearer(world["sa"]))
-    assert voided.status_code == 200 and voided.json()["status"] == "void"
+    assert voided.status_code == 200, voided.text
+    assert voided.json()["status"] == "void"
     assert paid.status_code == 422, paid.text
 
 

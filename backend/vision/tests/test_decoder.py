@@ -138,7 +138,8 @@ async def test_hik_set_layout_builds_window_put(reachable, capture_strict):
 
 async def test_hik_set_layout_rejects_bad_grid(reachable, capture_strict):
     res = await HikvisionDecoder().set_layout("10.0.0.9", CREDS, channel=0, grid=7)
-    assert res.ok is False and "grid" in res.error
+    assert res.ok is False
+    assert "grid" in res.error
     assert capture_strict == []  # never hit the wire
 
 
@@ -154,7 +155,8 @@ async def test_hik_display_graceful_when_unreachable(monkeypatch, capture_strict
 
     monkeypatch.setattr(hik_mod, "_tcp_reachable", _down)
     res = await HikvisionDecoder().display("10.0.0.9", CREDS, 1, 0, "rtsp://x")
-    assert res.ok is False and "unreachable" in res.error
+    assert res.ok is False
+    assert "unreachable" in res.error
     assert capture_strict == []
 
 
@@ -184,7 +186,8 @@ async def test_dahua_clear_builds_closeconnect(reachable, capture_strict):
 
 async def test_display_empty_rtsp_is_graceful(reachable, capture_strict):
     res = await DahuaCpPlusDecoder().display("10.0.0.8", CREDS, 1, 0, "")
-    assert res.ok is False and capture_strict == []
+    assert res.ok is False
+    assert capture_strict == []  # never hit the wire
 
 
 # ── decoder CRUD + tenant isolation ─────────────────────────────────────────────
@@ -194,16 +197,20 @@ async def test_decoder_crud_and_password_encrypted(dec_svc, db):
                       username="admin", password="s3cret", channel_count=4),
         actor=ACTOR,
     )
-    assert created.brand == "hikvision" and created.has_password is True
+    assert created.brand == "hikvision"
+    assert created.has_password is True
     # Public schema never leaks the password; the stored value is encrypted (enc: prefix).
     row = await db.get(VideoDecoder, created.id)
-    assert row.enc_password and row.enc_password.startswith("enc:") and "s3cret" not in row.enc_password
+    assert row.enc_password
+    assert row.enc_password.startswith("enc:")
+    assert "s3cret" not in row.enc_password
 
     listed = await dec_svc.list()
     assert listed.total == 1
 
     upd = await dec_svc.update(created.id, DecoderUpdate(name="Dec-1", port=8000), actor=ACTOR)
-    assert upd.name == "Dec-1" and upd.port == 8000
+    assert upd.name == "Dec-1"
+    assert upd.port == 8000
 
     await dec_svc.delete(created.id)
     assert (await dec_svc.list()).total == 0
@@ -235,7 +242,8 @@ async def test_decoder_test_probe(dec_svc, monkeypatch):
 
     monkeypatch.setattr(HikvisionDecoder, "probe", _probe)
     res = await dec_svc.test(created.id)
-    assert res.reachable is True and res.model == "DS-6900"
+    assert res.reachable is True
+    assert res.model == "DS-6900"
 
 
 # ── wall push → decoder wiring ───────────────────────────────────────────────────

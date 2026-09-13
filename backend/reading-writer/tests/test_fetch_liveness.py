@@ -86,7 +86,8 @@ def test_a_vanished_durable_is_not_consuming_even_while_the_loop_answers() -> No
     assert m.fetch_loop_alive is True
     assert m.consumer_confirmed is False
     assert m.consuming is False
-    assert m.consumer_missing and "not found" in m.consumer_missing
+    assert m.consumer_missing
+    assert "not found" in m.consumer_missing
 
 
 def test_one_failed_consumer_info_does_not_red_the_service() -> None:
@@ -263,7 +264,8 @@ def test_failing_pulls_stop_stamping_and_go_red() -> None:
     asyncio.run(_run_briefly(p, 3.5))
 
     assert m.fetch_failures >= REBIND_AFTER_FAILURES
-    assert m.last_error and "no responders" in m.last_error
+    assert m.last_error
+    assert "no responders" in m.last_error
     assert rebinds, "a failure streak must recreate the consumer, not retry forever"
     assert sub.pulls >= REBIND_AFTER_FAILURES
     # The three signals that used to be the whole of /readyz, all still green.
@@ -365,7 +367,8 @@ def test_a_deleted_durable_is_seen_by_the_stats_loop_and_a_rebind_requested() ->
 
     asyncio.run(_stats_tick(p))
 
-    assert m.consumer_missing and "not found" in m.consumer_missing
+    assert m.consumer_missing
+    assert "not found" in m.consumer_missing
     assert m.consumer_checks_failed >= 1
     assert p._rebind_requested is True
     # Aged past the window, that is what turns /readyz red.
@@ -402,7 +405,8 @@ def test_a_durable_of_the_right_name_but_the_wrong_shape_is_not_ours() -> None:
 
     asyncio.run(_stats_tick(p))
 
-    assert m.consumer_missing and "PUSH" in m.consumer_missing
+    assert m.consumer_missing
+    assert "PUSH" in m.consumer_missing
     # NOT a rebind: pull_subscribe would bind to the impostor again and report
     # success. The remedy for a squatted durable name is a human, not a retry.
     assert p._rebind_requested is False
@@ -417,7 +421,8 @@ def test_a_durable_on_a_different_filter_is_not_ours_either() -> None:
 
     asyncio.run(_stats_tick(p))
 
-    assert m.consumer_missing and "filter" in m.consumer_missing
+    assert m.consumer_missing
+    assert "filter" in m.consumer_missing
     assert p._rebind_requested is False
 
 

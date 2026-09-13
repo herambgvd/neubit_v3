@@ -63,8 +63,9 @@ def test_the_delta_t_leaf_registers_as_seeded():
 def test_an_occupancy_formula_must_be_the_band_itself():
     """Otherwise the answer is "the fraction of buckets where some expression was
     non-zero", which is not what a reader of "% in band" is being told."""
+    defn = _occupancy_defn(formula="owt - iwt")
     with pytest.raises(registry.RegistrationError) as exc:
-        registry.typecheck(_occupancy_defn(formula="owt - iwt"))
+        registry.typecheck(defn)
     assert "in_band" in str(exc.value)
 
 
@@ -72,14 +73,18 @@ def test_occupancy_is_device_scope_only_and_says_so():
     """A site-scope occupancy would have to aggregate before testing the band —
     the exact mistake this kind exists to avoid. Refused by name, not by
     producing a plausible wrong percentage."""
+    defn = _occupancy_defn(applies_to={"scope": "site"})
     with pytest.raises(registry.RegistrationError) as exc:
-        registry.typecheck(_occupancy_defn(applies_to={"scope": "site"}))
+        registry.typecheck(defn)
     assert "device-scope only" in str(exc.value)
 
 
 def test_an_occupancy_metric_outputs_a_percentage_not_a_temperature():
-    with pytest.raises(registry.RegistrationError):
-        registry.typecheck(_occupancy_defn(output={"dimension": "temperature"}))
+    defn = _occupancy_defn(output={"dimension": "temperature"})
+    # The refusal must be about the OUTPUT dimension. Any RegistrationError would
+    # otherwise do, including one this definition raises for some other reason.
+    with pytest.raises(registry.RegistrationError, match="percentage of time"):
+        registry.typecheck(defn)
 
 
 # ── emissions: the dimension that keeps a factor from being anything else ────
@@ -101,8 +106,12 @@ def test_energy_times_an_emission_factor_is_the_only_way_to_a_mass():
     ],
 )
 def test_a_product_outside_the_table_is_refused_not_guessed(op, a, b):
+    # Both operands are built OUTSIDE the raises: `qty_of_unit` raises DimensionError
+    # for an unknown unit, so a typo in the table above would satisfy this test
+    # without `mul_div` ever being asked.
+    left, right = qty_of_unit(a), qty_of_unit(b)
     with pytest.raises(DimensionError):
-        mul_div(op, qty_of_unit(a), qty_of_unit(b))
+        mul_div(op, left, right)
 
 
 def test_an_emission_factor_is_not_a_tariff_or_a_mass():
@@ -110,8 +119,9 @@ def test_an_emission_factor_is_not_a_tariff_or_a_mass():
     type system is where that stops being true."""
     assert qty_of_unit("kgCO2/kWh").dimension == "emission_factor"
     assert qty_of_unit("kgCO2").dimension == "mass"
+    factor = qty_of_unit("kgCO2/kWh")
     with pytest.raises(DimensionError):
-        mul_div("*", qty_of_unit("kgCO2/kWh"), qty_of_unit("kgCO2/kWh"))
+        mul_div("*", factor, factor)
 
 
 # ── carbon intensity ─────────────────────────────────────────────────────────
@@ -128,8 +138,9 @@ def test_the_carbon_leaf_registers_as_seeded():
 
 
 def test_the_emission_factor_input_is_site_scope_only():
+    defn = _carbon_defn(applies_to={"scope": "device"})
     with pytest.raises(registry.RegistrationError) as exc:
-        registry.typecheck(_carbon_defn(applies_to={"scope": "device"}))
+        registry.typecheck(defn)
     assert "scope = 'site'" in str(exc.value)
 
 
@@ -137,16 +148,20 @@ def test_an_emission_factor_input_takes_no_aggregation():
     """It is one dated, cited row for the window — not a series to average."""
     inputs = {k: dict(v) for k, v in LEAF_DEFINITIONS["carbon_intensity"]["inputs"].items()}
     inputs["factor"]["aggregation"] = "avg"
+    defn = _carbon_defn(inputs=inputs)
     with pytest.raises(registry.RegistrationError) as exc:
-        registry.typecheck(_carbon_defn(inputs=inputs))
+        registry.typecheck(defn)
     assert "no aggregation" in str(exc.value)
 
 
 def test_a_factor_declared_as_the_wrong_dimension_is_rejected():
     inputs = {k: dict(v) for k, v in LEAF_DEFINITIONS["carbon_intensity"]["inputs"].items()}
     inputs["factor"] = {"source": "emission_factor", "unit": "kWh"}
-    with pytest.raises(registry.RegistrationError):
-        registry.typecheck(_carbon_defn(inputs=inputs))
+    defn = _carbon_defn(inputs=inputs)
+    # Pinned to the dimension sentence: "it raised" would also be true if the
+    # hand-built input were refused for a missing key instead.
+    with pytest.raises(registry.RegistrationError, match="an emission factor is"):
+        registry.typecheck(defn)
 
 
 def test_carbon_intensity_reproduces_the_spec_s_own_worked_value():

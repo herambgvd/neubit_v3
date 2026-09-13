@@ -200,7 +200,8 @@ def test_a_row_whose_worker_died_comes_back_after_the_lease():
                         Notification.notification_id.in_(ids)))).scalars().all()
                 for n in rows:
                     assert n.status == "pending"
-                    assert n.claimed_at is None and n.claimed_by is None
+                    assert n.claimed_at is None
+                    assert n.claimed_by is None
                     # Not reset: the dead worker may have reached the provider, and
                     # forgiving the attempt lets a killer row retry forever.
                     assert n.attempts == 1

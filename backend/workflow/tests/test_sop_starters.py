@@ -99,7 +99,8 @@ def test_every_starter_can_be_closed_both_ways():
                     ).scalars().all()
                     terminal = {s.state_id for s in states if s.is_terminal}
                     cancel = {s.state_id for s in states if s.is_cancellation}
-                    assert terminal and cancel, f"{sop.name} cannot be closed"
+                    assert terminal, f"{sop.name} has no terminal state — it can never be resolved"
+                    assert cancel, f"{sop.name} has no cancellation state — it can never be dismissed"
                     reached = {t.to_state_id for t in trans}
                     assert terminal <= reached, f"{sop.name}: nothing leads to Resolved"
                     assert cancel <= reached, f"{sop.name}: nothing leads to Dismissed"

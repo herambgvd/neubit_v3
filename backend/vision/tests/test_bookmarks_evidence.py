@@ -132,7 +132,8 @@ async def test_bookmark_range_query_by_window(db, camera):
         camera_id=camera.id, from_=base, to=base + timedelta(hours=2)
     )
     titles = {b.title for b in items}
-    assert "in" in titles and "out" not in titles
+    assert "in" in titles
+    assert "out" not in titles
     assert total == 1
 
 
@@ -140,10 +141,13 @@ async def test_bookmark_update_and_delete(db, camera):
     svc = BookmarkService(db, _scope())
     b = await svc.create(BookmarkCreate(camera_id=camera.id, start_ts=_now(), title="t"), actor=_Actor())
     upd = await svc.update(b.id, BookmarkUpdate(title="t2", note="hello", tags=["a", "b"]))
-    assert upd.title == "t2" and upd.note == "hello" and upd.tags == ["a", "b"]
+    assert upd.title == "t2"
+    assert upd.note == "hello"
+    assert upd.tags == ["a", "b"]
     await svc.delete(b.id)
+    after_delete = BookmarkUpdate(title="x")
     with pytest.raises(NotFoundError):
-        await svc.update(b.id, BookmarkUpdate(title="x"))
+        await svc.update(b.id, after_delete)
 
 
 async def test_bookmark_tenant_isolation(db, camera):
@@ -151,8 +155,9 @@ async def test_bookmark_tenant_isolation(db, camera):
     b = await svc.create(BookmarkCreate(camera_id=camera.id, start_ts=_now(), title="mine"), actor=_Actor())
     other = BookmarkService(db, _scope(OTHER_TENANT))
     # foreign tenant cannot see / mutate it
+    hijack = BookmarkUpdate(title="hijack")
     with pytest.raises(NotFoundError):
-        await other.update(b.id, BookmarkUpdate(title="hijack"))
+        await other.update(b.id, hijack)
     # foreign tenant listing this camera → camera not owned → 404
     with pytest.raises(NotFoundError):
         await other.list_(camera_id=camera.id)
@@ -161,8 +166,9 @@ async def test_bookmark_tenant_isolation(db, camera):
 async def test_bookmark_range_validation(db, camera):
     svc = BookmarkService(db, _scope())
     t = _now()
+    ends_before_it_starts = t - timedelta(minutes=1)
     with pytest.raises(ValueError):  # pydantic model_validator
-        BookmarkCreate(camera_id=camera.id, start_ts=t, end_ts=t - timedelta(minutes=1), title="bad")
+        BookmarkCreate(camera_id=camera.id, start_ts=t, end_ts=ends_before_it_starts, title="bad")
 
 
 # ── Evidence lock CRUD ──────────────────────────────────────────────────────
@@ -178,14 +184,16 @@ async def test_evidence_create_list_release(db, camera):
         ),
         actor=_Actor(),
     )
-    assert lk.is_active is True and lk.case_ref == "CASE-42"
+    assert lk.is_active is True
+    assert lk.case_ref == "CASE-42"
 
     items, total = await svc.list_(camera_id=camera.id, active_only=True)
     assert total == 1
 
     rel = await svc.release(lk.id, actor=_Actor())
     assert rel.is_active is False
-    assert rel.released_by == str(_Actor.user_id) and rel.released_at is not None
+    assert rel.released_by == str(_Actor.user_id)
+    assert rel.released_at is not None
     # row is KEPT (audit trail) — still fetchable, just inactive
     active_items, active_total = await svc.list_(camera_id=camera.id, active_only=True)
     assert active_total == 0

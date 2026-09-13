@@ -125,9 +125,10 @@ async def test_user_grant_without_privilege_denies(db):
         target_id=CAMERA_ID,
         privileges=["view_live"],  # no 'export'
     )
+    scope = _tenant_scope()
     with pytest.raises(ForbiddenError):
         await enforce_camera_privilege(
-            db, scope=_tenant_scope(), principal=principal, camera_id=CAMERA_ID, privilege="export"
+            db, scope=scope, principal=principal, camera_id=CAMERA_ID, privilege="export"
         )
 
 
@@ -158,9 +159,10 @@ async def test_other_subject_only_denies(db):
         target_id=CAMERA_ID,
         privileges=["view_live"],
     )
+    scope = _tenant_scope()
     with pytest.raises(ForbiddenError):
         await enforce_camera_privilege(
-            db, scope=_tenant_scope(), principal=principal, camera_id=CAMERA_ID, privilege="view_live"
+            db, scope=scope, principal=principal, camera_id=CAMERA_ID, privilege="view_live"
         )
 
 
@@ -192,9 +194,10 @@ async def test_group_target_grant_wrong_privilege_denies(db):
         target_id=group.id,
         privileges=["playback"],  # no 'export'
     )
+    scope = _tenant_scope()
     with pytest.raises(ForbiddenError):
         await enforce_camera_privilege(
-            db, scope=_tenant_scope(), principal=principal, camera_id=CAMERA_ID, privilege="export"
+            db, scope=scope, principal=principal, camera_id=CAMERA_ID, privilege="export"
         )
 
 
@@ -249,7 +252,8 @@ async def test_subject_group_grant_is_noop(db):
         target_id=CAMERA_ID,
         privileges=["view_live"],
     )
+    scope = _tenant_scope()
     with pytest.raises(ForbiddenError):
         await enforce_camera_privilege(
-            db, scope=_tenant_scope(), principal=principal, camera_id=CAMERA_ID, privilege="view_live"
+            db, scope=scope, principal=principal, camera_id=CAMERA_ID, privilege="view_live"
         )

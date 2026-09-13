@@ -299,7 +299,8 @@ async def test_a_platform_super_admin_cannot_be_disabled_from_the_user_directory
         )
     assert refused.status_code == 422, refused.text
     # The same switch works on a tenant user: a targeted refusal, not a dead route.
-    assert allowed.status_code == 200 and allowed.json()["is_active"] is False
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json()["is_active"] is False
 
 
 async def test_a_disabled_user_can_no_longer_sign_in(app, sa):

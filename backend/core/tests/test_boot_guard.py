@@ -44,9 +44,10 @@ def _settings(**kw) -> Settings:
 
 @pytest.mark.parametrize("env", ["prod", "production", "staging", "appliance"])
 def test_a_placeholder_refuses_to_boot_outside_dev(env):
+    settings = _settings(env=env, jwt_secret="change-me-in-prod")
+    log = logging.getLogger("t")
     with pytest.raises(RuntimeError) as caught:
-        _enforce_secrets(_settings(env=env, jwt_secret="change-me-in-prod"),
-                         logging.getLogger("t"))
+        _enforce_secrets(settings, log)
     assert "VE_JWT_SECRET" in str(caught.value)
 
 
@@ -54,8 +55,10 @@ def test_a_placeholder_refuses_to_boot_outside_dev(env):
 def test_a_short_jwt_secret_refuses_to_boot(value):
     """RFC 7518 §3.2: an HS256 key must be at least as long as the hash output.
     PyJWT warns below 32 bytes and signs anyway, so nothing downstream refuses."""
+    settings = _settings(jwt_secret=value)
+    log = logging.getLogger("t")
     with pytest.raises(RuntimeError) as caught:
-        _enforce_secrets(_settings(jwt_secret=value), logging.getLogger("t"))
+        _enforce_secrets(settings, log)
     assert "VE_JWT_SECRET" in str(caught.value)
 
 
@@ -66,16 +69,19 @@ def test_exactly_the_floor_is_accepted():
 
 @pytest.mark.parametrize("value", ["", "short"])
 def test_a_short_secrets_key_refuses_to_boot(value):
+    settings = _settings(secrets_key=value)
+    log = logging.getLogger("t")
     with pytest.raises(RuntimeError) as caught:
-        _enforce_secrets(_settings(secrets_key=value), logging.getLogger("t"))
+        _enforce_secrets(settings, log)
     assert "VE_SECRETS_KEY" in str(caught.value)
 
 
 def test_the_refusal_names_only_what_is_wrong(caplog):
     """So an operator fixes the secret that is actually broken."""
+    settings = _settings(secrets_key="change-me-secret")
+    log = logging.getLogger("t")
     with pytest.raises(RuntimeError) as caught:
-        _enforce_secrets(_settings(secrets_key="change-me-secret"),
-                         logging.getLogger("t"))
+        _enforce_secrets(settings, log)
     message = str(caught.value)
     assert "VE_SECRETS_KEY" in message
     assert "VE_JWT_SECRET" not in message
@@ -128,7 +134,9 @@ def test_whatever_the_env_example_ships_is_refused():
     assert set(shipped) == {"VE_JWT_SECRET", "VE_SECRETS_KEY"}, shipped
 
     field = {"VE_JWT_SECRET": "jwt_secret", "VE_SECRETS_KEY": "secrets_key"}
+    log = logging.getLogger("t")
     for key, value in shipped.items():
+        settings = _settings(**{field[key]: value})
         with pytest.raises(RuntimeError) as caught:
-            _enforce_secrets(_settings(**{field[key]: value}), logging.getLogger("t"))
+            _enforce_secrets(settings, log)
         assert key in str(caught.value), f"{key}={value!r} was accepted"

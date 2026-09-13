@@ -189,7 +189,8 @@ async def test_ingest_system_event(db, camera, capture):
     assert row.event_type == "camera_offline"
     assert row.source == "system"
     assert row.severity == "warning"
-    assert capture and capture[0][1] == "camera_offline"
+    assert capture
+    assert capture[0][1] == "camera_offline"
 
 
 # ── events feed: filters + tenant scoping ──────────────────────────────────
@@ -252,8 +253,9 @@ async def test_ack_other_tenant_cannot(db, camera, capture):
     eid = await svc.ingest_device_event(tenant_id=camera.tenant_id, camera_id=camera.id,
         driver_event_type="motion_detected", severity="alarm", title="m")
     other = VmsEventService(db, Scope(tenant_id=OTHER_TENANT, is_superadmin=False))
+    actor = _Actor()
     with pytest.raises(NotFoundError):
-        await other.ack(eid, actor=_Actor())
+        await other.ack(eid, actor=actor)
 
 
 # ── supervisor: polls each recorder's ledger ─────────────────────────────────
@@ -318,13 +320,16 @@ async def test_poll_ingests_a_recorder_event(engine, db, camera, capture, monkey
     await sup._tick()
 
     # It asked the right recorder, with the recorder's own scoped credential.
-    assert asks and asks[0]["api_url"] == "http://rec-a:8000"
+    assert asks
+    assert asks[0]["api_url"] == "http://rec-a:8000"
     assert asks[0]["credential"] == "scoped-key"
 
     async with maker() as s:
         listed = await VmsEventService(s, PLATFORM).list_()
-    assert listed.total == 1 and listed.items[0].event_type == "motion"
-    assert capture and capture[0][1] == "motion"
+    assert listed.total == 1
+    assert listed.items[0].event_type == "motion"
+    assert capture
+    assert capture[0][1] == "motion"
     assert node.id in sup._watermark  # noqa: SLF001 — the watermark is the point
 
 
@@ -404,4 +409,5 @@ async def test_one_bad_recorder_does_not_stop_the_others(engine, db, camera, mon
     async with maker() as s:
         listed = await VmsEventService(s, PLATFORM).list_()
     assert listed.total == 1
-    assert good.id in sup._watermark and bad.id not in sup._watermark  # noqa: SLF001
+    assert good.id in sup._watermark  # noqa: SLF001
+    assert bad.id not in sup._watermark  # noqa: SLF001

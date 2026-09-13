@@ -88,7 +88,8 @@ async def test_the_estate_is_listed_for_system_read(app, db, agent):
     # Trouble first: the exited service is at the top.
     assert names[0] == "vision"
     core = next(row for row in rows if row["name"] == "core")
-    assert core["running"] is True and core["health"] == "healthy"
+    assert core["running"] is True
+    assert core["health"] == "healthy"
     assert core["container"] == "neubit-v3-core-1"
     assert core["cpu_pct"] == 3.5
 

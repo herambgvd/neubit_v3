@@ -142,7 +142,8 @@ def test_the_allowlist_has_no_stale_entries():
 
 def test_every_allowlist_entry_states_why():
     for key, reason in ALLOWED_UNAUTHENTICATED.items():
-        assert reason and len(reason) > 15, f"{key} has no real reason recorded"
+        assert reason, f"{key} records no reason at all"
+        assert len(reason) > 15, f"{key} has no real reason recorded: {reason!r}"
 
 
 # ---------------------------------------------------------------------------

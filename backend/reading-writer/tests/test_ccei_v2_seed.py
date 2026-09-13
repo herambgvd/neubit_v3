@@ -131,9 +131,11 @@ def test_every_leaf_says_what_blocks_it():
         assert leaf["direction"] in ("higher", "lower"), key
         # a direction implies which bound the spec states
         if leaf["direction"] == "higher":
-            assert "floor" in leaf and "target" in leaf, key
+            assert "floor" in leaf, key
+            assert "target" in leaf, key
         else:
-            assert "worst" in leaf and "target" in leaf, key
+            assert "worst" in leaf, key
+            assert "target" in leaf, key
 
 
 def test_every_row_carries_the_citation():

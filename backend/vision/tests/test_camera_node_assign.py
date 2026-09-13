@@ -104,8 +104,10 @@ async def test_patch_assign_to_valid_node_persists(db):
 async def test_patch_assign_to_missing_node_rejected(db):
     cam = await _mk_camera(db, tenant=TENANT_A)
     svc = CameraService(db, _scope(TENANT_A))
+    patch = CameraUpdate(media_node_id=str(uuid.uuid4()))
+    actor = _Actor()
     with pytest.raises(NotFoundError):
-        await svc.update(cam.id, CameraUpdate(media_node_id=str(uuid.uuid4())), actor=_Actor())
+        await svc.update(cam.id, patch, actor=actor)
     await db.refresh(cam)
     assert cam.media_node_id is None  # unchanged
 
@@ -115,8 +117,10 @@ async def test_patch_assign_to_cross_tenant_node_rejected(db):
     cam = await _mk_camera(db, tenant=TENANT_A)
     svc = CameraService(db, _scope(TENANT_A))
     # Tenant A cannot home a camera on tenant B's node (NotFound, not Forbidden).
+    patch = CameraUpdate(media_node_id=node_b.id)
+    actor = _Actor()
     with pytest.raises(NotFoundError):
-        await svc.update(cam.id, CameraUpdate(media_node_id=node_b.id), actor=_Actor())
+        await svc.update(cam.id, patch, actor=actor)
     await db.refresh(cam)
     assert cam.media_node_id is None
 
@@ -162,10 +166,12 @@ async def test_bulk_assign_node_sets_all(db):
 async def test_bulk_assign_node_bad_id_rejected(db):
     c1 = await _mk_camera(db, tenant=TENANT_A, name="c1")
     svc = CameraService(db, _scope(TENANT_A))
+    missing_node = str(uuid.uuid4())
+    actor = _Actor()
     with pytest.raises(NotFoundError):
         await svc.bulk(
             [c1.id], "assign_node",
-            group_id=None, retention_days=None, media_node_id=str(uuid.uuid4()), actor=_Actor(),
+            group_id=None, retention_days=None, media_node_id=missing_node, actor=actor,
         )
     await db.refresh(c1)
     assert c1.media_node_id is None

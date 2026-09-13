@@ -46,7 +46,8 @@ async def test_the_refusal_names_every_offending_field_at_once():
     with pytest.raises(ValidationError) as caught:
         apply_patch(plan, {"name": None, "currency": None})
     message = str(caught.value)
-    assert "name" in message and "currency" in message
+    assert "name" in message
+    assert "currency" in message
 
 
 async def test_ordinary_values_still_land():

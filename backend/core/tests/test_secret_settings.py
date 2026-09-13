@@ -129,7 +129,8 @@ async def test_a_channel_password_is_encrypted_under_its_own_tenants_key(db):
         )
     ).scalar_one()
     stored = row.config["password"]
-    assert stored != "a-pass" and str(stored).startswith("enc:v1:")
+    assert stored != "a-pass"
+    assert str(stored).startswith("enc:v1:")
     assert decrypt_secret_for(tenant_a, stored) == "a-pass"
     with pytest.raises(SecretDecryptionError):
         decrypt_secret_for(tenant_b, stored)

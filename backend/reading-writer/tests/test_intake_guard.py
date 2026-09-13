@@ -138,7 +138,8 @@ def test_a_mixed_batch_challenges_only_the_points_that_deserve_it():
 
 def test_only_the_two_data_free_states_are_challenged():
     assert set(CHALLENGED) == {"never_reported", "silent"}
-    assert "reporting" not in CHALLENGED and "awaiting_first_reading" not in CHALLENGED
+    assert "reporting" not in CHALLENGED
+    assert "awaiting_first_reading" not in CHALLENGED
 
 
 def test_a_refusal_carries_no_datetime_object():

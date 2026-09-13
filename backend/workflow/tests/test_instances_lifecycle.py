@@ -120,9 +120,10 @@ def test_create_on_a_sop_with_no_initial_state_is_refused():
             async with sm() as session:
                 sop = await SopService(session, SCOPE_A).create(
                     S.CreateSopRequest(name="Empty"), actor=ACTOR)
+                svc = InstanceService(session, SCOPE_A)
+                launch = IS.CreateInstanceRequest(sop_id=sop.sop_id)
                 with pytest.raises(ConflictError):
-                    await InstanceService(session, SCOPE_A).create(
-                        IS.CreateInstanceRequest(sop_id=sop.sop_id), actor=ACTOR)
+                    await svc.create(launch, actor=ACTOR)
             async with sm() as check:
                 rows, total = await InstanceService(check, SCOPE_A).list_()
                 assert (rows, total) == ([], 0)
@@ -246,16 +247,12 @@ def test_a_transition_that_does_not_start_here_is_refused():
                 svc = InstanceService(session, SCOPE_A)
                 inst = await svc.create(IS.CreateInstanceRequest(sop_id=sop.sop_id),
                                         actor=ACTOR)
+                wrong_end = IS.TransitionInstanceRequest(transition_id=back.transition_id)
                 with pytest.raises(ConflictError):
-                    await svc.transition(
-                        inst.instance_id,
-                        IS.TransitionInstanceRequest(transition_id=back.transition_id),
-                        actor=ACTOR)
+                    await svc.transition(inst.instance_id, wrong_end, actor=ACTOR)
+                unknown = IS.TransitionInstanceRequest(transition_id="no-such-transition")
                 with pytest.raises(ConflictError):
-                    await svc.transition(
-                        inst.instance_id,
-                        IS.TransitionInstanceRequest(transition_id="no-such-transition"),
-                        actor=ACTOR)
+                    await svc.transition(inst.instance_id, unknown, actor=ACTOR)
             async with sm() as check:
                 row = await check.get(WorkflowInstance, inst.instance_id)
                 assert row.current_state == start.state_id
@@ -278,12 +275,10 @@ def test_requires_note_is_enforced_on_blank_as_well_as_missing():
                 inst = await svc.create(IS.CreateInstanceRequest(sop_id=sop.sop_id),
                                         actor=ACTOR)
                 for notes in (None, "", "   "):
+                    move = IS.TransitionInstanceRequest(
+                        transition_id=trans.transition_id, notes=notes)
                     with pytest.raises(ValidationError):
-                        await svc.transition(
-                            inst.instance_id,
-                            IS.TransitionInstanceRequest(transition_id=trans.transition_id,
-                                                         notes=notes),
-                            actor=ACTOR)
+                        await svc.transition(inst.instance_id, move, actor=ACTOR)
                 moved = await svc.transition(
                     inst.instance_id,
                     IS.TransitionInstanceRequest(transition_id=trans.transition_id, notes="ok"),
@@ -317,11 +312,9 @@ def test_transition_conditions_gate_the_move_and_the_available_list():
                 offered = await svc.get_available_transitions(crit.instance_id)
                 assert [t.transition_id for t in offered] == [trans.transition_id]
 
+                move = IS.TransitionInstanceRequest(transition_id=trans.transition_id)
                 with pytest.raises(ConflictError):
-                    await svc.transition(
-                        low.instance_id,
-                        IS.TransitionInstanceRequest(transition_id=trans.transition_id),
-                        actor=ACTOR)
+                    await svc.transition(low.instance_id, move, actor=ACTOR)
                 moved = await svc.transition(
                     crit.instance_id,
                     IS.TransitionInstanceRequest(transition_id=trans.transition_id),
@@ -374,12 +367,10 @@ def test_form_backed_transition_rejects_bad_data_and_records_labels_for_good_dat
                                                      trans_kwargs={"form_id": form.form_id})
                 svc = InstanceService(session, SCOPE_A)
                 bad = await svc.create(IS.CreateInstanceRequest(sop_id=sop.sop_id), actor=ACTOR)
+                empty_form = IS.TransitionInstanceRequest(
+                    transition_id=trans.transition_id, form_data={})
                 with pytest.raises(ValidationError) as err:
-                    await svc.transition(
-                        bad.instance_id,
-                        IS.TransitionInstanceRequest(transition_id=trans.transition_id,
-                                                     form_data={}),
-                        actor=ACTOR)
+                    await svc.transition(bad.instance_id, empty_form, actor=ACTOR)
                 assert err.value.details["fields"] == ["Reason: required"]
 
                 await svc.transition(
@@ -477,9 +468,9 @@ def test_change_status_walks_only_legal_edges():
                     inst.instance_id, IS.StatusChangeRequest(status="paused"),
                     actor=ACTOR)).status == "paused"
                 # paused → pending is not an edge.
+                back_to_pending = IS.StatusChangeRequest(status="pending")
                 with pytest.raises(ConflictError):
-                    await svc.change_status(
-                        inst.instance_id, IS.StatusChangeRequest(status="pending"), actor=ACTOR)
+                    await svc.change_status(inst.instance_id, back_to_pending, actor=ACTOR)
 
                 resolved = await svc.change_status(
                     inst.instance_id,
