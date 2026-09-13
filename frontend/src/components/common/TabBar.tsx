@@ -21,7 +21,7 @@ export interface TabBarProps<K extends string = string> {
   className?: string;
 }
 
-export function TabBar<K extends string = string>({ tabs = [], active, onChange, className = "" }: TabBarProps<K>) {
+export function TabBar<K extends string = string>({ tabs = [], active, onChange, className = "" }: Readonly<TabBarProps<K>>) {
   // The tabs deliberately carry NO negative bottom margin. Setting overflow-x makes the
   // browser compute overflow-y from `visible` up to `auto`, so a `-mb-px` here (to lap the
   // active underline over the strip's border) left each tab 1px taller than the content

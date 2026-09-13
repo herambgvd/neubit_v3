@@ -19,7 +19,7 @@ export interface SettingFieldProps {
   onChange: (value: SettingValue) => void;
 }
 
-export default function SettingField({ item, value, onChange }: SettingFieldProps) {
+export default function SettingField({ item, value, onChange }: Readonly<SettingFieldProps>) {
   const [reveal, setReveal] = useState(false);
 
   if (item.type === "bool") {

@@ -41,7 +41,7 @@ export interface FederationNodeDetailProps {
   unreachable: boolean;
 }
 
-function SectionLabel({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
+function SectionLabel({ children, right }: Readonly<{ children: React.ReactNode; right?: React.ReactNode }>) {
   return (
     <div className="mb-2 mt-4 flex items-center justify-between gap-2">
       <p className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">{children}</p>
@@ -70,7 +70,7 @@ function meterColor(pct: number): string {
   return "#60a5fa";
 }
 
-function Meter({ percent, label }: { percent: number; label: string }) {
+function Meter({ percent, label }: Readonly<{ percent: number; label: string }>) {
   const p = Math.min(100, Math.max(0, Math.round(percent)));
   const color = meterColor(p);
   return (
@@ -92,7 +92,7 @@ export default function FederationNodeDetail({
   cameras,
   camsLoading,
   unreachable,
-}: FederationNodeDetailProps) {
+}: Readonly<FederationNodeDetailProps>) {
   const cap = node.capacity_channels;
   const used = node.used_channels ?? cameras.length;
   const online = cameras.filter((c) => c.status === "online").length;

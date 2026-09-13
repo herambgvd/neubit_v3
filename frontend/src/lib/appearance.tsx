@@ -74,7 +74,7 @@ function write(key: string, value: string) {
   }
 }
 
-export function AppearanceProvider({ children }: { children?: ReactNode }) {
+export function AppearanceProvider({ children }: Readonly<{ children?: ReactNode }>) {
   const { user } = useAuth();
 
   // Lazy initialisers, so the very first client render already agrees with what

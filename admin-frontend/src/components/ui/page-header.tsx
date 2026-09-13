@@ -9,7 +9,7 @@ export interface PageHeaderProps {
 }
 
 // Standard page title row: title + optional description on the left, actions on the right.
-export function PageHeader({ title, description, actions, className }: PageHeaderProps) {
+export function PageHeader({ title, description, actions, className }: Readonly<PageHeaderProps>) {
   return (
     <div className={cn("mb-6 flex flex-wrap items-end justify-between gap-4", className)}>
       <div>

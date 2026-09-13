@@ -12,7 +12,7 @@ export interface SiteListItemProps {
   onSelect: () => void;
 }
 
-export default function SiteListItem({ site, selected, onSelect }: SiteListItemProps) {
+export default function SiteListItem({ site, selected, onSelect }: Readonly<SiteListItemProps>) {
   const s = site;
   const city = [s.address?.city, s.address?.state].filter(Boolean).join(", ");
   return (

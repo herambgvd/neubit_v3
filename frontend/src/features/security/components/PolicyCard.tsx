@@ -24,7 +24,7 @@ export interface PolicyCardProps {
   canManage: boolean;
 }
 
-export default function PolicyCard({ canManage }: PolicyCardProps) {
+export default function PolicyCard({ canManage }: Readonly<PolicyCardProps>) {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["security-policy"], queryFn: () => security.policy.get() });
 

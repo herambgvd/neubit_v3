@@ -36,12 +36,12 @@ function SettingsSection({
   title,
   subtitle,
   children,
-}: {
+}: Readonly<{
   icon: ComponentType<{ className?: string }>;
   title: ReactNode;
   subtitle?: ReactNode;
   children?: ReactNode;
-}) {
+}>) {
   return (
     <Card className="animate-fade-in p-6">
       <div className="mb-5 flex items-center gap-2.5">
@@ -63,12 +63,12 @@ function Toggle({
   description,
   checked,
   onChange,
-}: {
+}: Readonly<{
   label: ReactNode;
   description?: ReactNode;
   checked: boolean;
   onChange: (checked: boolean) => void;
-}) {
+}>) {
   return (
     <label className="flex cursor-pointer items-center justify-between rounded-lg border border-card-border bg-card px-3.5 py-3">
       <div>
@@ -123,7 +123,7 @@ function SettingsCard() {
   );
 }
 
-function SettingsForm({ initial }: { initial: Record<string, unknown> }) {
+function SettingsForm({ initial }: Readonly<{ initial: Record<string, unknown> }>) {
   const qc = useQueryClient();
   const [form, setForm] = useState<SettingsValues>(() => ({
     announcement: asText(initial.announcement),
@@ -229,7 +229,7 @@ function MapsCard() {
   );
 }
 
-function MapsForm({ initial }: { initial: Record<string, unknown> }) {
+function MapsForm({ initial }: Readonly<{ initial: Record<string, unknown> }>) {
   const qc = useQueryClient();
   const [form, setForm] = useState<MapsValues>(() => ({
     google_maps_enabled: asBool(initial.google_maps_enabled),
@@ -327,7 +327,7 @@ function BrandingCard() {
   );
 }
 
-function BrandingForm({ initial }: { initial: Branding }) {
+function BrandingForm({ initial }: Readonly<{ initial: Branding }>) {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [form, setForm] = useState<BrandingValues>(() => ({

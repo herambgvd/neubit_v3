@@ -21,7 +21,7 @@ export interface FormRendererProps {
   disabled?: boolean;
 }
 
-export default function FormRenderer({ field, value, onChange, error, disabled = false }: FormRendererProps) {
+export default function FormRenderer({ field, value, onChange, error, disabled = false }: Readonly<FormRendererProps>) {
   const id = `ff-${field.id || "x"}`;
   const required = !!field?.validation?.required;
   const pattern = field?.validation?.pattern || undefined;

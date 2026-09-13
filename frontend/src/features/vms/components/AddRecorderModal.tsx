@@ -40,7 +40,7 @@ export interface AddRecorderModalProps {
   onSuccess?: (node: MediaNodePublic) => void;
 }
 
-export default function AddRecorderModal({ node, onClose, onSuccess }: AddRecorderModalProps) {
+export default function AddRecorderModal({ node, onClose, onSuccess }: Readonly<AddRecorderModalProps>) {
   const editing = !!node;
   const [form, setForm] = useState<RecorderForm>(
     node

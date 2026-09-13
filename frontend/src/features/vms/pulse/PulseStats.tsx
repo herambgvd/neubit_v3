@@ -19,13 +19,13 @@ function Stat({
   sub,
   tone = "idle",
   icon,
-}: {
+}: Readonly<{
   label: string;
   value: string;
   sub?: string;
   tone?: Tone;
   icon: string;
-}) {
+}>) {
   return (
     <div className="min-w-0 flex-1 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2.5">
       <div className="flex items-center gap-1.5">
@@ -43,11 +43,11 @@ function Stat({
 export default function PulseStats({
   data,
   right,
-}: {
+}: Readonly<{
   data: PulseOverview;
   /** Freshness + refresh, rendered at the end of the figures row. */
   right?: ReactNode;
-}) {
+}>) {
   const t = data.totals;
   const partial = answeredLabel(data);
   const rec = recordingLabel(t.recording_gap_free, t.cameras_recording);

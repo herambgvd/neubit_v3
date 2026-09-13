@@ -121,7 +121,7 @@ function WallTile({
   onSpotlight,
   onPickHere,
   style,
-}: WallTileProps) {
+}: Readonly<WallTileProps>) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [dropActive, setDropActive] = useState(false);
   // "Try anyway" on a dark tile. The estate's status is a poll result and can be a

@@ -39,7 +39,7 @@ export interface CardholderModalProps {
   onSuccess?: () => void;
 }
 
-export default function CardholderModal({ instanceId, cardholder, onClose, onSuccess }: CardholderModalProps) {
+export default function CardholderModal({ instanceId, cardholder, onClose, onSuccess }: Readonly<CardholderModalProps>) {
   const isEdit = !!cardholder;
   const qc = useQueryClient();
 
@@ -263,7 +263,7 @@ interface GroupSelectorProps {
   onChange: (groupIds: string[]) => void;
 }
 
-function GroupSelector({ allGroups, selected, onChange }: GroupSelectorProps) {
+function GroupSelector({ allGroups, selected, onChange }: Readonly<GroupSelectorProps>) {
   const [open, setOpen] = useState(false);
   const idSet = new Set<string>(selected);
   const selectedGroups = allGroups.filter((g) => idSet.has(g.group_id));

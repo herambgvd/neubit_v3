@@ -24,7 +24,7 @@ export interface PatternDetailProps {
   onToggleActive: (item: PatternItem) => void;
 }
 
-export default function PatternDetail({ item, isPattern, groupById, cameraById, onEdit, onDelete, onToggleActive }: PatternDetailProps) {
+export default function PatternDetail({ item, isPattern, groupById, cameraById, onEdit, onDelete, onToggleActive }: Readonly<PatternDetailProps>) {
   const active = item.is_active !== false;
   const icon = isPattern ? "heroicons:squares-2x2" : "heroicons-outline:video-camera";
   // The tab says which kind this is; the shape guard just types the reads.
@@ -170,7 +170,7 @@ export default function PatternDetail({ item, isPattern, groupById, cameraById, 
   );
 }
 
-function DetailField({ label, children }: { label: ReactNode; children: ReactNode }) {
+function DetailField({ label, children }: Readonly<{ label: ReactNode; children: ReactNode }>) {
   return (
     <div>
       <div className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">{label}</div>

@@ -157,11 +157,11 @@ function SetupWizard({
   open,
   onOpenChange,
   onDone,
-}: {
+}: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDone: () => void;
-}) {
+}>) {
   const [step, setStep] = useState<"scan" | "codes">("scan");
   const [code, setCode] = useState("");
   const [recovery, setRecovery] = useState<string[]>([]);
@@ -260,11 +260,11 @@ function RegenerateDialog({
   open,
   onOpenChange,
   onDone,
-}: {
+}: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDone?: () => void;
-}) {
+}>) {
   const [recovery, setRecovery] = useState<string[] | null>(null);
   return (
     <Dialog
@@ -309,7 +309,7 @@ function RegenerateDialog({
   );
 }
 
-function RecoveryCodes({ codes }: { codes: string[] }) {
+function RecoveryCodes({ codes }: Readonly<{ codes: string[] }>) {
   const [copied, setCopied] = useState(false);
   const text = useMemo(() => codes.join("\n"), [codes]);
 
@@ -372,7 +372,7 @@ function CodeConfirmDialog({
   variant,
   action,
   onSuccess,
-}: CodeConfirmProps & { open: boolean; onOpenChange: (open: boolean) => void }) {
+}: Readonly<CodeConfirmProps & { open: boolean; onOpenChange: (open: boolean) => void }>) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
@@ -398,7 +398,7 @@ function CodeConfirmBody({
   action,
   onCancel,
   onSuccess,
-}: CodeConfirmProps & { onCancel: () => void }) {
+}: Readonly<CodeConfirmProps & { onCancel: () => void }>) {
   const [code, setCode] = useState("");
   const mut = useMutation({
     mutationFn: () => action(code.trim()),

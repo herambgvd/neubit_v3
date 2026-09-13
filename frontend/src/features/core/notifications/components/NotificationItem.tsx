@@ -26,7 +26,7 @@ export interface NotificationItemProps {
   marking: boolean;
 }
 
-export function NotificationItem({ notification, onMarkRead, marking }: NotificationItemProps) {
+export function NotificationItem({ notification, onMarkRead, marking }: Readonly<NotificationItemProps>) {
   const n = notification;
   return (
     <Card

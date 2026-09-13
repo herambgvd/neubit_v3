@@ -129,7 +129,7 @@ export interface LinkageRuleModalProps {
   error?: ReactNode;
 }
 
-export default function LinkageRuleModal({ open, rule, onClose, onSave, saving = false, error }: LinkageRuleModalProps) {
+export default function LinkageRuleModal({ open, rule, onClose, onSave, saving = false, error }: Readonly<LinkageRuleModalProps>) {
   const [form, setForm] = useState(() => toForm(rule));
 
   useEffect(() => {
@@ -319,7 +319,7 @@ export default function LinkageRuleModal({ open, rule, onClose, onSave, saving =
   );
 }
 
-function Section({ title, children }: { title: ReactNode; children: ReactNode }) {
+function Section({ title, children }: Readonly<{ title: ReactNode; children: ReactNode }>) {
   return (
     <section className="space-y-2">
       <h4 className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">{title}</h4>
@@ -328,7 +328,7 @@ function Section({ title, children }: { title: ReactNode; children: ReactNode })
   );
 }
 
-function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
+function Field({ label, children }: Readonly<{ label: ReactNode; children: ReactNode }>) {
   return (
     <div>
       <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">{label}</label>
@@ -345,7 +345,7 @@ interface PickListProps {
   loading?: boolean;
 }
 
-function PickList({ items, selected, onToggle, empty, loading }: PickListProps) {
+function PickList({ items, selected, onToggle, empty, loading }: Readonly<PickListProps>) {
   if (loading) {
     return (
       <div className="flex items-center gap-2 px-1 py-3 text-[11px] text-nb-soft">

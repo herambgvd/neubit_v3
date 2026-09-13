@@ -27,7 +27,7 @@ interface TagFormErrors {
   color?: string;
 }
 
-export default function TagForm({ tag, onCancel, onSaved }: TagFormProps) {
+export default function TagForm({ tag, onCancel, onSaved }: Readonly<TagFormProps>) {
   const isEdit = !!tag;
   const [name, setName] = useState(tag?.name || "");
   const [color, setColor] = useState(tag?.color || DEFAULT_COLOR);

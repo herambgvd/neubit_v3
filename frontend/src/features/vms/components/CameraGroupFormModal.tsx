@@ -37,7 +37,7 @@ interface GroupFormErrors {
   cells?: string;
 }
 
-export default function CameraGroupFormModal({ open, group, cameras = [], onClose, onSaved }: CameraGroupFormModalProps) {
+export default function CameraGroupFormModal({ open, group, cameras = [], onClose, onSaved }: Readonly<CameraGroupFormModalProps>) {
   const qc = useQueryClient();
   const isEdit = !!group;
 

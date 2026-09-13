@@ -68,7 +68,7 @@ function pointOf(addr: string | null | undefined): string {
   return parts.length ? parts[parts.length - 1] : addr;
 }
 
-function SeverityChip({ severity, count }: { severity: string | null; count: number }) {
+function SeverityChip({ severity, count }: Readonly<{ severity: string | null; count: number }>) {
   const m = severityMeta(severity);
   return (
     <span
@@ -166,7 +166,7 @@ export function FaultSeverity({ query }: any) {
 // unreachable.
 const SECONDS_PER_FAULT = 9;
 
-function FaultTicker({ items }: { items: any[] }) {
+function FaultTicker({ items }: Readonly<{ items: any[] }>) {
   const duration = Math.max(18, items.length * SECONDS_PER_FAULT);
   const run = (dup: boolean) => (
     // `min-w-full` is what makes the loop seamless when the estate is QUIET.

@@ -21,7 +21,7 @@ export interface TagListProps {
   onSelect: (id: string) => void;
 }
 
-export default function TagList({ items, loading, error, query, selectedId, mode, onSelect }: TagListProps) {
+export default function TagList({ items, loading, error, query, selectedId, mode, onSelect }: Readonly<TagListProps>) {
   if (loading) {
     return (
       <div className="px-4 py-8 flex items-center gap-2 text-sm text-nb-muted">

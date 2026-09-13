@@ -189,12 +189,12 @@ function BroadcastDialog({
   broadcast,
   onClose,
   onSaved,
-}: {
+}: Readonly<{
   /** null for a new broadcast; a saved row to edit it. */
   broadcast: Broadcast | null;
   onClose: () => void;
   onSaved: () => void;
-}) {
+}>) {
   const isEdit = !!broadcast;
   const [title, setTitle] = useState(broadcast?.title || "");
   const [body, setBody] = useState(broadcast?.body || "");

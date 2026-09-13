@@ -18,7 +18,7 @@ export interface UserPostureProps {
   onUnlock: () => void;
 }
 
-export default function UserPosture({ user, canManage, busyAction, onClone, onForceSignOut, onUnlock }: UserPostureProps) {
+export default function UserPosture({ user, canManage, busyAction, onClone, onForceSignOut, onUnlock }: Readonly<UserPostureProps>) {
   const u = user;
   const locked = !!u.locked;
   return (

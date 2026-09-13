@@ -29,7 +29,7 @@ export interface TemplateFormProps {
   onSaved: () => void;
 }
 
-export default function TemplateForm({ template, onCancel, onSaved }: TemplateFormProps) {
+export default function TemplateForm({ template, onCancel, onSaved }: Readonly<TemplateFormProps>) {
   const isEdit = !!template;
   const [name, setName] = useState(template?.name || "");
   const [channelType, setChannelType] = useState(template?.channel_type || "email");

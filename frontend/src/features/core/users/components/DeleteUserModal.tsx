@@ -16,7 +16,7 @@ export interface DeleteUserModalProps {
 }
 
 // Delete user — requires the admin to re-enter their password.
-export default function DeleteUserModal({ deleting, onClose, password, setPassword, onConfirm, removing }: DeleteUserModalProps) {
+export default function DeleteUserModal({ deleting, onClose, password, setPassword, onConfirm, removing }: Readonly<DeleteUserModalProps>) {
   return (
     <Modal
       open={!!deleting}

@@ -60,7 +60,7 @@ export interface SopCanvasProps {
   sopId: string;
 }
 
-export default function SopCanvas({ sopId }: SopCanvasProps) {
+export default function SopCanvas({ sopId }: Readonly<SopCanvasProps>) {
   const qc = useQueryClient();
   const statesKey = ["wf-states", sopId];
   const transKey = ["wf-transitions", sopId];

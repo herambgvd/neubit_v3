@@ -19,13 +19,13 @@ function Cell({
   value,
   sub,
   subTone = "text-nb-faint",
-}: {
+}: Readonly<{
   icon: string;
   label: string;
   value: React.ReactNode;
   sub?: React.ReactNode;
   subTone?: string;
-}) {
+}>) {
   return (
     <div className="flex items-start gap-2.5 px-4 py-3">
       <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-nb-blue/12 text-nb-blueb">
@@ -40,7 +40,7 @@ function Cell({
   );
 }
 
-export default function LicenseStrip({ lic }: { lic: LicenseStatus | undefined }) {
+export default function LicenseStrip({ lic }: Readonly<{ lic: LicenseStatus | undefined }>) {
   const { entitlements } = useAuth();
   // The tenant's own expiry wins where there is one: a tenant can be wound down
   // inside a platform licence that runs for another year.

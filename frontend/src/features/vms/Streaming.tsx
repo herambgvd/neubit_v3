@@ -1035,7 +1035,7 @@ interface SavedLayoutsMenuProps {
   canSave: boolean;
 }
 
-function SavedLayoutsMenu({ layouts, onApply, onDelete, onSave, canSave }: SavedLayoutsMenuProps) {
+function SavedLayoutsMenu({ layouts, onApply, onDelete, onSave, canSave }: Readonly<SavedLayoutsMenuProps>) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 

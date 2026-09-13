@@ -247,7 +247,7 @@ interface DropHover {
   valid: boolean;
 }
 
-export const FloorPlanCanvas = forwardRef<FloorPlanCanvasHandle, FloorPlanCanvasProps>(function FloorPlanCanvas(
+export const FloorPlanCanvas = forwardRef<FloorPlanCanvasHandle, Readonly<FloorPlanCanvasProps>>(function FloorPlanCanvas(
   {
     floorplanUrl,
     zones = [],

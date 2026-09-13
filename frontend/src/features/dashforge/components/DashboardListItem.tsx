@@ -24,7 +24,7 @@ export interface DashboardListItemProps {
   onSelect: () => void;
 }
 
-export default function DashboardListItem({ dashboard, selected, onSelect }: DashboardListItemProps) {
+export default function DashboardListItem({ dashboard, selected, onSelect }: Readonly<DashboardListItemProps>) {
   const d = dashboard;
   const icon = CATEGORIES.find((c) => c.slug === d.category)?.icon || "heroicons-outline:squares-2x2";
   const locked = Object.keys(d.scope || {}).length;

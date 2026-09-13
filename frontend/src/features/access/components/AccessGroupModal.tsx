@@ -32,7 +32,7 @@ export interface AccessGroupModalProps {
   onSuccess?: () => void;
 }
 
-export default function AccessGroupModal({ instanceId, group, onClose, onSuccess }: AccessGroupModalProps) {
+export default function AccessGroupModal({ instanceId, group, onClose, onSuccess }: Readonly<AccessGroupModalProps>) {
   const isEdit = !!group;
   const qc = useQueryClient();
 

@@ -33,7 +33,7 @@ export interface WallKioskProps {
   monitorId?: string | string[];
 }
 
-export default function WallKiosk({ wallId: wallIdParam, monitorId: monitorIdParam }: WallKioskProps) {
+export default function WallKiosk({ wallId: wallIdParam, monitorId: monitorIdParam }: Readonly<WallKioskProps>) {
   // Neither segment is a catch-all, so the array form never actually occurs; ""
   // for a missing id keeps every `enabled` gate and lookup reading as before.
   const wallId = (Array.isArray(wallIdParam) ? wallIdParam[0] : wallIdParam) ?? "";
@@ -145,7 +145,7 @@ interface KioskMessageProps {
   text: string;
 }
 
-function KioskMessage({ icon, text }: KioskMessageProps) {
+function KioskMessage({ icon, text }: Readonly<KioskMessageProps>) {
   return (
     <div className="fixed inset-0 flex flex-col items-center justify-center gap-3 bg-black text-white/60">
       <Icon icon={icon} className="text-3xl" />

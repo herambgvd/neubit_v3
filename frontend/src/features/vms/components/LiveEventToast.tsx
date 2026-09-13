@@ -31,7 +31,7 @@ export function clearAllEventToasts(): void {
   }
 }
 
-export default function LiveEventToast({ toastId, ...rest }: LiveEventToastProps) {
+export default function LiveEventToast({ toastId, ...rest }: Readonly<LiveEventToastProps>) {
   const live = useLiveToasts();
   const isFront = live[0] === toastId;
 

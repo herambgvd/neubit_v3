@@ -49,7 +49,7 @@ try {
 // The root font size comes from `data-ui-scale` (theme.css), NOT from an inline
 // style here — an inline style would outrank the stylesheet and pin every
 // operator to one size.
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <html
       lang="en"

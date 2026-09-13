@@ -31,7 +31,7 @@ export interface ConditionsPreviewProps {
   conditions: ConditionRow[];
 }
 
-export default function ConditionsPreview({ conditions }: ConditionsPreviewProps) {
+export default function ConditionsPreview({ conditions }: Readonly<ConditionsPreviewProps>) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState(SAMPLE);
 

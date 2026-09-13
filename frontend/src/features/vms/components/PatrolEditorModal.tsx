@@ -63,7 +63,7 @@ export default function PatrolEditorModal({
   patrol,
   onClose,
   onSaved,
-}: PatrolEditorModalProps) {
+}: Readonly<PatrolEditorModalProps>) {
   const [randomOrder, setRandomOrder] = useState(!!patrol?.random_order);
   const [defaultDwell, setDefaultDwell] = useState<number | string>(
     patrol?.default_dwell_seconds ?? DEFAULT_DWELL
@@ -240,7 +240,7 @@ interface IconBtnProps {
   danger?: boolean;
 }
 
-function IconBtn({ icon, title, onClick, disabled, danger }: IconBtnProps) {
+function IconBtn({ icon, title, onClick, disabled, danger }: Readonly<IconBtnProps>) {
   return (
     <button
       type="button"

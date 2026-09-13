@@ -26,7 +26,7 @@ export interface ZoneFormProps {
   onSaved: () => void;
 }
 
-export default function ZoneForm({ zone, onCancel, onSaved }: ZoneFormProps) {
+export default function ZoneForm({ zone, onCancel, onSaved }: Readonly<ZoneFormProps>) {
   const [name, setName] = useState(zone.name || "");
   const [description, setDescription] = useState(zone.description || "");
   const [zoneType, setZoneType] = useState(zone.zone_type || "other");

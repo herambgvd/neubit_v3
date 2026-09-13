@@ -44,7 +44,7 @@ export interface PickOnMapButtonProps {
   }) => void;
 }
 
-export default function PickOnMapButton({ tilesUrl = DEFAULT_TILES_URL, value, onResult }: PickOnMapButtonProps) {
+export default function PickOnMapButton({ tilesUrl = DEFAULT_TILES_URL, value, onResult }: Readonly<PickOnMapButtonProps>) {
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState<{ lat: number; lng: number } | null>(null);
   const [address, setAddress] = useState<ResolvedAddress | null>(null);

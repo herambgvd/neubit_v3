@@ -60,7 +60,7 @@ export default function OfflineMapPicker({
   zoom = 4,
   value,
   onChange,
-}: OfflineMapPickerProps) {
+}: Readonly<OfflineMapPickerProps>) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markerRef = useRef<Marker | null>(null);

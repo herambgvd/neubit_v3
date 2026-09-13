@@ -33,11 +33,11 @@ const TABS: { key: View; label: string; icon: string }[] = [
 export default function TemplateDetail({
   name,
   onGone,
-}: {
+}: Readonly<{
   name: string;
   /** A custom template has no default to fall back to — the list must reselect. */
   onGone?: () => void;
-}) {
+}>) {
   const qc = useQueryClient();
   const [view, setView] = useState<View>("design");
   const [form, setForm] = useState({ subject: "", html: "" });

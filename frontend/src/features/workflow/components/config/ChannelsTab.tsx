@@ -236,12 +236,12 @@ function ChannelDetail({
   onEdit,
   onToggle,
   onDelete,
-}: {
+}: Readonly<{
   channel: ChannelPublic;
   onEdit: () => void;
   onToggle: (v: boolean) => void;
   onDelete: () => void;
-}) {
+}>) {
   const meta = typeMeta(channel.channel_type);
   const fields = FIELDS[channel.channel_type] || [];
   const cfg = channel.config || {};
@@ -300,13 +300,13 @@ function ChannelModal({
   saving,
   onClose,
   onSave,
-}: {
+}: Readonly<{
   open: boolean;
   channel: ChannelPublic | null;
   saving: boolean;
   onClose: () => void;
   onSave: (body: CreateChannelRequest) => void;
-}) {
+}>) {
   const [name, setName] = useState("");
   const [type, setType] = useState<string>("email");
   const [cfg, setCfg] = useState<Record<string, string>>({});

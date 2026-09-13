@@ -138,7 +138,7 @@ const FOOTER: [title: string, links: [label: string, href: string][]][] = [
 /* ------------------------------------------------------------------ */
 /* Shared bits                                                         */
 /* ------------------------------------------------------------------ */
-function Eyebrow({ children, className = "" }: { children?: ReactNode; className?: string }) {
+function Eyebrow({ children, className = "" }: Readonly<{ children?: ReactNode; className?: string }>) {
   return (
     <div className={`inline-flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-white/45 ${className}`}>
       <span className="h-1 w-1 rounded-full" style={{ background: ACCENT }} />
@@ -151,7 +151,7 @@ const cardBase =
   "rounded-2xl border border-white/[0.08] bg-white/[0.02] transition-[transform,border-color,background-color] duration-300 hover:-translate-y-1 hover:border-white/[0.16]";
 
 // Browser/app chrome frame around the live console — makes the product feel real.
-function AppWindow({ children }: { children?: ReactNode }) {
+function AppWindow({ children }: Readonly<{ children?: ReactNode }>) {
   return (
     <div className="overflow-hidden rounded-2xl border border-white/[0.1] bg-[#0b1228] shadow-[0_50px_140px_-40px_rgba(0,0,0,0.95)]">
       <div className="flex items-center gap-3 border-b border-white/[0.07] bg-white/[0.02] px-4 py-2.5">
@@ -172,7 +172,7 @@ function AppWindow({ children }: { children?: ReactNode }) {
 }
 
 /* Feature-row visuals — lightweight framed panels (CSS/SVG, no framer). */
-function FeatureVisual({ kind }: { kind: string }) {
+function FeatureVisual({ kind }: Readonly<{ kind: string }>) {
   if (kind === "wall") {
     return (
       <div className="rounded-xl border border-white/[0.08] bg-[#08080a] p-3">

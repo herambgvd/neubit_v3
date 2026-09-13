@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@iconify/react";
 import type { ReactNode } from "react";
 
-function Seg({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: string; children?: ReactNode }) {
+function Seg({ active, onClick, icon, children }: Readonly<{ active: boolean; onClick: () => void; icon: string; children?: ReactNode }>) {
   return (
     <button
       type="button"
@@ -24,7 +24,7 @@ function Seg({ active, onClick, icon, children }: { active: boolean; onClick: ()
   );
 }
 
-export default function UsersRolesStrip({ active }: { active: "users" | "roles" }) {
+export default function UsersRolesStrip({ active }: Readonly<{ active: "users" | "roles" }>) {
   const router = useRouter();
 
   return (

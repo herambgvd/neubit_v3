@@ -31,7 +31,7 @@ export interface LinkageActionsBuilderProps {
   onChange?: (next: LinkageAction[]) => void;
 }
 
-export default function LinkageActionsBuilder({ actions = [], onChange }: LinkageActionsBuilderProps) {
+export default function LinkageActionsBuilder({ actions = [], onChange }: Readonly<LinkageActionsBuilderProps>) {
   const set = (next: LinkageAction[]) => onChange?.(next);
 
   const add = () => set([...actions, emptyAction()]);
@@ -108,7 +108,7 @@ export default function LinkageActionsBuilder({ actions = [], onChange }: Linkag
 // The list needs settings.manage, which a VMS rule editor may not hold — so a
 // failed load degrades to a name field rather than hiding the feature. The name
 // is what travels either way.
-function NotifyTemplateField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function NotifyTemplateField({ value, onChange }: Readonly<{ value: string; onChange: (v: string) => void }>) {
   const templates = useQuery({
     queryKey: ["messaging-templates"],
     queryFn: () => api.get<{ name: string; subject: string }[]>("/messaging/templates").then((r) => r.data),
@@ -141,7 +141,7 @@ function NotifyTemplateField({ value, onChange }: { value: string; onChange: (v:
 }
 
 // A tiny labelled input used inside the config grid.
-function Cfg({ label, children, span = 1 }: { label: ReactNode; children: ReactNode; span?: 1 | 2 }) {
+function Cfg({ label, children, span = 1 }: Readonly<{ label: ReactNode; children: ReactNode; span?: 1 | 2 }>) {
   // The control lives INSIDE the label, so the two are associated without an id
   // to thread through: a screen reader announces the field's name, and clicking
   // the caption focuses it. Sibling <label> text next to an input names nothing.
@@ -163,7 +163,7 @@ interface ActionConfigProps {
   patchConfigs: (idx: number, patch: Record<string, unknown>) => void;
 }
 
-function ActionConfig({ action, idx, patchConfig, patchConfigs }: ActionConfigProps) {
+function ActionConfig({ action, idx, patchConfig, patchConfigs }: Readonly<ActionConfigProps>) {
   const c: Record<string, unknown> = action.config || {};
   // Config is a free dict (see the header); these read a key as the input type
   // it binds to, and anything else as "unset".
@@ -312,14 +312,14 @@ function WallDisplayFields({
   num,
   patchConfig,
   patchConfigs,
-}: {
+}: Readonly<{
   idx: number;
   str: (k: string) => string;
   numOrStr: (k: string) => number | string;
   num: (v: string) => number | undefined;
   patchConfig: (idx: number, key: string, value: unknown) => void;
   patchConfigs: (idx: number, patch: Record<string, unknown>) => void;
-}) {
+}>) {
   const wallId = str("wall_id");
   const wallsQ = useQuery({
     queryKey: ["vms-walls", "linkage-action"],

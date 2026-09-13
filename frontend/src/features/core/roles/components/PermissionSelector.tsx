@@ -17,7 +17,7 @@ export interface PermissionSelectorProps {
   onToggleGroup: (perms: PermissionEntry[], checkAll: boolean) => void;
 }
 
-export default function PermissionSelector({ groups, selected, loading, readOnly, count, onToggleKey, onToggleGroup }: PermissionSelectorProps) {
+export default function PermissionSelector({ groups, selected, loading, readOnly, count, onToggleKey, onToggleGroup }: Readonly<PermissionSelectorProps>) {
   return (
     <div>
       <div className="flex items-center justify-between mb-2">

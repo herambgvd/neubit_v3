@@ -37,7 +37,7 @@ export interface BadgeProps extends ComponentPropsWithoutRef<"span"> {
   dot?: boolean;
 }
 
-export function Badge({ tone = "neutral", dot = false, className, children, ...props }: BadgeProps) {
+export function Badge({ tone = "neutral", dot = false, className, children, ...props }: Readonly<BadgeProps>) {
   return (
     <span className={cn(badgeVariants({ tone }), className)} {...props}>
       {dot && <span className={cn("h-1.5 w-1.5 rounded-full", dotTone[tone])} />}

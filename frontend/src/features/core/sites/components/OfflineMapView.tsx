@@ -48,7 +48,7 @@ const lngLat = (site: SiteWithCoords): [number, number] => [
   site.coordinates.latitude,
 ];
 
-function OfflineDisabled({ reason }: { reason?: string }) {
+function OfflineDisabled({ reason }: Readonly<{ reason?: string }>) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-6 py-20 text-center">
       <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-white/5 text-nb-muted">
@@ -170,7 +170,7 @@ export default function OfflineMapView({
   onClose,
   siteActions,
   showAlarms = true,
-}: OfflineMapViewProps) {
+}: Readonly<OfflineMapViewProps>) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markersRef = useRef(new Map<string, Marker>());

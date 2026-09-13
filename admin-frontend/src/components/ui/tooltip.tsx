@@ -36,7 +36,7 @@ export interface TooltipProps {
 }
 
 // Convenience wrapper for simple text tooltips.
-export function Tooltip({ content, children, side = "top", delayDuration = 200 }: TooltipProps) {
+export function Tooltip({ content, children, side = "top", delayDuration = 200 }: Readonly<TooltipProps>) {
   if (!content) return children;
   return (
     <TooltipPrimitive.Root delayDuration={delayDuration}>

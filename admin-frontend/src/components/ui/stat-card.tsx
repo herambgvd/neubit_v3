@@ -22,7 +22,7 @@ export function StatCard({
   hint,
   tone = "muted",
   className,
-}: StatCardProps) {
+}: Readonly<StatCardProps>) {
   const toneCls: Record<StatTone, string> = {
     muted: "text-muted",
     success: "text-success",

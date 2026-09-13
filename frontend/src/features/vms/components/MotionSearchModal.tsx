@@ -155,7 +155,7 @@ export default function MotionSearchModal({
   seedTo = null,
   onResults,
   onSeekHit,
-}: MotionSearchModalProps) {
+}: Readonly<MotionSearchModalProps>) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   // 0..1 in the UI, 1..100 on the wire — the recorder's scale. Converted at the

@@ -67,7 +67,7 @@ function LicenseBanner() {
 }
 
 // Auth-guarded application shell: horizontal top nav + full-width content.
-export default function AppLayout({ children }: { children?: ReactNode }) {
+export default function AppLayout({ children }: Readonly<{ children?: ReactNode }>) {
   const { status } = useAuth();
   const router = useRouter();
   const pathname = usePathname();

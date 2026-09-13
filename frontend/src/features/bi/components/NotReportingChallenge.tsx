@@ -47,13 +47,13 @@ export default function NotReportingChallenge({
   onAssertAnyway,
   onCancel,
   busy,
-}: {
+}: Readonly<{
   detail: NotReportingDetail;
   message?: string;
   onAssertAnyway: () => void;
   onCancel: () => void;
   busy?: boolean;
-}) {
+}>) {
   const points = detail.points || [];
   const silentHours = detail.thresholds?.silent_after_hours ?? 24;
   return (

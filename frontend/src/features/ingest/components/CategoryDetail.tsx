@@ -15,7 +15,7 @@ export interface CategoryDetailProps {
   onDelete: () => void;
 }
 
-export default function CategoryDetail({ category, catId, onEdit, onDelete }: CategoryDetailProps) {
+export default function CategoryDetail({ category, catId, onEdit, onDelete }: Readonly<CategoryDetailProps>) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex items-center gap-3 border-b border-nb-line px-5 py-3">

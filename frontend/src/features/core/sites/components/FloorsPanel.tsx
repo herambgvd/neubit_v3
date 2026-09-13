@@ -16,7 +16,7 @@ import type { FloorPublic, SitePublic } from "@/lib/types";
 import { FloorPlanEditorModal } from "@/components/floor-builder/FloorPlanEditor";
 import FloorForm from "./FloorForm";
 
-export default function FloorsPanel({ site }: { site: SitePublic }) {
+export default function FloorsPanel({ site }: Readonly<{ site: SitePublic }>) {
   const qc = useQueryClient();
   const floorsQ = useQuery({
     queryKey: ["floors-list", site.site_id],

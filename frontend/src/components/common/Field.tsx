@@ -28,7 +28,7 @@ export interface FieldLabelProps {
   htmlFor?: string;
 }
 
-export function FieldLabel({ children, required, className = "", htmlFor }: FieldLabelProps) {
+export function FieldLabel({ children, required, className = "", htmlFor }: Readonly<FieldLabelProps>) {
   return (
     <label
       htmlFor={htmlFor}
@@ -75,7 +75,7 @@ export function Field({
   className = "",
   containerClassName = "",
   ...control
-}: FieldProps) {
+}: Readonly<FieldProps>) {
   // The label was a sibling <label> with no `htmlFor`, so it named NOTHING: a
   // screen reader announced "edit text, blank" on every form built from this
   // component, and clicking the caption focused nothing. An id is generated when

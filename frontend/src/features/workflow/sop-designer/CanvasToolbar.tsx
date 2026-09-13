@@ -11,7 +11,7 @@ interface ToolBtnProps {
   onClick: () => void;
 }
 
-function ToolBtn({ icon, title, onClick }: ToolBtnProps) {
+function ToolBtn({ icon, title, onClick }: Readonly<ToolBtnProps>) {
   return (
     <button
       type="button"
@@ -32,7 +32,7 @@ export interface CanvasToolbarProps {
   onFit: () => void;
 }
 
-export default function CanvasToolbar({ scale, onAddState, onZoomIn, onZoomOut, onFit }: CanvasToolbarProps) {
+export default function CanvasToolbar({ scale, onAddState, onZoomIn, onZoomOut, onFit }: Readonly<CanvasToolbarProps>) {
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-nb-line px-3 py-2 bg-[rgba(8,15,34,.5)]">
       <Button variant="success" icon="heroicons-outline:plus" onClick={onAddState} className="!px-2.5 !py-1 text-xs">

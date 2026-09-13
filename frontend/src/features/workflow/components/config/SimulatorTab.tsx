@@ -264,7 +264,7 @@ export default function SimulatorTab() {
   );
 }
 
-function ResultPanel({ result }: { result: SimulateEventResponse }) {
+function ResultPanel({ result }: Readonly<{ result: SimulateEventResponse }>) {
   const triggers = result.matched_triggers || [];
   const skipped = result.skipped || [];
   const fmt = result.matched_format;

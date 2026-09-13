@@ -23,7 +23,7 @@ export interface AlarmFactsProps {
   cameraName?: string | null;
 }
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
+function Row({ label, children }: Readonly<{ label: string; children: ReactNode }>) {
   return (
     <div className="flex items-start gap-3 border-b border-card-border/60 py-1.5 last:border-0">
       <span className="w-24 shrink-0 text-[11px] text-muted">{label}</span>
@@ -48,7 +48,7 @@ export default function AlarmFacts({
   sopName = {},
   siteName = {},
   cameraName = null,
-}: AlarmFactsProps) {
+}: Readonly<AlarmFactsProps>) {
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card p-3">
       <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.14em] text-muted">

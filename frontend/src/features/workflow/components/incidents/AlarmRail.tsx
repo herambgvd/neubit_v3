@@ -50,7 +50,7 @@ export default function AlarmRail({
   toolbar,
   footer,
   empty,
-}: AlarmRailProps) {
+}: Readonly<AlarmRailProps>) {
   return (
     <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card">
       {toolbar && (

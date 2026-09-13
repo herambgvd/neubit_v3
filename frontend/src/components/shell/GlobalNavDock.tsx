@@ -290,7 +290,7 @@ function AccountMenu() {
 // lives here so each page carries exactly one row of chrome. Right: (Home) status
 // strip, Search ⌘K, notifications, account. Slim + navy to match the immersive
 // aesthetic.
-export default function GlobalNavDock({ home = false }: { home?: boolean }) {
+export default function GlobalNavDock({ home = false }: Readonly<{ home?: boolean }>) {
   return (
     // z-50: the header's notification + account dropdowns must paint OVER every page
     // chrome on EVERY route. They once shared a stacking level with the section-nav

@@ -89,7 +89,7 @@ export default function StateMachine({
   currentStateId,
   currentStateName,
   title = "State machine",
-}: StateMachineProps) {
+}: Readonly<StateMachineProps>) {
   const layout = useLayout(states);
   const isCurrent = (s: StatePublic): boolean =>
     stateId(s) === currentStateId || stateName(s) === currentStateName;

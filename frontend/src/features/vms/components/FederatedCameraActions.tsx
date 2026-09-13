@@ -47,7 +47,7 @@ const FAILED = new Set<string>(["failed", "error"]);
 
 type RecordMode = "start" | "stop";
 
-export default function FederatedCameraActions({ camera }: FederatedCameraActionsProps) {
+export default function FederatedCameraActions({ camera }: Readonly<FederatedCameraActionsProps>) {
   const { can } = useAuth();
   const node = camera.node_id;
   const cam = camera.real_id;
@@ -268,7 +268,7 @@ interface FedModalProps {
   onClose?: () => void;
 }
 
-function FedHoldModal({ camera, onClose }: FedModalProps) {
+function FedHoldModal({ camera, onClose }: Readonly<FedModalProps>) {
   const node = camera.node_id;
   const cam = camera.real_id;
   const now = new Date();
@@ -368,7 +368,7 @@ function FedHoldModal({ camera, onClose }: FedModalProps) {
 // ── Clip export — job through the node ────────────────────────────────────────
 // POST createExport → poll getExport until ready/failed → Download (authed blob).
 // Polling lives inside this modal so it stops the moment the modal unmounts.
-function FedExportModal({ camera, onClose }: FedModalProps) {
+function FedExportModal({ camera, onClose }: Readonly<FedModalProps>) {
   const node = camera.node_id;
   const cam = camera.real_id;
   const now = new Date();

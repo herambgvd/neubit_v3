@@ -17,7 +17,7 @@ export interface WebhookTestPanelProps {
   hookId: string;
 }
 
-export default function WebhookTestPanel({ hookId }: WebhookTestPanelProps) {
+export default function WebhookTestPanel({ hookId }: Readonly<WebhookTestPanelProps>) {
   const [sample, setSample] = useState('{\n  "event": {\n    "name": "Door forced",\n    "severity": "high"\n  }\n}');
   const [jsonErr, setJsonErr] = useState("");
 

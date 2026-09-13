@@ -232,7 +232,7 @@ interface InfoCellProps {
   children?: ReactNode;
 }
 
-function InfoCell({ label, value, mono = false, children }: InfoCellProps) {
+function InfoCell({ label, value, mono = false, children }: Readonly<InfoCellProps>) {
   return (
     <div className="min-w-0 rounded-[10px] border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)] px-3 py-1.5">
       <p className="font-mono text-[10px] uppercase tracking-[1.4px] text-[#9a92c8]">{label}</p>
@@ -249,7 +249,7 @@ interface RecorderDetailProps {
   onDelete?: (node: MediaNodePublic) => void;
 }
 
-function RecorderDetail({ node, onEdit, onDrain, onDelete }: RecorderDetailProps) {
+function RecorderDetail({ node, onEdit, onDrain, onDelete }: Readonly<RecorderDetailProps>) {
   const cap = node.capacity_channels;
 
   // THE RECORDER OWNS ITS CAMERAS. This pane used to list only VMS-owned rows
@@ -421,7 +421,7 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }: RecorderDetailProps
 // lists issued credentials (grants + activity), lets an operator Enroll / Re-enroll
 // (the RAW secret is shown ONCE, copyable, with a warning) and Revoke a credential.
 // Gated on vms.config.manage, like the other recorder mutations.
-function FederationTrust({ node }: { node: MediaNodePublic }) {
+function FederationTrust({ node }: Readonly<{ node: MediaNodePublic }>) {
   const qc = useQueryClient();
   const { can } = useAuth();
   const canManage = can("vms.config.manage");

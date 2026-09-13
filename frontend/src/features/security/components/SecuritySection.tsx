@@ -59,7 +59,7 @@ export default function SecuritySection({
   summary,
   onToggleDetails,
   children,
-}: SecuritySectionProps) {
+}: Readonly<SecuritySectionProps>) {
   return (
     <SectionCard>
       <SectionHead icon={icon} title={title} desc={desc} action={action} />

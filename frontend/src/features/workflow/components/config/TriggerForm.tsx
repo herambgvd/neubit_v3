@@ -64,7 +64,7 @@ export interface TriggerFormProps {
 // memo that omitted it was leaning on the omission being harmless. Stable here, so the
 // dependency can simply be declared.
 
-export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit }: TriggerFormProps) {
+export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit }: Readonly<TriggerFormProps>) {
   const isEdit = !!trigger;
   const [name, setName] = useState(trigger?.name || "");
   const [description, setDescription] = useState(trigger?.description || "");

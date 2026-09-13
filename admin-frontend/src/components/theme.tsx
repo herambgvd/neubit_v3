@@ -13,7 +13,7 @@ const ThemeContext = createContext<ThemeContextValue>({ theme: "dark", toggle: (
 
 // Simple Vercel-style theme: toggles the `dark` class on <html> and persists the
 // choice. The no-FOUC script in app/layout.tsx sets the initial class before paint.
-export function ThemeProvider({ children }: { children: ReactNode }) {
+export function ThemeProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [theme, setTheme] = useState<Theme>("dark");
 
   useEffect(() => {

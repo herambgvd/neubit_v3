@@ -32,7 +32,7 @@ export interface SopFormProps {
   onSaved: (saved: SopPublic) => void;
 }
 
-export default function SopForm({ sop, onCancel, onSaved }: SopFormProps) {
+export default function SopForm({ sop, onCancel, onSaved }: Readonly<SopFormProps>) {
   const isEdit = !!sop;
   const [name, setName] = useState(sop?.name || "");
   const [description, setDescription] = useState(sop?.description || "");

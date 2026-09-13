@@ -57,7 +57,7 @@ export interface EditInstanceModalProps {
   onSuccess?: () => void;
 }
 
-export default function EditInstanceModal({ instance, onClose, onSuccess }: EditInstanceModalProps) {
+export default function EditInstanceModal({ instance, onClose, onSuccess }: Readonly<EditInstanceModalProps>) {
   const qc = useQueryClient();
   const [form, setForm] = useState<EditInstanceForm>({
     name: instance.name || "",

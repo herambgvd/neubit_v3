@@ -30,7 +30,7 @@ interface PatternFormErrors {
   seconds?: string;
 }
 
-export default function PatternFormModal({ open, pattern, groups = [], onClose, onSaved }: PatternFormModalProps) {
+export default function PatternFormModal({ open, pattern, groups = [], onClose, onSaved }: Readonly<PatternFormModalProps>) {
   const qc = useQueryClient();
   const isEdit = !!pattern;
 

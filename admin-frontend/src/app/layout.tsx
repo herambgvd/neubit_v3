@@ -27,7 +27,7 @@ try {
 // Root font-size 13px keeps the UI compact (rem-based sizing scales down with it).
 // Matches the operator console's default; that console lets each user change it,
 // this one has no preferences screen to offer the choice on.
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     // suppressHydrationWarning on <html>: the no-flash script mutates the class
     // before hydration, so the server/client class can differ by design.

@@ -37,7 +37,7 @@ interface FloorFormErrors {
   floorplan?: string;
 }
 
-export default function FloorForm({ site, floor, onCancel, onSaved }: FloorFormProps) {
+export default function FloorForm({ site, floor, onCancel, onSaved }: Readonly<FloorFormProps>) {
   const isEdit = !!floor;
   const [name, setName] = useState(floor?.name || "");
   // Raw field text once edited; the hydrated number until then.

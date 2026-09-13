@@ -22,7 +22,7 @@ export interface ActivityRow {
   points: number;
 }
 
-export default function ActivityChart({ rows = [] }: { rows: ActivityRow[] }) {
+export default function ActivityChart({ rows = [] }: Readonly<{ rows: ActivityRow[] }>) {
   const model = useMemo(() => {
     if (!rows.length) return null;
     const buckets = new Map<string, Map<string, number>>();

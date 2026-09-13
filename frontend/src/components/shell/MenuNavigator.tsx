@@ -22,7 +22,7 @@ import { menuItems, type NavItem } from "@/config/menu";
 import { useAuth } from "@/lib/auth";
 
 // One IA group in the overlay grid.
-function Group({ title, accent, children }: { title: string; accent: string; children?: ReactNode }) {
+function Group({ title, accent, children }: Readonly<{ title: string; accent: string; children?: ReactNode }>) {
   return (
     <div>
       <h4
@@ -48,7 +48,7 @@ interface NavCell {
 }
 
 // A single navigable cell. Renders dimmed + non-clickable when `soon` (no destination yet).
-function Cell({ item, onGo }: { item: NavCell; onGo: (link: string) => void }) {
+function Cell({ item, onGo }: Readonly<{ item: NavCell; onGo: (link: string) => void }>) {
   const link = item.link;
   const base =
     "group flex items-center gap-2.5 rounded-[10px] border px-3 py-2.5 text-[13px] transition";

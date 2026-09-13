@@ -79,7 +79,7 @@ export default function AlarmMap({
   onSelectSite,
   siteName = {},
   sopName = {},
-}: AlarmMapProps) {
+}: Readonly<AlarmMapProps>) {
   // INSIDE Alarms, not off in the video wall. The pin's "Floor plan" used to be a
   // link to /streaming?view=map — which left the console the operator was working
   // in, and landed on a screen that says "No floor plan uploaded" for a level

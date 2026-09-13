@@ -29,7 +29,7 @@ export interface TriggerTestModalProps {
   onClose: () => void;
 }
 
-export default function TriggerTestModal({ open, trigger, onClose }: TriggerTestModalProps) {
+export default function TriggerTestModal({ open, trigger, onClose }: Readonly<TriggerTestModalProps>) {
   const [eventType, setEventType] = useState("");
   const [payloadText, setPayloadText] = useState(SAMPLE_PAYLOAD);
   const [parseError, setParseError] = useState<string | null>(null);

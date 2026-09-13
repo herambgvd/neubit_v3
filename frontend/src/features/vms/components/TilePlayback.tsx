@@ -236,7 +236,7 @@ function TilePlayback({
   muted = true,
   compact = false,
   onReachedEnd,
-}: TilePlaybackProps) {
+}: Readonly<TilePlaybackProps>) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [session, setSession] = useState<TileSession | null>(null);
   const [transcoded, setTranscoded] = useState(false);
@@ -803,7 +803,7 @@ interface PlaceholderProps {
   onRetry?: () => void;
 }
 
-function Placeholder({ icon, label, compact, danger = false, onRetry }: PlaceholderProps) {
+function Placeholder({ icon, label, compact, danger = false, onRetry }: Readonly<PlaceholderProps>) {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-[#05070f] px-3 text-center">
       <Icon icon={icon} className={`${danger ? "text-[#f87171]/70" : "text-white/25"} ${compact ? "text-lg" : "text-2xl"}`} />

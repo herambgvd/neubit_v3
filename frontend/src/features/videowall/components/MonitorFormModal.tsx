@@ -49,7 +49,7 @@ export default function MonitorFormModal({
   onClose,
   onSubmit,
   busy,
-}: MonitorFormModalProps) {
+}: Readonly<MonitorFormModalProps>) {
   const editing = !!monitor;
   const [form, setForm] = useState<MonitorForm | null>(null);
 

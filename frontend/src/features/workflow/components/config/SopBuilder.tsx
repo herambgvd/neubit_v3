@@ -29,7 +29,7 @@ export interface SopBuilderProps {
   onSaved?: (saved: SopPublic) => void;
 }
 
-export default function SopBuilder({ sop, onDelete, onSaved }: SopBuilderProps) {
+export default function SopBuilder({ sop, onDelete, onSaved }: Readonly<SopBuilderProps>) {
   const [tab, setTab] = useState<SubTabKey>("designer");
   const id = sop.sop_id;
 

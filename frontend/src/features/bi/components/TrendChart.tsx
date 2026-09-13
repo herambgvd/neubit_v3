@@ -87,11 +87,11 @@ export default function TrendChart({
   buckets = [],
   accent = "#67e8f9",
   label,
-}: {
+}: Readonly<{
   buckets: Bucket[];
   accent?: string;
   label?: string;
-}) {
+}>) {
   const model = useMemo(() => {
     const pts = buckets.filter((b) => b.avg !== null && b.avg !== undefined);
     if (pts.length === 0) return null;

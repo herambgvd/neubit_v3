@@ -45,7 +45,7 @@ export default function AlarmNow({
   onTake,
   onAssign,
   takePending = false,
-}: AlarmNowProps) {
+}: Readonly<AlarmNowProps>) {
   const s = incident ? sev(incident.priority) : null;
   const cameraId = incident ? incCameraId(incident) : null;
   const eventTime = incident ? incEventTime(incident) : null;

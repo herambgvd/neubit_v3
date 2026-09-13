@@ -81,7 +81,7 @@ export interface RuleFormModalProps {
   onSaved?: () => void;
 }
 
-export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: RuleFormModalProps) {
+export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: Readonly<RuleFormModalProps>) {
   const isEdit = !!rule;
 
   // ── identity ──────────────────────────────────────────────────
@@ -453,7 +453,7 @@ interface ConditionRowProps {
   onRemove: () => void;
 }
 
-function ConditionRow({ condition, onChange, onRemove }: ConditionRowProps) {
+function ConditionRow({ condition, onChange, onRemove }: Readonly<ConditionRowProps>) {
   const needsValue = OP_NEEDS_VALUE.has(condition.op);
   return (
     <div className="grid grid-cols-1 sm:grid-cols-[1fr_150px_1fr_auto] items-center gap-2">

@@ -34,7 +34,7 @@ interface TokenBox {
 }
 
 // Draw a layout as a tiny grid of rounded rects inside a 24×24 viewBox.
-function LayoutGlyph({ layout, className = "" }: LayoutGlyphProps) {
+function LayoutGlyph({ layout, className = "" }: Readonly<LayoutGlyphProps>) {
   const pad = 2;
   const size = 24 - pad * 2;
 
@@ -96,7 +96,7 @@ export interface LayoutPickerProps {
   onChange?: (key: string) => void;
 }
 
-export default function LayoutPicker({ layoutKey, onChange }: LayoutPickerProps) {
+export default function LayoutPicker({ layoutKey, onChange }: Readonly<LayoutPickerProps>) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
   const active = getLayout(layoutKey);

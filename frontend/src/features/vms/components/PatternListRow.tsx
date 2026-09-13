@@ -27,7 +27,7 @@ export default function PatternListRow({
   onToggleActive,
   onEdit,
   onDelete,
-}: PatternListRowProps) {
+}: Readonly<PatternListRowProps>) {
   const active = item.is_active !== false;
   const icon = isPattern ? "heroicons:squares-2x2" : "heroicons-outline:video-camera";
   // The tab says which kind this row is; the shape guard just types the reads.
@@ -107,7 +107,7 @@ interface RowBtnProps {
   danger?: boolean;
 }
 
-function RowBtn({ icon, title, onClick, danger }: RowBtnProps) {
+function RowBtn({ icon, title, onClick, danger }: Readonly<RowBtnProps>) {
   return (
     <button
       type="button"

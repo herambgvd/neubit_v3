@@ -44,7 +44,7 @@ export interface EstateFrameProps {
 
 /** The 5-slot strip across the top of an estate page (mockup `.pkpis`).
  *  It does not enforce exactly five children, but five is the rhythm. */
-export function KpiStrip({ className = "", children }: EstateFrameProps) {
+export function KpiStrip({ className = "", children }: Readonly<EstateFrameProps>) {
   return (
     <div className={`grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5 ${className}`}>
       {children}
@@ -65,7 +65,7 @@ export interface KpiProps {
   title?: string;
 }
 
-export function Kpi({ icon, label, value, sub, tone: t = "ink", title }: KpiProps) {
+export function Kpi({ icon, label, value, sub, tone: t = "ink", title }: Readonly<KpiProps>) {
   const absent = value === null || value === undefined;
   return (
     <div
@@ -94,7 +94,7 @@ export interface EstateMainProps {
   className?: string;
 }
 
-export function EstateMain({ left, right, className = "" }: EstateMainProps) {
+export function EstateMain({ left, right, className = "" }: Readonly<EstateMainProps>) {
   return (
     <div className={`grid grid-cols-1 items-start gap-3 xl:grid-cols-[1.52fr_1fr] ${className}`}>
       <div className="min-w-0 space-y-3">{left}</div>
@@ -105,7 +105,7 @@ export function EstateMain({ left, right, className = "" }: EstateMainProps) {
 
 // ── Leaderboard ──────────────────────────────────────────────────────────────
 
-export function Leaderboard({ className = "", children }: EstateFrameProps) {
+export function Leaderboard({ className = "", children }: Readonly<EstateFrameProps>) {
   return <div className={`flex flex-col gap-2 ${className}`}>{children}</div>;
 }
 
@@ -118,7 +118,7 @@ export interface LeaderChipProps {
   title?: string;
 }
 
-export function LeaderChip({ label, value, tone: t = "faint", title }: LeaderChipProps) {
+export function LeaderChip({ label, value, tone: t = "faint", title }: Readonly<LeaderChipProps>) {
   const absent = value === null || value === undefined;
   const border =
     t === "crit"
@@ -178,7 +178,7 @@ export function LeaderRow({
   href,
   openLabel = "OPEN ›",
   muted = false,
-}: LeaderRowProps) {
+}: Readonly<LeaderRowProps>) {
   const body = (
     <>
       {/* score slot — fixed width so rows align whether or not a score exists */}
@@ -246,7 +246,7 @@ export function LeaderRow({
 
 // ── Action list ──────────────────────────────────────────────────────────────
 
-export function ActionList({ className = "", children }: EstateFrameProps) {
+export function ActionList({ className = "", children }: Readonly<EstateFrameProps>) {
   return <div className={`space-y-1.5 ${className}`}>{children}</div>;
 }
 
@@ -278,7 +278,7 @@ export function ActionRow({
   href,
   onOpen,
   openLabel = "Open →",
-}: ActionRowProps) {
+}: Readonly<ActionRowProps>) {
   const iconCls =
     iconTone === "crit"
       ? "border-nb-crit/40 bg-nb-crit/10 text-nb-crit"
@@ -344,7 +344,7 @@ export interface EstateHeaderProps {
   className?: string;
 }
 
-export function EstateHeader({ crumbs = [], desc, right, className = "" }: EstateHeaderProps) {
+export function EstateHeader({ crumbs = [], desc, right, className = "" }: Readonly<EstateHeaderProps>) {
   return (
     <div className={`mb-3 flex flex-wrap items-end justify-between gap-3 ${className}`}>
       <div className="min-w-0">

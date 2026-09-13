@@ -49,12 +49,12 @@ export default function Scatter({
   xLabel,
   yLabel,
   accent = "#a78bfa",
-}: {
+}: Readonly<{
   samples: ScatterSample[];
   xLabel?: string;
   yLabel?: string;
   accent?: string;
-}) {
+}>) {
   const geom = useMemo(() => {
     if (!samples.length) return null;
     const [xlo, xhi] = bounds(samples.map((s) => s.a));

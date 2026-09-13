@@ -13,7 +13,7 @@ export interface LinkageRuleListItemProps {
   onSelect: () => void;
 }
 
-export default function LinkageRuleListItem({ rule, selected, onSelect }: LinkageRuleListItemProps) {
+export default function LinkageRuleListItem({ rule, selected, onSelect }: Readonly<LinkageRuleListItemProps>) {
   const tp = presetFor(EVENT_TYPE_PRESETS, rule.trigger_event_type, EVENT_TYPE_PRESETS.system);
   return (
     <li className="relative">

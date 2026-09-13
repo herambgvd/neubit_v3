@@ -45,7 +45,7 @@ interface MetaFieldProps {
   full?: boolean;
 }
 
-function MetaField({ label, children, full }: MetaFieldProps) {
+function MetaField({ label, children, full }: Readonly<MetaFieldProps>) {
   return (
     <div className={full ? "sm:col-span-2 lg:col-span-3" : ""}>
       <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">{label}</div>
@@ -59,7 +59,7 @@ export interface IncidentMetaProps {
   currentStateName?: string | null;
 }
 
-export default function IncidentMeta({ instance, currentStateName }: IncidentMetaProps) {
+export default function IncidentMeta({ instance, currentStateName }: Readonly<IncidentMetaProps>) {
   const inst = instance;
   const sla = slaInfo(inst.sla_deadline, inst.status);
   const escalationLevel = inst.escalation?.level ?? 0;

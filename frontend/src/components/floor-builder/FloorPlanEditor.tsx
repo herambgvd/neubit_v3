@@ -117,7 +117,7 @@ export interface FloorPlanEditorProps {
   onSaved?: (floor: FloorPublic) => void;
 }
 
-export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }: FloorPlanEditorProps) {
+export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }: Readonly<FloorPlanEditorProps>) {
   const canvasRef = useRef<FloorPlanCanvasHandle>(null);
   const [floor, setFloor] = useState(initialFloor);
   const [zones, setZones] = useState<EditorZone[]>([]);
@@ -675,7 +675,7 @@ export interface FloorPlanEditorModalProps extends FloorPlanEditorProps {
 }
 
 // Full-screen modal launcher used from the Sites config page.
-export function FloorPlanEditorModal({ open, onClose, floor, onSaved }: FloorPlanEditorModalProps) {
+export function FloorPlanEditorModal({ open, onClose, floor, onSaved }: Readonly<FloorPlanEditorModalProps>) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose?.();

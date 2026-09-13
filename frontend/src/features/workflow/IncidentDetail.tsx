@@ -61,7 +61,7 @@ const SLA_TONE: Record<string, string> = {
 /** A section of the record: a small caps heading with a rule running off it, then
  *  the content. Plain typography rather than a card — a page of stacked cards
  *  reads as a dashboard, and this is a document. */
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children }: Readonly<{ title: string; children: React.ReactNode }>) {
   return (
     <section className="grid gap-2.5">
       <h2 className="flex items-center gap-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-foreground/80">

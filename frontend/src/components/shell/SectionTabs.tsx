@@ -27,7 +27,7 @@ export interface SectionTabsProps {
   icon?: string;
 }
 
-export default function SectionTabs({ tabs, label, icon }: SectionTabsProps) {
+export default function SectionTabs({ tabs, label, icon }: Readonly<SectionTabsProps>) {
   const pathname = usePathname();
   const { can, user, hasModule } = useAuth();
 

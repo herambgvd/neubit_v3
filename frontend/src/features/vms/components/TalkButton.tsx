@@ -60,7 +60,7 @@ export interface TalkButtonProps {
   disabled?: boolean;
 }
 
-export default function TalkButton({ nodeId, cameraId, disabled = false }: TalkButtonProps) {
+export default function TalkButton({ nodeId, cameraId, disabled = false }: Readonly<TalkButtonProps>) {
   const [talking, setTalking] = useState(false);
   const [connecting, setConnecting] = useState(false);
 

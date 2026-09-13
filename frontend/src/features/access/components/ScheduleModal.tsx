@@ -46,7 +46,7 @@ export interface ScheduleModalProps {
   onSuccess?: () => void;
 }
 
-export default function ScheduleModal({ instanceId, schedule, onClose, onSuccess }: ScheduleModalProps) {
+export default function ScheduleModal({ instanceId, schedule, onClose, onSuccess }: Readonly<ScheduleModalProps>) {
   const isEdit = !!schedule;
   const qc = useQueryClient();
 

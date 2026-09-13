@@ -12,7 +12,7 @@ function ThemedToaster() {
 }
 
 // App-wide client providers for the admin console: theme + TanStack Query + sonner toasts.
-export default function Providers({ children }: { children: ReactNode }) {
+export default function Providers({ children }: Readonly<{ children: ReactNode }>) {
   const [client] = useState(
     () =>
       new QueryClient({

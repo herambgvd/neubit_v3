@@ -41,7 +41,7 @@ export default function EvidenceLockModal({
   cameraName,
   seed = null,
   onSaved,
-}: EvidenceLockModalProps) {
+}: Readonly<EvidenceLockModalProps>) {
   const [startTs, setStartTs] = useState("");
   const [endTs, setEndTs] = useState("");
   const [reason, setReason] = useState("");

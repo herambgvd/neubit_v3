@@ -219,7 +219,7 @@ function LivePlayer({
   extraControls,
   onReady,
   onSnapshot,
-}: LivePlayerProps) {
+}: Readonly<LivePlayerProps>) {
   const { hlsUrl, webrtcUrl, ready, loading: sessionLoading, error: sessionError, retry: retrySession } =
     useLiveSession(cameraId, { profile, source, enabled });
 
@@ -1059,7 +1059,7 @@ function LivePlayer({
 // attach effect never re-runs off a sibling tile's state change.
 export default memo(LivePlayer);
 
-function ChromeBtn({ icon, title, onClick }: { icon: string; title: string; onClick: () => void }) {
+function ChromeBtn({ icon, title, onClick }: Readonly<{ icon: string; title: string; onClick: () => void }>) {
   return (
     <button
       type="button"
@@ -1082,7 +1082,7 @@ export interface PlayerBtnProps {
   disabled?: boolean;
 }
 
-export function PlayerBtn({ icon, title, onClick, disabled = false }: PlayerBtnProps) {
+export function PlayerBtn({ icon, title, onClick, disabled = false }: Readonly<PlayerBtnProps>) {
   return (
     <button
       type="button"

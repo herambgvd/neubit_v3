@@ -72,7 +72,7 @@ export interface MapViewProps {
   onClose: () => void;
 }
 
-export default function MapView({ apiKey, center, zoom, sites, selected, ops, onSelect, onClose }: MapViewProps) {
+export default function MapView({ apiKey, center, zoom, sites, selected, ops, onSelect, onClose }: Readonly<MapViewProps>) {
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: apiKey,
     id: "neubit-google-map",

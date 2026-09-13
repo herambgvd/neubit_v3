@@ -68,7 +68,7 @@ function pickColumns(items: Record<string, unknown>[]): string[] {
   return ordered;
 }
 
-function Cell({ value }: { value: unknown }) {
+function Cell({ value }: Readonly<{ value: unknown }>) {
   if (value === null || value === undefined || value === "") return <span className="text-muted/70">—</span>;
   if (typeof value === "object") return <code className="text-[10px] text-muted">{JSON.stringify(value)}</code>;
   const str = String(value);
@@ -80,7 +80,7 @@ interface ScheduledListProps {
   sub: ScheduledSub;
 }
 
-function ScheduledList({ instanceId, sub }: ScheduledListProps) {
+function ScheduledList({ instanceId, sub }: Readonly<ScheduledListProps>) {
   // The three sub-tabs hit two different routes, so the response type is the
   // union of what they return; the table reads it generically either way.
   const q = useQuery<ScheduleListResponse | HardwareListResponse>({
@@ -162,7 +162,7 @@ export interface ScheduledTabProps {
   instanceId: string;
 }
 
-export default function ScheduledTab({ instanceId }: ScheduledTabProps) {
+export default function ScheduledTab({ instanceId }: Readonly<ScheduledTabProps>) {
   const [sub, setSub] = useState<ScheduledSub>("mags");
 
   return (

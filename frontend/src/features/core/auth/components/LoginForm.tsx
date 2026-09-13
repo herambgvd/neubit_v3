@@ -102,7 +102,7 @@ export interface LoginFormProps {
   onSubmit: (e: FormEvent<HTMLFormElement>) => void;
 }
 
-export function LoginForm({ email, setEmail, password, setPassword, error, busy, onSubmit }: LoginFormProps) {
+export function LoginForm({ email, setEmail, password, setPassword, error, busy, onSubmit }: Readonly<LoginFormProps>) {
   const [show, setShow] = useState(false);
   const [keepSignedIn, setKeepSignedIn] = useState(true);
   const [fieldErrors, setFieldErrors] = useState<LoginFieldErrors>({});

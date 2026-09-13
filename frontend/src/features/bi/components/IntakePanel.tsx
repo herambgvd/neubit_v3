@@ -72,13 +72,13 @@ export default function IntakePanel({
   onDays,
   onState,
   onFocusDevice,
-}: {
+}: Readonly<{
   days: number;
   state: string;
   onDays: (d: number) => void;
   onState: (s: string) => void;
   onFocusDevice: (deviceTag: string) => void;
-}) {
+}>) {
   const q = useQuery<any>({
     queryKey: ["bi-intake", days, state],
     // ALL PENDING asks for outstanding work — everything with no confirmed unit.

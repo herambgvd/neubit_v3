@@ -24,7 +24,7 @@ export interface TagPickerProps {
   size?: "sm" | "xs";
 }
 
-export default function TagPicker({ entityType, entityId, size = "sm" }: TagPickerProps) {
+export default function TagPicker({ entityType, entityId, size = "sm" }: Readonly<TagPickerProps>) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);

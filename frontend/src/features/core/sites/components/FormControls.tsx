@@ -36,7 +36,7 @@ export interface FInputProps {
 
 export function FInput({
   label, required, full, value, onChange, placeholder, type = "text", inputMode, step, min, error, hint, action, mono,
-}: FInputProps) {
+}: Readonly<FInputProps>) {
   return (
     <div className={full ? "md:col-span-2" : ""}>
       <FieldLabel required={required}>{label}</FieldLabel>
@@ -74,7 +74,7 @@ export interface FTextareaProps {
   placeholder?: string;
 }
 
-export function FTextarea({ label, full, value, onChange, rows, placeholder }: FTextareaProps) {
+export function FTextarea({ label, full, value, onChange, rows, placeholder }: Readonly<FTextareaProps>) {
   return (
     <div className={full ? "md:col-span-2" : ""}>
       <FieldLabel>{label}</FieldLabel>
@@ -104,7 +104,7 @@ export interface FSelectProps<V extends string> {
   placeholder?: string;
 }
 
-export function FSelect<V extends string = string>({ label, full, required, value, onChange, options = [], placeholder }: FSelectProps<V>) {
+export function FSelect<V extends string = string>({ label, full, required, value, onChange, options = [], placeholder }: Readonly<FSelectProps<V>>) {
   return (
     <div className={full ? "md:col-span-2" : ""}>
       <FieldLabel required={required}>{label}</FieldLabel>
@@ -125,7 +125,7 @@ export interface FCheckboxProps {
   onChange: (checked: boolean) => void;
 }
 
-export function FCheckbox({ label, value, onChange }: FCheckboxProps) {
+export function FCheckbox({ label, value, onChange }: Readonly<FCheckboxProps>) {
   return (
     <div className="flex h-10 items-center rounded-lg border border-nb-line px-3">
       <Checkbox label={label} checked={value} onChange={onChange} />
@@ -140,7 +140,7 @@ export interface ImagePreviewCardProps {
   emptyText?: ReactNode;
 }
 
-export function ImagePreviewCard({ title, subtitle, imageUrl, emptyText }: ImagePreviewCardProps) {
+export function ImagePreviewCard({ title, subtitle, imageUrl, emptyText }: Readonly<ImagePreviewCardProps>) {
   return (
     <div className="rounded-lg border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden">
       <div className="px-3 py-2 border-b border-nb-line bg-white/5">
@@ -169,7 +169,7 @@ export interface SectionProps {
   children?: ReactNode;
 }
 
-export function Section({ title, action, children }: SectionProps) {
+export function Section({ title, action, children }: Readonly<SectionProps>) {
   return (
     <section>
       <div className="mb-3 flex items-center justify-between gap-3">

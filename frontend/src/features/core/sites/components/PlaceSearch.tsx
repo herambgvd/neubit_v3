@@ -75,7 +75,7 @@ const fromPlace = (place: Place): Row => ({
   drop: false,
 });
 
-export default function PlaceSearch({ onGo, near }: PlaceSearchProps) {
+export default function PlaceSearch({ onGo, near }: Readonly<PlaceSearchProps>) {
   const [query, setQuery] = useState("");
   const [places, setPlaces] = useState<Place[] | null>(null);
   const [gazetteerFailed, setGazetteerFailed] = useState(false);

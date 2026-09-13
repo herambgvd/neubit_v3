@@ -28,7 +28,7 @@ export default function InstanceListCard({
   onSelect,
   onEdit,
   onDelete,
-}: InstanceListCardProps) {
+}: Readonly<InstanceListCardProps>) {
   const [menuOpen, setMenuOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 

@@ -58,7 +58,7 @@ export interface FormPreviewProps {
   fields: BuilderField[];
 }
 
-export default function FormPreview({ name, description, fields }: FormPreviewProps) {
+export default function FormPreview({ name, description, fields }: Readonly<FormPreviewProps>) {
   const [values, setValues] = useState<FormValues>({});
   const [showSubmit, setShowSubmit] = useState(false);
 

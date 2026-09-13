@@ -17,7 +17,7 @@ export interface SopTriggersListProps {
   sopId: string;
 }
 
-export default function SopTriggersList({ sopId }: SopTriggersListProps) {
+export default function SopTriggersList({ sopId }: Readonly<SopTriggersListProps>) {
   const q = useQuery({
     queryKey: ["wf-triggers", { sop_id: sopId }],
     queryFn: () => wfApi.triggers.list({ sop_id: sopId, limit: 200 }),

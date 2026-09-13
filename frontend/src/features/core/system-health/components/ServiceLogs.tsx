@@ -30,7 +30,7 @@ export interface ServiceLogsProps {
   allowed: boolean;
 }
 
-export default function ServiceLogs({ service, allowed }: ServiceLogsProps) {
+export default function ServiceLogs({ service, allowed }: Readonly<ServiceLogsProps>) {
   const [following, setFollowing] = useState(true);
   const [filter, setFilter] = useState("");
   const linesRef = useRef<string[]>([]);

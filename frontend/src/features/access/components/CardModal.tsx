@@ -41,7 +41,7 @@ export interface CardModalProps {
   onSuccess?: () => void;
 }
 
-export default function CardModal({ instanceId, card, onClose, onSuccess }: CardModalProps) {
+export default function CardModal({ instanceId, card, onClose, onSuccess }: Readonly<CardModalProps>) {
   const isEdit = !!card;
   const qc = useQueryClient();
 
@@ -221,7 +221,7 @@ interface CardholderPickerProps {
   onSelect: (cardholder: AccessCardholder | null) => void;
 }
 
-function CardholderPicker({ selected, filtered, loading, search, open, onSearch, onToggle, onSelect }: CardholderPickerProps) {
+function CardholderPicker({ selected, filtered, loading, search, open, onSearch, onToggle, onSelect }: Readonly<CardholderPickerProps>) {
   const label = (ch: AccessCardholder) => `${ch.first_name ? ch.first_name + " " : ""}${ch.last_name || ch.name || ""}`.trim() || ch.cardholder_id;
   return (
     <div className="relative mt-1">

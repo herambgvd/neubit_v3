@@ -102,7 +102,7 @@ export default function AuthShell({
   subtitle,
   productName = "Neubit",
   children,
-}: AuthShellProps) {
+}: Readonly<AuthShellProps>) {
   return (
     <div className="relative min-h-screen w-full overflow-hidden bg-background text-foreground">
       <div
@@ -241,12 +241,12 @@ export function AuthLabel({
   children,
   htmlFor,
   action,
-}: {
+}: Readonly<{
   children?: ReactNode;
   htmlFor?: string;
   /** Rendered opposite the label — e.g. a "Forgot password?" link. */
   action?: ReactNode;
-}) {
+}>) {
   return (
     <div className="flex items-center justify-between">
       <label htmlFor={htmlFor} className="text-sm font-medium text-foreground">
@@ -257,7 +257,7 @@ export function AuthLabel({
   );
 }
 
-export function AuthSubmit({ children, loading }: { children?: ReactNode; loading?: boolean }) {
+export function AuthSubmit({ children, loading }: Readonly<{ children?: ReactNode; loading?: boolean }>) {
   return (
     <button
       type="submit"
@@ -272,7 +272,7 @@ export function AuthSubmit({ children, loading }: { children?: ReactNode; loadin
   );
 }
 
-export function AuthError({ children }: { children?: ReactNode }) {
+export function AuthError({ children }: Readonly<{ children?: ReactNode }>) {
   if (!children) return null;
   return (
     <div

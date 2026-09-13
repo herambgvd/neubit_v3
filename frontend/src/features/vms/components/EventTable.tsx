@@ -65,7 +65,7 @@ export default function EventTable({
   paging,
   scrollRef,
   onScroll,
-}: EventTableProps) {
+}: Readonly<EventTableProps>) {
   // One clock for the whole table: the open rows count up together, and a ticker
   // per row would be a timer per row.
   const now = useTicker(1_000, events.some((e) => eventInterval(e).open));

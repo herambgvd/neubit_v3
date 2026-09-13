@@ -24,7 +24,7 @@ import PayloadFieldsBuilder, {
 import type { BuilderField } from "../types";
 
 /** The parent owns the state; this is the smallest honest stand-in for it. */
-function Harness({ initialText = "" }: { initialText?: string }) {
+function Harness({ initialText = "" }: Readonly<{ initialText?: string }>) {
   const [text, setText] = useState(initialText);
   const [fields, setFields] = useState<BuilderField[]>([]);
   return (

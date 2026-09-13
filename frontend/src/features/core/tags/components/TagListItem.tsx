@@ -14,7 +14,7 @@ export interface TagListItemProps {
   onSelect: () => void;
 }
 
-export default function TagListItem({ tag, selected, onSelect }: TagListItemProps) {
+export default function TagListItem({ tag, selected, onSelect }: Readonly<TagListItemProps>) {
   const t = tag;
   const color = t.color || DEFAULT_COLOR;
   return (

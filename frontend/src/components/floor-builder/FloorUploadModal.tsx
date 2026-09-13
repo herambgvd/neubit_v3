@@ -21,7 +21,7 @@ export interface FloorUploadModalProps {
   onUploaded?: (floor: FloorPublic) => void;
 }
 
-export function FloorUploadModal({ open, onClose, floor, onUploaded }: FloorUploadModalProps) {
+export function FloorUploadModal({ open, onClose, floor, onUploaded }: Readonly<FloorUploadModalProps>) {
   const inputRef = useRef<HTMLInputElement>(null);
   const openPicker = useCallback(() => inputRef.current?.click(), []);
   const [file, setFile] = useState<File | null>(null);

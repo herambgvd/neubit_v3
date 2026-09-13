@@ -14,7 +14,7 @@ export interface BrandPickerModalProps {
   onPick: (brandId: string) => void;
 }
 
-export default function BrandPickerModal({ onClose, onPick }: BrandPickerModalProps) {
+export default function BrandPickerModal({ onClose, onPick }: Readonly<BrandPickerModalProps>) {
   return (
     <Modal open onClose={onClose} title="Choose Access Control Brand" wide>
       <p className="mb-4 text-xs text-muted">

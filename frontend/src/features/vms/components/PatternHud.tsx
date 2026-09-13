@@ -33,7 +33,7 @@ export default function PatternHud({
   onNext,
   onTogglePause,
   onExit,
-}: PatternHudProps) {
+}: Readonly<PatternHudProps>) {
   const [visible, setVisible] = useState(true);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -106,7 +106,7 @@ interface HudBtnProps {
   danger?: boolean;
 }
 
-function HudBtn({ icon, title, onClick, disabled, accent, danger }: HudBtnProps) {
+function HudBtn({ icon, title, onClick, disabled, accent, danger }: Readonly<HudBtnProps>) {
   return (
     <button
       type="button"

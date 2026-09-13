@@ -19,7 +19,7 @@ export interface CloneRoleModalProps {
 // Copy a role's permissions under a new name — a fast starting point you then trim
 // down. Lives in its own file (rather than inline in Roles.jsx) so it matches
 // CloneUserModal: the two clone dialogs are the same dialog with different nouns.
-export default function CloneRoleModal({ source, onClose, name, setName, onClone, cloning }: CloneRoleModalProps) {
+export default function CloneRoleModal({ source, onClose, name, setName, onClone, cloning }: Readonly<CloneRoleModalProps>) {
   const [submitted, setSubmitted] = useState(false);
   useEffect(() => { if (!source) setSubmitted(false); }, [source]);
 

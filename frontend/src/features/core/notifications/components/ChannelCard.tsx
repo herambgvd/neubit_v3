@@ -23,7 +23,7 @@ function textOf(v: unknown): string {
   return typeof v === "number" || typeof v === "boolean" || typeof v === "bigint" ? String(v) : "";
 }
 
-export function ChannelCard({ channel }: { channel: ChannelOut }) {
+export function ChannelCard({ channel }: Readonly<{ channel: ChannelOut }>) {
   const qc = useQueryClient();
   const fields = CHANNEL_FIELDS[channel.channel] || [];
   const textFields = fields.filter((f) => f.type !== "bool");

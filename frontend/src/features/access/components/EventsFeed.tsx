@@ -48,7 +48,7 @@ export interface EventsFeedProps {
   doorIndex?: AccessDoorPublic[] | null;
 }
 
-export default function EventsFeed({ instanceId, doorIndex }: EventsFeedProps) {
+export default function EventsFeed({ instanceId, doorIndex }: Readonly<EventsFeedProps>) {
   const qc = useQueryClient();
   const [paused, setPaused] = useState(false);
   const [showHeartbeat, setShowHeartbeat] = useState(false);
@@ -350,7 +350,7 @@ interface EventRowProps {
   doorById: DoorIndex;
 }
 
-function EventRow({ event, cardholderById, doorById }: EventRowProps) {
+function EventRow({ event, cardholderById, doorById }: Readonly<EventRowProps>) {
   const [open, setOpen] = useState(false);
   const result = String(event.result || "").toLowerCase();
   const category = eventCategory(event);
@@ -417,7 +417,7 @@ interface MetaFieldProps {
   value: ReactNode;
 }
 
-function MetaField({ label, value }: MetaFieldProps) {
+function MetaField({ label, value }: Readonly<MetaFieldProps>) {
   return (
     <div>
       <div className="text-[9px] uppercase tracking-wider text-muted/70">{label}</div>

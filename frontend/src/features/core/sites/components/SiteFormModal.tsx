@@ -40,7 +40,7 @@ interface SaveVars {
   file: File | null;
 }
 
-export default function SiteFormModal({ site, allSites, onCancel, onSaved }: SiteFormModalProps) {
+export default function SiteFormModal({ site, allSites, onCancel, onSaved }: Readonly<SiteFormModalProps>) {
   const isEdit = !!site;
   const [name, setName] = useState(site?.name || "");
   const [locationCode, setLocationCode] = useState(

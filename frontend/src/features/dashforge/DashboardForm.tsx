@@ -60,7 +60,7 @@ export default function DashboardForm({
   defaultCategory,
   onClose,
   onSaved,
-}: DashboardFormProps) {
+}: Readonly<DashboardFormProps>) {
   const qc = useQueryClient();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");

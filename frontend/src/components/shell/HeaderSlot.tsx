@@ -31,12 +31,12 @@ function subscribe(l: () => void) {
 }
 
 /** Where the header renders whatever the current page put in the slot. */
-export function HeaderSlotOutlet({ className }: { className?: string }) {
+export function HeaderSlotOutlet({ className }: Readonly<{ className?: string }>) {
   return <div ref={setOutlet} className={className} />;
 }
 
 /** Put these controls in the top bar. */
-export function HeaderSlot({ children }: { children: ReactNode }) {
+export function HeaderSlot({ children }: Readonly<{ children: ReactNode }>) {
   const node = useSyncExternalStore(
     subscribe,
     () => outlet,

@@ -11,7 +11,7 @@ export interface RoleListItemProps {
   onSelect: () => void;
 }
 
-export default function RoleListItem({ role, selected, onSelect }: RoleListItemProps) {
+export default function RoleListItem({ role, selected, onSelect }: Readonly<RoleListItemProps>) {
   return (
     <button
       onClick={onSelect}

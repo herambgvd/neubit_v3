@@ -65,7 +65,7 @@ export default function CameraPicker({
   onToggleMany,
   loading,
   empty = "No cameras",
-}: CameraPickerProps) {
+}: Readonly<CameraPickerProps>) {
   const [q, setQ] = useState("");
   // Which groups the operator has collapsed. Open by default: a picker that
   // starts shut hides the estate behind one more click.

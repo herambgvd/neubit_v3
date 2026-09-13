@@ -15,7 +15,7 @@ export interface RevealKeyModalProps {
 }
 
 // Shows the freshly-created secret key once, with a copy button.
-export default function RevealKeyModal({ revealed, onClose, copied, onCopy }: RevealKeyModalProps) {
+export default function RevealKeyModal({ revealed, onClose, copied, onCopy }: Readonly<RevealKeyModalProps>) {
   return (
     <Modal
       open={!!revealed}

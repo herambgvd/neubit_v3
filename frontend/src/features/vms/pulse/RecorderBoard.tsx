@@ -52,7 +52,7 @@ function metric(sensors: boolean, pct: number | null): string {
   return sensors && pct != null ? `${Math.round(pct)}%` : "—";
 }
 
-function Metric({ label, value, tone = "idle" }: { label: string; value: string; tone?: keyof typeof TONE_TEXT }) {
+function Metric({ label, value, tone = "idle" }: Readonly<{ label: string; value: string; tone?: keyof typeof TONE_TEXT }>) {
   return (
     <div className="rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2">
       <p className="text-[10px] font-semibold uppercase tracking-[1.3px] text-nb-faint">{label}</p>
@@ -61,7 +61,7 @@ function Metric({ label, value, tone = "idle" }: { label: string; value: string;
   );
 }
 
-function VolumeBar({ volume }: { volume: PulseVolume }) {
+function VolumeBar({ volume }: Readonly<{ volume: PulseVolume }>) {
   const pct = volume.used_percent;
   const tone = volumeTone(pct);
   return (
@@ -92,7 +92,7 @@ export interface RecorderBoardProps {
   onIsolate?: (cameraId: string) => void;
 }
 
-export default function RecorderBoard({ board, loading, error, onIsolate }: RecorderBoardProps) {
+export default function RecorderBoard({ board, loading, error, onIsolate }: Readonly<RecorderBoardProps>) {
   if (loading) return <LoadingBlock label="Reading the recorder…" />;
   if (error) {
     return (

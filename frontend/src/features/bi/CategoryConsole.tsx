@@ -59,7 +59,7 @@ const RANGES = [
 
 // Wrapper so `useSearchParams` (the ?site= scope) sits under a Suspense
 // boundary, which the app router requires of any prerendered client page.
-export default function CategoryConsole(props: { category: string }) {
+export default function CategoryConsole(props: Readonly<{ category: string }>) {
   return (
     <Suspense fallback={null}>
       <CategoryConsoleInner {...props} />
@@ -67,7 +67,7 @@ export default function CategoryConsole(props: { category: string }) {
   );
 }
 
-function CategoryConsoleInner({ category }: { category: string }) {
+function CategoryConsoleInner({ category }: Readonly<{ category: string }>) {
   const meta = categoryMeta(category);
   // Portfolio drill-down: `?site=<uuid>` scopes the console to the devices
   // placed at that site. WITHOUT the param nothing below changes — the unscoped

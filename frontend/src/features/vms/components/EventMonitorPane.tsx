@@ -69,7 +69,7 @@ export default function EventMonitorPane({
   camera,
   follow,
   onFollowChange,
-}: EventMonitorPaneProps) {
+}: Readonly<EventMonitorPaneProps>) {
   // A node-issued live session, minted through the owning recorder — the same
   // path the wall and the camera detail use. Keyed on the pair so switching
   // events re-mints exactly once.
@@ -235,12 +235,12 @@ function ModeButton({
   onClick,
   icon,
   children,
-}: {
+}: Readonly<{
   active: boolean;
   onClick: () => void;
   icon: string;
   children: React.ReactNode;
-}) {
+}>) {
   return (
     <button
       type="button"

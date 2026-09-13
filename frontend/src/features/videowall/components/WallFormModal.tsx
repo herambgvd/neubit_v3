@@ -34,7 +34,7 @@ export interface WallFormModalProps {
   busy?: boolean;
 }
 
-export default function WallFormModal({ open, wall, onClose, onSubmit, busy }: WallFormModalProps) {
+export default function WallFormModal({ open, wall, onClose, onSubmit, busy }: Readonly<WallFormModalProps>) {
   const editing = !!wall;
   const [form, setForm] = useState<WallForm | null>(null);
 

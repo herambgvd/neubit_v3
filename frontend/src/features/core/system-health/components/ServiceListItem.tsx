@@ -13,7 +13,7 @@ export interface ServiceListItemProps {
   onSelect: () => void;
 }
 
-export default function ServiceListItem({ service, selected, onSelect }: ServiceListItemProps) {
+export default function ServiceListItem({ service, selected, onSelect }: Readonly<ServiceListItemProps>) {
   const state = serviceState(service);
   const mem = service.mem_used_mb != null ? `${Math.round(service.mem_used_mb)} MB` : null;
   const cpu = service.cpu_pct != null ? `${service.cpu_pct.toFixed(1)}%` : null;

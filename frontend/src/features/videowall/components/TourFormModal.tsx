@@ -27,7 +27,7 @@ export default function TourFormModal({
   onClose,
   onSubmit,
   busy,
-}: TourFormModalProps) {
+}: Readonly<TourFormModalProps>) {
   const editing = !!tour;
   const [name, setName] = useState("");
   const [dwell, setDwell] = useState<number | string>(10);

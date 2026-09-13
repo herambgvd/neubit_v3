@@ -32,7 +32,7 @@ function scopeLabel(scope: LinkageScopeDict | null | undefined = {}) {
   return "Any camera";
 }
 
-function InfoField({ label, children }: { label: ReactNode; children: ReactNode }) {
+function InfoField({ label, children }: Readonly<{ label: ReactNode; children: ReactNode }>) {
   return (
     <div>
       <div className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">{label}</div>
@@ -49,7 +49,7 @@ export interface LinkageRuleDetailProps {
   onDelete: () => void;
 }
 
-export default function LinkageRuleDetail({ rule, onToggle, onClose, onEdit, onDelete }: LinkageRuleDetailProps) {
+export default function LinkageRuleDetail({ rule, onToggle, onClose, onEdit, onDelete }: Readonly<LinkageRuleDetailProps>) {
   const tp = presetFor(EVENT_TYPE_PRESETS, rule.trigger_event_type, EVENT_TYPE_PRESETS.system);
   const actions = rule.actions || [];
 

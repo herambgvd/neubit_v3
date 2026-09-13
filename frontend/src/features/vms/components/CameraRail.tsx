@@ -56,7 +56,7 @@ export default function CameraRail({
   onPickMany,
   onDragStateChange,
   isLoading,
-}: CameraRailProps) {
+}: Readonly<CameraRailProps>) {
   const [q, setQ] = useState("");
   // Collapsed branches (Set of keys). Empty ⇒ everything expanded (friendliest
   // default for small estates; operators collapse what they don't need).

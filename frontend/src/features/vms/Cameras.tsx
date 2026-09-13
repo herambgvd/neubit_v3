@@ -189,7 +189,7 @@ interface CameraListItemProps {
   onSelect: () => void;
 }
 
-function CameraListItem({ camera, selected, onSelect }: CameraListItemProps) {
+function CameraListItem({ camera, selected, onSelect }: Readonly<CameraListItemProps>) {
   return (
     <div
       role="button"

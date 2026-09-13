@@ -48,7 +48,7 @@ interface BtnProps {
   disabled?: boolean;
 }
 
-function Btn({ icon, title, onClick, active = false, disabled = false }: BtnProps) {
+function Btn({ icon, title, onClick, active = false, disabled = false }: Readonly<BtnProps>) {
   return (
     <button
       type="button"
@@ -178,7 +178,7 @@ export interface PlayoutBarProps {
   onClose?: () => void;
 }
 
-export default function PlayoutBar({ camera, pb, onClose }: PlayoutBarProps) {
+export default function PlayoutBar({ camera, pb, onClose }: Readonly<PlayoutBarProps>) {
   const { win, mode, sync, playing, speed, rangeSeconds, clock } = pb;
   const federated = !!camera?.federated;
   const nodeId = camera?.node_id;

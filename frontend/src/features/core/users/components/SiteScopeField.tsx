@@ -20,7 +20,7 @@ export interface SiteScopeFieldProps {
   disabled?: boolean;
 }
 
-export default function SiteScopeField({ sites, value, onChange, disabled }: SiteScopeFieldProps) {
+export default function SiteScopeField({ sites, value, onChange, disabled }: Readonly<SiteScopeFieldProps>) {
   const selected = new Set<string>(value || []);
   const toggle = (id: string) => {
     if (disabled) return;

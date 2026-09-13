@@ -23,7 +23,7 @@ export interface AccessGroupsTabProps {
   instanceId: string;
 }
 
-export default function AccessGroupsTab({ instanceId }: AccessGroupsTabProps) {
+export default function AccessGroupsTab({ instanceId }: Readonly<AccessGroupsTabProps>) {
   const qc = useQueryClient();
   const [groupCreate, setGroupCreate] = useState(false);
   const [groupEdit, setGroupEdit] = useState<AccessGroupPublic | null>(null);
@@ -224,7 +224,7 @@ interface SectionProps {
   children?: ReactNode;
 }
 
-function Section({ icon, title, count, loading, onAdd, addLabel, children }: SectionProps) {
+function Section({ icon, title, count, loading, onAdd, addLabel, children }: Readonly<SectionProps>) {
   return (
     <div className="rounded-lg border border-card-border bg-card">
       <div className="flex items-center gap-2 border-b border-card-border px-3 py-2">
@@ -253,7 +253,7 @@ interface ThProps {
   align?: "left" | "right";
 }
 
-function Th({ children, align = "left" }: ThProps) {
+function Th({ children, align = "left" }: Readonly<ThProps>) {
   return (
     <th className={`px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted ${align === "right" ? "text-right" : "text-left"}`}>
       {children}
@@ -261,7 +261,7 @@ function Th({ children, align = "left" }: ThProps) {
   );
 }
 
-function Empty({ label }: { label: ReactNode }) {
+function Empty({ label }: Readonly<{ label: ReactNode }>) {
   return <div className="px-3 py-6 text-center text-xs text-muted/70">{label}</div>;
 }
 
@@ -270,7 +270,7 @@ interface RowActionsProps {
   onDelete: () => void;
 }
 
-function RowActions({ onEdit, onDelete }: RowActionsProps) {
+function RowActions({ onEdit, onDelete }: Readonly<RowActionsProps>) {
   return (
     <div className="inline-flex items-center gap-1">
       <button type="button" onClick={onEdit} title="Edit" className="rounded-sm p-1 text-muted hover:bg-hover hover:text-foreground">
@@ -289,7 +289,7 @@ interface DoorChipsProps {
   doorsById: Map<string, AccessDoorPublic>;
 }
 
-function DoorChips({ ids, doorsById }: DoorChipsProps) {
+function DoorChips({ ids, doorsById }: Readonly<DoorChipsProps>) {
   if (!ids?.length) return <span className="text-[10px] text-muted/70">—</span>;
   const visible = ids.slice(0, 3);
   const overflow = ids.length - visible.length;
@@ -308,7 +308,7 @@ function DoorChips({ ids, doorsById }: DoorChipsProps) {
   );
 }
 
-function WindowsCell({ windows }: { windows: TimeWindow[] }) {
+function WindowsCell({ windows }: Readonly<{ windows: TimeWindow[] }>) {
   if (!windows.length) return <span className="text-[10px] text-muted/70">—</span>;
   return (
     <div className="space-y-0.5">

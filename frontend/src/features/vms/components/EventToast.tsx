@@ -76,7 +76,7 @@ export default function EventToast({
   onClearAll,
   clearAllCount = 0,
   now,
-}: EventToastProps) {
+}: Readonly<EventToastProps>) {
   // Lazily, once: a Date.now() in the render body is a different answer every
   // render, so "just now" could change while nothing about the alarm did.
   const [raisedAt] = useState(() => Date.now());

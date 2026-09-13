@@ -58,7 +58,7 @@ export interface OnboardInstanceModalProps {
   onSuccess?: () => void;
 }
 
-export default function OnboardInstanceModal({ onClose, onSuccess }: OnboardInstanceModalProps) {
+export default function OnboardInstanceModal({ onClose, onSuccess }: Readonly<OnboardInstanceModalProps>) {
   const [form, setForm] = useState<OnboardForm>({
     name: "",
     site_id: "",

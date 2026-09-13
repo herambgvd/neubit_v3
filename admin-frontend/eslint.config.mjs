@@ -12,6 +12,10 @@ const config = [
   ...nextTypescript,
   {
     rules: {
+      // Props are the component's input, never its scratch space. Enforced rather
+      // than left to review: the count went to zero once, and a rule is what keeps
+      // it there.
+      "react/prefer-read-only-props": "error",
       // The panel is fully TypeScript, so an `any` is a hole in the types rather
       // than an unconverted island — treat it as an error.
       "@typescript-eslint/no-explicit-any": "error",

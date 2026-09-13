@@ -25,7 +25,7 @@ export interface WebhooksPanelProps {
   catId?: string;
 }
 
-export default function WebhooksPanel({ category, catId }: WebhooksPanelProps) {
+export default function WebhooksPanel({ category, catId }: Readonly<WebhooksPanelProps>) {
   const qc = useQueryClient();
   const key = ["ingest-webhooks", catId];
   const hooksQ = useQuery({

@@ -16,7 +16,7 @@ import type { SiteOption } from "./SiteScopeField";
 /** The three states the status segment can put an account in. */
 export type AccountStatus = "active" | "disabled" | "locked";
 
-function Section({ icon, children, note }: { icon: string; children?: ReactNode; note?: ReactNode }) {
+function Section({ icon, children, note }: Readonly<{ icon: string; children?: ReactNode; note?: ReactNode }>) {
   return (
     <div className="mb-2 mt-5 flex items-center gap-2 first:mt-0">
       <Icon icon={icon} className="text-sm text-nb-blueb" />
@@ -27,7 +27,7 @@ function Section({ icon, children, note }: { icon: string; children?: ReactNode;
   );
 }
 
-function Row({ label, children }: { label: ReactNode; children?: ReactNode }) {
+function Row({ label, children }: Readonly<{ label: ReactNode; children?: ReactNode }>) {
   return (
     <div className="flex items-start gap-4 border-b border-nb-line/40 py-1.5 last:border-b-0">
       <span className="w-[130px] shrink-0 pt-1.5 text-[11.5px] text-nb-faint">{label}</span>
@@ -66,7 +66,7 @@ export default function UserDetail({
   onDelete,
   onSetStatus,
   onResetMfa,
-}: UserDetailProps) {
+}: Readonly<UserDetailProps>) {
   const u = user;
   const status: AccountStatus = u.locked ? "locked" : u.is_active ? "active" : "disabled";
   // Accounts on the built-in Administrator role are the console's last way back

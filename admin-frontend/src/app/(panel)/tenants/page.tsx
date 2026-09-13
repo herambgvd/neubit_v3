@@ -40,7 +40,7 @@ function fmtDate(value: string | null | undefined): string {
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status }: Readonly<{ status: string }>) {
   const active = status !== "suspended";
   return (
     <Badge tone={active ? "success" : "warning"} dot>
@@ -49,7 +49,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function LicenseBadge({ state }: { state: string }) {
+function LicenseBadge({ state }: Readonly<{ state: string }>) {
   const map: Record<string, [BadgeTone, string]> = {
     active: ["foreground", "Licensed"],
     grace: ["warning", "Grace"],
@@ -219,11 +219,11 @@ function CreateTenantModal({
   open,
   onOpenChange,
   onCreated,
-}: {
+}: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
-}) {
+}>) {
   const form = useAdminForm(createSchema, { name: "", admin_email: "", admin_password: "" });
   const { errors } = form.formState;
 

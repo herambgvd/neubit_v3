@@ -48,7 +48,7 @@ interface StageLayerProps {
   qualityProfile: "main" | "sub" | null;
 }
 
-function StageLayer({ stop, visible, cameraById, estateReady, qualityProfile }: StageLayerProps) {
+function StageLayer({ stop, visible, cameraById, estateReady, qualityProfile }: Readonly<StageLayerProps>) {
   const layout = useMemo(() => getLayout(stop.wallLayout), [stop.wallLayout]);
   // Stable per-tile grid-area objects, same reason as the manual wall: a fresh
   // object each render would defeat WallTile's memo.
@@ -97,7 +97,7 @@ export interface PatternStageProps {
   qualityProfile: "main" | "sub" | null;
 }
 
-function PatternStage({ slots, front, cameraById, estateReady, qualityProfile }: PatternStageProps) {
+function PatternStage({ slots, front, cameraById, estateReady, qualityProfile }: Readonly<PatternStageProps>) {
   return (
     <div className="relative h-full min-h-0">
       {[0, 1].map((slot) =>

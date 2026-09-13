@@ -22,7 +22,7 @@ export interface BlockEditorProps {
 const ADDABLE: BlockType[] = ["heading", "text", "button", "image", "divider", "spacer"];
 
 /** Click a placeholder to append it to a field — nobody has to remember the syntax. */
-function Placeholders({ variables, onInsert }: { variables: string[]; onInsert: (token: string) => void }) {
+function Placeholders({ variables, onInsert }: Readonly<{ variables: string[]; onInsert: (token: string) => void }>) {
   if (!variables.length) return null;
   return (
     <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -41,7 +41,7 @@ function Placeholders({ variables, onInsert }: { variables: string[]; onInsert: 
   );
 }
 
-export default function BlockEditor({ blocks, onChange, variables }: BlockEditorProps) {
+export default function BlockEditor({ blocks, onChange, variables }: Readonly<BlockEditorProps>) {
   const patch = (id: string, changes: Partial<Block>) =>
     onChange(blocks.map((b) => (b.id === id ? { ...b, ...changes } : b)));
   const remove = (id: string) => onChange(blocks.filter((b) => b.id !== id));

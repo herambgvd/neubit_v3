@@ -26,7 +26,7 @@ export interface MasterDetailProps {
 // `fill` = fill the parent's height and scroll INTERNALLY (no page scroll): the grid
 // takes h-full, the list-aside scrolls its own body, and the detail pane gets its own
 // themed scroll container. Used by the contained device pages (NVR / Access Control).
-export function MasterDetail({ aside, children, gridCols = "lg:grid-cols-[25%_1fr]", className = "", fill = false }: MasterDetailProps) {
+export function MasterDetail({ aside, children, gridCols = "lg:grid-cols-[25%_1fr]", className = "", fill = false }: Readonly<MasterDetailProps>) {
   return (
     <div
       className={`grid grid-cols-1 gap-3 ${
@@ -66,7 +66,7 @@ export function ListPanel({
   searchPlaceholder = "Search…",
   children,
   className = "",
-}: ListPanelProps) {
+}: Readonly<ListPanelProps>) {
   return (
     <aside className={`flex min-h-0 flex-col rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] ${className}`}>
       <header className="flex shrink-0 items-center justify-between border-b border-nb-line px-3 py-2">
@@ -109,7 +109,7 @@ export interface EmptyDetailProps {
 }
 
 // Right-hand empty placeholder for when nothing is selected.
-export function EmptyDetail({ icon = "heroicons-outline:cursor-arrow-rays", title = "Nothing selected", subtitle }: EmptyDetailProps) {
+export function EmptyDetail({ icon = "heroicons-outline:cursor-arrow-rays", title = "Nothing selected", subtitle }: Readonly<EmptyDetailProps>) {
   return (
     <section className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] py-20 text-center">
       <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-nb-teal/10 text-nb-teal">

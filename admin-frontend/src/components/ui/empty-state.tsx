@@ -11,7 +11,7 @@ export interface EmptyStateProps {
 }
 
 // Centered empty/zero state with optional icon + action.
-export function EmptyState({ icon: Icon, title, description, action, className }: EmptyStateProps) {
+export function EmptyState({ icon: Icon, title, description, action, className }: Readonly<EmptyStateProps>) {
   return (
     <div className={cn("flex flex-col items-center justify-center px-6 py-16 text-center", className)}>
       {Icon && (

@@ -30,7 +30,7 @@ const STAGE_ICON: Record<string, string> = {
   display: "heroicons:tv",
 };
 
-function Stage({ stage }: { stage: IsolationStage }) {
+function Stage({ stage }: Readonly<{ stage: IsolationStage }>) {
   const tone = stageTone(stage.state, stage.measured);
   return (
     <div
@@ -83,7 +83,7 @@ export interface IsolationPaneProps {
   onRetest?: () => void;
 }
 
-export default function IsolationPane({ trace, loading, error, cameraName, onRetest }: IsolationPaneProps) {
+export default function IsolationPane({ trace, loading, error, cameraName, onRetest }: Readonly<IsolationPaneProps>) {
   if (loading) return <LoadingBlock label="Tracing the fault chain…" />;
   if (error) {
     return (

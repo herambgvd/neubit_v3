@@ -50,13 +50,13 @@ export function ChartCard({
   action,
   children,
   className,
-}: {
+}: Readonly<{
   title?: ReactNode;
   subtitle?: ReactNode;
   action?: ReactNode;
   children?: ReactNode;
   className?: string;
-}) {
+}>) {
   return (
     <Card className={cn("flex flex-col p-5", className)}>
       <div className="mb-4 flex items-start justify-between gap-3">
@@ -71,7 +71,7 @@ export function ChartCard({
   );
 }
 
-export function ChartEmpty({ label = "No data yet" }: { label?: ReactNode }) {
+export function ChartEmpty({ label = "No data yet" }: Readonly<{ label?: ReactNode }>) {
   return (
     <div className="flex h-full min-h-[160px] items-center justify-center text-sm text-muted">{label}</div>
   );
@@ -83,11 +83,11 @@ export function DonutChart({
   data = [],
   centerLabel = "Total",
   formatValue = (n) => n,
-}: {
+}: Readonly<{
   data?: ChartDatum[];
   centerLabel?: ReactNode;
   formatValue?: ValueFormatter;
-}) {
+}>) {
   const [hover, setHover] = useState<number | null>(null);
   const total = data.reduce((s, d) => s + (d.value || 0), 0);
   if (!total) return <ChartEmpty />;
@@ -165,12 +165,12 @@ export function BarList({
   color = "var(--accent)",
   formatValue = (n) => n,
   emptyLabel,
-}: {
+}: Readonly<{
   data?: ChartDatum[];
   color?: string;
   formatValue?: ValueFormatter;
   emptyLabel?: ReactNode;
-}) {
+}>) {
   if (!data.length) return <ChartEmpty label={emptyLabel} />;
   const max = Math.max(...data.map((d) => d.value || 0), 1);
   return (
@@ -200,13 +200,13 @@ export function Sparkline({
   color = "var(--accent)",
   width = 84,
   height = 26,
-}: {
+}: Readonly<{
   /** A plain numeric series — one point per sample, oldest first. */
   data?: number[];
   color?: string;
   width?: number;
   height?: number;
-}) {
+}>) {
   if (data.length < 2) {
     return <div style={{ width, height }} className="rounded bg-hover/60" aria-hidden />;
   }
@@ -238,12 +238,12 @@ export function AreaTrend({
   color = "var(--accent)",
   formatValue = (n) => n,
   height = 200,
-}: {
+}: Readonly<{
   data?: ChartDatum[];
   color?: string;
   formatValue?: ValueFormatter;
   height?: number;
-}) {
+}>) {
   const [wrapRef, width] = useContainerWidth();
   const [hover, setHover] = useState<number | null>(null);
   // A per-instance id for the <linearGradient>. useId is stable across renders

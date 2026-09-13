@@ -30,7 +30,7 @@ export default function NewTemplateModal({
   onCreate,
   taken,
   creating,
-}: NewTemplateModalProps) {
+}: Readonly<NewTemplateModalProps>) {
   const [name, setName] = useState("");
   const [subject, setSubject] = useState("");
   const [submitted, setSubmitted] = useState(false);

@@ -26,7 +26,7 @@ export interface SaveWallGroupModalProps {
   onSaved?: () => void;
 }
 
-export default function SaveWallGroupModal({ open, layoutKey, cameraIds = [], onClose, onSaved }: SaveWallGroupModalProps) {
+export default function SaveWallGroupModal({ open, layoutKey, cameraIds = [], onClose, onSaved }: Readonly<SaveWallGroupModalProps>) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
 

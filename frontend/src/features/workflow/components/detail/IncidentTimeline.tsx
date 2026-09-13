@@ -11,7 +11,7 @@ export interface IncidentTimelineProps {
   history?: TimelineEntry[];
 }
 
-export default function IncidentTimeline({ history = [] }: IncidentTimelineProps) {
+export default function IncidentTimeline({ history = [] }: Readonly<IncidentTimelineProps>) {
   return (
     <div className="rounded-xl border border-card-border bg-card">
       <header className="px-5 py-4 border-b border-card-border">

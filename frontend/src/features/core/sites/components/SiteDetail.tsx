@@ -35,7 +35,7 @@ export interface SiteDetailProps {
   onChangeThreat: (level: ThreatLevel) => void;
 }
 
-export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, onDelete, onRestore, onChangeThreat }: SiteDetailProps) {
+export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, onDelete, onRestore, onChangeThreat }: Readonly<SiteDetailProps>) {
   /**
    * BUILDING FACTS ARE NOT HERE ANY MORE.
    *

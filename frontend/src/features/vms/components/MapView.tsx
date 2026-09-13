@@ -32,7 +32,7 @@ interface CameraPin {
   y: number;
 }
 
-export default function MapView({ cameras = [], onPick }: MapViewProps) {
+export default function MapView({ cameras = [], onPick }: Readonly<MapViewProps>) {
   // ?site=<id> — where the estate map's "Floor plan" link lands. Read once, from
   // window.location rather than useSearchParams, to stay out of the Suspense rule
   // the rest of this screen already sidesteps (see Streaming's deep link).
@@ -162,7 +162,7 @@ interface PickerProps {
   placeholder: string;
 }
 
-function Picker({ value, onChange, options, placeholder }: PickerProps) {
+function Picker({ value, onChange, options, placeholder }: Readonly<PickerProps>) {
   if (options.length === 0) {
     return <span className="text-[#7e93bf]">{placeholder}</span>;
   }
@@ -181,7 +181,7 @@ function Picker({ value, onChange, options, placeholder }: PickerProps) {
   );
 }
 
-function Empty({ title, body }: { title: string; body: string }) {
+function Empty({ title, body }: Readonly<{ title: string; body: string }>) {
   return (
     <div className="flex h-full flex-col items-center justify-center px-6 text-center">
       <Icon icon="heroicons-outline:map" className="text-4xl text-[rgba(103,232,249,.35)]" />
@@ -209,7 +209,7 @@ interface Size {
   h: number;
 }
 
-function FloorPlan({ url, placements, statusById, onPick, emptyPlacements }: FloorPlanProps) {
+function FloorPlan({ url, placements, statusById, onPick, emptyPlacements }: Readonly<FloorPlanProps>) {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const [box, setBox] = useState<Size>({ w: 0, h: 0 });
   const [nat, setNat] = useState<Size>({ w: 0, h: 0 });

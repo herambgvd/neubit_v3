@@ -18,7 +18,7 @@ export interface BrandingPreviewProps {
   faviconUrl?: string | null;
 }
 
-export default function BrandingPreview({ form, logoUrl, faviconUrl }: BrandingPreviewProps) {
+export default function BrandingPreview({ form, logoUrl, faviconUrl }: Readonly<BrandingPreviewProps>) {
   const name = form.app_name.trim() || "Neubit";
 
   return (

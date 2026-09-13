@@ -56,7 +56,7 @@ export default function PlaybackChannelPicker({
   max,
   loading,
   error,
-}: PlaybackChannelPickerProps) {
+}: Readonly<PlaybackChannelPickerProps>) {
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
 

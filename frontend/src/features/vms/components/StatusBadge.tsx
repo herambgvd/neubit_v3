@@ -12,7 +12,7 @@ export interface StatusBadgeProps {
   className?: string;
 }
 
-export default function StatusBadge({ status, className = "" }: StatusBadgeProps) {
+export default function StatusBadge({ status, className = "" }: Readonly<StatusBadgeProps>) {
   const preset = presetFor(STATUS_PRESETS, status, STATUS_PRESETS.unknown);
   return (
     <span
@@ -34,7 +34,7 @@ const NB_DOT = {
   unknown: "bg-nb-warn",
 };
 
-export function StatusDot({ status, className = "" }: StatusBadgeProps) {
+export function StatusDot({ status, className = "" }: Readonly<StatusBadgeProps>) {
   const preset = presetFor(STATUS_PRESETS, status, STATUS_PRESETS.unknown);
   const dot = presetFor(NB_DOT, status, NB_DOT.unknown);
   return (

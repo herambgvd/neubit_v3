@@ -20,7 +20,7 @@ export interface ReasonModalProps {
   onSubmit: (reason: string | null) => void;
 }
 
-export default function ReasonModal({ action, pending, onCancel, onSubmit }: ReasonModalProps) {
+export default function ReasonModal({ action, pending, onCancel, onSubmit }: Readonly<ReasonModalProps>) {
   const [reason, setReason] = useState("");
   return (
     <Modal

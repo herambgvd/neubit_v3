@@ -29,7 +29,7 @@ export interface FormatDetailProps {
   onDelete: () => void;
 }
 
-export default function FormatDetail({ format, sopName, onEdit, onDelete }: FormatDetailProps) {
+export default function FormatDetail({ format, sopName, onEdit, onDelete }: Readonly<FormatDetailProps>) {
   const f = format;
   const [tab, setTab] = useState<TabKey>("overview");
 
@@ -75,7 +75,7 @@ export default function FormatDetail({ format, sopName, onEdit, onDelete }: Form
   );
 }
 
-function OverviewPanel({ f }: { f: AlertFormatPublic }) {
+function OverviewPanel({ f }: Readonly<{ f: AlertFormatPublic }>) {
   return (
     <div className="space-y-6">
       {f.description && <p className="text-sm text-nb-faint">{f.description}</p>}
@@ -99,7 +99,7 @@ function OverviewPanel({ f }: { f: AlertFormatPublic }) {
   );
 }
 
-function PresentationPanel({ f }: { f: AlertFormatPublic }) {
+function PresentationPanel({ f }: Readonly<{ f: AlertFormatPublic }>) {
   return (
     <div className="space-y-6">
       <Section title="Visual">
@@ -121,7 +121,7 @@ function PresentationPanel({ f }: { f: AlertFormatPublic }) {
   );
 }
 
-function WorkflowLinkPanel({ f, sopName }: { f: AlertFormatPublic; sopName: string | null }) {
+function WorkflowLinkPanel({ f, sopName }: Readonly<{ f: AlertFormatPublic; sopName: string | null }>) {
   const linked = !!f.sop_id;
   return (
     <div className="space-y-6">
@@ -139,7 +139,7 @@ function WorkflowLinkPanel({ f, sopName }: { f: AlertFormatPublic; sopName: stri
   );
 }
 
-function Section({ title, children }: { title: ReactNode; children?: ReactNode }) {
+function Section({ title, children }: Readonly<{ title: ReactNode; children?: ReactNode }>) {
   return (
     <section>
       <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-nb-faint">{title}</h3>
@@ -148,7 +148,7 @@ function Section({ title, children }: { title: ReactNode; children?: ReactNode }
   );
 }
 
-function Row({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
+function Row({ label, value, mono }: Readonly<{ label: string; value: ReactNode; mono?: boolean }>) {
   return (
     <div>
       <div className="text-[10px] font-medium uppercase tracking-wide text-nb-faint/70">{label}</div>

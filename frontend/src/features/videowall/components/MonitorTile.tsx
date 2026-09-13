@@ -34,7 +34,7 @@ export default function MonitorTile({
   onClearCell,
   onClearMonitor,
   onPickCell,
-}: MonitorTileProps) {
+}: Readonly<MonitorTileProps>) {
   const { capacity } = monitorGrid(monitor.layout);
   const monState = state?.[monitor.id] || {};
   const filled = Object.values(monState).filter(Boolean).length;

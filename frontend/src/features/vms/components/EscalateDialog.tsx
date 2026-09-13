@@ -214,7 +214,7 @@ export default function EscalateDialog({
   recorderName = null,
   nodeId = null,
   onCreated,
-}: EscalateDialogProps) {
+}: Readonly<EscalateDialogProps>) {
   const qc = useQueryClient();
   const { can } = useAuth();
   // WHERE the alarm is, not just which camera. An incident with no site cannot be

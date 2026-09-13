@@ -17,7 +17,7 @@ export interface DialogContentProps
 
 export const DialogContent = forwardRef<
   ComponentRef<typeof DialogPrimitive.Content>,
-  DialogContentProps
+  Readonly<DialogContentProps>
 >(function DialogContent({ className, children, showClose = true, ...props }, ref) {
   return (
     <DialogPrimitive.Portal>
@@ -51,7 +51,7 @@ export interface DialogHeaderProps extends Omit<ComponentPropsWithoutRef<"div">,
   description?: ReactNode;
 }
 
-export function DialogHeader({ className, title, description, ...props }: DialogHeaderProps) {
+export function DialogHeader({ className, title, description, ...props }: Readonly<DialogHeaderProps>) {
   return (
     <div className={cn("mb-5 pr-8", className)} {...props}>
       {title && (

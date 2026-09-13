@@ -29,7 +29,7 @@ export interface CardProps {
   children?: ReactNode;
 }
 
-export function Card({ className = "", children }: CardProps) {
+export function Card({ className = "", children }: Readonly<CardProps>) {
   return (
     <div className={`rounded-lg bg-[rgba(8,15,34,.5)] border border-nb-line ${className}`}>{children}</div>
   );
@@ -41,7 +41,7 @@ export interface PageHeaderProps {
   actions?: ReactNode;
 }
 
-export function PageHeader({ title, subtitle, actions }: PageHeaderProps) {
+export function PageHeader({ title, subtitle, actions }: Readonly<PageHeaderProps>) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
       <div>
@@ -94,7 +94,7 @@ export interface ButtonProps extends ComponentPropsWithoutRef<"button"> {
 // `as` lets a button that navigates render as a <Link>/<a>. Wrapping a <button>
 // in a <Link> nests interactive elements — invalid HTML, and it breaks keyboard
 // and assistive-tech navigation.
-export function Button({ as: As = "button", variant = "action", icon, className = "", children, ...props }: ButtonProps) {
+export function Button({ as: As = "button", variant = "action", icon, className = "", children, ...props }: Readonly<ButtonProps>) {
   const extra = As === "button" ? { type: props.type || "button" } : {};
   return (
     <As
@@ -119,13 +119,13 @@ const AREA = `${areaClass} !mt-0`;
 // Kit field label — the same uppercase micro-label as common's FieldLabel, with the
 // kit's own bottom spacing (the kit stacks label-over-control; common relies on the
 // control's mt-1).
-function Label({ children, required }: { children?: ReactNode; required?: boolean }) {
+function Label({ children, required }: Readonly<{ children?: ReactNode; required?: boolean }>) {
   return <FieldLabel className="mb-1.5 block" required={required}>{children}</FieldLabel>;
 }
 
 // `error` mirrors common/Field: a red border and a red message that takes the
 // hint's place, so a kit modal reports a bad field exactly like a pane form does.
-function FieldNote({ error, hint }: { error?: ReactNode; hint?: ReactNode }) {
+function FieldNote({ error, hint }: Readonly<{ error?: ReactNode; hint?: ReactNode }>) {
   if (error) return <span className="mt-1 block text-xs text-nb-crit">{error}</span>;
   if (hint) return <span className="mt-1 block text-xs text-nb-muted">{hint}</span>;
   return null;
@@ -133,11 +133,14 @@ function FieldNote({ error, hint }: { error?: ReactNode; hint?: ReactNode }) {
 
 /** The label / hint / error trio every kit field wraps its control in. */
 export interface FieldChrome {
-  label?: ReactNode;
-  hint?: ReactNode;
-  error?: ReactNode;
+  // `readonly` on the members rather than `Readonly<>` at each parameter: this is a
+  // BASE for the field props interfaces and is never built or mutated as a value,
+  // so the four members are readonly wherever they are inherited.
+  readonly label?: ReactNode;
+  readonly hint?: ReactNode;
+  readonly error?: ReactNode;
   /** Marks the label and sets aria-required; not forwarded as the DOM attribute. */
-  required?: boolean;
+  readonly required?: boolean;
 }
 
 export interface InputProps extends FieldChrome, Omit<ComponentPropsWithoutRef<"input">, "required"> {
@@ -153,7 +156,7 @@ export function Input({
   className = "",
   wrapperClassName = "block",
   ...props
-}: InputProps) {
+}: Readonly<InputProps>) {
   return (
     // `wrapperClassName`, like Textarea's: the label element sits between a flex
     // parent and the field, so without a handle on it an input cannot stretch.
@@ -241,7 +244,7 @@ export interface CheckboxProps extends Omit<ComponentPropsWithoutRef<"input">, "
 
 // Themed checkbox — replaces the native box, whose blue accent and sizing did not
 // match anything else in the console. Renders label + box as one clickable row.
-export function Checkbox({ label, checked, onChange, disabled, className = "", ...props }: CheckboxProps) {
+export function Checkbox({ label, checked, onChange, disabled, className = "", ...props }: Readonly<CheckboxProps>) {
   return (
     <label className={`inline-flex cursor-pointer select-none items-center gap-2 ${disabled ? "opacity-50" : ""} ${className}`}>
       <span
@@ -277,7 +280,7 @@ export function Textarea({
   className = "",
   wrapperClassName = "block",
   ...props
-}: TextareaProps) {
+}: Readonly<TextareaProps>) {
   return (
     // `wrapperClassName` exists so a textarea can FILL a flex parent: the label
     // element is between the caller's flex column and the field, so without a
@@ -308,7 +311,7 @@ export interface BadgeProps {
   children?: ReactNode;
 }
 
-export function Badge({ color = "neutral", children }: BadgeProps) {
+export function Badge({ color = "neutral", children }: Readonly<BadgeProps>) {
   const cls = (BADGE as Record<string, string | undefined>)[color] || BADGE.neutral;
   return (
     <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${cls}`}>
@@ -327,7 +330,7 @@ export interface AvatarProps {
 
 // Round profile picture: shows the image when a URL is given, otherwise the
 // first initial on a neutral chip. `size` is the diameter in px.
-export function Avatar({ src, name, size = 28, className = "" }: AvatarProps) {
+export function Avatar({ src, name, size = 28, className = "" }: Readonly<AvatarProps>) {
   const initials = (name || "?").trim().charAt(0).toUpperCase() || "?";
   const dim = { width: size, height: size };
   if (src) {
@@ -351,7 +354,7 @@ export function Avatar({ src, name, size = 28, className = "" }: AvatarProps) {
   );
 }
 
-export function Spinner({ className = "" }: { className?: string }) {
+export function Spinner({ className = "" }: Readonly<{ className?: string }>) {
   return (
     <div className={`h-6 w-6 rounded-full border-2 border-nb-line border-t-nb-teal animate-spin ${className}`} />
   );
@@ -359,7 +362,7 @@ export function Spinner({ className = "" }: { className?: string }) {
 
 // Branded full-screen loader: the "N" mark inside a spinning ring. Used for the
 // initial auth check and route-level loading fallbacks.
-export function FullPageLoader({ label = "Loading" }: { label?: ReactNode }) {
+export function FullPageLoader({ label = "Loading" }: Readonly<{ label?: ReactNode }>) {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-nb-bg">
       <div className="relative h-14 w-14">
@@ -382,7 +385,7 @@ export interface EmptyStateProps {
   action?: ReactNode;
 }
 
-export function EmptyState({ icon = "heroicons-outline:inbox", title, subtitle, action }: EmptyStateProps) {
+export function EmptyState({ icon = "heroicons-outline:inbox", title, subtitle, action }: Readonly<EmptyStateProps>) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <Icon icon={icon} className="text-4xl text-nb-teal mb-3 opacity-70" />
@@ -426,7 +429,7 @@ export interface MetricCardProps {
   className?: string;
 }
 
-export function MetricCard({ label, value, icon, tone = "info", hint, className = "" }: MetricCardProps) {
+export function MetricCard({ label, value, icon, tone = "info", hint, className = "" }: Readonly<MetricCardProps>) {
   const toneCls = (_METRIC_TONE as Record<string, string | undefined>)[tone] || _METRIC_TONE.info;
   const barCls = (_METRIC_BAR as Record<string, string | undefined>)[tone] || _METRIC_BAR.info;
   return (
@@ -454,7 +457,7 @@ export interface MetricRowProps {
   className?: string;
 }
 
-export function MetricRow({ items = [], className = "" }: MetricRowProps) {
+export function MetricRow({ items = [], className = "" }: Readonly<MetricRowProps>) {
   const cols = _METRIC_COLS[Math.min(items.length, 6)] || "sm:grid-cols-4";
   return (
     <div className={`grid grid-cols-2 gap-2.5 ${cols} ${className}`}>
@@ -498,7 +501,7 @@ export interface ToggleProps {
  * 20px-tall control is a miss waiting to happen — especially the ones that sit in
  * a dense settings grid.
  */
-export function Toggle({ checked, onChange, disabled, label, labelledBy }: ToggleProps) {
+export function Toggle({ checked, onChange, disabled, label, labelledBy }: Readonly<ToggleProps>) {
   return (
     <button
       type="button"
@@ -558,7 +561,7 @@ export interface OverlayProps {
   children?: ReactNode;
 }
 
-export function Overlay({ onClose, staticBackdrop, wrapper = "items-center justify-center p-4", children }: OverlayProps) {
+export function Overlay({ onClose, staticBackdrop, wrapper = "items-center justify-center p-4", children }: Readonly<OverlayProps>) {
   // document is undefined during SSR/prerender; portal only once mounted.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -656,7 +659,7 @@ export interface ModalProps {
 //: the same portal and the backdrop blocks the page behind it).
 const MODAL_TITLE_ID = "nb-modal-title";
 
-export function Modal({ open, onClose, title, subtitle, children, footer, wide, size, hideScroll, staticBackdrop }: ModalProps) {
+export function Modal({ open, onClose, title, subtitle, children, footer, wide, size, hideScroll, staticBackdrop }: Readonly<ModalProps>) {
   if (!open) return null;
   const width = (size && MODAL_WIDTH[size]) || (wide ? MODAL_WIDTH.wide : MODAL_WIDTH.md);
   return (
@@ -701,7 +704,7 @@ export interface DrawerProps {
 }
 
 // Right-side sliding sheet for detail views (person detail, investigation history…).
-export function Drawer({ open, onClose, title, subtitle, children, width = "max-w-md" }: DrawerProps) {
+export function Drawer({ open, onClose, title, subtitle, children, width = "max-w-md" }: Readonly<DrawerProps>) {
   if (!open) return null;
   return (
     <Overlay onClose={onClose} wrapper="justify-end">
@@ -745,7 +748,7 @@ export interface ConfirmDialogProps {
 // A themed confirmation modal (replaces window.confirm). Drive it with a piece of
 // state: setConfirm({ title, message, confirmLabel, danger, onConfirm }) to open,
 // and render one <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />.
-export function ConfirmDialog({ state, onClose, pending, staticBackdrop }: ConfirmDialogProps) {
+export function ConfirmDialog({ state, onClose, pending, staticBackdrop }: Readonly<ConfirmDialogProps>) {
   const cfg: ConfirmState = state || {};
   return (
     <Modal

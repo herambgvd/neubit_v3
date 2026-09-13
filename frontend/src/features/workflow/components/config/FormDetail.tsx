@@ -13,7 +13,7 @@ export interface FormDetailProps {
   onDelete: () => void;
 }
 
-export default function FormDetail({ form, onEdit, onDelete }: FormDetailProps) {
+export default function FormDetail({ form, onEdit, onDelete }: Readonly<FormDetailProps>) {
   const fields = Array.isArray(form.fields) ? form.fields : [];
   return (
     <div className="flex flex-col flex-1 min-h-0">

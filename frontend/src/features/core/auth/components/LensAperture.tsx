@@ -42,7 +42,7 @@ const BLADES = [
   "M0 58 L-32 25",
 ];
 
-export default function LensAperture({ size = 520, className = "" }: LensApertureProps) {
+export default function LensAperture({ size = 520, className = "" }: Readonly<LensApertureProps>) {
   // A page that respects this setting still shows the lens — it just stops it.
   // The aperture is part of the picture; the motion is what was asked about.
   const still = useReducedMotion();

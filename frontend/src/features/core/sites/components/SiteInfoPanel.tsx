@@ -10,7 +10,7 @@ import { fileUrl } from "@/lib/api";
 import type { Address, SitePublic } from "@/lib/types";
 import TagPicker from "@/components/tags/TagPicker";
 
-function InfoField({ label, full, children }: { label: ReactNode; full?: boolean; children?: ReactNode }) {
+function InfoField({ label, full, children }: Readonly<{ label: ReactNode; full?: boolean; children?: ReactNode }>) {
   return (
     <div className={full ? "md:col-span-2" : ""}>
       <div className="text-[10px] font-semibold uppercase tracking-wider text-nb-muted">{label}</div>
@@ -19,7 +19,7 @@ function InfoField({ label, full, children }: { label: ReactNode; full?: boolean
   );
 }
 
-export default function SiteInfoPanel({ site }: { site: SitePublic }) {
+export default function SiteInfoPanel({ site }: Readonly<{ site: SitePublic }>) {
   const a: Address = site.address || {};
   const fullAddress = [a.street, a.city, a.state, a.zip_code, a.country].filter(Boolean).join(", ");
   return (

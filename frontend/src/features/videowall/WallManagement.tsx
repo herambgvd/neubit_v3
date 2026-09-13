@@ -409,7 +409,7 @@ function WallDetail({
   onEditDecoder,
   setConfirm,
   refetchDecoders,
-}: WallDetailProps) {
+}: Readonly<WallDetailProps>) {
   const qc = useQueryClient();
 
   const monitorsQ = useQuery({ queryKey: ["wall-monitors", wall.id], queryFn: () => videowall.monitors.list(wall.id) });
@@ -701,7 +701,7 @@ interface TabListProps<T extends TabRow> {
 }
 
 // A simple add-button + row-list with edit/delete actions, shared by all tabs.
-function TabList<T extends TabRow>({ loading, items, emptyIcon, emptyText, addLabel, canManage, onAdd, renderRow, onEdit, onDelete, extraAction }: TabListProps<T>) {
+function TabList<T extends TabRow>({ loading, items, emptyIcon, emptyText, addLabel, canManage, onAdd, renderRow, onEdit, onDelete, extraAction }: Readonly<TabListProps<T>>) {
   return (
     <div>
       {canManage && onAdd && (

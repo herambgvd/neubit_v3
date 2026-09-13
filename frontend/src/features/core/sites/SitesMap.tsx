@@ -173,7 +173,7 @@ function EstateBar({
   onAttentionOnly,
   showLabels,
   onShowLabels,
-}: EstateBarProps) {
+}: Readonly<EstateBarProps>) {
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] px-3 py-2">
       <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[1.2px] text-nb-muted">
@@ -235,12 +235,12 @@ function BarToggle({
   onClick,
   icon,
   label,
-}: {
+}: Readonly<{
   on: boolean;
   onClick: () => void;
   icon: string;
   label: string;
-}) {
+}>) {
   return (
     <button
       type="button"

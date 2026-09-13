@@ -22,7 +22,7 @@ import { THREAT_PILL } from "../constants";
 import ZoneForm from "./ZoneForm";
 import SelectMenu from "@/components/common/SelectMenu";
 
-export default function ZonesPanel({ site }: { site: SitePublic }) {
+export default function ZonesPanel({ site }: Readonly<{ site: SitePublic }>) {
   const qc = useQueryClient();
   const floorsQ = useQuery({
     queryKey: ["floors-list", site.site_id],

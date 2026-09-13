@@ -45,7 +45,7 @@ export interface GroupGridBuilderProps {
   error?: ReactNode;
 }
 
-export default function GroupGridBuilder({ layout, cameras = [], cells = [], onChange, error }: GroupGridBuilderProps) {
+export default function GroupGridBuilder({ layout, cameras = [], cells = [], onChange, error }: Readonly<GroupGridBuilderProps>) {
   const [search, setSearch] = useState("");
   const [dragOverCell, setDragOverCell] = useState<number | null>(null);
 
@@ -239,7 +239,7 @@ export default function GroupGridBuilder({ layout, cameras = [], cells = [], onC
   );
 }
 
-function FieldLabel({ children }: { children: ReactNode }) {
+function FieldLabel({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <span className="text-xs font-medium uppercase tracking-wide text-muted">{children}</span>
   );

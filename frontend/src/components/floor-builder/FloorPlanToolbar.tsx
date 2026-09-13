@@ -42,7 +42,7 @@ export function FloorPlanToolbar({
   onUndo,
   onRedo,
   onSave,
-}: FloorPlanToolbarProps) {
+}: Readonly<FloorPlanToolbarProps>) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-card-border bg-card px-4 py-2.5">
       <div className="flex items-center gap-3">

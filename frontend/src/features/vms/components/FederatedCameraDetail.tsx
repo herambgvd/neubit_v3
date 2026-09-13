@@ -34,7 +34,7 @@ export interface FederatedCameraDetailProps {
   camera: EstateFederatedCamera;
 }
 
-export default function FederatedCameraDetail({ camera }: FederatedCameraDetailProps) {
+export default function FederatedCameraDetail({ camera }: Readonly<FederatedCameraDetailProps>) {
   const { can } = useAuth();
   const [snapping, setSnapping] = useState(false);
   const ptzCapable = isPtzCapable(camera);
@@ -184,7 +184,7 @@ export default function FederatedCameraDetail({ camera }: FederatedCameraDetailP
   );
 }
 
-function Fact({ label, value }: { label: ReactNode; value?: ReactNode }) {
+function Fact({ label, value }: Readonly<{ label: ReactNode; value?: ReactNode }>) {
   return (
     <div className="min-w-0">
       <dt className="mb-0.5 text-[9px] font-semibold uppercase tracking-[1.2px] text-nb-faint">{label}</dt>

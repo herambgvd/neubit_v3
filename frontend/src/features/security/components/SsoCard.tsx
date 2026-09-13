@@ -50,7 +50,7 @@ export interface SsoCardProps {
   canManage: boolean;
 }
 
-export default function SsoCard({ canManage }: SsoCardProps) {
+export default function SsoCard({ canManage }: Readonly<SsoCardProps>) {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["security-sso"], queryFn: () => security.sso.get() });
 
@@ -250,7 +250,7 @@ interface UrlRowProps {
   value: string;
 }
 
-function UrlRow({ label, value }: UrlRowProps) {
+function UrlRow({ label, value }: Readonly<UrlRowProps>) {
   const copy = () => {
     navigator.clipboard?.writeText(value);
     toast.success("Copied");

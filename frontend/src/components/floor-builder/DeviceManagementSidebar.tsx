@@ -83,7 +83,7 @@ interface PaletteRowProps {
   onDragEnd?: () => void;
 }
 
-function PaletteRow({ device, isDragging, onDragStart, onDragEnd }: PaletteRowProps) {
+function PaletteRow({ device, isDragging, onDragStart, onDragEnd }: Readonly<PaletteRowProps>) {
   return (
     <div
       draggable
@@ -136,7 +136,7 @@ interface PlacedRowProps {
   onDelete?: (placement: EditorPlacement, name: string) => void;
 }
 
-function PlacedRow({ placement, inventory, isSelected, onSelect, onDelete }: PlacedRowProps) {
+function PlacedRow({ placement, inventory, isSelected, onSelect, onDelete }: Readonly<PlacedRowProps>) {
   const name =
     inventory?.name || placement.name || placement.label || placement.device_id;
   return (
@@ -186,7 +186,7 @@ export function DeviceManagementSidebar({
   onPaletteDragEnd,
   draggingDeviceId = null,
   onDeleteDevice,
-}: DeviceManagementSidebarProps) {
+}: Readonly<DeviceManagementSidebarProps>) {
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<"available" | "placed">("available");
   const [deviceTypeFilter, setDeviceTypeFilter] = useState("all");

@@ -100,7 +100,7 @@ export interface FormBuilderProps {
   onSaved: () => void;
 }
 
-export default function FormBuilder({ form, onCancel, onSaved }: FormBuilderProps) {
+export default function FormBuilder({ form, onCancel, onSaved }: Readonly<FormBuilderProps>) {
   const isEdit = !!form;
   const [name, setName] = useState(form?.name || "");
   const [description, setDescription] = useState(form?.description || "");

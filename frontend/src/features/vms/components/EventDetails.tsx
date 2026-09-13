@@ -38,7 +38,7 @@ export interface EventDetailsProps {
   onClose?: () => void;
 }
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
+function Row({ label, children }: Readonly<{ label: string; children: ReactNode }>) {
   return (
     <div className="flex items-start gap-3 border-b border-card-border/60 px-3 py-2 last:border-0">
       <span className="w-28 shrink-0 text-[11px] text-muted">{label}</span>
@@ -68,7 +68,7 @@ export default function EventDetails({
   investigateHref = null,
   onClose,
   onEscalate,
-}: EventDetailsProps) {
+}: Readonly<EventDetailsProps>) {
   const iv = eventInterval(event);
   // Only an OPEN event needs a clock: its duration is still changing.
   const now = useTicker(1_000, iv.open);

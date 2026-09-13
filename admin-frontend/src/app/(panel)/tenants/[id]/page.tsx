@@ -69,7 +69,7 @@ import {
 const OPERATOR_ORIGIN =
   (process.env.NEXT_PUBLIC_OPERATOR_URL || "http://localhost").replace(/\/$/, "");
 
-function LicensePill({ state }: { state: string }) {
+function LicensePill({ state }: Readonly<{ state: string }>) {
   const map: Record<string, [BadgeTone, string]> = {
     active: ["success", "Licensed"],
     grace: ["warning", "Grace period"],
@@ -302,7 +302,7 @@ interface LimitRow {
 let nextLimitRowId = 0;
 const newLimitRow = (key = "", value = ""): LimitRow => ({ id: `limit-${nextLimitRowId++}`, key, value });
 
-function LicenseCard({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void }) {
+function LicenseCard({ tenant, onSaved }: Readonly<{ tenant: Tenant; onSaved: () => void }>) {
   const [plan, setPlan] = useState(tenant.plan || "");
   const [expires, setExpires] = useState(toLocalInput(tenant.license_expires_at));
   const [grace, setGrace] = useState(String(tenant.grace_days ?? 0));
@@ -486,12 +486,12 @@ function FeatureRow({
   subtitle,
   checked,
   onChange,
-}: {
+}: Readonly<{
   title: ReactNode;
   subtitle?: ReactNode;
   checked: boolean;
   onChange: (checked: boolean) => void;
-}) {
+}>) {
   return (
     <div className="flex items-center justify-between gap-3 px-3 py-2.5">
       <div className="min-w-0">
@@ -562,13 +562,13 @@ function TreeRow({
   features,
   toggle,
   moduleName,
-}: {
+}: Readonly<{
   item: TreeItem;
   depth: number;
   features: Record<string, boolean>;
   toggle: (key: string, on: boolean) => void;
   moduleName: (key: string) => string;
-}) {
+}>) {
   const pad = { paddingLeft: 12 + depth * 18 };
   if (item.children) {
     return (
@@ -626,13 +626,13 @@ function ConsoleModuleTree({
   toggle,
   catalog,
   extraKeys,
-}: {
+}: Readonly<{
   features: Record<string, boolean>;
   toggle: (key: string, on: boolean) => void;
   catalog: PlatformModule[];
   /** Tenant flags with no catalog entry — shown so nothing is silently dropped. */
   extraKeys: string[];
-}) {
+}>) {
   const moduleName = (key: string) =>
     catalog.find((m) => m.key === key)?.name || humanizeKey(key);
   const covered = treeModuleKeys();
@@ -696,7 +696,7 @@ function ConsoleModuleTree({
   );
 }
 
-function UsageCard({ usage, loading }: { usage?: TenantUsage; loading: boolean }) {
+function UsageCard({ usage, loading }: Readonly<{ usage?: TenantUsage; loading: boolean }>) {
   const users = usage?.users ?? 0;
   const limits = usage?.limits || {};
   const maxUsers = limits.max_users;
@@ -770,10 +770,10 @@ const SUB_TONE: Record<string, BadgeTone> = {
 function SubscriptionCard({
   tenantId,
   onEntitlementsChanged,
-}: {
+}: Readonly<{
   tenantId: string;
   onEntitlementsChanged?: () => void;
-}) {
+}>) {
   const qc = useQueryClient();
   const [plan, setPlan] = useState("");
   const [applyEnt, setApplyEnt] = useState(true);
@@ -961,14 +961,14 @@ function NewInvoiceDialog({
   suggestedCents,
   onClose,
   onSaved,
-}: {
+}: Readonly<{
   tenantId: string;
   currency: string;
   /** Pre-fills the amount from the tenant's plan price, when there is one. */
   suggestedCents?: number;
   onClose: () => void;
   onSaved: () => void;
-}) {
+}>) {
   const [amount, setAmount] = useState(suggestedCents ? String(suggestedCents / 100) : "");
   const [due, setDue] = useState("");
   const [notes, setNotes] = useState("");
@@ -1076,7 +1076,7 @@ function timeAgo(iso: string): string {
   return `${Math.round(mo / 12)}y ago`;
 }
 
-function ActivityCard({ tenantId }: { tenantId: string }) {
+function ActivityCard({ tenantId }: Readonly<{ tenantId: string }>) {
   const q = useInfiniteQuery({
     queryKey: ["tenant", tenantId, "audit"],
     queryFn: ({ pageParam }) => adminApi.listAudit({ tenantId, page: pageParam }),
@@ -1184,12 +1184,12 @@ function AdminsCard({
   admins,
   loading,
   onChange,
-}: {
+}: Readonly<{
   tenantId: string;
   admins: TenantAdmin[];
   loading: boolean;
   onChange: () => void;
-}) {
+}>) {
   const [showAdd, setShowAdd] = useState(false);
   const [removing, setRemoving] = useState<TenantAdmin | null>(null);
 
@@ -1252,7 +1252,7 @@ function AdminsCard({
   );
 }
 
-function AddAdminForm({ tenantId, onDone }: { tenantId: string; onDone: () => void }) {
+function AddAdminForm({ tenantId, onDone }: Readonly<{ tenantId: string; onDone: () => void }>) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");

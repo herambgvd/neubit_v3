@@ -17,7 +17,7 @@ function humanize(key: string): string {
   return key.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).trim();
 }
 
-export default function QuotasCard({ lic }: { lic: LicenseStatus | undefined }) {
+export default function QuotasCard({ lic }: Readonly<{ lic: LicenseStatus | undefined }>) {
   const { entitlements } = useAuth();
   const quotas = Object.entries(entitlements?.limits || {});
   const features = Object.entries(lic?.features || {});

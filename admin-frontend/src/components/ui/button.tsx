@@ -42,7 +42,7 @@ export interface ButtonProps
   loading?: boolean;
 }
 
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+export const Button = forwardRef<HTMLButtonElement, Readonly<ButtonProps>>(function Button(
   { className, variant, size, loading = false, disabled, children, ...props },
   ref
 ) {

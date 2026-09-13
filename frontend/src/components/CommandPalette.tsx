@@ -323,7 +323,7 @@ export default function CommandPalette() {
   );
 }
 
-function Kbd({ children }: { children?: ReactNode }) {
+function Kbd({ children }: Readonly<{ children?: ReactNode }>) {
   return (
     <kbd className="inline-flex h-4 min-w-4 items-center justify-center rounded-sm border border-card-border bg-hover px-1 font-mono text-[10px] text-muted">
       {children}

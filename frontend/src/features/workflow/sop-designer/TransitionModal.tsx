@@ -38,7 +38,7 @@ const NOTIFY_TYPES: { value: NotifyType; label: string }[] = [
 const isNotifyType = (v: string): v is NotifyType => NOTIFY_TYPES.some((t) => t.value === v);
 
 // Small titled group (v2's <Section>).
-function Section({ title, children }: { title: ReactNode; children?: ReactNode }) {
+function Section({ title, children }: Readonly<{ title: ReactNode; children?: ReactNode }>) {
   return (
     <div>
       <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-nb-muted">{title}</div>
@@ -74,7 +74,7 @@ export interface TransitionModalProps {
 // memo that omitted it was leaning on the omission being harmless. Stable here, so the
 // dependency can simply be declared.
 
-export default function TransitionModal({ sopId, states = [], transition, defaults, onClose, onSaved }: TransitionModalProps) {
+export default function TransitionModal({ sopId, states = [], transition, defaults, onClose, onSaved }: Readonly<TransitionModalProps>) {
   const isEdit = !!transition;
 
   const [name, setName] = useState("");

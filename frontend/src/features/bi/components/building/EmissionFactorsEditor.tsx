@@ -46,7 +46,7 @@ function rowError(r: Row): string | null {
   return null;
 }
 
-export default function EmissionFactorsEditor({ site }: { site: SitePublic }) {
+export default function EmissionFactorsEditor({ site }: Readonly<{ site: SitePublic }>) {
   const { can } = useAuth();
   const qc = useQueryClient();
   const editable = can("sites.update");

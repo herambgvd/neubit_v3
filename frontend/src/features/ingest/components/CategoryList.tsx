@@ -48,7 +48,7 @@ export default function CategoryList({
   catId,
   suppressSelected = false,
   onNew,
-}: CategoryListProps) {
+}: Readonly<CategoryListProps>) {
   return (
     <ConsolePanel>
       <PanelHeader icon="heroicons-outline:squares-2x2" title="Categories" count={total}

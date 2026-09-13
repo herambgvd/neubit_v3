@@ -14,7 +14,7 @@ export interface FormSubmitTestModalProps {
   values?: FormValues;
 }
 
-export default function FormSubmitTestModal({ open, onClose, fields, values }: FormSubmitTestModalProps) {
+export default function FormSubmitTestModal({ open, onClose, fields, values }: Readonly<FormSubmitTestModalProps>) {
   const { errors, formData, valid } = validateForm(fields, values || {});
   const errEntries = Object.entries(errors);
   const dataEntries = Object.entries(formData);

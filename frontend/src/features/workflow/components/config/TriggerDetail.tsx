@@ -19,7 +19,7 @@ export interface TriggerDetailProps {
   onTest?: () => void;
 }
 
-export default function TriggerDetail({ trigger, sopName, onEdit, onDelete, onToggle, toggling, onTest }: TriggerDetailProps) {
+export default function TriggerDetail({ trigger, sopName, onEdit, onDelete, onToggle, toggling, onTest }: Readonly<TriggerDetailProps>) {
   const t = trigger;
   const enabled = t.enabled !== false;
   const conds = Array.isArray(t.conditions) ? t.conditions : [];
@@ -110,7 +110,7 @@ export default function TriggerDetail({ trigger, sopName, onEdit, onDelete, onTo
   );
 }
 
-function Section({ title, children }: { title: ReactNode; children?: ReactNode }) {
+function Section({ title, children }: Readonly<{ title: ReactNode; children?: ReactNode }>) {
   return (
     <section>
       <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-nb-faint">{title}</h3>
@@ -119,7 +119,7 @@ function Section({ title, children }: { title: ReactNode; children?: ReactNode }
   );
 }
 
-function Row({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
+function Row({ label, value, mono }: Readonly<{ label: string; value: ReactNode; mono?: boolean }>) {
   return (
     <div>
       <div className="text-[10px] font-medium uppercase tracking-wide text-nb-faint/70">{label}</div>

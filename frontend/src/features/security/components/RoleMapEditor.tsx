@@ -17,7 +17,7 @@ export interface RoleMapEditorProps {
   disabled?: boolean;
 }
 
-export default function RoleMapEditor({ label, keyLabel = "Group", value = {}, onChange, disabled }: RoleMapEditorProps) {
+export default function RoleMapEditor({ label, keyLabel = "Group", value = {}, onChange, disabled }: Readonly<RoleMapEditorProps>) {
   const [k, setK] = useState("");
   const [v, setV] = useState("");
   const entries = Object.entries(value);

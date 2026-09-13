@@ -244,12 +244,12 @@ function PlanDialog({
   plan,
   onClose,
   onSaved,
-}: {
+}: Readonly<{
   /** null for a new plan; a saved row to edit it. */
   plan: Plan | null;
   onClose: () => void;
   onSaved: () => void;
-}) {
+}>) {
   const isEdit = !!plan;
   const [key, setKey] = useState(plan?.key || "");
   const [name, setName] = useState(plan?.name || "");

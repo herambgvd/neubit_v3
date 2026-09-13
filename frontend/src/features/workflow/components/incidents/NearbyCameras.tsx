@@ -52,7 +52,7 @@ export default function NearbyCameras({
   onPick,
   unplaced = false,
   siteName = null,
-}: NearbyCamerasProps) {
+}: Readonly<NearbyCamerasProps>) {
   const neighbours = neighboursOf(atSite, subject);
 
   if (unplaced) {

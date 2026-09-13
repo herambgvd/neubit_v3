@@ -33,7 +33,7 @@ export interface AuthContextValue {
 // every consumer gets a non-null value.
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [status, setStatus] = useState<AuthStatus>("loading");
   // The caller's effective entitlements from GET /features (modules/limits/license

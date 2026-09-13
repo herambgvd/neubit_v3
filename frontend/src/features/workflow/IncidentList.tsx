@@ -730,14 +730,14 @@ function CountChip({
   active,
   title,
   onClick,
-}: {
+}: Readonly<{
   label: string;
   value: number;
   tone?: "info" | "bad" | "warn" | "ok";
   active?: boolean;
   title?: string;
   onClick?: () => void;
-}) {
+}>) {
   const toneCls =
     tone === "bad"
       ? "text-red-400"

@@ -33,7 +33,7 @@ export default function SiteCard({
   onClose,
   actions,
   showAlarms = true,
-}: SiteCardProps) {
+}: Readonly<SiteCardProps>) {
   const tone = THREAT_PIN[site.threat_level] || THREAT_PIN.normal;
   return (
     <div className="relative min-w-[240px] max-w-[280px] space-y-2 rounded-lg border border-slate-200 bg-white p-2 text-slate-800">

@@ -119,7 +119,7 @@ function Soul() {
 }
 
 /* ── One metro tile ───────────────────────────────────────────────────── */
-function Tile({ icon, label, href, tone = "teal", count, sub, stats, soon }: TileProps) {
+function Tile({ icon, label, href, tone = "teal", count, sub, stats, soon }: Readonly<TileProps>) {
   const toneRing: Record<LauncherTone, string> = {
     teal: "hover:border-[rgba(34,211,238,.65)] hover:shadow-[0_14px_44px_rgba(3,10,28,.6),0_0_26px_rgba(34,211,238,.3)]",
     blue: "hover:border-[rgba(96,165,250,.65)] hover:shadow-[0_14px_44px_rgba(3,10,28,.6),0_0_26px_rgba(96,165,250,.3)]",
@@ -195,7 +195,7 @@ function Tile({ icon, label, href, tone = "teal", count, sub, stats, soon }: Til
   );
 }
 
-function GroupHeading({ children, accent }: { children?: ReactNode; accent: string }) {
+function GroupHeading({ children, accent }: Readonly<{ children?: ReactNode; accent: string }>) {
   return (
     <h4 className="mb-4 flex items-center gap-2 text-[13px] font-normal tracking-[.6px]" style={{ color: accent }}>
       <span className="h-[7px] w-[7px] rounded-full" style={{ background: accent, boxShadow: `0 0 8px ${accent}` }} />
@@ -204,7 +204,7 @@ function GroupHeading({ children, accent }: { children?: ReactNode; accent: stri
   );
 }
 
-function Group({ title, accent, tiles, soon }: { title: string; accent: string; tiles: TileProps[]; soon?: boolean }) {
+function Group({ title, accent, tiles, soon }: Readonly<{ title: string; accent: string; tiles: TileProps[]; soon?: boolean }>) {
   return (
     <div>
       <GroupHeading accent={accent}>{title}</GroupHeading>

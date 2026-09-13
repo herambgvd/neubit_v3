@@ -200,7 +200,7 @@ export interface AuthShellProps {
  * quarter of what typing a form costs, which is the kind of waste that puts a
  * test asserting on a request body up against a wall-clock timeout.
  */
-const BrandPanel = memo(function BrandPanel({ productName }: { productName: string }) {
+const BrandPanel = memo(function BrandPanel({ productName }: Readonly<{ productName: string }>) {
   return (
     <aside className="relative hidden h-full min-h-0 flex-col gap-6 overflow-hidden border-r border-white/[0.06] p-10 lg:flex xl:p-12">
       <Link href="/" className="inline-flex shrink-0 items-center gap-3">
@@ -253,7 +253,7 @@ const BrandPanel = memo(function BrandPanel({ productName }: { productName: stri
   );
 });
 
-export default function AuthShell({ eyebrow, title, subtitle, productName = "Neubit", children }: AuthShellProps) {
+export default function AuthShell({ eyebrow, title, subtitle, productName = "Neubit", children }: Readonly<AuthShellProps>) {
   return (
     <div className="relative h-screen w-full overflow-hidden bg-[#0a0a0a] text-white antialiased selection:bg-emerald-500/20">
       {/* line grid */}
@@ -337,7 +337,7 @@ export function AuthInput({ className = "", ...props }: ComponentPropsWithoutRef
   );
 }
 
-export function AuthLabel({ children, htmlFor, action }: { children?: ReactNode; htmlFor?: string; action?: ReactNode }) {
+export function AuthLabel({ children, htmlFor, action }: Readonly<{ children?: ReactNode; htmlFor?: string; action?: ReactNode }>) {
   return (
     <div className="flex items-center justify-between">
       <label htmlFor={htmlFor} className="text-sm font-medium text-white/70">
@@ -348,7 +348,7 @@ export function AuthLabel({ children, htmlFor, action }: { children?: ReactNode;
   );
 }
 
-export function AuthSubmit({ children, loading, disabled }: { children?: ReactNode; loading?: boolean; disabled?: boolean }) {
+export function AuthSubmit({ children, loading, disabled }: Readonly<{ children?: ReactNode; loading?: boolean; disabled?: boolean }>) {
   return (
     <button
       type="submit"
@@ -361,7 +361,7 @@ export function AuthSubmit({ children, loading, disabled }: { children?: ReactNo
   );
 }
 
-export function AuthError({ children }: { children?: ReactNode }) {
+export function AuthError({ children }: Readonly<{ children?: ReactNode }>) {
   if (!children) return null;
   return (
     <div role="alert" className="rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">

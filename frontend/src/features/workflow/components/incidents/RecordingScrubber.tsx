@@ -81,7 +81,7 @@ export default function RecordingScrubber({
   onPlayingChange,
   onSpeedChange,
   ranges = [],
-}: RecordingScrubberProps) {
+}: Readonly<RecordingScrubberProps>) {
   // The playhead comes FROM the tile, not from a timer of our own: two clocks
   // would drift apart and the bar would stop describing the picture.
   const [head, setHead] = useState<number | null>(() => clock.get());

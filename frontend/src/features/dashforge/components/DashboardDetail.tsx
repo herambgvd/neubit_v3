@@ -15,7 +15,7 @@ import { PaneAction, PaneDeleteAction } from "@/components/console";
 import type { DashForgeEmbed } from "../api";
 import { CATEGORIES, categoryLabel } from "../constants";
 
-function InfoField({ label, full, children }: { label: ReactNode; full?: boolean; children?: ReactNode }) {
+function InfoField({ label, full, children }: Readonly<{ label: ReactNode; full?: boolean; children?: ReactNode }>) {
   return (
     <div className={full ? "md:col-span-2" : ""}>
       <div className="text-[10px] font-semibold uppercase tracking-wider text-nb-muted">{label}</div>
@@ -40,7 +40,7 @@ export interface DashboardDetailProps {
   onDelete: () => void;
 }
 
-export default function DashboardDetail({ dashboard, canManage, onEdit, onDelete }: DashboardDetailProps) {
+export default function DashboardDetail({ dashboard, canManage, onEdit, onDelete }: Readonly<DashboardDetailProps>) {
   const d = dashboard;
   const icon = CATEGORIES.find((c) => c.slug === d.category)?.icon || "heroicons-outline:squares-2x2";
   const locks = Object.entries(d.scope || {});

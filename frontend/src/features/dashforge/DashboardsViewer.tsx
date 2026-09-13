@@ -51,7 +51,7 @@ export interface DashboardsViewerProps {
   crumb?: string;
 }
 
-function DashboardsViewerInner({ category: fixed, crumb }: DashboardsViewerProps) {
+function DashboardsViewerInner({ category: fixed, crumb }: Readonly<DashboardsViewerProps>) {
   const router = useRouter();
   const params = useSearchParams();
   const { can } = useAuth();
@@ -195,12 +195,12 @@ function Tab({
   icon,
   on,
   onClick,
-}: {
+}: Readonly<{
   label: string;
   icon?: string;
   on: boolean;
   onClick: () => void;
-}) {
+}>) {
   return (
     <button
       type="button"
@@ -218,7 +218,7 @@ function Tab({
   );
 }
 
-export default function DashboardsViewer(props: DashboardsViewerProps) {
+export default function DashboardsViewer(props: Readonly<DashboardsViewerProps>) {
   // useSearchParams needs a Suspense boundary in Next 16.
   return (
     <Suspense fallback={<LoadingBlock label="Listing dashboards…" />}>

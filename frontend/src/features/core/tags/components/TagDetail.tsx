@@ -16,7 +16,7 @@ export interface TagDetailProps {
   onDelete: () => void;
 }
 
-export default function TagDetail({ tag, onEdit, onDelete }: TagDetailProps) {
+export default function TagDetail({ tag, onEdit, onDelete }: Readonly<TagDetailProps>) {
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-nb-line">

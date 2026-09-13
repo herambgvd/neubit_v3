@@ -17,7 +17,7 @@ export interface MapMarkerProps {
   title?: string;
 }
 
-export default function MapMarker({ x, y, priority, count = 1, selected, onClick, title }: MapMarkerProps) {
+export default function MapMarker({ x, y, priority, count = 1, selected, onClick, title }: Readonly<MapMarkerProps>) {
   const s = sev(priority);
   const r = 13;
   return (

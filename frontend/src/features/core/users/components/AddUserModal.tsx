@@ -18,7 +18,7 @@ export interface AddUserModalProps {
   creating: boolean;
 }
 
-export default function AddUserModal({ open, onClose, form, setForm, roleOptions, sites = [], onCreate, creating }: AddUserModalProps) {
+export default function AddUserModal({ open, onClose, form, setForm, roleOptions, sites = [], onCreate, creating }: Readonly<AddUserModalProps>) {
   // Errors appear on the first Create attempt, then track the field as it is fixed —
   // so the dialog never opens already shouting at an untouched form.
   const [submitted, setSubmitted] = useState(false);

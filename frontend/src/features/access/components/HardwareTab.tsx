@@ -18,7 +18,7 @@ interface PillProps {
   label?: string;
 }
 
-function OnPill({ label }: PillProps) {
+function OnPill({ label }: Readonly<PillProps>) {
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-[10px] font-medium text-green-500">
       <Icon icon="heroicons-solid:check-circle" className="text-[10px]" />
@@ -26,7 +26,7 @@ function OnPill({ label }: PillProps) {
     </span>
   );
 }
-function OffPill({ label }: PillProps) {
+function OffPill({ label }: Readonly<PillProps>) {
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-hover px-2 py-0.5 text-[10px] font-medium text-muted">
       <Icon icon="heroicons-solid:minus-circle" className="text-[10px]" />
@@ -82,7 +82,7 @@ function renderPill(col: HardwareColumn, value: unknown): ReactElement | null {
   return null;
 }
 
-function Cell({ value }: { value: unknown }) {
+function Cell({ value }: Readonly<{ value: unknown }>) {
   if (value === null || value === undefined || value === "") return <span className="text-muted/70">—</span>;
   if (typeof value === "object") return <code className="text-[10px] text-muted">{cellText(value)}</code>;
   const str = cellText(value);
@@ -120,7 +120,7 @@ export interface HardwareTabProps {
   instanceId: string;
 }
 
-export default function HardwareTab({ instanceId }: HardwareTabProps) {
+export default function HardwareTab({ instanceId }: Readonly<HardwareTabProps>) {
   const [section, setSection] = useState<HardwareSet>("sites");
 
   const q = useQuery({

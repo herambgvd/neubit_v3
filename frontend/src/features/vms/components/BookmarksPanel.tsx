@@ -40,7 +40,7 @@ export default function BookmarksPanel({
   onReleaseLock,
   onDeleteLock,
   className = "",
-}: BookmarksPanelProps) {
+}: Readonly<BookmarksPanelProps>) {
   return (
     <div className={`flex flex-col gap-4 ${className}`}>
       {/* Bookmarks */}
@@ -165,7 +165,7 @@ interface IconBtnProps {
   danger?: boolean;
 }
 
-function IconBtn({ icon, title, onClick, danger }: IconBtnProps) {
+function IconBtn({ icon, title, onClick, danger }: Readonly<IconBtnProps>) {
   return (
     <button
       type="button"

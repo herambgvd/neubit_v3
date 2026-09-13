@@ -13,7 +13,7 @@ export interface TemplateDetailProps {
   onDelete: () => void;
 }
 
-export default function TemplateDetail({ template, onEdit, onDelete }: TemplateDetailProps) {
+export default function TemplateDetail({ template, onEdit, onDelete }: Readonly<TemplateDetailProps>) {
   const t = template;
   return (
     <div className="flex flex-col flex-1 min-h-0">

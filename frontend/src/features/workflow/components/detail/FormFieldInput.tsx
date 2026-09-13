@@ -20,7 +20,7 @@ export interface FormFieldInputProps {
   onChange: (value: FormFieldValue) => void;
 }
 
-export default function FormFieldInput({ field, value, error, onChange }: FormFieldInputProps) {
+export default function FormFieldInput({ field, value, error, onChange }: Readonly<FormFieldInputProps>) {
   const label = (
     <label className="text-xs font-medium uppercase tracking-wide text-muted">
       {field.label || fieldKey(field)}

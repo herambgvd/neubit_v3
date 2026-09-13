@@ -44,7 +44,7 @@ export default function PlaybackCalendar({
   onSelectDay,
   onPrevMonth,
   onNextMonth,
-}: PlaybackCalendarProps) {
+}: Readonly<PlaybackCalendarProps>) {
   const firstDow = new Date(viewYear, viewMonth, 1).getDay(); // 0=Sun
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
 

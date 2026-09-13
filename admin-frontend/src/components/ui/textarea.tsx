@@ -7,7 +7,7 @@ export interface TextareaProps extends ComponentPropsWithoutRef<"textarea"> {
   invalid?: boolean;
 }
 
-export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(
+export const Textarea = forwardRef<HTMLTextAreaElement, Readonly<TextareaProps>>(function Textarea(
   { className, invalid = false, ...props },
   ref
 ) {

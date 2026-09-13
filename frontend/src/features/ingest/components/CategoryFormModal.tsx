@@ -21,7 +21,7 @@ export interface CategoryFormModalProps {
   onSaved: (saved: CategoryPublic) => void;
 }
 
-export default function CategoryFormModal({ category, onCancel, onSaved }: CategoryFormModalProps) {
+export default function CategoryFormModal({ category, onCancel, onSaved }: Readonly<CategoryFormModalProps>) {
   const isEdit = !!category;
   const [name, setName] = useState(category?.name || "");
   const [description, setDescription] = useState(category?.description || "");

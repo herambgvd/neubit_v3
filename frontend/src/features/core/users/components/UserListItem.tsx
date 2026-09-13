@@ -11,7 +11,7 @@ export interface UserListItemProps {
   onSelect: () => void;
 }
 
-export default function UserListItem({ user, selected, onSelect }: UserListItemProps) {
+export default function UserListItem({ user, selected, onSelect }: Readonly<UserListItemProps>) {
   const u = user;
   const dot = u.locked
     ? "bg-nb-crit shadow-[0_0_5px_#f87171]"

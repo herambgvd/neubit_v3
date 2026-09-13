@@ -37,7 +37,7 @@ export default function PatternPickerMenu({
   onPlay,
   onStop,
   onCreate,
-}: PatternPickerMenuProps) {
+}: Readonly<PatternPickerMenuProps>) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 

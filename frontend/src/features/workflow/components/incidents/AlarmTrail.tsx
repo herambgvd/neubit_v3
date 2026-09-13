@@ -22,7 +22,7 @@ export interface AlarmTrailProps {
   incident: InstancePublic | null;
 }
 
-export default function AlarmTrail({ incident }: AlarmTrailProps) {
+export default function AlarmTrail({ incident }: Readonly<AlarmTrailProps>) {
   // Newest first: what happened last is what a person arriving now needs.
   const entries = [...(incident?.timeline || [])].sort((a, b) =>
     String(b.executed_at || "").localeCompare(String(a.executed_at || "")),

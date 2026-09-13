@@ -62,7 +62,7 @@ export function DataTable<TData>({
   sorting: controlledSorting,
   onSortingChange,
   className,
-}: DataTableProps<TData>) {
+}: Readonly<DataTableProps<TData>>) {
   const [internalSorting, setInternalSorting] = useState<SortingState>([]);
   const sorting = controlledSorting ?? internalSorting;
 

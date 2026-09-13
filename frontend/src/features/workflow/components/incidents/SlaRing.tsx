@@ -48,7 +48,7 @@ function useNow(enabled: boolean, injected?: number): number {
   return injected ?? now;
 }
 
-export default function SlaRing({ incident, now: injected }: SlaRingProps) {
+export default function SlaRing({ incident, now: injected }: Readonly<SlaRingProps>) {
   const running = !!incident && !isTerminal(incident.status);
   const now = useNow(running, injected);
 

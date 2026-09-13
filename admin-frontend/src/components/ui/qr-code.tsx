@@ -14,7 +14,7 @@ export interface QrCodeProps {
 
 // Renders an otpauth:// (or any) string as a QR image. White quiet-zone bg so it
 // scans in both light and dark themes.
-export function QrCode({ value, size = 176, className }: QrCodeProps) {
+export function QrCode({ value, size = 176, className }: Readonly<QrCodeProps>) {
   const [src, setSrc] = useState("");
 
   useEffect(() => {

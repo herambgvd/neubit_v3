@@ -49,7 +49,7 @@ export interface DirectoryCardProps {
   canManage: boolean;
 }
 
-export default function DirectoryCard({ canManage }: DirectoryCardProps) {
+export default function DirectoryCard({ canManage }: Readonly<DirectoryCardProps>) {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["security-directory"], queryFn: () => security.directory.get() });
 

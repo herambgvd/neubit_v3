@@ -35,7 +35,7 @@ const DAYS: [string, string][] = [
   ["sun", "Sun"],
 ];
 
-export default function LinkageScheduleEditor({ value = {}, onChange }: LinkageScheduleEditorProps) {
+export default function LinkageScheduleEditor({ value = {}, onChange }: Readonly<LinkageScheduleEditorProps>) {
   const sched: Record<string, unknown> = value && typeof value === "object" ? value : {};
   const isAlwaysOn = Object.keys(sched).length === 0;
 

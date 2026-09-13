@@ -28,7 +28,7 @@ export interface CardsTabProps {
   instanceId: string;
 }
 
-export default function CardsTab({ instanceId }: CardsTabProps) {
+export default function CardsTab({ instanceId }: Readonly<CardsTabProps>) {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");

@@ -47,7 +47,7 @@ export default function BookmarkModal({
   seed = null,
   bookmark = null,
   onSaved,
-}: BookmarkModalProps) {
+}: Readonly<BookmarkModalProps>) {
   const editing = !!bookmark;
   const [startTs, setStartTs] = useState("");
   const [endTs, setEndTs] = useState("");

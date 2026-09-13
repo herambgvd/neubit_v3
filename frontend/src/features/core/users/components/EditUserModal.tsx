@@ -35,7 +35,7 @@ export default function EditUserModal({
   sites = [],
   onSave,
   saving,
-}: EditUserModalProps) {
+}: Readonly<EditUserModalProps>) {
   const isAdminAccount = !!editing?.role?.is_system;
   const statusLocked = isSelf || isAdminAccount;
 

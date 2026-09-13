@@ -31,7 +31,7 @@ export interface FormatFormProps {
   onSubmit: (body: CreateAlertFormatRequest) => void;
 }
 
-export default function FormatForm({ format, sops, pending, onCancel, onSubmit }: FormatFormProps) {
+export default function FormatForm({ format, sops, pending, onCancel, onSubmit }: Readonly<FormatFormProps>) {
   const isEdit = !!format;
   const [name, setName] = useState(format?.name || "");
   const [alertCode, setAlertCode] = useState(format?.alert_code || "");

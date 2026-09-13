@@ -22,7 +22,7 @@ export interface CameraQuickPickerProps {
   onClose?: () => void;
 }
 
-export default function CameraQuickPicker({ open, cameras = [], mountedIds, tileIndex, onPick, onClose }: CameraQuickPickerProps) {
+export default function CameraQuickPicker({ open, cameras = [], mountedIds, tileIndex, onPick, onClose }: Readonly<CameraQuickPickerProps>) {
   const [q, setQ] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
 

@@ -16,7 +16,7 @@ export interface SelectTriggerProps
 
 export const SelectTrigger = forwardRef<
   ComponentRef<typeof SelectPrimitive.Trigger>,
-  SelectTriggerProps
+  Readonly<SelectTriggerProps>
 >(function SelectTrigger({ className, children, invalid = false, ...props }, ref) {
   return (
     <SelectPrimitive.Trigger

@@ -82,7 +82,7 @@ export interface IncidentMapProps {
   sopName?: NameMap;
 }
 
-export default function IncidentMap({ incidents = [], sites = [], sopName = {} }: IncidentMapProps) {
+export default function IncidentMap({ incidents = [], sites = [], sopName = {} }: Readonly<IncidentMapProps>) {
   const router = useRouter();
   const [siteId, setSiteId] = useState("");
   const [floorId, setFloorId] = useState("");
@@ -346,7 +346,7 @@ interface IncidentRowProps {
   zoneName?: string;
 }
 
-function IncidentRow({ it, onOpen, zoneName }: IncidentRowProps) {
+function IncidentRow({ it, onOpen, zoneName }: Readonly<IncidentRowProps>) {
   const s = sev(it.priority);
   return (
     <button

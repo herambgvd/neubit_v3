@@ -17,7 +17,7 @@ export interface ModulesCardProps {
   licenseModules: string[];
 }
 
-export default function ModulesCard({ licenseModules }: ModulesCardProps) {
+export default function ModulesCard({ licenseModules }: Readonly<ModulesCardProps>) {
   const { entitlements } = useAuth();
   const catalog = entitlements?.modules || [];
   const licensed = new Set(licenseModules);

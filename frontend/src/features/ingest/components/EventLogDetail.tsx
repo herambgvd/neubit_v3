@@ -13,7 +13,7 @@ export interface EventLogDetailProps {
   error?: string | null;
 }
 
-export default function EventLogDetail({ id, error }: EventLogDetailProps) {
+export default function EventLogDetail({ id, error }: Readonly<EventLogDetailProps>) {
   const q = useQuery({ queryKey: ["ingest-event-log", id], queryFn: () => ingestApi.eventLogs.get(id) });
   const d = q.data;
   return (

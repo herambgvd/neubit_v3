@@ -46,7 +46,7 @@ export interface ScreenMenuProps {
   screens: ReturnType<typeof useScreens>;
 }
 
-export default function ScreenMenu({ wall, monitors, screens }: ScreenMenuProps) {
+export default function ScreenMenu({ wall, monitors, screens }: Readonly<ScreenMenuProps>) {
   const [open, setOpen] = useState(false);
   if (!screens.available) return null;
 

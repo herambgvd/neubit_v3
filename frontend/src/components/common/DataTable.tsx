@@ -52,7 +52,7 @@ declare module "@tanstack/react-table" {
   }
 }
 
-function SortCaret({ dir }: { dir: SortDirection | false }) {
+function SortCaret({ dir }: Readonly<{ dir: SortDirection | false }>) {
   if (!dir) return <Icon icon="heroicons:chevron-up-down" className="text-xs opacity-40" />;
   return (
     <Icon
@@ -91,7 +91,7 @@ export default function DataTable<TData>({
   enableRowSelection = false,
   rowSelection,
   onRowSelectionChange,
-}: DataTableProps<TData>) {
+}: Readonly<DataTableProps<TData>>) {
   // Uncontrolled sorting lives here; selection is controlled by the caller when
   // enableRowSelection is set.
   const [sorting, setSorting] = useState<SortingState>(initialSorting);

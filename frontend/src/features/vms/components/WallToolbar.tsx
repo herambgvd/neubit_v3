@@ -21,7 +21,7 @@ interface IconBtnProps {
   danger?: boolean;
 }
 
-function IconBtn({ icon, title, onClick, active = false, spinning = false, danger = false }: IconBtnProps) {
+function IconBtn({ icon, title, onClick, active = false, spinning = false, danger = false }: Readonly<IconBtnProps>) {
   return (
     <button
       type="button"
@@ -143,7 +143,7 @@ export default function WallToolbar({
   onClear,
   onRefresh,
   refreshing,
-}: WallToolbarProps) {
+}: Readonly<WallToolbarProps>) {
   const layout = getLayout(layoutKey);
   const gridMode = viewMode !== "map"; // grid or split show the layout picker
 
@@ -297,7 +297,7 @@ function Clock() {
 }
 
 // Quality selector — global stream-profile switch (Auto/Eco/Balanced/High/Turbo).
-function QualitySelect({ quality, onQuality }: { quality: string; onQuality?: (key: string) => void }) {
+function QualitySelect({ quality, onQuality }: Readonly<{ quality: string; onQuality?: (key: string) => void }>) {
   return (
     <div className="hidden overflow-hidden rounded-[9px] border border-[rgba(150,180,245,.22)] lg:inline-flex" title="Stream quality">
       {QUALITY_LEVELS.map((lvl) => (
@@ -327,7 +327,7 @@ interface TourControlProps {
   onInterval?: (seconds: number) => void;
 }
 
-function TourControl({ tour, onStart, onStop, onInterval }: TourControlProps) {
+function TourControl({ tour, onStart, onStop, onInterval }: Readonly<TourControlProps>) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 

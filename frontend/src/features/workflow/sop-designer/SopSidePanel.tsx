@@ -34,7 +34,7 @@ export default function SopSidePanel({
   onClose,
   onEdit,
   onDelete,
-}: SopSidePanelProps) {
+}: Readonly<SopSidePanelProps>) {
   if (!selection) return null;
 
   if (selection.kind === "state") {
@@ -111,7 +111,7 @@ interface ShellProps {
   children?: ReactNode;
 }
 
-function Shell({ title, onClose, onEdit, onDelete, children }: ShellProps) {
+function Shell({ title, onClose, onEdit, onDelete, children }: Readonly<ShellProps>) {
   return (
     <aside className="flex h-full w-72 shrink-0 flex-col rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)]">
       <header className="flex items-center justify-between border-b border-nb-line px-4 py-3">
@@ -154,7 +154,7 @@ interface RowProps {
   value: ReactNode;
 }
 
-function Row({ label, value }: RowProps) {
+function Row({ label, value }: Readonly<RowProps>) {
   return (
     <div className="flex items-center justify-between gap-3 text-xs">
       <span className="text-[10px] font-medium uppercase tracking-wide text-nb-muted/70">{label}</span>

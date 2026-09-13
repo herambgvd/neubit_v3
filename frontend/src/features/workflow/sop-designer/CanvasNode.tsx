@@ -21,7 +21,7 @@ export interface CanvasNodeProps {
 /** [label, icon, colour] */
 type Badge = [string, string, string];
 
-export default function CanvasNode({ state, selected, onPointerDown, onPointerUp, onHandleDown, onEdit }: CanvasNodeProps) {
+export default function CanvasNode({ state, selected, onPointerDown, onPointerUp, onHandleDown, onEdit }: Readonly<CanvasNodeProps>) {
   const color = state.color || DEFAULT_COLOR;
   const badges: Badge[] = [];
   if (state.is_initial) badges.push(["Initial", "heroicons-solid:play", "#10b981"]);

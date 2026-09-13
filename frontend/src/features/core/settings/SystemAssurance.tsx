@@ -85,14 +85,14 @@ function Tile({
   link,
   linkLabel,
   children,
-}: {
+}: Readonly<{
   icon: string;
   title: ReactNode;
   span?: string;
   link?: string;
   linkLabel?: string;
   children?: ReactNode;
-}) {
+}>) {
   return (
     <div
       className={`flex flex-col rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-3 ${span}`}
@@ -122,13 +122,13 @@ function Stat({
   tone = "faint",
   sub,
   href,
-}: {
+}: Readonly<{
   label: ReactNode;
   value: ReactNode;
   tone?: KpiTone;
   sub?: ReactNode;
   href?: string;
-}) {
+}>) {
   const body = (
     <>
       <div className="text-[10.5px] font-semibold uppercase tracking-[1.2px] text-nb-faint">{label}</div>
@@ -150,7 +150,7 @@ type RowTone = KpiTone | "ink";
 
 const ROW_TONE: Record<RowTone, string> = { ink: "text-nb-ink", good: "text-nb-good", warn: "text-nb-warn", crit: "text-nb-crit", faint: "text-nb-faint", blue: "text-nb-blueb" };
 
-function Row({ label, value, tone = "ink", note }: { label: ReactNode; value: ReactNode; tone?: RowTone; note?: ReactNode }) {
+function Row({ label, value, tone = "ink", note }: Readonly<{ label: ReactNode; value: ReactNode; tone?: RowTone; note?: ReactNode }>) {
   const c = ROW_TONE[tone];
   return (
     <div className="flex items-center gap-3 border-b border-nb-line/40 py-1.5 last:border-b-0">

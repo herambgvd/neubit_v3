@@ -49,7 +49,7 @@ export default function PayloadFieldsBuilder({
   onSampleTextChange,
   fields, // [{ path, name, checked }]
   onFieldsChange,
-}: PayloadFieldsBuilderProps) {
+}: Readonly<PayloadFieldsBuilderProps>) {
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
   // Parse result AND its error come out of the same memo. They used to be state
@@ -217,7 +217,7 @@ interface StepProps {
   children?: ReactNode;
 }
 
-function Step({ number, title, hint, children }: StepProps) {
+function Step({ number, title, hint, children }: Readonly<StepProps>) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
@@ -242,7 +242,7 @@ interface FieldRowProps {
   onName: (name: string) => void;
 }
 
-function FieldRow({ field, preview, onCheck, onName }: FieldRowProps) {
+function FieldRow({ field, preview, onCheck, onName }: Readonly<FieldRowProps>) {
   return (
     <label
       className={`grid cursor-pointer grid-cols-[20px_1fr_1fr_110px] items-center gap-2 px-2 py-1.5 transition hover:bg-[rgba(96,165,250,.05)] ${

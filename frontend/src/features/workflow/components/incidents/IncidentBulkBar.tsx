@@ -15,7 +15,7 @@ export interface IncidentBulkBarProps {
   onClear: () => void;
 }
 
-export default function IncidentBulkBar({ count, pending, onAction, onClear }: IncidentBulkBarProps) {
+export default function IncidentBulkBar({ count, pending, onAction, onClear }: Readonly<IncidentBulkBarProps>) {
   if (count === 0) return null;
   return (
     <div className="mb-3 flex items-center gap-2 rounded-[13px] border border-[rgba(34,211,238,.35)] bg-[rgba(34,211,238,.08)] px-3 py-2 backdrop-blur-xs">

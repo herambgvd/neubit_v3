@@ -19,7 +19,7 @@ export interface CanvasToolControlsProps {
   onScaleChange?: (scale: number) => void;
 }
 
-export function CanvasToolControls({ activeTool, onToolSelect, canvasScale = 1, onScaleChange }: CanvasToolControlsProps) {
+export function CanvasToolControls({ activeTool, onToolSelect, canvasScale = 1, onScaleChange }: Readonly<CanvasToolControlsProps>) {
   const zoomIn = () => onScaleChange?.(Math.min(canvasScale * 1.2, 5));
   const zoomOut = () => onScaleChange?.(Math.max(canvasScale / 1.2, 0.1));
   const reset = () => onScaleChange?.(1);

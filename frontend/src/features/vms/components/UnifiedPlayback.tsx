@@ -191,7 +191,7 @@ export interface UnifiedPlaybackProps {
   onExportRange?: (req: ExportRequest) => void;
 }
 
-export default function UnifiedPlayback({ onExportRange }: UnifiedPlaybackProps) {
+export default function UnifiedPlayback({ onExportRange }: Readonly<UnifiedPlaybackProps>) {
   const [day, setDay] = useState(todayStr());
   const [sources, setSources] = useState<PlaybackTile[]>([]); // tile descriptors (loaded on Search)
   const [playing, setPlaying] = useState(false);
@@ -1255,7 +1255,7 @@ interface ToolBtnProps {
   disabled?: boolean;
 }
 
-function ToolBtn({ icon, label, title, onClick, disabled }: ToolBtnProps) {
+function ToolBtn({ icon, label, title, onClick, disabled }: Readonly<ToolBtnProps>) {
   return (
     <button
       type="button"

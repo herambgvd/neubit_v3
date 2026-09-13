@@ -34,12 +34,12 @@ function Meter({
   label,
   percent,
   sub,
-}: {
+}: Readonly<{
   icon: string;
   label: string;
   percent: number | null | undefined;
   sub?: string | null;
-}) {
+}>) {
   const p = Math.min(100, Math.max(0, Math.round(percent ?? 0)));
   const col = meterColor(p);
   return (
@@ -86,7 +86,7 @@ export interface HostStripProps {
   loading?: boolean;
 }
 
-export default function HostStrip({ health, loading }: HostStripProps) {
+export default function HostStrip({ health, loading }: Readonly<HostStripProps>) {
   const res = useQuery({
     queryKey: ["system-resources"],
     queryFn: () => api.get<SystemResourcesSnapshot>("/system/resources").then((r) => r.data),

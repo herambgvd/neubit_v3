@@ -23,7 +23,7 @@ export interface CardholdersTabProps {
   instanceId: string;
 }
 
-export default function CardholdersTab({ instanceId }: CardholdersTabProps) {
+export default function CardholdersTab({ instanceId }: Readonly<CardholdersTabProps>) {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");

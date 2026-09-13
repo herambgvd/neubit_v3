@@ -40,7 +40,7 @@ export default function RoleFormModal({
   onToggleGroup,
   onSave,
   saving,
-}: RoleFormModalProps) {
+}: Readonly<RoleFormModalProps>) {
   // Same submit-then-validate flow as the Add/Edit user dialogs.
   const [submitted, setSubmitted] = useState(false);
   useEffect(() => { if (!open) setSubmitted(false); }, [open]);

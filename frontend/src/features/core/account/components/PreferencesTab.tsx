@@ -9,7 +9,7 @@ import AppearanceCard from "./AppearanceCard";
 import { api, apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
-function PrefRow({ title, desc, children }: { title: ReactNode; desc?: ReactNode; children?: ReactNode }) {
+function PrefRow({ title, desc, children }: Readonly<{ title: ReactNode; desc?: ReactNode; children?: ReactNode }>) {
   return (
     <div className="flex items-center justify-between gap-4 py-3 border-b border-card-border last:border-0">
       <div className="min-w-0">

@@ -87,7 +87,7 @@ const PALETTE_NAV: PaletteNavItem[] = [
   { href: "/security", label: "Security", icon: Lock },
 ];
 
-export default function PanelLayout({ children }: { children: ReactNode }) {
+export default function PanelLayout({ children }: Readonly<{ children: ReactNode }>) {
   const pathname = usePathname();
   const { theme, toggle: toggleTheme } = useTheme();
   const { status } = useRequireSuperadmin();

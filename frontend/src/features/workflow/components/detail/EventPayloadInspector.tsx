@@ -20,7 +20,7 @@ export interface EventPayloadInspectorProps {
   incident?: InstancePublic | null;
 }
 
-export default function EventPayloadInspector({ payload, eventType, incident = null }: EventPayloadInspectorProps) {
+export default function EventPayloadInspector({ payload, eventType, incident = null }: Readonly<EventPayloadInspectorProps>) {
   const [open, setOpen] = useState(false);
   let json = "";
   // The fallback says so rather than printing the envelope's stringification:

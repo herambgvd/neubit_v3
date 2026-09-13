@@ -199,7 +199,7 @@ export default function ScrubBar({
   selectionStart = null,
   selectionEnd = null,
   disabled = false,
-}: ScrubBarProps) {
+}: Readonly<ScrubBarProps>) {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState(false);
   const [hover, setHover] = useState<{ pct: number; ms: number } | null>(null);

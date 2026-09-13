@@ -42,7 +42,7 @@ export default function WallCell({
   onAssign,
   onClear,
   onPick,
-}: WallCellProps) {
+}: Readonly<WallCellProps>) {
   const [dropActive, setDropActive] = useState(false);
 
   const onDragOver = (e: DragEvent<HTMLDivElement>) => {

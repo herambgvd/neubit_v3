@@ -25,7 +25,7 @@ export interface RulesPanelProps {
   webhookId: string;
 }
 
-export default function RulesPanel({ webhookId }: RulesPanelProps) {
+export default function RulesPanel({ webhookId }: Readonly<RulesPanelProps>) {
   const qc = useQueryClient();
   const key = ["ingest-event-rules", webhookId];
   const q = useQuery({ queryKey: key, queryFn: () => ingestApi.eventRules.list(webhookId) });
@@ -122,7 +122,7 @@ interface RuleRowProps {
   onDelete: () => void;
 }
 
-function RuleRow({ rule, onEdit, onToggle, onDelete }: RuleRowProps) {
+function RuleRow({ rule, onEdit, onToggle, onDelete }: Readonly<RuleRowProps>) {
   const condCount = (rule.match_conditions || []).length;
   const summary = summarizeConditions(rule.match_conditions);
   return (

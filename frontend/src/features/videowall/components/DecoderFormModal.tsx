@@ -45,7 +45,7 @@ export default function DecoderFormModal({
   onClose,
   onSubmit,
   busy,
-}: DecoderFormModalProps) {
+}: Readonly<DecoderFormModalProps>) {
   const editing = !!decoder;
   const [form, setForm] = useState<DecoderForm | null>(null);
 

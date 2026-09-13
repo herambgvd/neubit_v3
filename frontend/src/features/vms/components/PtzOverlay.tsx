@@ -66,7 +66,7 @@ export interface PtzOverlayProps {
   canControl: boolean;
 }
 
-export default function PtzOverlay({ nodeId, cameraId, canControl }: PtzOverlayProps) {
+export default function PtzOverlay({ nodeId, cameraId, canControl }: Readonly<PtzOverlayProps>) {
   const qc = useQueryClient();
   const [showPatrol, setShowPatrol] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -419,7 +419,7 @@ interface PanTiltPadProps {
 }
 
 // 3×3 direction pad; the center is a stop button.
-function PanTiltPad({ holdProps, startPanTilt, onCenterStop }: PanTiltPadProps) {
+function PanTiltPad({ holdProps, startPanTilt, onCenterStop }: Readonly<PanTiltPadProps>) {
   const cell = (dir: PadDir | null, icon = "", rotate = "") =>
     dir ? (
       <button
@@ -462,7 +462,7 @@ interface HoldGroupProps {
   holdProps: HoldPropsFn;
 }
 
-function HoldGroup({ label, buttons, holdProps }: HoldGroupProps) {
+function HoldGroup({ label, buttons, holdProps }: Readonly<HoldGroupProps>) {
   return (
     <div className="flex items-center gap-1">
       <span className="w-9 text-right text-[10px] font-semibold uppercase tracking-wide text-white/45">
@@ -495,7 +495,7 @@ interface PatrolPanelProps {
 // The recorder's ONE host-driven patrol, not a list. It shows what the recorder
 // will actually do — how many stops, whether it is running, and why it cannot run
 // if it cannot — instead of a roster of patrols the device has never heard of.
-function PatrolPanel({ patrol, loading, canControl, onOperate, onEdit, onClose }: PatrolPanelProps) {
+function PatrolPanel({ patrol, loading, canControl, onOperate, onEdit, onClose }: Readonly<PatrolPanelProps>) {
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const onDoc = (e: globalThis.MouseEvent) => {
@@ -566,7 +566,7 @@ interface PanelButtonProps {
   disabled?: boolean;
 }
 
-function PanelButton({ icon, label, onClick, disabled }: PanelButtonProps) {
+function PanelButton({ icon, label, onClick, disabled }: Readonly<PanelButtonProps>) {
   return (
     <button
       type="button"

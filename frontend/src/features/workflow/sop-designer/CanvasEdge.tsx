@@ -16,7 +16,7 @@ export interface CanvasEdgeProps {
   onEdit: () => void;
 }
 
-export default function CanvasEdge({ from, to, label, selected, onSelect, onEdit }: CanvasEdgeProps) {
+export default function CanvasEdge({ from, to, label, selected, onSelect, onEdit }: Readonly<CanvasEdgeProps>) {
   const { a, b, c1, c2 } = edgePath(from, to);
   const d = `M ${a.x} ${a.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${b.x} ${b.y}`;
   const mid = bezierPoint(a, c1, c2, b, 0.5);
@@ -63,7 +63,7 @@ export interface PendingEdgeProps {
   to: Point;
 }
 
-export function PendingEdge({ from, to }: PendingEdgeProps) {
+export function PendingEdge({ from, to }: Readonly<PendingEdgeProps>) {
   const a = nodeCenter(from);
   const dx = to.x - a.x;
   const dy = to.y - a.y;

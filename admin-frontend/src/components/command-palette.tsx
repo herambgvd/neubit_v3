@@ -76,7 +76,7 @@ export function CommandPalette({
   onOpenChange,
   navItems = [],
   actions = [],
-}: CommandPaletteProps) {
+}: Readonly<CommandPaletteProps>) {
   // Radix unmounts the portal when closed, so the body below holds all of the
   // palette's state: every open starts from a blank query with the first row
   // selected, without an effect resetting anything.
@@ -94,10 +94,10 @@ function PaletteBody({
   onOpenChange,
   navItems,
   actions,
-}: Omit<CommandPaletteProps, "open"> & {
+}: Readonly<Omit<CommandPaletteProps, "open"> & {
   navItems: PaletteNavItem[];
   actions: PaletteAction[];
-}) {
+}>) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -308,7 +308,7 @@ function PaletteBody({
   );
 }
 
-function Kbd({ children }: { children?: ReactNode }) {
+function Kbd({ children }: Readonly<{ children?: ReactNode }>) {
   return (
     <kbd className="inline-flex h-4 min-w-4 items-center justify-center rounded border border-card-border bg-hover px-1 font-mono text-[10px] text-muted">
       {children}

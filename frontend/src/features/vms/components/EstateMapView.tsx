@@ -75,7 +75,7 @@ export function cameraOps(camerasAt: (siteId: string) => EstateCamera[], siteId:
   };
 }
 
-export default function EstateMapView({ cameras = [], onPick }: EstateMapViewProps) {
+export default function EstateMapView({ cameras = [], onPick }: Readonly<EstateMapViewProps>) {
   const sitesQ = useQuery({
     queryKey: ["map-sites"],
     queryFn: () => sitesApi.list({ limit: 200 }),

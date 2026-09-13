@@ -52,7 +52,7 @@ const ADDRESS_PARTS: [keyof GeocodeAddress, string][] = [
   ["country", "country"],
 ];
 
-export default function GeocodeButton({ apiKey, address, onResult }: GeocodeButtonProps) {
+export default function GeocodeButton({ apiKey, address, onResult }: Readonly<GeocodeButtonProps>) {
   // Same loader id as the Sites Map so the script is shared, never injected twice.
   const { isLoaded, loadError } = useJsApiLoader({ googleMapsApiKey: apiKey, id: "neubit-google-map" });
   const [busy, setBusy] = useState(false);

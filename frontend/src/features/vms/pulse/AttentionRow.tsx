@@ -31,7 +31,7 @@ export interface AttentionRowProps {
   onSelect?: () => void;
 }
 
-export default function AttentionRow({ item, selected, onSelect }: AttentionRowProps) {
+export default function AttentionRow({ item, selected, onSelect }: Readonly<AttentionRowProps>) {
   const tone = SEVERITY_TONE[item.severity] ?? "idle";
   const body = (
     <>

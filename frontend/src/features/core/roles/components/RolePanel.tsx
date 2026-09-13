@@ -13,7 +13,7 @@ export interface RolePanelProps {
   onClone: () => void;
 }
 
-export default function RolePanel({ role, groups, canManage, onClone }: RolePanelProps) {
+export default function RolePanel({ role, groups, canManage, onClone }: Readonly<RolePanelProps>) {
   const granted = new Set<string>(role.permissions || []);
   const all = granted.has("*");
   const allPerms = Object.values(groups).flat();

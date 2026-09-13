@@ -62,7 +62,7 @@ describe("Providers", () => {
       return respond(config, { app_name: "NeuBit" });
     };
     const { useQuery } = await import("@tanstack/react-query");
-    function Branding({ testId }: { testId: string }) {
+    function Branding({ testId }: Readonly<{ testId: string }>) {
       const { data } = useQuery({
         queryKey: ["smoke-branding"],
         queryFn: () => api.get("/branding").then((r) => r.data as { app_name: string }),

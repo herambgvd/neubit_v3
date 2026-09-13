@@ -149,7 +149,7 @@ export default function PlaybackPlayer({
   onClock,
   onExportRange,
   className = "",
-}: PlaybackPlayerProps) {
+}: Readonly<PlaybackPlayerProps>) {
   // When opened via a deep-link seek, start on that instant's day so its window
   // (and coverage) load; else today.
   const initialDay = useMemo(() => {
@@ -1142,7 +1142,7 @@ interface CtrlBtnProps {
   plain?: boolean;
 }
 
-function CtrlBtn({ icon, title, onClick, disabled, primary, plain }: CtrlBtnProps) {
+function CtrlBtn({ icon, title, onClick, disabled, primary, plain }: Readonly<CtrlBtnProps>) {
   const base =
     "inline-flex h-8 w-8 items-center justify-center rounded-lg transition disabled:opacity-40 disabled:pointer-events-none";
   const skin = primary

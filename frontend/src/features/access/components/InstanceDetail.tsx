@@ -39,7 +39,7 @@ export interface InstanceDetailProps {
   sites?: SitePublic[] | null;
 }
 
-export default function InstanceDetail({ instanceId, sites }: InstanceDetailProps) {
+export default function InstanceDetail({ instanceId, sites }: Readonly<InstanceDetailProps>) {
   const [activeTab, setActiveTab] = useState("events");
   const [copied, setCopied] = useState(false);
 
@@ -152,7 +152,7 @@ interface InfoCellProps {
   value: ReactNode;
 }
 
-function InfoCell({ label, value }: InfoCellProps) {
+function InfoCell({ label, value }: Readonly<InfoCellProps>) {
   return (
     <div>
       <div className="mb-0.5 text-[9px] uppercase tracking-wider text-muted/70">{label}</div>

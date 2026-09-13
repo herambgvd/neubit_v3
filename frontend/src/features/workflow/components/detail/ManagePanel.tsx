@@ -26,7 +26,7 @@ export default function ManagePanel({
   transitionPending,
   sopLoading,
   onRunTransition,
-}: ManagePanelProps) {
+}: Readonly<ManagePanelProps>) {
   return (
     <aside className="space-y-4">
       <div className="rounded-xl border border-card-border bg-card p-5">

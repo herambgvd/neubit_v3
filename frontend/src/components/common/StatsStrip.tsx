@@ -25,7 +25,7 @@ export interface StatsStripProps<K extends string = string> {
   className?: string;
 }
 
-export function StatsStrip<K extends string = string>({ stats = [], active, onSelect, className = "" }: StatsStripProps<K>) {
+export function StatsStrip<K extends string = string>({ stats = [], active, onSelect, className = "" }: Readonly<StatsStripProps<K>>) {
   return (
     <div className={`grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6 ${className}`}>
       {stats.map((s) => {

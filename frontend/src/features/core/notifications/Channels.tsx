@@ -23,7 +23,7 @@ import { ChannelCard } from "./components/ChannelCard";
  * `break-inside-avoid` on each card is what keeps a card whole; without it the
  * browser will split one across the column boundary mid-field.
  */
-export default function ChannelsPage({ children }: { children?: ReactNode }) {
+export default function ChannelsPage({ children }: Readonly<{ children?: ReactNode }>) {
   const channels = useQuery({
     queryKey: ["messaging-channels"],
     queryFn: () => api.get<ChannelOut[]>("/messaging/channels").then((r) => r.data),

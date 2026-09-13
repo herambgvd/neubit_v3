@@ -262,13 +262,13 @@ function ModuleModal({
   open,
   onOpenChange,
   onSaved,
-}: {
+}: Readonly<{
   /** Omitted to create; supplied to edit that module. */
   module?: PlatformModule | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
-}) {
+}>) {
   const isEdit = !!module;
   const form = useAdminForm(moduleSchema, {
     key: module?.key || "",

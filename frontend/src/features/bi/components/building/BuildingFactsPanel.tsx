@@ -50,7 +50,7 @@ function numOrNull(v: string | number | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function Stat({ label, value, sub }: { label: ReactNode; value: ReactNode; sub?: ReactNode }) {
+function Stat({ label, value, sub }: Readonly<{ label: ReactNode; value: ReactNode; sub?: ReactNode }>) {
   return (
     <div className="rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2">
       <p className="text-[10px] font-semibold uppercase tracking-[1.4px] text-nb-faint">{label}</p>
@@ -60,7 +60,7 @@ function Stat({ label, value, sub }: { label: ReactNode; value: ReactNode; sub?:
   );
 }
 
-export default function BuildingFactsPanel({ site }: { site: SitePublic }) {
+export default function BuildingFactsPanel({ site }: Readonly<{ site: SitePublic }>) {
   const { can } = useAuth();
   const qc = useQueryClient();
   const editable = can("sites.update");

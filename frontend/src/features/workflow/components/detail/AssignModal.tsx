@@ -30,7 +30,7 @@ export interface AssignModalProps {
   onAssigned?: () => void;
 }
 
-export default function AssignModal({ open, onClose, instanceId, currentAssigneeId, onAssigned }: AssignModalProps) {
+export default function AssignModal({ open, onClose, instanceId, currentAssigneeId, onAssigned }: Readonly<AssignModalProps>) {
   const qc = useQueryClient();
   const [selected, setSelected] = useState(currentAssigneeId ?? "");
   const [search, setSearch] = useState("");

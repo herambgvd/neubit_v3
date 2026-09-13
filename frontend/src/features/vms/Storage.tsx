@@ -266,7 +266,7 @@ export default function StoragePage() {
 }
 
 // ── Right pane: one node's storage, read-only ───────────────────────────────
-function NodeStorageDetail({ node, nvrs }: { node: FederationNode; nvrs: UpstreamNvrRef[] }) {
+function NodeStorageDetail({ node, nvrs }: Readonly<{ node: FederationNode; nvrs: UpstreamNvrRef[] }>) {
   const reachableOffline = node.status !== "online";
 
   const usageQ = useQuery({
@@ -432,7 +432,7 @@ function NodeStorageDetail({ node, nvrs }: { node: FederationNode; nvrs: Upstrea
 }
 
 // ── RAID ────────────────────────────────────────────────────────────────────
-function RaidSection({ query }: { query: UseQueryResult<NodeRaidStatus> }) {
+function RaidSection({ query }: Readonly<{ query: UseQueryResult<NodeRaidStatus> }>) {
   if (query.isLoading) return <InlineLoading />;
   if (query.isError) return <InlineError error={query.error} fallback="Failed to load RAID status" />;
 
@@ -458,7 +458,7 @@ function RaidSection({ query }: { query: UseQueryResult<NodeRaidStatus> }) {
   );
 }
 
-function RaidArrayCard({ arr }: { arr: NodeRaidArray }) {
+function RaidArrayCard({ arr }: Readonly<{ arr: NodeRaidArray }>) {
   const h = RAID_HEALTH[arr.health ?? "unknown"] || RAID_HEALTH.unknown;
   const alarm = arr.health === "degraded" || arr.health === "failed";
   const pct = arr.rebuild_percent;
@@ -512,7 +512,7 @@ function RaidArrayCard({ arr }: { arr: NodeRaidArray }) {
 }
 
 // ── Pool card (read-only) ───────────────────────────────────────────────────
-function PoolCard({ pool }: { pool: NodeStoragePool }) {
+function PoolCard({ pool }: Readonly<{ pool: NodeStoragePool }>) {
   const kind = POOL_KIND[pool.kind ?? ""] || { label: pool.kind || "Pool", icon: "heroicons-outline:server" };
   const u = (pool.usage || {}) as NodeDiskRow;
   const cap = u.total_bytes ?? u.capacity_bytes ?? pool.max_size_bytes ?? 0;
@@ -554,7 +554,7 @@ function PoolCard({ pool }: { pool: NodeStoragePool }) {
 const fmtAge = (h: number | null | undefined) =>
   h == null ? "—" : h >= 24 ? `${Math.round(h / 24)}d` : `${h}h`;
 
-function TierRuleRow({ rule, poolNames }: { rule: NodeTierRuleRow; poolNames: Record<string, string> }) {
+function TierRuleRow({ rule, poolNames }: Readonly<{ rule: NodeTierRuleRow; poolNames: Record<string, string> }>) {
   const src = poolNames[rule.source_pool_id ?? ""] || rule.source_pool_name || rule.source || "—";
   const dst = poolNames[rule.target_pool_id ?? ""] || rule.target_pool_name || rule.target || "—";
   const hours = rule.after_age_hours ?? rule.after_hours ?? rule.hours;
@@ -573,7 +573,7 @@ function TierRuleRow({ rule, poolNames }: { rule: NodeTierRuleRow; poolNames: Re
 }
 
 // ── Upstream 3rd-party NVR storage ──────────────────────────────────────────
-function UpstreamNvrCard({ nodeId, nvr }: { nodeId: string; nvr: UpstreamNvrRef }) {
+function UpstreamNvrCard({ nodeId, nvr }: Readonly<{ nodeId: string; nvr: UpstreamNvrRef }>) {
   const q = useQuery({
     queryKey: ["vms-node-upstream-nvr-storage", nodeId, nvr.id],
     queryFn: () => vms.federation.storage.upstreamNvr(nodeId, nvr.id),
@@ -637,11 +637,11 @@ function SectionLabel({
   children,
   count,
   className = "",
-}: {
+}: Readonly<{
   children: React.ReactNode;
   count?: number;
   className?: string;
-}) {
+}>) {
   return (
     <div className={`mb-2 flex items-center gap-2 ${className}`}>
       <span className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">{children}</span>
@@ -662,11 +662,11 @@ function InlineLoading() {
   );
 }
 
-function InlineError({ error, fallback }: { error: unknown; fallback: string }) {
+function InlineError({ error, fallback }: Readonly<{ error: unknown; fallback: string }>) {
   return <p className="px-1 py-3 text-xs text-nb-crit">{apiError(error, fallback)}</p>;
 }
 
-function EmptyNote({ children }: { children: React.ReactNode }) {
+function EmptyNote({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <p className="rounded-[10px] border border-dashed border-nb-line px-3 py-4 text-center text-xs text-nb-faint">
       {children}

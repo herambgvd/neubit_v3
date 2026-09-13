@@ -13,7 +13,7 @@ const ThemeContext = createContext(THEME);
 // user-facing switch. This provider stays so the `useTheme()` call sites keep
 // working (and so a stale `theme: "light"` left in localStorage by an older build
 // can never resurrect the light palette).
-export function ThemeProvider({ children }: { children?: ReactNode }) {
+export function ThemeProvider({ children }: Readonly<{ children?: ReactNode }>) {
   useEffect(() => {
     document.documentElement.classList.add("dark");
     try {

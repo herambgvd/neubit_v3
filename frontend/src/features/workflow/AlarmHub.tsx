@@ -66,10 +66,10 @@ export function hubOrder(rows: InstancePublic[]): InstancePublic[] {
 function Cell({
   children,
   className = "",
-}: {
+}: Readonly<{
   children: React.ReactNode;
   className?: string;
-}) {
+}>) {
   return (
     <div className={`relative overflow-hidden rounded-lg border border-card-border bg-card ${className}`}>
       {children}
@@ -78,7 +78,7 @@ function Cell({
 }
 
 /** A neighbouring camera, live and small. */
-function NeighbourCell({ camera }: { camera: EstateCamera }) {
+function NeighbourCell({ camera }: Readonly<{ camera: EstateCamera }>) {
   const source = nodeLiveSource(camera);
   const offline = String(camera.status).toLowerCase() !== "online";
   return (

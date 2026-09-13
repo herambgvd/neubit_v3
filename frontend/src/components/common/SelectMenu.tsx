@@ -71,7 +71,7 @@ export default function SelectMenu({
   id,
   name,
   ariaLabel,
-}: SelectMenuProps) {
+}: Readonly<SelectMenuProps>) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<PanelPosition | null>(null);
   const [activeIdx, setActiveIdx] = useState(-1);

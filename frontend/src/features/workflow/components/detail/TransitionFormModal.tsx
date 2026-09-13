@@ -21,7 +21,7 @@ export interface TransitionFormModalProps {
   onSubmit: (values: FormValues) => void;
 }
 
-export default function TransitionFormModal({ transition, states, formList, pending, onCancel, onSubmit }: TransitionFormModalProps) {
+export default function TransitionFormModal({ transition, states, formList, pending, onCancel, onSubmit }: Readonly<TransitionFormModalProps>) {
   // Resolve the field list from the referenced form definition.
   const formRef = transition.form_id;
   const referenced = formList.find((f) => f.form_id === formRef);

@@ -11,7 +11,7 @@ export interface InputProps extends ComponentPropsWithoutRef<"input"> {
   invalid?: boolean;
 }
 
-export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
+export const Input = forwardRef<HTMLInputElement, Readonly<InputProps>>(function Input(
   { className, invalid = false, ...props },
   ref
 ) {

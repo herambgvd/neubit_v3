@@ -32,7 +32,7 @@ export interface WebhookEventsPanelProps {
   hookId: string;
 }
 
-export default function WebhookEventsPanel({ hookId }: WebhookEventsPanelProps) {
+export default function WebhookEventsPanel({ hookId }: Readonly<WebhookEventsPanelProps>) {
   const qc = useQueryClient();
   const key = ["ingest-event-logs", hookId];
   const q = useQuery({ queryKey: key, queryFn: () => ingestApi.eventLogs.list({ webhook_id: hookId, limit: 30 }) });

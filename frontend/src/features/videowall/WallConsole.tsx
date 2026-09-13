@@ -52,7 +52,7 @@ interface CellTarget {
   cellIndex: number;
 }
 
-export default function WallConsole({ wallId: wallIdParam }: WallConsoleProps) {
+export default function WallConsole({ wallId: wallIdParam }: Readonly<WallConsoleProps>) {
   // `[id]` is not a catch-all, so the array form never actually occurs; "" for a
   // missing id keeps every `enabled: !!wallId` gate reading exactly as before.
   const wallId = (Array.isArray(wallIdParam) ? wallIdParam[0] : wallIdParam) ?? "";
@@ -393,7 +393,7 @@ interface PresetMenuProps {
   wallId?: string;
 }
 
-function PresetMenu({ presets, onApply, onSave }: PresetMenuProps) {
+function PresetMenu({ presets, onApply, onSave }: Readonly<PresetMenuProps>) {
   const [open, setOpen] = useState(false);
   return (
     <div className="relative">
@@ -461,7 +461,7 @@ interface TourMenuProps {
   onToggle: (tour: TourPublic) => void;
 }
 
-function TourMenu({ tours, onToggle }: TourMenuProps) {
+function TourMenu({ tours, onToggle }: Readonly<TourMenuProps>) {
   const [open, setOpen] = useState(false);
   const running = tours.find((t) => t.is_running);
   return (

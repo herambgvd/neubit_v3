@@ -100,7 +100,7 @@ export default function H265WebPlayer({
   onReady,
   onError,
   className = "",
-}: H265WebPlayerProps) {
+}: Readonly<H265WebPlayerProps>) {
   const reactId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const containerId = `h265-${reactId}`;
   const playerRef = useRef<H265Player | null>(null);

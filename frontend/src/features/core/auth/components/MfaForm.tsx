@@ -15,7 +15,7 @@ export interface MfaFormProps {
   onBack: () => void;
 }
 
-export function MfaForm({ code, setCode, error, busy, onSubmit, onBack }: MfaFormProps) {
+export function MfaForm({ code, setCode, error, busy, onSubmit, onBack }: Readonly<MfaFormProps>) {
   return (
     <div>
       <h2 className="text-[19px] font-[650] tracking-[0.2px] text-[#f2f6ff]">Verify it&apos;s you</h2>

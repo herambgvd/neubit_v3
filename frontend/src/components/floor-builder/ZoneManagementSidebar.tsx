@@ -49,7 +49,7 @@ interface ZoneRowProps {
   onDelete: () => void;
 }
 
-function ZoneRow({ zone, isSelected, expanded, onToggle, onSelect, onEdit, onDelete }: ZoneRowProps) {
+function ZoneRow({ zone, isSelected, expanded, onToggle, onSelect, onEdit, onDelete }: Readonly<ZoneRowProps>) {
   const threat = THREAT_LEVELS.find((t) => t.value === zone.threat_level);
   return (
     <div
@@ -132,7 +132,7 @@ interface ZonePropertiesModalProps {
   onSave?: (patch: ZonePatch) => void | Promise<void>;
 }
 
-function ZonePropertiesModal({ open, onClose, zone, onSave }: ZonePropertiesModalProps) {
+function ZonePropertiesModal({ open, onClose, zone, onSave }: Readonly<ZonePropertiesModalProps>) {
   const [form, setForm] = useState<ZoneForm>(() => buildZoneForm(zone));
   const [saving, setSaving] = useState(false);
 
@@ -262,7 +262,7 @@ export function ZoneManagementSidebar({
   onZoneUpdate,
   onZoneDelete,
   onStartDrawing,
-}: ZoneManagementSidebarProps) {
+}: Readonly<ZoneManagementSidebarProps>) {
   const [expanded, setExpanded] = useState(() => new Set<string>());
   const [editing, setEditing] = useState<EditorZone | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);

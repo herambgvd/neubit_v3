@@ -23,7 +23,7 @@ export default function UpdateLicensePanel({
   setToken,
   onApply,
   applying,
-}: UpdateLicensePanelProps) {
+}: Readonly<UpdateLicensePanelProps>) {
   const [open, setOpen] = useState(false);
 
   return (

@@ -67,12 +67,12 @@ export default function CorrelationMatrix({
   pairs,
   selected,
   onSelect,
-}: {
+}: Readonly<{
   series: CorrSeries[];
   pairs: CorrPair[];
   selected?: [string, string] | null;
   onSelect?: (a: string, b: string) => void;
-}) {
+}>) {
   // Canonical key: the pair must hash the same either way round. Any consistent
   // order does the job, so the comparator is here to say the choice was made
   // rather than inherited from a default.

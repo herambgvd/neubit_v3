@@ -23,7 +23,7 @@ export default function TemplateListItem({
   onSelect,
   onRemove,
   busy,
-}: TemplateListItemProps) {
+}: Readonly<TemplateListItemProps>) {
   const meta = TEMPLATE_META[template.name];
   const builtin = template.name in TEMPLATE_META;
 

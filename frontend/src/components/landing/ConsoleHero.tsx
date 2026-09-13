@@ -51,7 +51,7 @@ const CAM_TILES = [
   "ROOF-01", "CAM-22", "GATE-01", "BAY-09",
 ];
 
-function VideoTile({ label, index, time }: { label: string; index: number; time: string }) {
+function VideoTile({ label, index, time }: Readonly<{ label: string; index: number; time: string }>) {
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.92 }}
@@ -112,7 +112,7 @@ function VideoTile({ label, index, time }: { label: string; index: number; time:
   );
 }
 
-function VideoWall({ time }: { time: Date | null }) {
+function VideoWall({ time }: Readonly<{ time: Date | null }>) {
   return (
     <div className="rounded-md border border-white/[0.07] bg-white/[0.015] p-2">
       <div className="mb-2 flex items-center justify-between px-0.5">
@@ -156,7 +156,7 @@ const SEV_COLOR = {
 
 type Severity = keyof typeof SEV_COLOR;
 
-function EventFeed({ time }: { time: Date | null }) {
+function EventFeed({ time }: Readonly<{ time: Date | null }>) {
   const [events, setEvents] = useState(() =>
     EVENT_POOL.slice(0, 5).map((e, i) => ({ ...e, id: i, t: fmtTime(time) }))
   );
@@ -228,7 +228,7 @@ function EventFeed({ time }: { time: Date | null }) {
 /* ------------------------------------------------------------------ */
 /* KPI counters — count up on view                                     */
 /* ------------------------------------------------------------------ */
-function CountUp({ to, format }: { to: number; format?: (v: number) => ReactNode }) {
+function CountUp({ to, format }: Readonly<{ to: number; format?: (v: number) => ReactNode }>) {
   const ref = useRef<HTMLSpanElement>(null);
   const inView = useInView(ref, { once: true, margin: "-40px" });
   const mv = useMotionValue(0);
@@ -366,7 +366,7 @@ function Radar() {
 /* ------------------------------------------------------------------ */
 /* Status bar                                                          */
 /* ------------------------------------------------------------------ */
-function StatusBar({ time }: { time: Date | null }) {
+function StatusBar({ time }: Readonly<{ time: Date | null }>) {
   return (
     <div className="flex items-center justify-between border-b border-white/[0.07] px-3 py-2">
       <div className="flex items-center gap-2.5">

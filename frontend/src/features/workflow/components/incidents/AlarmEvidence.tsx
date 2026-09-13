@@ -51,7 +51,7 @@ export interface EvidencePictureProps {
   clock?: ReturnType<typeof createClock> | null;
 }
 
-function Blank({ icon, title, body }: { icon: string; title: string; body?: string }) {
+function Blank({ icon, title, body }: Readonly<{ icon: string; title: string; body?: string }>) {
   return (
     <div className="flex h-full min-h-0 flex-col items-center justify-center gap-1.5 p-5 text-center">
       <Icon icon={icon} className="text-2xl text-muted opacity-40" />
@@ -74,7 +74,7 @@ export function EvidencePicture({
   playing = true,
   speed = 1,
   clock = null,
-}: EvidencePictureProps) {
+}: Readonly<EvidencePictureProps>) {
   const nodeId = (camera as { node_id?: string } | null)?.node_id ?? null;
   const realId = (camera as { real_id?: string } | null)?.real_id ?? null;
   const liveSource = useNodeLiveSource(camera);
@@ -188,11 +188,11 @@ export function RecordingWithTransport({
   incident,
   camera,
   onFootage,
-}: {
+}: Readonly<{
   incident: InstancePublic | null;
   camera: EstateCamera | null;
   onFootage?: (present: boolean) => void;
-}) {
+}>) {
   const win = incident ? evidenceWindow(incident) : null;
   // useState, not useRef: the clock is READ during render (the transport
   // subscribes to it), and a ref read in render is the thing the compiler
@@ -277,7 +277,7 @@ export default function AlarmEvidenceCard({
   kind,
   onPromote,
   onFootage,
-}: AlarmEvidenceCardProps) {
+}: Readonly<AlarmEvidenceCardProps>) {
   const live = kind === "live";
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card">

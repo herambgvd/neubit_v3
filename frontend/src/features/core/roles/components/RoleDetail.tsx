@@ -18,7 +18,7 @@ export interface RoleDetailProps {
   onDelete: () => void;
 }
 
-export default function RoleDetail({ role, groups, catalogLoading, canManage, onEdit, onDelete }: RoleDetailProps) {
+export default function RoleDetail({ role, groups, catalogLoading, canManage, onEdit, onDelete }: Readonly<RoleDetailProps>) {
   const granted = new Set<string>(role.permissions || []);
   const all = granted.has("*");
 

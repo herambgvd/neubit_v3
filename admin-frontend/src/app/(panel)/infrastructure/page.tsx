@@ -126,7 +126,7 @@ function stateTone(container: Container): BadgeTone {
   return "neutral";
 }
 
-function StateBadge({ container }: { container: Container }) {
+function StateBadge({ container }: Readonly<{ container: Container }>) {
   const tone = stateTone(container);
   const label = container.state
     ? container.state.charAt(0).toUpperCase() + container.state.slice(1)
@@ -140,7 +140,7 @@ function StateBadge({ container }: { container: Container }) {
   );
 }
 
-function MemBar({ used, limit }: { used: number | null | undefined; limit: number | null | undefined }) {
+function MemBar({ used, limit }: Readonly<{ used: number | null | undefined; limit: number | null | undefined }>) {
   const pct = (() => {
     const u = Number(used);
     const l = Number(limit);
@@ -529,7 +529,7 @@ function lineTone(line: string): string {
   return "text-foreground";
 }
 
-function LogsDrawer({ name, onClose }: { name: string; onClose: () => void }) {
+function LogsDrawer({ name, onClose }: Readonly<{ name: string; onClose: () => void }>) {
   const [tail, setTail] = useState(200);
   const [auto, setAuto] = useState(true);
   const [filter, setFilter] = useState("");

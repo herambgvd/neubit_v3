@@ -34,7 +34,7 @@ import { apiError } from "@/lib/api";
 import { dashforge, type DashForgeSession } from "./api";
 import { REMINT_MARGIN_MS, REMINT_MIN_MS } from "./constants";
 
-export default function EmbedView({ id, name }: { id: string; name?: string }) {
+export default function EmbedView({ id, name }: Readonly<{ id: string; name?: string }>) {
   const [session, setSession] = useState<DashForgeSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Bumped to force a re-mint. A counter rather than a boolean so a second

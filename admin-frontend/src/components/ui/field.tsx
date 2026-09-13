@@ -33,7 +33,7 @@ export interface FieldProps {
  * cannot be associated this way; give those an explicit `htmlFor` and set the
  * matching id on the trigger.
  */
-export function Field({ label, htmlFor, error, hint, required, className, children }: FieldProps) {
+export function Field({ label, htmlFor, error, hint, required, className, children }: Readonly<FieldProps>) {
   const generatedId = useId();
   const controlId = htmlFor ?? generatedId;
   const control =
@@ -70,7 +70,7 @@ export function Label({
   htmlFor,
   children,
   ...props
-}: ComponentPropsWithoutRef<"label"> & { htmlFor: string; children: ReactNode }) {
+}: Readonly<ComponentPropsWithoutRef<"label"> & { htmlFor: string; children: ReactNode }>) {
   return (
     <label
       htmlFor={htmlFor}

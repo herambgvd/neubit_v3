@@ -26,6 +26,15 @@ const config = [
     rules: {
       // Tracks tsconfig `strict`: while implicit any is still allowed by the
       // compiler, an explicit `any` is a marker, not yet a failure.
+      // Props are a component's input, never its scratch space. An error rather
+      // than a warning because the count went to zero once and a rule is what
+      // keeps it there — and because the fix is `Readonly<Props>` at the
+      // parameter, which costs nothing to write.
+      //
+      // NOT the rule's own autofix, which marks every member of the named props
+      // interface instead: that changes the type for every other consumer,
+      // including code that builds or mutates one.
+      "react/prefer-read-only-props": "error",
       "@typescript-eslint/no-explicit-any": "warn",
       // ~100 components seed local state from props/server data inside an effect
       // ("load this record into the edit form", "reset when the modal opens").

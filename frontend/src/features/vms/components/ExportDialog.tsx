@@ -65,7 +65,7 @@ export interface ExportDialogProps {
   range?: ExportRange | null;
 }
 
-export default function ExportDialog({ open, onClose, nodeId, cameraId, cameraName, range }: ExportDialogProps) {
+export default function ExportDialog({ open, onClose, nodeId, cameraId, cameraName, range }: Readonly<ExportDialogProps>) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [watermark, setWatermark] = useState(false);

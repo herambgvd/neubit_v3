@@ -17,7 +17,7 @@ export interface CloneUserModalProps {
 // Fast onboarding: clone a source user's role, status and site scope into a new
 // account. Only identity is entered here — the backend copies everything else and
 // never copies a password (the new user sets their own via the emailed invite).
-export default function CloneUserModal({ source, onClose, form, setForm, onClone, cloning }: CloneUserModalProps) {
+export default function CloneUserModal({ source, onClose, form, setForm, onClone, cloning }: Readonly<CloneUserModalProps>) {
   return (
     <Modal
       open={!!source}

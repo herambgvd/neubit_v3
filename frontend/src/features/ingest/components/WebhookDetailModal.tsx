@@ -39,7 +39,7 @@ export interface WebhookDetailModalProps {
   onChanged?: () => void;
 }
 
-export default function WebhookDetailModal({ webhook, onClose, onChanged }: WebhookDetailModalProps) {
+export default function WebhookDetailModal({ webhook, onClose, onChanged }: Readonly<WebhookDetailModalProps>) {
   const [tab, setTab] = useState<DetailTabKey>("overview");
   // The receiver URL, refreshed live after a rotate. It is built from the slug /
   // ingest_url the backend returns — there has never been a `token` field.
@@ -140,7 +140,7 @@ interface JsonBlockProps {
   empty: ReactNode;
 }
 
-function JsonBlock({ label, value, empty }: JsonBlockProps) {
+function JsonBlock({ label, value, empty }: Readonly<JsonBlockProps>) {
   const has = value && Object.keys(value).length > 0;
   return (
     <div>

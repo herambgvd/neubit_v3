@@ -21,7 +21,7 @@ export interface EventLivePaneProps {
   camera: EstateCamera | null;
 }
 
-export default function EventLivePane({ camera }: EventLivePaneProps) {
+export default function EventLivePane({ camera }: Readonly<EventLivePaneProps>) {
   const nodeId = (camera as { node_id?: string } | null)?.node_id ?? null;
   const realId = (camera as { real_id?: string } | null)?.real_id ?? null;
 

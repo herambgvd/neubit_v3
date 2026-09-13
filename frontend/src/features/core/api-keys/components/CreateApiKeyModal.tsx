@@ -19,7 +19,7 @@ export interface CreateApiKeyModalProps {
   creating: boolean;
 }
 
-export default function CreateApiKeyModal({ open, onClose, form, setForm, roleOptions, onCreate, creating }: CreateApiKeyModalProps) {
+export default function CreateApiKeyModal({ open, onClose, form, setForm, roleOptions, onCreate, creating }: Readonly<CreateApiKeyModalProps>) {
   return (
     <Modal
       open={open}

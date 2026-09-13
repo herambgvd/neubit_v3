@@ -12,7 +12,7 @@ export interface HealthBadgeProps {
   status: string | null | undefined;
 }
 
-export default function HealthBadge({ status }: HealthBadgeProps) {
+export default function HealthBadge({ status }: Readonly<HealthBadgeProps>) {
   const preset = (status ? HEALTH_PRESETS[status] : undefined) || HEALTH_PRESETS.unknown;
   return (
     <span

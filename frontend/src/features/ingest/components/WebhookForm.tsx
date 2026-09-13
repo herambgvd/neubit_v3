@@ -80,7 +80,7 @@ export interface WebhookFormProps {
   onSaved: () => void;
 }
 
-export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: WebhookFormProps) {
+export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: Readonly<WebhookFormProps>) {
   const isEdit = !!webhook;
   const [name, setName] = useState(webhook?.name || "");
   // The slug IS the last segment of the public receiver URL, and it is fixed at

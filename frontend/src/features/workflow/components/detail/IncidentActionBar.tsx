@@ -57,7 +57,7 @@ export default function IncidentActionBar({
   onStatusAction,
   onEscalate,
   onAssign,
-}: IncidentActionBarProps) {
+}: Readonly<IncidentActionBarProps>) {
   const inst = instance;
   const id = inst.instance_id;
   const status = inst.status;

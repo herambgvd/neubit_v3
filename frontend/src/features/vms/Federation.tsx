@@ -257,7 +257,7 @@ function EstateStrip({
   channelsCap,
   refused,
   loading,
-}: EstateStripProps) {
+}: Readonly<EstateStripProps>) {
   const cells: { label: string; value: string; tone?: string; title?: string }[] = [
     {
       label: "Recorders",

@@ -37,14 +37,14 @@ function ImageUpload({
   accept,
   busy,
   onPick,
-}: {
+}: Readonly<{
   label: string;
   url: string | null | undefined;
   alt: string;
   accept: string;
   busy: boolean;
   onPick: (file: File) => void;
-}) {
+}>) {
   const ref = useRef<HTMLInputElement>(null);
 
   function pick(e: ChangeEvent<HTMLInputElement>) {
@@ -86,7 +86,7 @@ export default function BrandingEditor({
   onUploadFavicon,
   uploadingLogo,
   uploadingFavicon,
-}: BrandingEditorProps) {
+}: Readonly<BrandingEditorProps>) {
   // A FRAGMENT, not a wrapping column. The three cards are direct children of the
   // page's column flow, so the browser can balance them against the preview
   // instead of stacking them in a fixed two-thirds column with the preview

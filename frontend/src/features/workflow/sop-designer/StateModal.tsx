@@ -36,7 +36,7 @@ export interface StateModalProps {
   onSaved: () => void;
 }
 
-export default function StateModal({ sopId, state, defaults, onClose, onSaved }: StateModalProps) {
+export default function StateModal({ sopId, state, defaults, onClose, onSaved }: Readonly<StateModalProps>) {
   const isEdit = !!state;
   const [name, setName] = useState(state?.name || "");
   const [description, setDescription] = useState(state?.description || "");

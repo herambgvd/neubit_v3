@@ -47,7 +47,7 @@ export function orderedSteps(states: StatePublic[]): StatePublic[] {
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 }
 
-export default function ProcedureSteps({ incident, onDone }: ProcedureStepsProps) {
+export default function ProcedureSteps({ incident, onDone }: Readonly<ProcedureStepsProps>) {
   const qc = useQueryClient();
   const [pendingNote, setPendingNote] = useState<TransitionPublic | null>(null);
   const [note, setNote] = useState("");

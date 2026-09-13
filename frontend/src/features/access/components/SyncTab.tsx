@@ -21,7 +21,7 @@ export interface SyncTabProps {
   instanceId: string;
 }
 
-export default function SyncTab({ instanceId }: SyncTabProps) {
+export default function SyncTab({ instanceId }: Readonly<SyncTabProps>) {
   const qc = useQueryClient();
   const [openJobs, setOpenJobs] = useState(() => new Set<string>());
 
@@ -107,7 +107,7 @@ interface JobRowProps {
   onToggle: () => void;
 }
 
-function JobRow({ job, open, onToggle }: JobRowProps) {
+function JobRow({ job, open, onToggle }: Readonly<JobRowProps>) {
   const s = String(job.status || "").toLowerCase();
   const isOk = s === "success" || s === "completed" || s === "succeeded";
   const isRunning = s === "running" || s === "pending";
@@ -168,7 +168,7 @@ interface KVProps {
   value: ReactNode;
 }
 
-function KV({ label, value }: KVProps) {
+function KV({ label, value }: Readonly<KVProps>) {
   return (
     <div>
       <div className="text-[9px] uppercase tracking-wider text-muted/70">{label}</div>
@@ -177,7 +177,7 @@ function KV({ label, value }: KVProps) {
   );
 }
 
-function CountsCell({ counts }: { counts: Record<string, SyncCollectionCounts> }) {
+function CountsCell({ counts }: Readonly<{ counts: Record<string, SyncCollectionCounts> }>) {
   const entries = Object.entries(counts || {});
   if (!entries.length) return <span className="text-[10px] text-muted/70">—</span>;
   return (
