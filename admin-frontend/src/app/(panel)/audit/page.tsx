@@ -1,11 +1,10 @@
 "use client";
 
-import { useMemo, type FormEvent } from "react";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ScrollText, Search } from "lucide-react";
 
-import type { ColumnDef } from "@tanstack/react-table";
+import type { CellContext, ColumnDef } from "@tanstack/react-table";
 
 import { adminApi, apiError } from "@/lib/api";
 import type { AuditEntry } from "@/lib/types";
@@ -34,6 +33,57 @@ function actionTone(action: string | null | undefined): BadgeTone {
   return "foreground";
 }
 
+/* Cells live at module scope so their component type is fixed for the life of
+   the module. Declared inside the page, each one would be a fresh type on every
+   render and React would tear down and rebuild every cell in the table. */
+
+type AuditCell = CellContext<AuditEntry, unknown>;
+
+function TimeCell({ row }: AuditCell) {
+  return <span className="whitespace-nowrap tabular-nums text-muted">{fmtTs(row.original.ts)}</span>;
+}
+
+function ActorCell({ row }: AuditCell) {
+  return (
+    <span className="font-medium text-foreground">
+      {row.original.actor_name || row.original.actor_email || "—"}
+    </span>
+  );
+}
+
+function ActionCell({ row }: AuditCell) {
+  return <Badge tone={actionTone(row.original.action)}>{row.original.action || "—"}</Badge>;
+}
+
+function TargetCell({ row }: AuditCell) {
+  if (!row.original.target_type && !row.original.target_id) {
+    return <span className="text-muted">—</span>;
+  }
+  return (
+    <span>
+      <span className="text-muted">{row.original.target_type || "—"}</span>
+      {row.original.target_id ? (
+        <span className="font-mono text-xs text-muted"> · {row.original.target_id}</span>
+      ) : null}
+    </span>
+  );
+}
+
+// Nothing here depends on page state, so the array itself is a constant too.
+const COLUMNS: ColumnDef<AuditEntry, unknown>[] = [
+  { accessorKey: "ts", header: "Time", cell: TimeCell },
+  {
+    // The row carries actor_name/actor_email (there is no flat `actor`
+    // field) — prefer the display name and fall back to the address.
+    accessorKey: "actor_email",
+    header: "Actor",
+    enableSorting: false,
+    cell: ActorCell,
+  },
+  { accessorKey: "action", header: "Action", enableSorting: false, cell: ActionCell },
+  { accessorKey: "target_type", header: "Target", enableSorting: false, cell: TargetCell },
+];
+
 export default function AuditPage() {
   const [tenantInput, setTenantInput] = useState("");
   const [tenantId, setTenantId] = useState("");
@@ -49,53 +99,6 @@ export default function AuditPage() {
   const total = data?.total ?? items.length;
   const pageSize = data?.page_size || items.length || 20;
   const pages = Math.max(1, Math.ceil(total / (pageSize || 20)));
-
-  const columns = useMemo<ColumnDef<AuditEntry, unknown>[]>(
-    () => [
-      {
-        accessorKey: "ts",
-        header: "Time",
-        cell: ({ row }) => (
-          <span className="whitespace-nowrap tabular-nums text-muted">{fmtTs(row.original.ts)}</span>
-        ),
-      },
-      {
-        // The row carries actor_name/actor_email (there is no flat `actor`
-        // field) — prefer the display name and fall back to the address.
-        accessorKey: "actor_email",
-        header: "Actor",
-        enableSorting: false,
-        cell: ({ row }) => (
-          <span className="font-medium text-foreground">
-            {row.original.actor_name || row.original.actor_email || "—"}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "action",
-        header: "Action",
-        enableSorting: false,
-        cell: ({ row }) => <Badge tone={actionTone(row.original.action)}>{row.original.action || "—"}</Badge>,
-      },
-      {
-        accessorKey: "target_type",
-        header: "Target",
-        enableSorting: false,
-        cell: ({ row }) =>
-          row.original.target_type || row.original.target_id ? (
-            <span>
-              <span className="text-muted">{row.original.target_type || "—"}</span>
-              {row.original.target_id ? (
-                <span className="font-mono text-xs text-muted"> · {row.original.target_id}</span>
-              ) : null}
-            </span>
-          ) : (
-            <span className="text-muted">—</span>
-          ),
-      },
-    ],
-    []
-  );
 
   function applyFilter(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -141,7 +144,7 @@ export default function AuditPage() {
       />
 
       <DataTable
-        columns={columns}
+        columns={COLUMNS}
         data={items}
         loading={isLoading}
         error={isError ? apiError(error, "Failed to load audit log") : null}

@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search, ShieldCheck, UserCheck, UserX, Users } from "lucide-react";
 import { toast } from "sonner";
 
-import type { ColumnDef } from "@tanstack/react-table";
+import type { CellContext, ColumnDef } from "@tanstack/react-table";
 
 import { adminApi, apiError } from "@/lib/api";
 import { pagedItems, pagedTotal } from "@/lib/paged";
@@ -30,6 +30,141 @@ function fmtDate(value: string | null | undefined): string {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+/* Cells live at module scope so their component type is fixed for the life of
+   the module. Declared inside the page, each one would be a fresh type on every
+   render and React would tear down and rebuild every cell in the table. */
+
+type UserCell = CellContext<AdminUser, unknown>;
+
+function UserIdentityCell({ row }: UserCell) {
+  const u = row.original;
+  const name = u.full_name || u.email;
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-hover text-xs font-semibold text-foreground">
+        {(name || "?").slice(0, 1).toUpperCase()}
+      </div>
+      <div className="min-w-0">
+        <div className="truncate font-medium text-foreground">{name}</div>
+        <div className="truncate text-xs text-muted">{u.email}</div>
+      </div>
+    </div>
+  );
+}
+
+function TenantCell({ row }: UserCell) {
+  const u = row.original;
+  if (u.is_superadmin && !u.tenant_id) {
+    return (
+      <Badge tone="accent">
+        <ShieldCheck className="h-3 w-3" /> Platform
+      </Badge>
+    );
+  }
+  if (!u.tenant_id) return <span className="text-muted">—</span>;
+  return (
+    <Link
+      href={`/tenants/${u.tenant_id}`}
+      onClick={(e) => e.stopPropagation()}
+      className="text-foreground transition hover:text-accent"
+    >
+      {u.tenant_name || "—"}
+      {u.tenant_slug && <span className="ml-1 font-mono text-xs text-muted">/{u.tenant_slug}</span>}
+    </Link>
+  );
+}
+
+function RoleCell({ row }: UserCell) {
+  return <span className="text-foreground">{row.original.role_name || "—"}</span>;
+}
+
+function StatusCell({ row }: UserCell) {
+  const u = row.original;
+  return (
+    <div className="flex items-center gap-1.5">
+      <Badge tone={u.is_active ? "success" : "neutral"} dot>
+        {u.is_active ? "Active" : "Disabled"}
+      </Badge>
+      {!u.email_verified && <Badge tone="warning">Unverified</Badge>}
+    </div>
+  );
+}
+
+function LastLoginCell({ row }: UserCell) {
+  return <span className="text-muted">{fmtDate(row.original.last_login_at)}</span>;
+}
+
+function ActionsHeader() {
+  return <span className="sr-only">Actions</span>;
+}
+
+function UserActionsCell({
+  user: u,
+  onDisable,
+  onEnable,
+  enabling,
+}: {
+  user: AdminUser;
+  onDisable: (u: AdminUser) => void;
+  onEnable: (id: string) => void;
+  enabling: boolean;
+}) {
+  if (u.is_superadmin) return null; // platform admins aren't toggled here
+  return u.is_active ? (
+    <div className="flex justify-end">
+      <Button
+        variant="outline"
+        size="sm"
+        className="hover:border-danger/40 hover:text-danger"
+        onClick={() => onDisable(u)}
+      >
+        <UserX className="h-3.5 w-3.5" /> Disable
+      </Button>
+    </div>
+  ) : (
+    <div className="flex justify-end">
+      <Button
+        variant="outline"
+        size="sm"
+        className="hover:border-success/40 hover:text-success"
+        loading={enabling}
+        onClick={() => onEnable(u.id)}
+      >
+        <UserCheck className="h-3.5 w-3.5" /> Enable
+      </Button>
+    </div>
+  );
+}
+
+// Everything the table needs from the page arrives as an argument, so no cell
+// closes over a render of UsersPage.
+function userColumns(
+  onDisable: (u: AdminUser) => void,
+  onEnable: (id: string) => void,
+  enablingId: string | null
+): ColumnDef<AdminUser, unknown>[] {
+  return [
+    { accessorKey: "email", header: "User", cell: UserIdentityCell },
+    { accessorKey: "tenant_name", header: "Tenant", enableSorting: false, cell: TenantCell },
+    { accessorKey: "role_name", header: "Role", enableSorting: false, cell: RoleCell },
+    { accessorKey: "is_active", header: "Status", cell: StatusCell },
+    { accessorKey: "last_login_at", header: "Last login", cell: LastLoginCell },
+    {
+      id: "actions",
+      header: ActionsHeader,
+      enableSorting: false,
+      cell: ({ row }: UserCell) => (
+        <UserActionsCell
+          user={row.original}
+          onDisable={onDisable}
+          onEnable={onEnable}
+          enabling={enablingId === row.original.id}
+        />
+      ),
+    },
+  ];
 }
 
 export default function UsersPage() {
@@ -60,114 +195,16 @@ export default function UsersPage() {
     onError: (err) => toast.error(apiError(err, "Could not update user")),
   });
 
-  const columns = useMemo<ColumnDef<AdminUser, unknown>[]>(
-    () => [
-      {
-        accessorKey: "email",
-        header: "User",
-        cell: ({ row }) => {
-          const u = row.original;
-          const name = u.full_name || u.email;
-          return (
-            <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-hover text-xs font-semibold text-foreground">
-                {(name || "?").slice(0, 1).toUpperCase()}
-              </div>
-              <div className="min-w-0">
-                <div className="truncate font-medium text-foreground">{name}</div>
-                <div className="truncate text-xs text-muted">{u.email}</div>
-              </div>
-            </div>
-          );
-        },
-      },
-      {
-        accessorKey: "tenant_name",
-        header: "Tenant",
-        enableSorting: false,
-        cell: ({ row }) => {
-          const u = row.original;
-          if (u.is_superadmin && !u.tenant_id) {
-            return (
-              <Badge tone="accent">
-                <ShieldCheck className="h-3 w-3" /> Platform
-              </Badge>
-            );
-          }
-          if (!u.tenant_id) return <span className="text-muted">—</span>;
-          return (
-            <Link
-              href={`/tenants/${u.tenant_id}`}
-              onClick={(e) => e.stopPropagation()}
-              className="text-foreground transition hover:text-accent"
-            >
-              {u.tenant_name || "—"}
-              {u.tenant_slug && <span className="ml-1 font-mono text-xs text-muted">/{u.tenant_slug}</span>}
-            </Link>
-          );
-        },
-      },
-      {
-        accessorKey: "role_name",
-        header: "Role",
-        enableSorting: false,
-        cell: ({ row }) => <span className="text-foreground">{row.original.role_name || "—"}</span>,
-      },
-      {
-        accessorKey: "is_active",
-        header: "Status",
-        cell: ({ row }) => {
-          const u = row.original;
-          return (
-            <div className="flex items-center gap-1.5">
-              <Badge tone={u.is_active ? "success" : "neutral"} dot>
-                {u.is_active ? "Active" : "Disabled"}
-              </Badge>
-              {!u.email_verified && <Badge tone="warning">Unverified</Badge>}
-            </div>
-          );
-        },
-      },
-      {
-        accessorKey: "last_login_at",
-        header: "Last login",
-        cell: ({ row }) => <span className="text-muted">{fmtDate(row.original.last_login_at)}</span>,
-      },
-      {
-        id: "actions",
-        header: () => <span className="sr-only">Actions</span>,
-        enableSorting: false,
-        cell: ({ row }) => {
-          const u = row.original;
-          if (u.is_superadmin) return null; // platform admins aren't toggled here
-          return u.is_active ? (
-            <div className="flex justify-end">
-              <Button
-                variant="outline"
-                size="sm"
-                className="hover:border-danger/40 hover:text-danger"
-                onClick={() => setDisabling(u)}
-              >
-                <UserX className="h-3.5 w-3.5" /> Disable
-              </Button>
-            </div>
-          ) : (
-            <div className="flex justify-end">
-              <Button
-                variant="outline"
-                size="sm"
-                className="hover:border-success/40 hover:text-success"
-                loading={setActive.isPending && setActive.variables?.id === u.id}
-                onClick={() => setActive.mutate({ id: u.id, isActive: true })}
-              >
-                <UserCheck className="h-3.5 w-3.5" /> Enable
-              </Button>
-            </div>
-          );
-        },
-      },
-    ],
-    [setActive]
+  // `mutate` is stable and `enablingId` only changes when a toggle starts or
+  // finishes, so the column array holds still while the page re-renders on every
+  // keystroke in the search box. Depending on the mutation object itself would
+  // rebuild it every render — react-query returns a fresh one each time.
+  const { mutate } = setActive;
+  const enablingId = setActive.isPending ? (setActive.variables?.id ?? null) : null;
+  const onEnable = useCallback((id: string) => mutate({ id, isActive: true }), [mutate]);
+  const columns = useMemo(
+    () => userColumns(setDisabling, onEnable, enablingId),
+    [onEnable, enablingId]
   );
 
   const toolbar = (

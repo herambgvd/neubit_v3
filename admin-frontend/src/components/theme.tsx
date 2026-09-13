@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 export type Theme = "dark" | "light";
 
@@ -22,17 +22,24 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setTheme(saved === "light" ? "light" : "dark");
   }, []);
 
-  function apply(next: Theme) {
+  const apply = useCallback((next: Theme) => {
     setTheme(next);
     if (typeof document !== "undefined") {
       document.documentElement.classList.toggle("dark", next === "dark");
       localStorage.setItem("theme", next);
     }
-  }
+  }, []);
 
-  const toggle = () => apply(theme === "dark" ? "light" : "dark");
+  // `theme` is the only dependency that can change: `apply` reads its argument,
+  // not the current theme, so the toggle below is the only thing that has to be
+  // rebuilt when the theme flips. Without this every consumer of the context
+  // re-renders on each ThemeProvider render, memoized or not.
+  const value = useMemo<ThemeContextValue>(
+    () => ({ theme, toggle: () => apply(theme === "dark" ? "light" : "dark") }),
+    [theme, apply]
+  );
 
-  return <ThemeContext.Provider value={{ theme, toggle }}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export const useTheme = (): ThemeContextValue => useContext(ThemeContext);

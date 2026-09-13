@@ -291,9 +291,16 @@ const INVOICE_TONE: Record<string, BadgeTone> = {
 
 /** One editable quota row — kept as strings so a half-typed value stays valid. */
 interface LimitRow {
+  /** Row identity for React. The `key` field below cannot serve as one: it is
+   *  user-editable, starts blank on a new row, and two rows may briefly share a
+   *  name while being typed. */
+  id: string;
   key: string;
   value: string;
 }
+
+let nextLimitRowId = 0;
+const newLimitRow = (key = "", value = ""): LimitRow => ({ id: `limit-${nextLimitRowId++}`, key, value });
 
 function LicenseCard({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void }) {
   const [plan, setPlan] = useState(tenant.plan || "");
@@ -304,7 +311,7 @@ function LicenseCard({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void 
     ...(tenant.features || {}),
   }));
   const [limits, setLimits] = useState<LimitRow[]>(() =>
-    Object.entries(tenant.limits || {}).map(([key, value]) => ({ key, value: String(value ?? "") }))
+    Object.entries(tenant.limits || {}).map(([key, value]) => newLimitRow(key, String(value ?? "")))
   );
 
   // The platform module catalog drives the feature toggles: one switch per module.
@@ -322,7 +329,7 @@ function LicenseCard({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void 
 
   const setLimitRow = (i: number, patch: Partial<LimitRow>) =>
     setLimits((rows) => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  const addLimitRow = () => setLimits((rows) => [...rows, { key: "", value: "" }]);
+  const addLimitRow = () => setLimits((rows) => [...rows, newLimitRow()]);
   const removeLimitRow = (i: number) => setLimits((rows) => rows.filter((_, j) => j !== i));
 
   const save = useMutation({
@@ -434,7 +441,7 @@ function LicenseCard({ tenant, onSaved }: { tenant: Tenant; onSaved: () => void 
           ) : (
             <div className="space-y-2">
               {limits.map((row, i) => (
-                <div key={i} className="flex items-center gap-2">
+                <div key={row.id} className="flex items-center gap-2">
                   <Input
                     value={row.key}
                     onChange={(e) => setLimitRow(i, { key: e.target.value })}

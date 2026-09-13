@@ -136,3 +136,41 @@ describe("tenant detail — page states", () => {
     expect(impersonate).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The quota rows are keyed by list position. Remove a row above the one being
+ * edited and every row below shifts up a slot, so React reuses the DOM nodes for
+ * different rows and destroys the last one — taking the caret out of the field
+ * the operator was typing in. The row needs an identity of its own; the `key`
+ * field cannot be it, because it is blank on a new row and is itself being typed.
+ */
+describe("tenant detail — quota rows", () => {
+  beforeEach(() => {
+    vi.spyOn(adminApi, "listAudit").mockResolvedValue(auditPage(1, 0));
+  });
+
+  it("leaves the caret in the quota you are typing when an earlier row is removed", async () => {
+    renderWithProviders(<TenantDetailPage />);
+    await screen.findByText("Acme");
+
+    const addQuota = await screen.findByRole("button", { name: /add quota/i });
+    await userEvent.click(addQuota);
+    await userEvent.click(addQuota);
+
+    const keyFields = () => screen.getAllByPlaceholderText("max_users");
+    expect(keyFields()).toHaveLength(3);
+
+    const typed = keyFields()[2]!;
+    await userEvent.type(typed, "max_seats");
+    expect(typed).toHaveFocus();
+
+    await userEvent.click(screen.getAllByRole("button", { name: /remove quota/i })[0]!);
+
+    expect(keyFields().map((el) => (el as HTMLInputElement).value)).toEqual(["", "max_seats"]);
+    // The half-typed row moved up a slot — as the same live field, not as a
+    // value copied into the node that used to belong to the row above it.
+    expect(typed).toBeInTheDocument();
+    expect(keyFields()[1]).toBe(typed);
+    expect(typed).toHaveValue("max_seats");
+  });
+});

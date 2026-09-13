@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -108,5 +108,41 @@ describe("cross-tenant user directory", () => {
     renderWithProviders(<UsersPage />);
 
     expect(await screen.findByText("Unverified")).toBeInTheDocument();
+  });
+});
+
+/**
+ * A cell declared inside UsersPage is a brand-new component type on every render
+ * of the page, so React cannot reconcile it: it unmounts the old cell and mounts
+ * a fresh one. With the search box re-rendering the page on every keystroke that
+ * meant the entire table body was rebuilt per character — losing the DOM nodes,
+ * and with them focus, mid-interaction.
+ */
+describe("table identity", () => {
+  it("keeps its cells mounted while the page re-renders around them", async () => {
+    renderWithProviders(<UsersPage />);
+    const cellBefore = await screen.findByText("Ada Lovelace");
+    const search = screen.getByPlaceholderText(/search email or name/i);
+
+    await userEvent.type(search, "ada");
+    await waitFor(() => expect(search).toHaveValue("ada"));
+
+    // Same node object, not merely the same text: the cell was never torn down.
+    expect(screen.getByText("Ada Lovelace")).toBe(cellBefore);
+  });
+
+  it("does not throw away focus held inside a cell when the page re-renders", async () => {
+    renderWithProviders(<UsersPage />);
+    await screen.findByText("Ada Lovelace");
+    const disable = screen.getByRole("button", { name: /disable/i });
+    disable.focus();
+
+    // fireEvent, not userEvent: typing would move focus to the search box itself
+    // and hide the very thing under test.
+    fireEvent.change(screen.getByPlaceholderText(/search email or name/i), {
+      target: { value: "ada" },
+    });
+
+    expect(document.activeElement).toBe(disable);
   });
 });

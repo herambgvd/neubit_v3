@@ -114,7 +114,7 @@ export function DonutChart({
           const { len, offset } = arcs[i]!;
           return (
             <circle
-              key={i}
+              key={d.label}
               cx={size / 2}
               cy={size / 2}
               r={r}
@@ -142,7 +142,7 @@ export function DonutChart({
         <ul className="space-y-1.5">
           {data.map((d, i) => (
             <li
-              key={i}
+              key={d.label}
               className="flex items-center gap-2 text-xs"
               onMouseEnter={() => setHover(i)}
               onMouseLeave={() => setHover(null)}
@@ -175,8 +175,8 @@ export function BarList({
   const max = Math.max(...data.map((d) => d.value || 0), 1);
   return (
     <ul className="space-y-2.5">
-      {data.map((d, i) => (
-        <li key={i} className="group">
+      {data.map((d) => (
+        <li key={d.label} className="group">
           <div className="mb-1 flex items-center justify-between gap-3 text-xs">
             <span className="truncate text-foreground">{d.label}</span>
             <span className="shrink-0 font-medium tabular-nums text-muted">{formatValue(d.value)}</span>
@@ -295,6 +295,9 @@ export function AreaTrend({
               <circle cx={xAt(hover)} cy={yAt(data[hover]?.value || 0)} r={4} fill="var(--background)" stroke={color} strokeWidth={2} />
             </g>
           )}
+          {/* Keyed by position, deliberately: an axis tick is its slot on the
+              axis, and a rolling series may repeat a label (two points in the
+              same minute) where the slices and bars above cannot. */}
           {data.map((d, i) =>
             i % labelEvery === 0 || i === data.length - 1 ? (
               <text key={i} x={xAt(i)} y={height - 6} textAnchor="middle" className="fill-[var(--muted)] text-[10px]">

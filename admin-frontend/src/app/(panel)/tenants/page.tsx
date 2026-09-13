@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -8,7 +8,7 @@ import { Building2, Plus, Search, Users } from "lucide-react";
 import { toast } from "sonner";
 import * as yup from "yup";
 
-import type { ColumnDef } from "@tanstack/react-table";
+import type { CellContext, ColumnDef } from "@tanstack/react-table";
 
 import { adminApi, apiError } from "@/lib/api";
 import { pagedItems, pagedTotal } from "@/lib/paged";
@@ -59,6 +59,62 @@ function LicenseBadge({ state }: { state: string }) {
   return <Badge tone={tone}>{label}</Badge>;
 }
 
+/* Cells live at module scope so their component type is fixed for the life of
+   the module. Declared inside the page, each one would be a fresh type on every
+   render and React would tear down and rebuild every cell in the table. */
+
+type TenantCell = CellContext<Tenant, unknown>;
+
+function NameCell({ row }: TenantCell) {
+  return (
+    <div>
+      <Link
+        href={`/tenants/${row.original.id}`}
+        onClick={(e) => e.stopPropagation()}
+        className="font-medium text-foreground transition hover:text-accent"
+      >
+        {row.original.name}
+      </Link>
+      <div className="font-mono text-xs text-muted">{row.original.slug}</div>
+    </div>
+  );
+}
+
+function StatusCell({ row }: TenantCell) {
+  return <StatusBadge status={row.original.status} />;
+}
+
+function LicenseCell({ row }: TenantCell) {
+  return <LicenseBadge state={row.original.license_state} />;
+}
+
+function PlanCell({ row }: TenantCell) {
+  return <span className="text-foreground">{row.original.plan || "—"}</span>;
+}
+
+function UsersCell({ row }: TenantCell) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-foreground">
+      <Users className="h-3.5 w-3.5 text-muted" />
+      {row.original.users ?? 0}
+    </span>
+  );
+}
+
+function CreatedCell({ row }: TenantCell) {
+  return <span className="text-muted">{fmtDate(row.original.created_at)}</span>;
+}
+
+// Nothing here depends on page state, so the array itself is a constant too.
+const COLUMNS: ColumnDef<Tenant, unknown>[] = [
+  { accessorKey: "name", header: "Name", cell: NameCell },
+  { accessorKey: "status", header: "Status", cell: StatusCell },
+  { accessorKey: "license_state", header: "License", cell: LicenseCell },
+  { accessorKey: "plan", header: "Plan", cell: PlanCell },
+  { accessorKey: "users", header: "Users", cell: UsersCell },
+  { accessorKey: "created_at", header: "Created", cell: CreatedCell },
+];
+
 export default function TenantsPage() {
   const qc = useQueryClient();
   const router = useRouter();
@@ -76,58 +132,6 @@ export default function TenantsPage() {
   const tenants = pagedItems(data);
   const total = pagedTotal(data);
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
-  const columns = useMemo<ColumnDef<Tenant, unknown>[]>(
-    () => [
-      {
-        accessorKey: "name",
-        header: "Name",
-        cell: ({ row }) => (
-          <div>
-            <Link
-              href={`/tenants/${row.original.id}`}
-              onClick={(e) => e.stopPropagation()}
-              className="font-medium text-foreground transition hover:text-accent"
-            >
-              {row.original.name}
-            </Link>
-            <div className="font-mono text-xs text-muted">{row.original.slug}</div>
-          </div>
-        ),
-      },
-      {
-        accessorKey: "status",
-        header: "Status",
-        cell: ({ row }) => <StatusBadge status={row.original.status} />,
-      },
-      {
-        accessorKey: "license_state",
-        header: "License",
-        cell: ({ row }) => <LicenseBadge state={row.original.license_state} />,
-      },
-      {
-        accessorKey: "plan",
-        header: "Plan",
-        cell: ({ row }) => <span className="text-foreground">{row.original.plan || "—"}</span>,
-      },
-      {
-        accessorKey: "users",
-        header: "Users",
-        cell: ({ row }) => (
-          <span className="inline-flex items-center gap-1.5 text-foreground">
-            <Users className="h-3.5 w-3.5 text-muted" />
-            {row.original.users ?? 0}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "created_at",
-        header: "Created",
-        cell: ({ row }) => <span className="text-muted">{fmtDate(row.original.created_at)}</span>,
-      },
-    ],
-    []
-  );
 
   const toolbar = (
     <div className="flex flex-wrap items-center gap-3">
@@ -167,7 +171,7 @@ export default function TenantsPage() {
       />
 
       <DataTable
-        columns={columns}
+        columns={COLUMNS}
         data={tenants}
         loading={isLoading}
         error={isError ? apiError(error, "Failed to load tenants") : null}

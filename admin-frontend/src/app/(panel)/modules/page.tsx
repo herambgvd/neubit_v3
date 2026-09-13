@@ -6,7 +6,7 @@ import { Blocks, Lock, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import * as yup from "yup";
 
-import type { ColumnDef } from "@tanstack/react-table";
+import type { CellContext, ColumnDef } from "@tanstack/react-table";
 
 import { adminApi, apiError } from "@/lib/api";
 import { useAdminForm } from "@/lib/useAdminForm";
@@ -26,6 +26,111 @@ import {
   Switch,
   Textarea,
 } from "@/components/ui";
+
+/* Cells live at module scope so their component type is fixed for the life of
+   the module. Declared inside the page, each one would be a fresh type on every
+   render and React would tear down and rebuild every cell in the table. */
+
+type ModuleCell = CellContext<PlatformModule, unknown>;
+
+function ModuleNameCell({ row }: ModuleCell) {
+  const m = row.original;
+  return (
+    <div>
+      <div className="font-medium text-foreground">{m.name || m.key}</div>
+      <div className="font-mono text-xs text-muted">{m.key}</div>
+      {m.description && <div className="mt-0.5 max-w-md text-xs text-muted">{m.description}</div>}
+    </div>
+  );
+}
+
+function CategoryCell({ row }: ModuleCell) {
+  return row.original.category ? (
+    <Badge tone="foreground" className="capitalize">
+      {row.original.category}
+    </Badge>
+  ) : (
+    <span className="text-muted">—</span>
+  );
+}
+
+function DefaultCell({ row }: ModuleCell) {
+  return row.original.default_enabled ? (
+    <Badge tone="success" dot>
+      On
+    </Badge>
+  ) : (
+    <Badge tone="neutral" dot>
+      Off
+    </Badge>
+  );
+}
+
+function TypeCell({ row }: ModuleCell) {
+  return row.original.is_system ? (
+    <Badge tone="accent">
+      <Lock className="h-3 w-3" />
+      System
+    </Badge>
+  ) : (
+    <Badge tone="neutral">Custom</Badge>
+  );
+}
+
+function ActionsHeader() {
+  return <span className="sr-only">Actions</span>;
+}
+
+function ModuleActionsCell({
+  module: m,
+  onEdit,
+  onDelete,
+}: {
+  module: PlatformModule;
+  onEdit: (m: PlatformModule) => void;
+  onDelete: (m: PlatformModule) => void;
+}) {
+  return (
+    <div className="flex items-center justify-end gap-1.5">
+      <Button variant="outline" size="icon" title="Edit" aria-label="Edit" onClick={() => onEdit(m)}>
+        <Pencil className="h-3.5 w-3.5" />
+      </Button>
+      <Button
+        variant="outline"
+        size="icon"
+        title={m.is_system ? "System modules can't be deleted" : "Delete"}
+        aria-label="Delete"
+        disabled={m.is_system}
+        onClick={() => onDelete(m)}
+        className="hover:border-danger/40 hover:text-danger"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+  );
+}
+
+// The two row actions are the only thing the table needs from the page, so they
+// come in as arguments rather than as a closure over the page's render.
+function moduleColumns(
+  onEdit: (m: PlatformModule) => void,
+  onDelete: (m: PlatformModule) => void
+): ColumnDef<PlatformModule, unknown>[] {
+  return [
+    { accessorKey: "name", header: "Module", cell: ModuleNameCell },
+    { accessorKey: "category", header: "Category", cell: CategoryCell },
+    { accessorKey: "default_enabled", header: "Default", cell: DefaultCell },
+    { accessorKey: "is_system", header: "Type", cell: TypeCell },
+    {
+      id: "actions",
+      header: ActionsHeader,
+      enableSorting: false,
+      cell: ({ row }: ModuleCell) => (
+        <ModuleActionsCell module={row.original} onEdit={onEdit} onDelete={onDelete} />
+      ),
+    },
+  ];
+}
 
 export default function ModulesPage() {
   const qc = useQueryClient();
@@ -65,90 +170,10 @@ export default function ModulesPage() {
     onError: (err) => toast.error(apiError(err, "Could not delete module")),
   });
 
-  const columns = useMemo<ColumnDef<PlatformModule, unknown>[]>(
-    () => [
-      {
-        accessorKey: "name",
-        header: "Module",
-        cell: ({ row }) => {
-          const m = row.original;
-          return (
-            <div>
-              <div className="font-medium text-foreground">{m.name || m.key}</div>
-              <div className="font-mono text-xs text-muted">{m.key}</div>
-              {m.description && <div className="mt-0.5 max-w-md text-xs text-muted">{m.description}</div>}
-            </div>
-          );
-        },
-      },
-      {
-        accessorKey: "category",
-        header: "Category",
-        cell: ({ row }) =>
-          row.original.category ? (
-            <Badge tone="foreground" className="capitalize">
-              {row.original.category}
-            </Badge>
-          ) : (
-            <span className="text-muted">—</span>
-          ),
-      },
-      {
-        accessorKey: "default_enabled",
-        header: "Default",
-        cell: ({ row }) =>
-          row.original.default_enabled ? (
-            <Badge tone="success" dot>
-              On
-            </Badge>
-          ) : (
-            <Badge tone="neutral" dot>
-              Off
-            </Badge>
-          ),
-      },
-      {
-        accessorKey: "is_system",
-        header: "Type",
-        cell: ({ row }) =>
-          row.original.is_system ? (
-            <Badge tone="accent">
-              <Lock className="h-3 w-3" />
-              System
-            </Badge>
-          ) : (
-            <Badge tone="neutral">Custom</Badge>
-          ),
-      },
-      {
-        id: "actions",
-        header: () => <span className="sr-only">Actions</span>,
-        enableSorting: false,
-        cell: ({ row }) => {
-          const m = row.original;
-          return (
-            <div className="flex items-center justify-end gap-1.5">
-              <Button variant="outline" size="icon" title="Edit" aria-label="Edit" onClick={() => setEditing(m)}>
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                title={m.is_system ? "System modules can't be deleted" : "Delete"}
-                aria-label="Delete"
-                disabled={m.is_system}
-                onClick={() => setDeleting(m)}
-                className="hover:border-danger/40 hover:text-danger"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          );
-        },
-      },
-    ],
-    []
-  );
+  // Built once: `moduleColumns` lives at module scope and both setters are
+  // stable, so the column array — and with it every cell component type —
+  // never changes identity.
+  const columns = useMemo(() => moduleColumns(setEditing, setDeleting), []);
 
   const toolbar = (
     <div className="relative min-w-[220px] flex-1">
