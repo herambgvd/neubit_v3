@@ -1488,6 +1488,44 @@ async def _site_benchmark_context(
     }
 
 
+def _annualize_span(
+    tree, covered_spans: list, covered_days, window_days: float, input_report
+) -> dict:
+    """The span annualize() scales over, or the refusal saying there is none.
+
+    annualize() over a consumption formula scales the COVERED span; a formula
+    with no consumption input keeps the requested window.
+
+    TWO consumption inputs that cover different spans have no one span to
+    scale by: annualising their combination over either one states an annual
+    figure for a series that was not measured over it, and taking the shorter
+    would inflate the longer-covered input by the ratio between them. Both are
+    numbers that look right on a screen, which is exactly what this module
+    refuses to produce — so the annual figure is withheld and both spans are
+    named, because the fix is to ask over a window both meters cover.
+    """
+    effective_days = covered_days if covered_days is not None else window_days
+    if not expr.uses(tree, "annualize"):
+        return {"status": "ok", "days": effective_days}
+    if len(covered_spans) > 1 and covered_days is None:
+        named = ", ".join(f"`{n}` over {d:g} day(s)" for n, d in covered_spans)
+        out = _refusal(
+            "blocked",
+            f"annualize() has no single covered span to scale over: {named} "
+            f"— annualising series measured over different spans into one "
+            f"number would state a year nothing was measured for",
+        )
+        out["inputs"] = input_report
+        return out
+    if not effective_days or effective_days <= 0:
+        return _refusal(
+            "no_data",
+            "annualize() needs a covered span and the usable registers span "
+            "less than one bucket — there is no interval to annualise over",
+        )
+    return {"status": "ok", "days": effective_days}
+
+
 async def _evaluate_site_formula(
     db: AsyncSession, tenant, defn: dict, site: dict, start, end, table: str
 ) -> dict:
@@ -1516,33 +1554,11 @@ async def _evaluate_site_formula(
         bench_note = bench["note"]
         benchmark = bench["edges"]
 
-    # annualize() over a consumption formula scales the COVERED span; a formula
-    # with no consumption input keeps the requested window.
-    #
-    # TWO consumption inputs that cover different spans have no one span to
-    # scale by: annualising their combination over either one states an annual
-    # figure for a series that was not measured over it, and taking the shorter
-    # would inflate the longer-covered input by the ratio between them. Both are
-    # numbers that look right on a screen, which is exactly what this module
-    # refuses to produce — so the annual figure is withheld and both spans are
-    # named, because the fix is to ask over a window both meters cover.
-    if len(covered_spans) > 1 and covered_days is None and expr.uses(tree, "annualize"):
-        named = ", ".join(f"`{n}` over {d:g} day(s)" for n, d in covered_spans)
-        out = _refusal(
-            "blocked",
-            f"annualize() has no single covered span to scale over: {named} "
-            f"— annualising series measured over different spans into one "
-            f"number would state a year nothing was measured for",
-        )
-        out["inputs"] = input_report
-        return out
-    effective_days = covered_days if covered_days is not None else window_days
-    if expr.uses(tree, "annualize") and (not effective_days or effective_days <= 0):
-        return _refusal(
-            "no_data",
-            "annualize() needs a covered span and the usable registers span "
-            "less than one bucket — there is no interval to annualise over",
-        )
+    span = _annualize_span(tree, covered_spans, covered_days, window_days, input_report)
+    if span["status"] != "ok":
+        return span
+    effective_days = span["days"]
+
     try:
         value = expr.evaluate(tree, env, window_days=effective_days, benchmark=benchmark)
     except expr.EvalRefusal as e:

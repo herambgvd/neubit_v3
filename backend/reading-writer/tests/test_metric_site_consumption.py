@@ -189,7 +189,8 @@ def test_a_non_consumption_aggregation_needs_exactly_one_point_in_the_role():
         at(1), at(31), "readings_1h",
     ))
     assert out["status"] == "ambiguous_role"
-    assert "M1" in out["reason"] and "M2" in out["reason"]
+    assert "M1" in out["reason"]
+    assert "M2" in out["reason"]
     assert "`consumption` is the" in out["reason"]
 
 
@@ -215,7 +216,8 @@ def test_an_unconfirmed_unit_on_any_register_in_the_role_refuses_the_input():
         at(1), at(31), "readings_1h",
     ))
     assert out["status"] == "unit_unconfirmed"
-    assert "`M2`" in out["reason"] and "M1" not in out["reason"]
+    assert "`M2`" in out["reason"]
+    assert "M1" not in out["reason"]
 
 
 # ── site facts and the emission factor ───────────────────────────────────────

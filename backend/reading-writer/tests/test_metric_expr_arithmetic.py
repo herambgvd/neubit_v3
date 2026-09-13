@@ -184,9 +184,14 @@ def test_energy_cannot_be_added_to_a_mass_of_carbon():
     """kWh + kgCO2e is the archetype of a formula that runs fine and means
     nothing. It is refused at REGISTRATION, naming both dimensions."""
     tree = expr.parse("kwh + co2")
+    # The quantities are built before the block so `infer` is the only call in it
+    # that can raise; a `qty_of_unit` that started refusing kgCO2 would otherwise
+    # pass this test while the addition guard was gone.
+    inputs = {"kwh": qty_of_unit("kWh"), "co2": qty_of_unit("kgCO2")}
     with pytest.raises(DimensionError) as exc:
-        expr.infer(tree, {"kwh": qty_of_unit("kWh"), "co2": qty_of_unit("kgCO2")})
-    assert "energy" in str(exc.value) and "mass" in str(exc.value)
+        expr.infer(tree, inputs)
+    assert "energy" in str(exc.value)
+    assert "mass" in str(exc.value)
 
 
 def test_the_result_unit_is_the_one_the_formula_computes():
@@ -215,11 +220,10 @@ def test_a_score_carries_no_unit_however_it_was_computed():
 def test_two_absolute_temperatures_in_different_units_refuse_to_subtract():
     """°C − °F is the silent-conversion trap this platform does not model; it is
     refused with the refusal saying so, not quietly treated as kelvin."""
+    tree = expr.parse("owt - iwt")
+    inputs = {"owt": qty_of_unit("degC"), "iwt": qty_of_unit("degF")}
     with pytest.raises(DimensionError) as exc:
-        expr.infer(
-            expr.parse("owt - iwt"),
-            {"owt": qty_of_unit("degC"), "iwt": qty_of_unit("degF")},
-        )
+        expr.infer(tree, inputs)
     assert "conversion is not modelled" in str(exc.value)
 
 

@@ -372,6 +372,10 @@ function FocusedCameraLabel({
   loading: boolean;
   spanCount: number;
 }>) {
+  // Named rather than nested in the JSX: the plural is about the COUNT, the
+  // ternary below is about whether the count is known yet, and folding the two
+  // into one expression made a reader work out which question each answered.
+  const spansInView = `${spanCount} span${spanCount === 1 ? "" : "s"} in view`;
   return (
     <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[#aec2e8]">
       {camera ? (
@@ -381,7 +385,7 @@ function FocusedCameraLabel({
           {camera.node_name && <span className="ml-1.5 text-[#7e93bf]">· {camera.node_name}</span>}
           {federated && (
             <span className="ml-2 text-[#7e93bf]">
-              {loading ? "loading…" : `${spanCount} span${spanCount === 1 ? "" : "s"} in view`}
+              {loading ? "loading…" : spansInView}
             </span>
           )}
         </>

@@ -32,8 +32,12 @@ def test_raw_is_refused_by_name_and_never_quietly_downgraded():
     """Metrics read rollups only. Silently serving 1m for a `raw` request would
     answer a different question than the one asked, at a different sample
     weighting, with nothing in the response saying so."""
+    # The window is built before the block, so `pick_resolution` is the only call
+    # inside it that can raise — otherwise a broken `at()` would satisfy the
+    # assertion while the resolution guard was doing nothing.
+    start, end = at(1), at(2)
     with pytest.raises(ev.EvaluationError) as exc:
-        ev.pick_resolution(at(1), at(2), "raw")
+        ev.pick_resolution(start, end, "raw")
     assert "rollups only" in str(exc.value)
 
 
@@ -51,8 +55,9 @@ def test_auto_picks_the_fine_rollup_only_inside_the_three_hour_ceiling(hours, ex
 
 
 def test_an_unknown_resolution_is_a_request_error_not_a_silent_default():
+    start, end = at(1), at(2)
     with pytest.raises(ev.EvaluationError, match="auto, 1m, 1h"):
-        ev.pick_resolution(at(1), at(2), "5m")
+        ev.pick_resolution(start, end, "5m")
 
 
 # ── binding a role to a point ────────────────────────────────────────────────
@@ -86,7 +91,8 @@ def test_two_points_in_one_role_refuse_and_name_both_so_the_extra_is_findable():
         point(2, role="energy_total", tag="SPARE-KWH"),
     ])
     assert out["status"] == "ambiguous_role"
-    assert "MAIN-KWH" in out["reason"] and "SPARE-KWH" in out["reason"]
+    assert "MAIN-KWH" in out["reason"]
+    assert "SPARE-KWH" in out["reason"]
 
 
 def test_one_point_in_the_role_binds_to_that_point():
@@ -132,7 +138,8 @@ def test_an_input_that_demands_an_exact_unit_refuses_the_wrong_one_naming_both()
         _bound(point(1, role="energy_total", tag="MAIN", unit="Wh"), names=("a",)),
     )
     assert out["status"] == "unit_mismatch"
-    assert "`kWh`" in out["reason"] and "`Wh`" in out["reason"]
+    assert "`kWh`" in out["reason"]
+    assert "`Wh`" in out["reason"]
 
 
 def test_an_input_that_demands_a_dimension_refuses_a_unit_of_another_one():
@@ -144,7 +151,8 @@ def test_an_input_that_demands_a_dimension_refuses_a_unit_of_another_one():
         _bound(point(1, role="energy_total", unit="degC"), names=("a",)),
     )
     assert out["status"] == "unit_mismatch"
-    assert "`energy`" in out["reason"] and "temperature" in out["reason"]
+    assert "`energy`" in out["reason"]
+    assert "temperature" in out["reason"]
 
 
 def test_same_unit_refuses_two_sides_in_different_units_rather_than_converting():
@@ -160,7 +168,8 @@ def test_same_unit_refuses_two_sides_in_different_units_rather_than_converting()
     )
     assert out["status"] == "unit_mismatch"
     assert "conversion is not" in out["reason"]
-    assert "a=`degC`" in out["reason"] and "b=`degF`" in out["reason"]
+    assert "a=`degC`" in out["reason"]
+    assert "b=`degF`" in out["reason"]
 
 
 def test_same_unit_passes_when_both_sides_agree():
@@ -221,8 +230,10 @@ def test_a_frozen_input_refuses_naming_the_input_its_point_and_the_flat_value():
         {pid(1): agg(1, avg=7.0, lo=7.0, hi=7.0, samples=120)},
     )
     assert out["status"] == "undefined_frozen"
-    assert "`a`" in out["reason"] and "`CH1-CHWS`" in out["reason"]
-    assert "7" in out["reason"] and "120 samples" in out["reason"]
+    assert "`a`" in out["reason"]
+    assert "`CH1-CHWS`" in out["reason"]
+    assert "7" in out["reason"]
+    assert "120 samples" in out["reason"]
 
 
 def test_one_sample_is_not_evidence_that_an_input_is_frozen():
@@ -315,7 +326,8 @@ def test_any_device_refusal_refuses_the_component_and_names_that_device():
         ],
     )
     assert out["status"] == "blocked"
-    assert "CH-2" in out["reason"] and "undefined_frozen" in out["reason"]
+    assert "CH-2" in out["reason"]
+    assert "undefined_frozen" in out["reason"]
     assert "1 of 2 device(s)" in out["reason"]
 
 
@@ -523,7 +535,8 @@ def test_a_window_where_the_inputs_rarely_reported_together_withholds_the_percen
     out = _run_band(buckets, union=10)
     assert out["status"] == "insufficient_coverage"
     assert "only 2 of 10 bucket(s)" in out["reason"]
-    assert "20%" in out["reason"] and "80%" in out["reason"]
+    assert "20%" in out["reason"]
+    assert "80%" in out["reason"]
     assert out["coverage"] == 0.2
     assert out["inputs"] is not None
 
