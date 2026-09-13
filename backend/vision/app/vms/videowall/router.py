@@ -71,30 +71,28 @@ async def get_wall_service(
 
 @router.get(
     "/walls",
-    response_model=WallListResponse,
     dependencies=[Depends(require_permission(PERM_VIEW))],
 )
 async def list_walls(
     svc: Annotated[VideoWallService, Depends(get_wall_service)],
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=500),
-    site_id: str | None = Query(None, max_length=36),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+    site_id: Annotated[str | None, Query(max_length=36)] = None,
 ) -> WallListResponse:
     return await svc.list_walls(skip=skip, limit=limit, site_id=site_id)
 
 
-@router.post("/walls", response_model=WallPublic, status_code=status.HTTP_201_CREATED)
+@router.post("/walls", status_code=status.HTTP_201_CREATED)
 async def create_wall(
     body: WallCreate,
     svc: Annotated[VideoWallService, Depends(get_wall_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> WallPublic:
     return await svc.create_wall(body, actor=actor)
 
 
 @router.get(
     "/walls/{wall_id}",
-    response_model=WallPublic,
     dependencies=[Depends(require_permission(PERM_VIEW))],
 )
 async def get_wall(
@@ -104,12 +102,12 @@ async def get_wall(
     return await svc.get_wall(wall_id)
 
 
-@router.patch("/walls/{wall_id}", response_model=WallPublic)
+@router.patch("/walls/{wall_id}")
 async def update_wall(
     wall_id: str,
     body: WallUpdate,
     svc: Annotated[VideoWallService, Depends(get_wall_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> WallPublic:
     return await svc.update_wall(wall_id, body, actor=actor)
 
@@ -118,7 +116,7 @@ async def update_wall(
 async def delete_wall(
     wall_id: str,
     svc: Annotated[VideoWallService, Depends(get_wall_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> Response:
     await svc.delete_wall(wall_id, actor=actor)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -129,7 +127,6 @@ async def delete_wall(
 
 @router.get(
     "/walls/{wall_id}/monitors",
-    response_model=MonitorListResponse,
     dependencies=[Depends(require_permission(PERM_VIEW))],
 )
 async def list_monitors(
@@ -141,25 +138,24 @@ async def list_monitors(
 
 @router.post(
     "/walls/{wall_id}/monitors",
-    response_model=MonitorPublic,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_monitor(
     wall_id: str,
     body: MonitorCreate,
     svc: Annotated[VideoWallService, Depends(get_wall_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> MonitorPublic:
     return await svc.create_monitor(wall_id, body, actor=actor)
 
 
-@router.patch("/walls/{wall_id}/monitors/{monitor_id}", response_model=MonitorPublic)
+@router.patch("/walls/{wall_id}/monitors/{monitor_id}")
 async def update_monitor(
     wall_id: str,
     monitor_id: str,
     body: MonitorUpdate,
     svc: Annotated[VideoWallService, Depends(get_wall_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> MonitorPublic:
     return await svc.update_monitor(wall_id, monitor_id, body)
 
@@ -171,7 +167,7 @@ async def delete_monitor(
     wall_id: str,
     monitor_id: str,
     svc: Annotated[VideoWallService, Depends(get_wall_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> Response:
     await svc.delete_monitor(wall_id, monitor_id, actor=actor)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -182,7 +178,6 @@ async def delete_monitor(
 
 @router.get(
     "/walls/{wall_id}/state",
-    response_model=WallStateResponse,
     dependencies=[Depends(require_permission(PERM_VIEW))],
 )
 async def get_state(
@@ -192,34 +187,34 @@ async def get_state(
     return await svc.get_state(wall_id)
 
 
-@router.post("/walls/{wall_id}/state/push", response_model=WallStateResponse)
+@router.post("/walls/{wall_id}/state/push")
 async def push_cell(
     wall_id: str,
     body: PushCellBody,
     svc: Annotated[VideoWallService, Depends(get_wall_service)],
-    actor: Principal = Depends(require_permission(PERM_CONTROL)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_CONTROL))],
 ) -> WallStateResponse:
     return await svc.push_cell(
         wall_id, body.monitor_id, body.cell_index, body.camera_id, actor=actor
     )
 
 
-@router.post("/walls/{wall_id}/state/clear", response_model=WallStateResponse)
+@router.post("/walls/{wall_id}/state/clear")
 async def clear_cell(
     wall_id: str,
     body: ClearCellBody,
     svc: Annotated[VideoWallService, Depends(get_wall_service)],
-    actor: Principal = Depends(require_permission(PERM_CONTROL)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_CONTROL))],
 ) -> WallStateResponse:
     return await svc.clear_cell(wall_id, body.monitor_id, body.cell_index, actor=actor)
 
 
-@router.post("/walls/{wall_id}/presets/{preset_id}/apply", response_model=WallStateResponse)
+@router.post("/walls/{wall_id}/presets/{preset_id}/apply")
 async def apply_preset(
     wall_id: str,
     preset_id: str,
     svc: Annotated[VideoWallService, Depends(get_wall_service)],
-    actor: Principal = Depends(require_permission(PERM_CONTROL)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_CONTROL))],
 ) -> WallStateResponse:
     return await svc.apply_preset(wall_id, preset_id, actor=actor)
 
@@ -229,7 +224,6 @@ async def apply_preset(
 
 @router.get(
     "/walls/{wall_id}/presets",
-    response_model=PresetListResponse,
     dependencies=[Depends(require_permission(PERM_VIEW))],
 )
 async def list_presets(
@@ -241,25 +235,24 @@ async def list_presets(
 
 @router.post(
     "/walls/{wall_id}/presets",
-    response_model=PresetPublic,
     status_code=status.HTTP_201_CREATED,
 )
 async def save_preset(
     wall_id: str,
     body: PresetCreate,
     svc: Annotated[VideoWallService, Depends(get_wall_service)],
-    actor: Principal = Depends(require_permission(PERM_CONTROL)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_CONTROL))],
 ) -> PresetPublic:
     return await svc.save_preset(wall_id, body, actor=actor)
 
 
-@router.patch("/walls/{wall_id}/presets/{preset_id}", response_model=PresetPublic)
+@router.patch("/walls/{wall_id}/presets/{preset_id}")
 async def update_preset(
     wall_id: str,
     preset_id: str,
     body: PresetUpdate,
     svc: Annotated[VideoWallService, Depends(get_wall_service)],
-    _actor: Principal = Depends(require_permission(PERM_CONTROL)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_CONTROL))],
 ) -> PresetPublic:
     return await svc.update_preset(wall_id, preset_id, body)
 
@@ -271,7 +264,7 @@ async def delete_preset(
     wall_id: str,
     preset_id: str,
     svc: Annotated[VideoWallService, Depends(get_wall_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> Response:
     await svc.delete_preset(wall_id, preset_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -282,7 +275,6 @@ async def delete_preset(
 
 @router.get(
     "/walls/{wall_id}/tours",
-    response_model=TourListResponse,
     dependencies=[Depends(require_permission(PERM_VIEW))],
 )
 async def list_tours(
@@ -294,25 +286,24 @@ async def list_tours(
 
 @router.post(
     "/walls/{wall_id}/tours",
-    response_model=TourPublic,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_tour(
     wall_id: str,
     body: TourCreate,
     svc: Annotated[VideoWallService, Depends(get_wall_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> TourPublic:
     return await svc.create_tour(wall_id, body, actor=actor)
 
 
-@router.patch("/walls/{wall_id}/tours/{tour_id}", response_model=TourPublic)
+@router.patch("/walls/{wall_id}/tours/{tour_id}")
 async def update_tour(
     wall_id: str,
     tour_id: str,
     body: TourUpdate,
     svc: Annotated[VideoWallService, Depends(get_wall_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> TourPublic:
     return await svc.update_tour(wall_id, tour_id, body)
 
@@ -324,27 +315,27 @@ async def delete_tour(
     wall_id: str,
     tour_id: str,
     svc: Annotated[VideoWallService, Depends(get_wall_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> Response:
     await svc.delete_tour(wall_id, tour_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/walls/{wall_id}/tours/{tour_id}/start", response_model=TourPublic)
+@router.post("/walls/{wall_id}/tours/{tour_id}/start")
 async def start_tour(
     wall_id: str,
     tour_id: str,
     svc: Annotated[VideoWallService, Depends(get_wall_service)],
-    actor: Principal = Depends(require_permission(PERM_CONTROL)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_CONTROL))],
 ) -> TourPublic:
     return await svc.set_tour_running(wall_id, tour_id, True, actor=actor)
 
 
-@router.post("/walls/{wall_id}/tours/{tour_id}/stop", response_model=TourPublic)
+@router.post("/walls/{wall_id}/tours/{tour_id}/stop")
 async def stop_tour(
     wall_id: str,
     tour_id: str,
     svc: Annotated[VideoWallService, Depends(get_wall_service)],
-    actor: Principal = Depends(require_permission(PERM_CONTROL)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_CONTROL))],
 ) -> TourPublic:
     return await svc.set_tour_running(wall_id, tour_id, False, actor=actor)

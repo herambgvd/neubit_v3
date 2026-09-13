@@ -44,7 +44,6 @@ async def get_dashboard_service(
 
 @router.get(
     "/dashboard/summary",
-    response_model=DashboardSummary,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def dashboard_summary(

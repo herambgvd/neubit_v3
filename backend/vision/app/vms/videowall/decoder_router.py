@@ -45,29 +45,27 @@ async def get_decoder_service(
 
 @router.get(
     "/decoders",
-    response_model=DecoderListResponse,
     dependencies=[Depends(require_permission(PERM_MANAGE))],
 )
 async def list_decoders(
     svc: Annotated[VideoDecoderService, Depends(get_decoder_service)],
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=500),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
 ) -> DecoderListResponse:
     return await svc.list(skip=skip, limit=limit)
 
 
-@router.post("/decoders", response_model=DecoderPublic, status_code=status.HTTP_201_CREATED)
+@router.post("/decoders", status_code=status.HTTP_201_CREATED)
 async def create_decoder(
     body: DecoderCreate,
     svc: Annotated[VideoDecoderService, Depends(get_decoder_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> DecoderPublic:
     return await svc.create(body, actor=actor)
 
 
 @router.get(
     "/decoders/{decoder_id}",
-    response_model=DecoderPublic,
     dependencies=[Depends(require_permission(PERM_MANAGE))],
 )
 async def get_decoder(
@@ -77,12 +75,12 @@ async def get_decoder(
     return await svc.get(decoder_id)
 
 
-@router.patch("/decoders/{decoder_id}", response_model=DecoderPublic)
+@router.patch("/decoders/{decoder_id}")
 async def update_decoder(
     decoder_id: str,
     body: DecoderUpdate,
     svc: Annotated[VideoDecoderService, Depends(get_decoder_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> DecoderPublic:
     return await svc.update(decoder_id, body, actor=actor)
 
@@ -91,7 +89,7 @@ async def update_decoder(
 async def delete_decoder(
     decoder_id: str,
     svc: Annotated[VideoDecoderService, Depends(get_decoder_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> Response:
     await svc.delete(decoder_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -99,7 +97,6 @@ async def delete_decoder(
 
 @router.post(
     "/decoders/{decoder_id}/test",
-    response_model=DecoderTestResult,
     dependencies=[Depends(require_permission(PERM_MANAGE))],
 )
 async def test_decoder(

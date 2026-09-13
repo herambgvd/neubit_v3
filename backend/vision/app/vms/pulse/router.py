@@ -129,7 +129,7 @@ async def isolate_camera(
     camera_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
     scope: Annotated[Scope, Depends(get_scope)],
-    profile: Optional[str] = Query(None, max_length=64),
+    profile: Annotated[Optional[str], Query(max_length=64)] = None,
 ) -> dict:
     """The fault trace for one camera: camera → network → ingest → decode → storage
     → display, with the recorder's own evidence and verdict.

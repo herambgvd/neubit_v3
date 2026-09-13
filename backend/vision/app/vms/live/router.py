@@ -80,7 +80,6 @@ async def get_live_service(
 
 @router.post(
     "/cameras/{camera_id}/live",
-    response_model=PlaybackSessionPublic,
     status_code=status.HTTP_201_CREATED,
 )
 async def start_live(
@@ -107,15 +106,12 @@ async def start_live(
     return session
 
 
-@router.post(
-    "/cameras/{camera_id}/live/{session_id}/renew",
-    response_model=PlaybackSessionPublic,
-)
+@router.post("/cameras/{camera_id}/live/{session_id}/renew")
 async def renew_live(
     camera_id: str,
     session_id: str,
     svc: Annotated[LiveService, Depends(get_live_service)],
-    actor: Principal = Depends(require_permission(PERM_VIEW)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_VIEW))],
 ) -> PlaybackSessionPublic:
     # Per-camera ACL: re-minting a media token still requires the view_live grant.
     await enforce_camera_privilege(
@@ -128,7 +124,7 @@ async def renew_live(
 async def release_live(
     session_id: str,
     svc: Annotated[LiveService, Depends(get_live_service)],
-    actor: Principal = Depends(require_permission(PERM_VIEW)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_VIEW))],
 ) -> Response:
     await svc.release(session_id, actor=actor)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -141,7 +137,7 @@ async def release_live(
 async def media_verify(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
-    token: str | None = Query(default=None),
+    token: Annotated[str | None, Query()] = None,
 ) -> Response:
     """Validate the media token → 200 (empty) when valid, 401/403 otherwise.
 

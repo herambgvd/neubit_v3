@@ -51,12 +51,11 @@ async def get_health_service(
 
 @router.get(
     "/cameras/health",
-    response_model=CameraHealthListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def latest_health(
     svc: Annotated[HealthService, Depends(get_health_service)],
-    camera_id: str | None = Query(None, max_length=36),
+    camera_id: Annotated[str | None, Query(max_length=36)] = None,
 ) -> CameraHealthListResponse:
     """Latest health snapshot per camera (health-dashboard / Cameras-table column).
 
@@ -67,16 +66,15 @@ async def latest_health(
 
 @router.get(
     "/cameras/{camera_id}/health/history",
-    response_model=CameraHealthHistoryResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def health_history(
     camera_id: str,
     svc: Annotated[HealthService, Depends(get_health_service)],
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-    from_: datetime | None = Query(None, alias="from"),
-    to: datetime | None = Query(None),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    from_: Annotated[datetime | None, Query(alias="from")] = None,
+    to: Annotated[datetime | None, Query()] = None,
 ) -> CameraHealthHistoryResponse:
     """Paginated health time-series for one camera (newest first; from/to filter)."""
     return await svc.history(camera_id, skip=skip, limit=limit, from_=from_, to=to)
@@ -84,7 +82,6 @@ async def health_history(
 
 @router.post(
     "/cameras/{camera_id}/health/refresh",
-    response_model=CameraHealthPublic,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def refresh_health(

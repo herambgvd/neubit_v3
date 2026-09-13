@@ -47,7 +47,6 @@ async def get_pattern_service(
 
 @router.get(
     "/patterns",
-    response_model=PatternListResponse,
     dependencies=[Depends(require_permission(PERM_VIEW))],
 )
 async def list_patterns(
@@ -60,20 +59,18 @@ async def list_patterns(
 
 @router.post(
     "/patterns",
-    response_model=PatternPublic,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_pattern(
     body: PatternCreate,
     svc: Annotated[PatternService, Depends(get_pattern_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> PatternPublic:
     return await svc.create(body, actor=actor)
 
 
 @router.get(
     "/patterns/{pattern_id}",
-    response_model=PatternPublic,
     dependencies=[Depends(require_permission(PERM_VIEW))],
 )
 async def get_pattern(
@@ -83,12 +80,12 @@ async def get_pattern(
     return await svc.get(pattern_id)
 
 
-@router.patch("/patterns/{pattern_id}", response_model=PatternPublic)
+@router.patch("/patterns/{pattern_id}")
 async def update_pattern(
     pattern_id: str,
     body: PatternUpdate,
     svc: Annotated[PatternService, Depends(get_pattern_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> PatternPublic:
     return await svc.update(pattern_id, body, actor=actor)
 
@@ -97,7 +94,7 @@ async def update_pattern(
 async def delete_pattern(
     pattern_id: str,
     svc: Annotated[PatternService, Depends(get_pattern_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> Response:
     await svc.delete(pattern_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

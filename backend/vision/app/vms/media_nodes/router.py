@@ -53,22 +53,20 @@ async def get_media_node_service(
 
 @router.get(
     "/media-nodes",
-    response_model=MediaNodeListResponse,
     dependencies=[Depends(require_permission(PERM_MANAGE))],
 )
 async def list_media_nodes(
     svc: Annotated[MediaNodeService, Depends(get_media_node_service)],
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=500),
-    status_: str | None = Query(None, alias="status", max_length=16),
-    q: str | None = Query(None, max_length=255),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+    status_: Annotated[str | None, Query(alias="status", max_length=16)] = None,
+    q: Annotated[str | None, Query(max_length=255)] = None,
 ) -> MediaNodeListResponse:
     return await svc.list_(skip=skip, limit=limit, status=status_, q=q)
 
 
 @router.post(
     "/media-nodes",
-    response_model=MediaNodePublic,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_permission(PERM_MANAGE))],
 )
@@ -81,7 +79,6 @@ async def register_media_node(
 
 @router.get(
     "/media-nodes/{node_id}",
-    response_model=MediaNodePublic,
     dependencies=[Depends(require_permission(PERM_MANAGE))],
 )
 async def get_media_node(
@@ -93,7 +90,6 @@ async def get_media_node(
 
 @router.patch(
     "/media-nodes/{node_id}",
-    response_model=MediaNodePublic,
     dependencies=[Depends(require_permission(PERM_MANAGE))],
 )
 async def update_media_node(

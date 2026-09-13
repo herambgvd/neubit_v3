@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 
 from contextlib import asynccontextmanager
+from typing import Annotated
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -202,8 +203,8 @@ def create_app() -> FastAPI:
     # (a core-minted token verifies here identically to the Go nvr service).
     @app.get(f"{settings.api_prefix}/vms/whoami")
     async def whoami(
-        principal: Principal = Depends(get_principal),
-        scope: Scope = Depends(get_scope),
+        principal: Annotated[Principal, Depends(get_principal)],
+        scope: Annotated[Scope, Depends(get_scope)],
     ) -> dict:
         return {
             "user_id": str(principal.user_id),

@@ -42,16 +42,15 @@ async def get_bookmark_service(
 
 @router.get(
     "/bookmarks",
-    response_model=BookmarkListResponse,
     dependencies=[Depends(require_permission(PERM_VIEW))],
 )
 async def list_bookmarks(
     svc: Annotated[BookmarkService, Depends(get_bookmark_service)],
-    camera_id: str | None = Query(None, alias="camera_id", max_length=36),
-    from_: datetime | None = Query(None, alias="from"),
-    to: datetime | None = Query(None, alias="to"),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500),
+    camera_id: Annotated[str | None, Query(alias="camera_id", max_length=36)] = None,
+    from_: Annotated[datetime | None, Query(alias="from")] = None,
+    to: Annotated[datetime | None, Query(alias="to")] = None,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> BookmarkListResponse:
     items, total = await svc.list_(
         camera_id=camera_id, from_=from_, to=to, skip=skip, limit=limit
@@ -61,23 +60,22 @@ async def list_bookmarks(
 
 @router.post(
     "/bookmarks",
-    response_model=BookmarkPublic,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_bookmark(
     body: BookmarkCreate,
     svc: Annotated[BookmarkService, Depends(get_bookmark_service)],
-    actor: Principal = Depends(require_permission(PERM_VIEW)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_VIEW))],
 ) -> BookmarkPublic:
     return await svc.create(body, actor=actor)
 
 
-@router.patch("/bookmarks/{bookmark_id}", response_model=BookmarkPublic)
+@router.patch("/bookmarks/{bookmark_id}")
 async def update_bookmark(
     bookmark_id: str,
     body: BookmarkUpdate,
     svc: Annotated[BookmarkService, Depends(get_bookmark_service)],
-    _actor: Principal = Depends(require_permission(PERM_VIEW)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_VIEW))],
 ) -> BookmarkPublic:
     return await svc.update(bookmark_id, body)
 
@@ -86,7 +84,7 @@ async def update_bookmark(
 async def delete_bookmark(
     bookmark_id: str,
     svc: Annotated[BookmarkService, Depends(get_bookmark_service)],
-    _actor: Principal = Depends(require_permission(PERM_VIEW)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_VIEW))],
 ) -> Response:
     await svc.delete(bookmark_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

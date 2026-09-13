@@ -206,7 +206,7 @@ async def federated_timeline(
     db: Annotated[AsyncSession, Depends(get_db)],
     scope: Annotated[Scope, Depends(get_scope)],
     profile: Optional[str] = None,
-    from_: Optional[str] = Query(None, alias="from"),
+    from_: Annotated[Optional[str], Query(alias="from")] = None,
     to: Optional[str] = None,
 ) -> dict:
     """Merged recorded-coverage ranges (scrub bar) for a federated camera, via its node."""
@@ -232,7 +232,7 @@ async def federated_recordings(
     db: Annotated[AsyncSession, Depends(get_db)],
     scope: Annotated[Scope, Depends(get_scope)],
     profile: Optional[str] = None,
-    from_: Optional[str] = Query(None, alias="from"),
+    from_: Annotated[Optional[str], Query(alias="from")] = None,
     to: Optional[str] = None,
     limit: int = 500,
     offset: int = 0,
@@ -267,7 +267,7 @@ async def federated_playback(
     camera_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
     scope: Annotated[Scope, Depends(get_scope)],
-    from_: Optional[str] = Query(None, alias="from"),
+    from_: Annotated[Optional[str], Query(alias="from")] = None,
     to: Optional[str] = None,
 ) -> dict:
     """Mint a playback session for a federated camera THROUGH its recorder node. Returns

@@ -370,7 +370,7 @@ async def federated_preset_goto(
     preset: str,
     db: Annotated[AsyncSession, Depends(get_db)],
     scope: Annotated[Scope, Depends(get_scope)],
-    body: Optional[dict] = Body(None),
+    body: Annotated[Optional[dict], Body()] = None,
 ) -> dict:
     """Recall a preset on a federated camera, via its node. ptz.go ptzGotoPreset —
     ``preset`` is the DEVICE token from the list route, and { speed?, zoom_speed? } is
@@ -550,7 +550,7 @@ async def federated_talk_begin(
     camera_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
     scope: Annotated[Scope, Depends(get_scope)],
-    body: Optional[dict] = Body(None),
+    body: Annotated[Optional[dict], Body()] = None,
 ) -> dict:
     """Begin push-to-talk on a federated camera, via its node (talk.go postTalk): the
     capability + transport check and the audited intent, returning

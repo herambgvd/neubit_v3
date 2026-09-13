@@ -47,15 +47,14 @@ async def get_evidence_service(
 
 @router.get(
     "/evidence",
-    response_model=EvidenceLockListResponse,
     dependencies=[Depends(require_permission(PERM_VIEW))],
 )
 async def list_evidence(
     svc: Annotated[EvidenceService, Depends(get_evidence_service)],
-    camera_id: str | None = Query(None, max_length=36),
-    active_only: bool = Query(False),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500),
+    camera_id: Annotated[str | None, Query(max_length=36)] = None,
+    active_only: Annotated[bool, Query()] = False,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> EvidenceLockListResponse:
     items, total = await svc.list_(
         camera_id=camera_id, active_only=active_only, skip=skip, limit=limit
@@ -68,15 +67,14 @@ async def list_evidence(
 # is matched before the path-param catch-all (FastAPI matches in registration order).
 @router.get(
     "/evidence/check",
-    response_model=EvidenceCheckResult,
     dependencies=[Depends(require_permission(PERM_VIEW))],
 )
 async def check_evidence(
     svc: Annotated[EvidenceService, Depends(get_evidence_service)],
-    camera_id: str = Query(..., max_length=36),
-    ts: datetime | None = Query(None),
-    from_: datetime | None = Query(None, alias="from"),
-    to: datetime | None = Query(None, alias="to"),
+    camera_id: Annotated[str, Query(max_length=36)],
+    ts: Annotated[datetime | None, Query()] = None,
+    from_: Annotated[datetime | None, Query(alias="from")] = None,
+    to: Annotated[datetime | None, Query(alias="to")] = None,
 ) -> EvidenceCheckResult:
     if ts is None and (from_ is None or to is None):
         raise HTTPException(
@@ -89,20 +87,18 @@ async def check_evidence(
 
 @router.post(
     "/evidence",
-    response_model=EvidenceLockPublic,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_evidence(
     body: EvidenceLockCreate,
     svc: Annotated[EvidenceService, Depends(get_evidence_service)],
-    actor: Principal = Depends(require_permission(PERM_CONTROL)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_CONTROL))],
 ) -> EvidenceLockPublic:
     return await svc.create(body, actor=actor)
 
 
 @router.get(
     "/evidence/{lock_id}",
-    response_model=EvidenceLockPublic,
     dependencies=[Depends(require_permission(PERM_VIEW))],
 )
 async def get_evidence(
@@ -112,11 +108,11 @@ async def get_evidence(
     return await svc.get(lock_id)
 
 
-@router.post("/evidence/{lock_id}/release", response_model=EvidenceLockPublic)
+@router.post("/evidence/{lock_id}/release")
 async def release_evidence(
     lock_id: str,
     svc: Annotated[EvidenceService, Depends(get_evidence_service)],
-    actor: Principal = Depends(require_permission(PERM_CONTROL)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_CONTROL))],
 ) -> EvidenceLockPublic:
     return await svc.release(lock_id, actor=actor)
 
@@ -125,7 +121,7 @@ async def release_evidence(
 async def delete_evidence(
     lock_id: str,
     svc: Annotated[EvidenceService, Depends(get_evidence_service)],
-    _actor: Principal = Depends(require_permission(PERM_CONTROL)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_CONTROL))],
 ) -> Response:
     await svc.delete(lock_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

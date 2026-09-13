@@ -99,18 +99,17 @@ async def get_camera_service(
 
 @router.get(
     "/cameras",
-    response_model=CameraListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def list_cameras(
     svc: Annotated[CameraService, Depends(get_camera_service)],
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=500),
-    status_: str | None = Query(None, alias="status", max_length=16),
-    brand: str | None = Query(None, max_length=64),
-    site_id: str | None = Query(None, max_length=36),
-    group_id: str | None = Query(None, max_length=36),
-    q: str | None = Query(None, max_length=255),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+    status_: Annotated[str | None, Query(alias="status", max_length=16)] = None,
+    brand: Annotated[str | None, Query(max_length=64)] = None,
+    site_id: Annotated[str | None, Query(max_length=36)] = None,
+    group_id: Annotated[str | None, Query(max_length=36)] = None,
+    q: Annotated[str | None, Query(max_length=255)] = None,
 ) -> CameraListResponse:
     return await svc.list_(
         skip=skip, limit=limit, status=status_, brand=brand,
@@ -120,20 +119,18 @@ async def list_cameras(
 
 @router.post(
     "/cameras",
-    response_model=CameraPublic,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_camera(
     body: CameraCreate,
     svc: Annotated[CameraService, Depends(get_camera_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> CameraPublic:
     return await svc.create(body, actor=actor)
 
 
 @router.get(
     "/cameras/{camera_id}",
-    response_model=CameraPublic,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def get_camera(
@@ -143,12 +140,12 @@ async def get_camera(
     return await svc.get(camera_id)
 
 
-@router.patch("/cameras/{camera_id}", response_model=CameraPublic)
+@router.patch("/cameras/{camera_id}")
 async def update_camera(
     camera_id: str,
     body: CameraUpdate,
     svc: Annotated[CameraService, Depends(get_camera_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> CameraPublic:
     return await svc.update(camera_id, body, actor=actor)
 
@@ -157,7 +154,7 @@ async def update_camera(
 async def delete_camera(
     camera_id: str,
     svc: Annotated[CameraService, Depends(get_camera_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> Response:
     await svc.delete(camera_id, actor=actor)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -166,11 +163,11 @@ async def delete_camera(
 # ── Bulk + reorder ─────────────────────────────────────────────────────
 
 
-@router.post("/cameras/bulk", response_model=BulkResult)
+@router.post("/cameras/bulk")
 async def bulk_cameras(
     body: CameraBulkBody,
     svc: Annotated[CameraService, Depends(get_camera_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> BulkResult:
     result = await svc.bulk(
         body.camera_ids, body.action,
@@ -180,11 +177,11 @@ async def bulk_cameras(
     return BulkResult(affected=result["affected"])
 
 
-@router.post("/cameras/reorder", response_model=ReorderResult)
+@router.post("/cameras/reorder")
 async def reorder_cameras(
     body: CameraReorderBody,
     svc: Annotated[CameraService, Depends(get_camera_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> ReorderResult:
     result = await svc.reorder(body.items)
     return ReorderResult(reordered=result["reordered"])
@@ -208,7 +205,7 @@ async def reorder_cameras(
 async def snapshot_camera(
     camera_id: str,
     svc: Annotated[CameraService, Depends(get_camera_service)],
-    _actor: Principal = Depends(require_permission(PERM_READ)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_READ))],
 ) -> Response:
     jpeg = await svc.snapshot_for(camera_id)
     if jpeg is None:

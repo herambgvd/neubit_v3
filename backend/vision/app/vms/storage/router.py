@@ -43,28 +43,27 @@ async def get_storage_service(
 # ── recording integrity + evidence lock ─────────────────────────────────
 
 
-@rec_router.post("/recordings/{rec_id}/lock", response_model=RecordingIntegrityResult)
+@rec_router.post("/recordings/{rec_id}/lock")
 async def lock_recording(
     rec_id: str,
     body: RecordingLockBody,
     svc: Annotated[StorageService, Depends(get_storage_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> RecordingIntegrityResult:
     return await svc.set_lock(rec_id, locked=True, actor=actor, reason=body.reason)
 
 
-@rec_router.post("/recordings/{rec_id}/unlock", response_model=RecordingIntegrityResult)
+@rec_router.post("/recordings/{rec_id}/unlock")
 async def unlock_recording(
     rec_id: str,
     svc: Annotated[StorageService, Depends(get_storage_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> RecordingIntegrityResult:
     return await svc.set_lock(rec_id, locked=False, actor=actor)
 
 
 @rec_router.post(
     "/recordings/{rec_id}/verify",
-    response_model=RecordingIntegrityResult,
     dependencies=[Depends(require_permission(PERM_VIEW))],
 )
 async def verify_recording(

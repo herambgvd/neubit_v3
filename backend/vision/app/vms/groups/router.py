@@ -49,7 +49,6 @@ async def get_group_service(
 
 @router.get(
     "/camera-groups",
-    response_model=CameraGroupListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def list_groups(
@@ -61,23 +60,22 @@ async def list_groups(
 
 @router.post(
     "/camera-groups",
-    response_model=CameraGroupPublic,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_group(
     body: CameraGroupCreate,
     svc: Annotated[CameraGroupService, Depends(get_group_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> CameraGroupPublic:
     return await svc.create(body, actor=actor)
 
 
-@router.patch("/camera-groups/{group_id}", response_model=CameraGroupPublic)
+@router.patch("/camera-groups/{group_id}")
 async def update_group(
     group_id: str,
     body: CameraGroupUpdate,
     svc: Annotated[CameraGroupService, Depends(get_group_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> CameraGroupPublic:
     return await svc.update(group_id, body, actor=actor)
 
@@ -86,7 +84,7 @@ async def update_group(
 async def delete_group(
     group_id: str,
     svc: Annotated[CameraGroupService, Depends(get_group_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> Response:
     await svc.delete(group_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -97,7 +95,6 @@ async def delete_group(
 
 @router.get(
     "/cameras/{camera_id}/acl",
-    response_model=CameraACLListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def get_camera_acl(
@@ -108,12 +105,12 @@ async def get_camera_acl(
     return CameraACLListResponse(items=items, total=len(items))
 
 
-@router.put("/cameras/{camera_id}/acl", response_model=CameraACLListResponse)
+@router.put("/cameras/{camera_id}/acl")
 async def put_camera_acl(
     camera_id: str,
     body: CameraACLPutBody,
     svc: Annotated[CameraService, Depends(get_camera_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> CameraACLListResponse:
     items = await svc.put_acl(camera_id, body.entries, actor=actor)
     return CameraACLListResponse(items=items, total=len(items))

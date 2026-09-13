@@ -49,28 +49,26 @@ async def get_linkage_service(
 
 @router.post(
     "/linkage-rules",
-    response_model=LinkageRulePublic,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_rule(
     body: LinkageRuleCreate,
     svc: Annotated[LinkageRuleService, Depends(get_linkage_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> LinkageRulePublic:
     return await svc.create(body, actor=actor)
 
 
 @router.get(
     "/linkage-rules",
-    response_model=LinkageRuleListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def list_rules(
     svc: Annotated[LinkageRuleService, Depends(get_linkage_service)],
-    trigger_event_type: str | None = Query(None, max_length=48),
-    is_active: bool | None = Query(None),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=500),
+    trigger_event_type: Annotated[str | None, Query(max_length=48)] = None,
+    is_active: Annotated[bool | None, Query()] = None,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
 ) -> LinkageRuleListResponse:
     return await svc.list_(
         trigger_event_type=trigger_event_type,
@@ -82,15 +80,14 @@ async def list_rules(
 
 @router.get(
     "/linkage-fires",
-    response_model=LinkageFireListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def list_fires(
     svc: Annotated[LinkageRuleService, Depends(get_linkage_service)],
-    rule_id: str | None = Query(None, max_length=36),
-    camera_id: str | None = Query(None, max_length=36),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=500),
+    rule_id: Annotated[str | None, Query(max_length=36)] = None,
+    camera_id: Annotated[str | None, Query(max_length=36)] = None,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
 ) -> LinkageFireListResponse:
     """The rule-fire audit log (newest first) — which rule fired what, when."""
     return await svc.list_fires(rule_id=rule_id, camera_id=camera_id, skip=skip, limit=limit)
@@ -98,7 +95,6 @@ async def list_fires(
 
 @router.get(
     "/linkage-rules/{rule_id}",
-    response_model=LinkageRulePublic,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def get_rule(
@@ -108,15 +104,12 @@ async def get_rule(
     return await svc.get(rule_id)
 
 
-@router.patch(
-    "/linkage-rules/{rule_id}",
-    response_model=LinkageRulePublic,
-)
+@router.patch("/linkage-rules/{rule_id}")
 async def update_rule(
     rule_id: str,
     body: LinkageRuleUpdate,
     svc: Annotated[LinkageRuleService, Depends(get_linkage_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> LinkageRulePublic:
     return await svc.update(rule_id, body, actor=actor)
 

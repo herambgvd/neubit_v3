@@ -43,7 +43,6 @@ async def get_event_service(
 
 @router.get(
     "/events",
-    response_model=VmsEventListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def list_events(
@@ -72,7 +71,6 @@ async def list_events(
 
 @router.get(
     "/cameras/{camera_id}/events",
-    response_model=VmsEventListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def list_camera_events(
@@ -101,7 +99,6 @@ async def list_camera_events(
 
 @router.post(
     "/events/{event_id}/ack",
-    response_model=VmsEventPublic,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def ack_event(
