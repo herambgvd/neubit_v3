@@ -52,7 +52,13 @@ function purposeLabel(value: unknown): string | undefined {
 function cellText(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "object") return JSON.stringify(value);
-  return String(value);
+  if (typeof value === "string") return value;
+  // `unknown` minus `object` is still `unknown` to the analyser, so the scalar
+  // types are named rather than left to `String()`. Everything that survives
+  // `JSON.parse` is one of these or an object, and the object case returned above.
+  return typeof value === "number" || typeof value === "boolean" || typeof value === "bigint"
+    ? String(value)
+    : "";
 }
 
 // A controller DTO value is `unknown`; each pill narrows only what it needs.

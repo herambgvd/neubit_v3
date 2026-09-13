@@ -16,8 +16,11 @@ import { CHANNEL_FIELDS, CHANNEL_META } from "../constants";
  *  scalar has a text form the operator can meaningfully edit. */
 function textOf(v: unknown): string {
   if (v === null || v === undefined) return "";
-  if (typeof v === "object") return "";
-  return String(v);
+  if (typeof v === "string") return v;
+  // `unknown` minus `object` is still `unknown` to the analyser, so the scalar
+  // types are named rather than left to `String()`. Everything that survives
+  // `JSON.parse` is one of these or an object, and the object case returned above.
+  return typeof v === "number" || typeof v === "boolean" || typeof v === "bigint" ? String(v) : "";
 }
 
 export function ChannelCard({ channel }: { channel: ChannelOut }) {

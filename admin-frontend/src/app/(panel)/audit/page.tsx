@@ -37,7 +37,10 @@ function actionTone(action: string | null | undefined): BadgeTone {
    the module. Declared inside the page, each one would be a fresh type on every
    render and React would tear down and rebuild every cell in the table. */
 
-type AuditCell = CellContext<AuditEntry, unknown>;
+// Readonly at the alias rather than on each cell: a cell renders its row and
+// never mutates the context it is handed, and saying so once keeps the six
+// signatures below identical.
+type AuditCell = Readonly<CellContext<AuditEntry, unknown>>;
 
 function TimeCell({ row }: AuditCell) {
   return <span className="whitespace-nowrap tabular-nums text-muted">{fmtTs(row.original.ts)}</span>;

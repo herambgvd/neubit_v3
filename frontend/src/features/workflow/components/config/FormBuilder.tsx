@@ -67,7 +67,11 @@ const blankField = (): BuilderField => ({
 function defaultText(v: unknown): string {
   if (v === null || v === undefined) return "";
   if (typeof v === "object") return JSON.stringify(v);
-  return String(v);
+  if (typeof v === "string") return v;
+  // `unknown` minus `object` is still `unknown` to the analyser, so the scalar
+  // types are named rather than left to `String()`. Everything that survives
+  // `JSON.parse` is one of these or an object, and the object case returned above.
+  return typeof v === "number" || typeof v === "boolean" || typeof v === "bigint" ? String(v) : "";
 }
 
 // Backend field → editor row (options list → comma string; validation → flat).

@@ -46,7 +46,11 @@ export const CHANNEL_TYPES = [
 function configText(v: unknown): string {
   if (v === null || v === undefined) return "";
   if (typeof v === "object") return JSON.stringify(v);
-  return String(v);
+  if (typeof v === "string") return v;
+  // `unknown` minus `object` is still `unknown` to the analyser, so the scalar
+  // types are named rather than left to `String()`. Everything that survives
+  // `JSON.parse` is one of these or an object, and the object case returned above.
+  return typeof v === "number" || typeof v === "boolean" || typeof v === "bigint" ? String(v) : "";
 }
 
 /** A config value the text editor can hold and hand back unchanged. Anything
@@ -323,7 +327,7 @@ function ChannelModal({
     setType(channel?.channel_type || "email");
     setIsDefault(!!channel?.is_default);
     const entries = Object.entries(channel?.config || {});
-    setCfg(Object.fromEntries(entries.filter(([, v]) => isEditable(v)).map(([k, v]) => [k, v == null ? "" : String(v)])));
+    setCfg(Object.fromEntries(entries.filter(([, v]) => isEditable(v)).map(([k, v]) => [k, configText(v)])));
     setPassthrough(Object.fromEntries(entries.filter(([, v]) => !isEditable(v))));
   }
 

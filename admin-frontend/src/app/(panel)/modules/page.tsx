@@ -31,7 +31,10 @@ import {
    the module. Declared inside the page, each one would be a fresh type on every
    render and React would tear down and rebuild every cell in the table. */
 
-type ModuleCell = CellContext<PlatformModule, unknown>;
+// Readonly at the alias rather than on each cell: a cell renders its row and
+// never mutates the context it is handed, and saying so once keeps the six
+// signatures below identical.
+type ModuleCell = Readonly<CellContext<PlatformModule, unknown>>;
 
 function ModuleNameCell({ row }: ModuleCell) {
   const m = row.original;
@@ -85,11 +88,11 @@ function ModuleActionsCell({
   module: m,
   onEdit,
   onDelete,
-}: {
+}: Readonly<{
   module: PlatformModule;
   onEdit: (m: PlatformModule) => void;
   onDelete: (m: PlatformModule) => void;
-}) {
+}>) {
   return (
     <div className="flex items-center justify-end gap-1.5">
       <Button variant="outline" size="icon" title="Edit" aria-label="Edit" onClick={() => onEdit(m)}>

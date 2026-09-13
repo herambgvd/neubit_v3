@@ -40,7 +40,10 @@ interface StopDraft {
 }
 
 let stopSeq = 0;
-const nextUid = () => `stop-${(stopSeq += 1)}`;
+const nextUid = () => {
+  stopSeq += 1;
+  return `stop-${stopSeq}`;
+};
 
 const DEFAULT_DWELL = 5;
 

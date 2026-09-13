@@ -36,7 +36,10 @@ function fmtDate(value: string | null | undefined): string {
    the module. Declared inside the page, each one would be a fresh type on every
    render and React would tear down and rebuild every cell in the table. */
 
-type UserCell = CellContext<AdminUser, unknown>;
+// Readonly at the alias rather than on each cell: a cell renders its row and
+// never mutates the context it is handed, and saying so once keeps the six
+// signatures below identical.
+type UserCell = Readonly<CellContext<AdminUser, unknown>>;
 
 function UserIdentityCell({ row }: UserCell) {
   const u = row.original;
@@ -105,12 +108,12 @@ function UserActionsCell({
   onDisable,
   onEnable,
   enabling,
-}: {
+}: Readonly<{
   user: AdminUser;
   onDisable: (u: AdminUser) => void;
   onEnable: (id: string) => void;
   enabling: boolean;
-}) {
+}>) {
   if (u.is_superadmin) return null; // platform admins aren't toggled here
   return u.is_active ? (
     <div className="flex justify-end">

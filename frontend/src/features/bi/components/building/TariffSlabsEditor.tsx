@@ -271,8 +271,8 @@ export default function TariffSlabsEditor({ site }: { site: SitePublic }) {
                   start: "",
                   end: "",
                   rate: "",
-                  currency: prev[prev.length - 1]?.currency || "",
-                  effective_from: prev[prev.length - 1]?.effective_from || "",
+                  currency: prev.at(-1)?.currency || "",
+                  effective_from: prev.at(-1)?.effective_from || "",
                   _key: randomId(),
                 },
               ]);

@@ -63,7 +63,10 @@ function LicenseBadge({ state }: { state: string }) {
    the module. Declared inside the page, each one would be a fresh type on every
    render and React would tear down and rebuild every cell in the table. */
 
-type TenantCell = CellContext<Tenant, unknown>;
+// Readonly at the alias rather than on each cell: a cell renders its row and
+// never mutates the context it is handed, and saying so once keeps the six
+// signatures below identical.
+type TenantCell = Readonly<CellContext<Tenant, unknown>>;
 
 function NameCell({ row }: TenantCell) {
   return (
