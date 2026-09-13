@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager
+from typing import Annotated
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -125,8 +126,8 @@ def create_app() -> FastAPI:
     # Sample authed route — proves JWT verification + tenant scope work locally.
     @app.get(f"{settings.api_prefix}/access/whoami")
     async def whoami(
-        principal: Principal = Depends(get_principal),
-        scope: Scope = Depends(get_scope),
+        principal: Annotated[Principal, Depends(get_principal)],
+        scope: Annotated[Scope, Depends(get_scope)],
     ) -> dict:
         return {
             "user_id": str(principal.user_id),

@@ -111,14 +111,13 @@ async def _rule_service(
 
 @config_router.get(
     "/categories",
-    response_model=CategoryListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def list_categories(
     svc: Annotated[CategoryService, Depends(_category_service)],
-    skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=500),
-    search: Optional[str] = Query(None, max_length=100),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 20,
+    search: Annotated[Optional[str], Query(max_length=100)] = None,
 ) -> CategoryListResponse:
     items, total = await svc.list_(skip=skip, limit=limit, search=search)
     return CategoryListResponse(items=items, total=total, skip=skip, limit=limit)
@@ -126,20 +125,18 @@ async def list_categories(
 
 @config_router.post(
     "/categories",
-    response_model=CategoryPublic,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_category(
     body: CategoryCreate,
     svc: Annotated[CategoryService, Depends(_category_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> CategoryPublic:
     return await svc.create(body, actor=actor)
 
 
 @config_router.get(
     "/categories/{category_id}",
-    response_model=CategoryPublic,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def get_category(
@@ -149,12 +146,12 @@ async def get_category(
     return await svc.get(category_id)
 
 
-@config_router.patch("/categories/{category_id}", response_model=CategoryPublic)
+@config_router.patch("/categories/{category_id}")
 async def update_category(
     category_id: str,
     body: CategoryUpdate,
     svc: Annotated[CategoryService, Depends(_category_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> CategoryPublic:
     return await svc.update(category_id, body, actor=actor)
 
@@ -165,7 +162,7 @@ async def update_category(
 async def delete_category(
     category_id: str,
     svc: Annotated[CategoryService, Depends(_category_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> Response:
     await svc.delete(category_id, actor=actor)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -176,15 +173,14 @@ async def delete_category(
 
 @config_router.get(
     "/webhooks",
-    response_model=WebhookListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def list_webhooks(
     svc: Annotated[WebhookService, Depends(_webhook_service)],
-    skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=500),
-    search: Optional[str] = Query(None, max_length=100),
-    category_id: Optional[str] = Query(None, max_length=36),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 20,
+    search: Annotated[Optional[str], Query(max_length=100)] = None,
+    category_id: Annotated[Optional[str], Query(max_length=36)] = None,
 ) -> WebhookListResponse:
     items, total = await svc.list_(
         skip=skip, limit=limit, search=search, category_id=category_id
@@ -194,20 +190,18 @@ async def list_webhooks(
 
 @config_router.post(
     "/webhooks",
-    response_model=WebhookPublic,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_webhook(
     body: WebhookCreate,
     svc: Annotated[WebhookService, Depends(_webhook_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> WebhookPublic:
     return await svc.create(body, actor=actor)
 
 
 @config_router.get(
     "/webhooks/{webhook_id}",
-    response_model=WebhookPublic,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def get_webhook(
@@ -217,12 +211,12 @@ async def get_webhook(
     return await svc.get(webhook_id)
 
 
-@config_router.patch("/webhooks/{webhook_id}", response_model=WebhookPublic)
+@config_router.patch("/webhooks/{webhook_id}")
 async def update_webhook(
     webhook_id: str,
     body: WebhookUpdate,
     svc: Annotated[WebhookService, Depends(_webhook_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> WebhookPublic:
     return await svc.update(webhook_id, body, actor=actor)
 
@@ -231,7 +225,7 @@ async def update_webhook(
 async def delete_webhook(
     webhook_id: str,
     svc: Annotated[WebhookService, Depends(_webhook_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> Response:
     await svc.delete(webhook_id, actor=actor)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -239,7 +233,6 @@ async def delete_webhook(
 
 @config_router.post(
     "/webhooks/{webhook_id}/test",
-    response_model=WebhookTestResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def test_webhook(
@@ -253,13 +246,12 @@ async def test_webhook(
 
 @config_router.post(
     "/webhooks/{webhook_id}/rotate-secret",
-    response_model=RotateSecretResponse,
 )
 async def rotate_webhook_secret(
     webhook_id: str,
     body: RotateSecretRequest,
     svc: Annotated[WebhookService, Depends(_webhook_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> RotateSecretResponse:
     """Mint a fresh auth secret, returned once. The URL/slug is not changed."""
     return await svc.rotate_secret(webhook_id, actor=actor)
@@ -270,7 +262,6 @@ async def rotate_webhook_secret(
 
 @config_router.get(
     "/webhooks/{webhook_id}/rules",
-    response_model=EventRuleListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def list_rules(
@@ -283,21 +274,19 @@ async def list_rules(
 
 @config_router.post(
     "/webhooks/{webhook_id}/rules",
-    response_model=EventRulePublic,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_rule(
     webhook_id: str,
     body: EventRuleCreate,
     svc: Annotated[RuleService, Depends(_rule_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> EventRulePublic:
     return await svc.create(webhook_id, body, actor=actor)
 
 
 @config_router.get(
     "/event-rules/{rule_id}",
-    response_model=EventRulePublic,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def get_rule(
@@ -307,12 +296,12 @@ async def get_rule(
     return await svc.get(rule_id)
 
 
-@config_router.patch("/event-rules/{rule_id}", response_model=EventRulePublic)
+@config_router.patch("/event-rules/{rule_id}")
 async def update_rule(
     rule_id: str,
     body: EventRuleUpdate,
     svc: Annotated[RuleService, Depends(_rule_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> EventRulePublic:
     return await svc.update(rule_id, body, actor=actor)
 
@@ -323,7 +312,7 @@ async def update_rule(
 async def delete_rule(
     rule_id: str,
     svc: Annotated[RuleService, Depends(_rule_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> Response:
     await svc.delete(rule_id, actor=actor)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -331,7 +320,6 @@ async def delete_rule(
 
 @config_router.post(
     "/event-rules/{rule_id}/test",
-    response_model=RuleTestResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def test_rule(
@@ -360,20 +348,19 @@ async def _event_log_service(
 
 @config_router.get(
     "/event-logs",
-    response_model=EventLogListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def list_event_logs(
     svc: Annotated[EventLogService, Depends(_event_log_service)],
-    skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=500),
-    webhook_id: Optional[str] = Query(None, max_length=36),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 20,
+    webhook_id: Annotated[Optional[str], Query(max_length=36)] = None,
     # The single-value verdict the operator UI filters on (EventStatus).
-    status: Optional[EventStatus] = Query(None),
-    auth_outcome: Optional[str] = Query(None, pattern="^(ok|failed)$"),
-    published: Optional[bool] = Query(None),
-    since: Optional[datetime] = Query(None),
-    until: Optional[datetime] = Query(None),
+    status: Annotated[Optional[EventStatus], Query()] = None,
+    auth_outcome: Annotated[Optional[str], Query(pattern="^(ok|failed)$")] = None,
+    published: Annotated[Optional[bool], Query()] = None,
+    since: Annotated[Optional[datetime], Query()] = None,
+    until: Annotated[Optional[datetime], Query()] = None,
 ) -> EventLogListResponse:
     items, total = await svc.list_(
         skip=skip,
@@ -390,7 +377,6 @@ async def list_event_logs(
 
 @config_router.get(
     "/event-logs/{log_id}",
-    response_model=EventLogDetail,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def get_event_log(
@@ -402,12 +388,11 @@ async def get_event_log(
 
 @config_router.post(
     "/event-logs/{log_id}/replay",
-    response_model=ReplayResponse,
 )
 async def replay_event_log(
     log_id: str,
     svc: Annotated[EventLogService, Depends(_event_log_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> ReplayResponse:
     """Re-run the stored raw payload through the webhook pipeline (new log row)."""
     row = await svc.replay(log_id)

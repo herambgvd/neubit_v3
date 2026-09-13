@@ -193,22 +193,20 @@ def _dds_err(exc: DDSError) -> HTTPException:
 
 @router.get(
     "/instances",
-    response_model=InstanceListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
     responses=_denied(PERM_READ),
 )
 async def list_instances(
     svc: Annotated[InstanceService, Depends(_instance_service)],
-    skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=500),
-    search: Optional[str] = Query(None, max_length=100),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 20,
+    search: Annotated[Optional[str], Query(max_length=100)] = None,
 ) -> InstanceListResponse:
     return await svc.list_(skip=skip, limit=limit, search=search)
 
 
 @router.post(
     "/instances",
-    response_model=InstancePublic,
     status_code=status.HTTP_201_CREATED,
     responses={
         **_denied(PERM_MANAGE),
@@ -223,14 +221,13 @@ async def list_instances(
 async def create_instance(
     body: InstanceCreate,
     svc: Annotated[InstanceService, Depends(_instance_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> InstancePublic:
     return await svc.create(body, actor=actor)
 
 
 @router.get(
     "/instances/{instance_id}",
-    response_model=InstancePublic,
     dependencies=[Depends(require_permission(PERM_READ))],
     responses={**_denied(PERM_READ), **_INSTANCE_404},
 )
@@ -243,14 +240,13 @@ async def get_instance(
 
 @router.patch(
     "/instances/{instance_id}",
-    response_model=InstancePublic,
     responses={**_denied(PERM_MANAGE), **_INSTANCE_404},
 )
 async def update_instance(
     instance_id: str,
     body: InstanceUpdate,
     svc: Annotated[InstanceService, Depends(_instance_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> InstancePublic:
     return await svc.update(instance_id, body, actor=actor)
 
@@ -263,7 +259,7 @@ async def update_instance(
 async def delete_instance(
     instance_id: str,
     svc: Annotated[InstanceService, Depends(_instance_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> Response:
     await svc.delete(instance_id, actor=actor)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -274,13 +270,12 @@ async def delete_instance(
 
 @router.post(
     "/instances/{instance_id}/test-connection",
-    response_model=TestConnectionResponse,
     responses={**_denied(PERM_MANAGE), **_INSTANCE_404},
 )
 async def test_connection(
     instance_id: str,
     svc: Annotated[InstanceService, Depends(_instance_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> TestConnectionResponse:
     """Ping the controller. Returns ok/error — never 500s on an unreachable box."""
     return await svc.test_connection(instance_id)
@@ -288,13 +283,12 @@ async def test_connection(
 
 @router.post(
     "/instances/{instance_id}/reconcile",
-    response_model=SyncJobPublic,
     responses={**_denied(PERM_MANAGE), **_INSTANCE_404},
 )
 async def reconcile_instance(
     instance_id: str,
     svc: Annotated[InstanceService, Depends(_instance_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> SyncJobPublic:
     """Full-sync the controller's entities into the mirror + record a SyncJob.
     Degrades to a failed/partial SyncJob when the controller is unreachable."""
@@ -303,14 +297,13 @@ async def reconcile_instance(
 
 @router.get(
     "/instances/{instance_id}/sync-jobs",
-    response_model=SyncJobListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
     responses={**_denied(PERM_READ), **_INSTANCE_404},
 )
 async def list_sync_jobs(
     instance_id: str,
     svc: Annotated[InstanceService, Depends(_instance_service)],
-    limit: int = Query(50, ge=1, le=200),
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> SyncJobListResponse:
     return await svc.sync_jobs(instance_id, limit=limit)
 
@@ -327,30 +320,28 @@ async def _list_mirror(
 
 @router.get(
     "/instances/{instance_id}/cardholders",
-    response_model=MirrorListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
     responses={**_denied(PERM_READ), **_INSTANCE_404},
 )
 async def list_cardholders(
     instance_id: str,
     svc: Annotated[InstanceService, Depends(_instance_service)],
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=500),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
 ) -> MirrorListResponse:
     return await _list_mirror(svc, instance_id, "cardholders", skip, limit)
 
 
 @router.get(
     "/instances/{instance_id}/cards",
-    response_model=MirrorListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
     responses={**_denied(PERM_READ), **_INSTANCE_404},
 )
 async def list_cards(
     instance_id: str,
     svc: Annotated[InstanceService, Depends(_instance_service)],
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=500),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
 ) -> MirrorListResponse:
     return await _list_mirror(svc, instance_id, "cards", skip, limit)
 
@@ -387,7 +378,7 @@ async def create_cardholder(
     instance_id: str,
     body: CardholderCreate,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_CREDENTIAL))],
 ) -> dict:
     payload = body.model_dump(exclude_none=True)
     if not payload.get("name") and not payload.get("first_name") and not payload.get("last_name"):
@@ -417,7 +408,7 @@ async def update_cardholder(
     cardholder_id: str,
     body: CardholderUpdate,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_CREDENTIAL))],
 ) -> dict:
     payload = body.model_dump(exclude_none=True)
     if not payload:
@@ -438,7 +429,7 @@ async def delete_cardholder(
     instance_id: str,
     cardholder_id: str,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_CREDENTIAL))],
 ) -> Response:
     try:
         await svc.delete_cardholder(instance_id, cardholder_id)
@@ -456,7 +447,7 @@ async def suspend_cardholder(
     instance_id: str,
     cardholder_id: str,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_CREDENTIAL))],
 ) -> dict:
     try:
         return await svc.set_cardholder_status(instance_id, cardholder_id, "Invalidated")
@@ -473,7 +464,7 @@ async def reinstate_cardholder(
     instance_id: str,
     cardholder_id: str,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_CREDENTIAL))],
 ) -> dict:
     try:
         return await svc.set_cardholder_status(instance_id, cardholder_id, "Validated")
@@ -491,7 +482,7 @@ async def cardholder_add_card(
     cardholder_id: str,
     body: AssignCardBody,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_CREDENTIAL))],
 ) -> dict:
     try:
         return await svc.assign_card(instance_id, cardholder_id, body.card_id)
@@ -509,7 +500,7 @@ async def cardholder_remove_card(
     cardholder_id: str,
     card_id: str,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_CREDENTIAL))],
 ) -> dict:
     try:
         return await svc.detach_card(instance_id, cardholder_id, card_id)
@@ -527,7 +518,7 @@ async def cardholder_add_group(
     cardholder_id: str,
     body: AssignGroupBody,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_CREDENTIAL))],
 ) -> dict:
     try:
         return await svc.assign_cardholder_to_group(
@@ -547,7 +538,7 @@ async def cardholder_remove_group(
     cardholder_id: str,
     group_id: str,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_CREDENTIAL))],
 ) -> dict:
     try:
         return await svc.remove_cardholder_from_group(
@@ -579,7 +570,7 @@ async def create_card(
     instance_id: str,
     body: CardCreate,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_CREDENTIAL))],
 ) -> dict:
     try:
         return await svc.create_card(instance_id, body.model_dump(exclude_none=True))
@@ -606,7 +597,7 @@ async def update_card(
     card_id: str,
     body: CardUpdate,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_CREDENTIAL))],
 ) -> dict:
     payload = body.model_dump(exclude_none=True)
     if not payload:
@@ -627,7 +618,7 @@ async def set_card_status(
     card_id: str,
     body: CardStatusBody,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_CREDENTIAL))],
 ) -> dict:
     try:
         return await svc.set_card_status(instance_id, card_id, body.status)
@@ -654,7 +645,7 @@ async def delete_card(
     instance_id: str,
     card_id: str,
     svc: Annotated[WriteThroughService, Depends(_wt_service)],
-    _actor: Principal = Depends(require_permission(PERM_CREDENTIAL)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_CREDENTIAL))],
 ) -> Response:
     try:
         await svc.delete_card(instance_id, card_id)
@@ -674,13 +665,12 @@ async def delete_card(
 
 @router.get(
     "/access-groups",
-    response_model=AccessGroupListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
     responses={**_denied(PERM_READ), **_INSTANCE_404},
 )
 async def list_access_groups(
     svc: Annotated[AccessGroupCatalog, Depends(_group_catalog)],
-    instance_id: str = Query(..., min_length=1),
+    instance_id: Annotated[str, Query(min_length=1)],
 ) -> AccessGroupListResponse:
     rows = await svc.list_(instance_id)
     return AccessGroupListResponse(items=[AccessGroupPublic.from_row(r) for r in rows])
@@ -688,15 +678,14 @@ async def list_access_groups(
 
 @router.post(
     "/access-groups",
-    response_model=AccessGroupPublic,
     status_code=status.HTTP_201_CREATED,
     responses={**_denied(PERM_MANAGE), **_INSTANCE_404},
 )
 async def create_access_group(
     body: AccessGroupCreate,
     svc: Annotated[AccessGroupCatalog, Depends(_group_catalog)],
-    instance_id: str = Query(..., min_length=1),
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    instance_id: Annotated[str, Query(min_length=1)],
+    _actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> AccessGroupPublic:
     row = await svc.create(instance_id, body.model_dump())
     return AccessGroupPublic.from_row(row)
@@ -704,7 +693,6 @@ async def create_access_group(
 
 @router.get(
     "/access-groups/{group_id}",
-    response_model=AccessGroupPublic,
     dependencies=[Depends(require_permission(PERM_READ))],
     responses={
         **_denied(PERM_READ),
@@ -719,7 +707,7 @@ async def create_access_group(
 async def get_access_group(
     group_id: str,
     svc: Annotated[AccessGroupCatalog, Depends(_group_catalog)],
-    instance_id: str = Query(..., min_length=1),
+    instance_id: Annotated[str, Query(min_length=1)],
 ) -> AccessGroupPublic:
     row = await svc.get(instance_id, group_id)
     if row is None:
@@ -729,7 +717,6 @@ async def get_access_group(
 
 @router.patch(
     "/access-groups/{group_id}",
-    response_model=AccessGroupPublic,
     responses={
         **_denied(PERM_MANAGE),
         404: {
@@ -744,8 +731,8 @@ async def update_access_group(
     group_id: str,
     body: AccessGroupUpdate,
     svc: Annotated[AccessGroupCatalog, Depends(_group_catalog)],
-    instance_id: str = Query(..., min_length=1),
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    instance_id: Annotated[str, Query(min_length=1)],
+    _actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> AccessGroupPublic:
     row = await svc.update(instance_id, group_id, body.model_dump(exclude_unset=True))
     if row is None:
@@ -769,8 +756,8 @@ async def update_access_group(
 async def delete_access_group(
     group_id: str,
     svc: Annotated[AccessGroupCatalog, Depends(_group_catalog)],
-    instance_id: str = Query(..., min_length=1),
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    instance_id: Annotated[str, Query(min_length=1)],
+    _actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> Response:
     if not await svc.delete(instance_id, group_id):
         raise HTTPException(status_code=404, detail={"code": "group_not_found"})
@@ -779,13 +766,12 @@ async def delete_access_group(
 
 @router.get(
     "/schedules",
-    response_model=ScheduleListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
     responses={**_denied(PERM_READ), **_INSTANCE_404},
 )
 async def list_schedules(
     svc: Annotated[ScheduleCatalog, Depends(_schedule_catalog)],
-    instance_id: str = Query(..., min_length=1),
+    instance_id: Annotated[str, Query(min_length=1)],
 ) -> ScheduleListResponse:
     rows = await svc.list_(instance_id)
     return ScheduleListResponse(items=[SchedulePublic.from_row(r) for r in rows])
@@ -793,15 +779,14 @@ async def list_schedules(
 
 @router.post(
     "/schedules",
-    response_model=SchedulePublic,
     status_code=status.HTTP_201_CREATED,
     responses={**_denied(PERM_MANAGE), **_INSTANCE_404},
 )
 async def create_schedule(
     body: ScheduleCreate,
     svc: Annotated[ScheduleCatalog, Depends(_schedule_catalog)],
-    instance_id: str = Query(..., min_length=1),
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    instance_id: Annotated[str, Query(min_length=1)],
+    _actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> SchedulePublic:
     row = await svc.create(instance_id, body.model_dump())
     return SchedulePublic.from_row(row)
@@ -809,7 +794,6 @@ async def create_schedule(
 
 @router.get(
     "/schedules/{schedule_id}",
-    response_model=SchedulePublic,
     dependencies=[Depends(require_permission(PERM_READ))],
     responses={
         **_denied(PERM_READ),
@@ -824,7 +808,7 @@ async def create_schedule(
 async def get_schedule(
     schedule_id: str,
     svc: Annotated[ScheduleCatalog, Depends(_schedule_catalog)],
-    instance_id: str = Query(..., min_length=1),
+    instance_id: Annotated[str, Query(min_length=1)],
 ) -> SchedulePublic:
     row = await svc.get(instance_id, schedule_id)
     if row is None:
@@ -834,7 +818,6 @@ async def get_schedule(
 
 @router.patch(
     "/schedules/{schedule_id}",
-    response_model=SchedulePublic,
     responses={
         **_denied(PERM_MANAGE),
         404: {
@@ -849,8 +832,8 @@ async def update_schedule(
     schedule_id: str,
     body: ScheduleUpdate,
     svc: Annotated[ScheduleCatalog, Depends(_schedule_catalog)],
-    instance_id: str = Query(..., min_length=1),
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    instance_id: Annotated[str, Query(min_length=1)],
+    _actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> SchedulePublic:
     row = await svc.update(instance_id, schedule_id, body.model_dump(exclude_unset=True))
     if row is None:
@@ -874,8 +857,8 @@ async def update_schedule(
 async def delete_schedule(
     schedule_id: str,
     svc: Annotated[ScheduleCatalog, Depends(_schedule_catalog)],
-    instance_id: str = Query(..., min_length=1),
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    instance_id: Annotated[str, Query(min_length=1)],
+    _actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> Response:
     if not await svc.delete(instance_id, schedule_id):
         raise HTTPException(status_code=404, detail={"code": "schedule_not_found"})
@@ -887,7 +870,6 @@ async def delete_schedule(
 
 @router.get(
     "/doors",
-    response_model=DoorListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
     responses={
         **_denied(PERM_READ),
@@ -901,10 +883,10 @@ async def delete_schedule(
 )
 async def list_doors(
     svc: Annotated[DoorService, Depends(_door_service)],
-    instance_id: Optional[str] = Query(None),
-    site_id: Optional[str] = Query(None),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500),
+    instance_id: Annotated[Optional[str], Query()] = None,
+    site_id: Annotated[Optional[str], Query()] = None,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> DoorListResponse:
     # Same rule the write path applies: a site id that could never be one is a
     # mistake, and answering it with an empty list reads as "no doors on that
@@ -925,14 +907,13 @@ async def list_doors(
 
 @router.post(
     "/doors",
-    response_model=DoorPublic,
     status_code=status.HTTP_201_CREATED,
     responses={**_denied(PERM_MANAGE), **_INSTANCE_404},
 )
 async def create_door(
     body: DoorCreate,
     svc: Annotated[DoorService, Depends(_door_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> DoorPublic:
     row = await svc.create(body.model_dump(), actor=actor)
     return DoorPublic.from_row(row)
@@ -940,7 +921,6 @@ async def create_door(
 
 @router.get(
     "/doors/{door_id}",
-    response_model=DoorPublic,
     dependencies=[Depends(require_permission(PERM_READ))],
     responses={
         **_denied(PERM_READ),
@@ -961,7 +941,6 @@ async def get_door(
 
 @router.patch(
     "/doors/{door_id}",
-    response_model=DoorPublic,
     responses={
         **_denied(PERM_MANAGE),
         404: {
@@ -976,7 +955,7 @@ async def update_door(
     door_id: str,
     body: DoorUpdate,
     svc: Annotated[DoorService, Depends(_door_service)],
-    actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> DoorPublic:
     row = await svc.update(door_id, body.model_dump(exclude_unset=True), actor=actor)
     return DoorPublic.from_row(row)
@@ -998,7 +977,7 @@ async def update_door(
 async def delete_door(
     door_id: str,
     svc: Annotated[DoorService, Depends(_door_service)],
-    _actor: Principal = Depends(require_permission(PERM_MANAGE)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_MANAGE))],
 ) -> Response:
     await svc.delete(door_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -1027,7 +1006,7 @@ async def delete_door(
 async def unlock_door(
     door_id: str,
     svc: Annotated[DoorService, Depends(_door_service)],
-    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_COMMAND))],
 ) -> dict:
     try:
         return await svc.command(door_id, "unlock")
@@ -1058,7 +1037,7 @@ async def unlock_door(
 async def lock_door(
     door_id: str,
     svc: Annotated[DoorService, Depends(_door_service)],
-    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_COMMAND))],
 ) -> dict:
     try:
         return await svc.command(door_id, "lock")
@@ -1082,7 +1061,7 @@ async def cmd_output_activate(
     instance_id: str,
     body: OutputTargets,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_COMMAND))],
 ) -> dict:
     try:
         return await svc.output_activate(instance_id, body.uids, body.api_keys, body.period)
@@ -1099,7 +1078,7 @@ async def cmd_output_activate_continuous(
     instance_id: str,
     body: OutputTargets,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_COMMAND))],
 ) -> dict:
     try:
         return await svc.output_activate_continuous(instance_id, body.uids, body.api_keys)
@@ -1116,7 +1095,7 @@ async def cmd_output_deactivate(
     instance_id: str,
     body: OutputTargets,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_COMMAND))],
 ) -> dict:
     try:
         return await svc.output_deactivate(instance_id, body.uids, body.api_keys)
@@ -1133,7 +1112,7 @@ async def cmd_output_return_to_normal(
     instance_id: str,
     body: OutputTargets,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_COMMAND))],
 ) -> dict:
     try:
         return await svc.output_return_to_normal(instance_id, body.uids, body.api_keys)
@@ -1149,7 +1128,7 @@ async def cmd_output_return_to_normal(
 async def cmd_output_open_all(
     instance_id: str,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_COMMAND))],
 ) -> dict:
     try:
         return await svc.output_open_all_doors(instance_id)
@@ -1165,7 +1144,7 @@ async def cmd_output_open_all(
 async def cmd_output_return_all(
     instance_id: str,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_COMMAND))],
 ) -> dict:
     try:
         return await svc.output_return_to_normal_all(instance_id)
@@ -1183,7 +1162,7 @@ async def cmd_arm_zone(
     dds_uid: str,
     body: ArmBody,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_COMMAND))],
 ) -> dict:
     try:
         return await svc.alarm_zone_arm(
@@ -1203,7 +1182,7 @@ async def cmd_disarm_zone(
     dds_uid: str,
     body: DisarmBody,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_COMMAND))],
 ) -> dict:
     try:
         return await svc.alarm_zone_disarm(
@@ -1222,7 +1201,7 @@ async def cmd_return_zone(
     instance_id: str,
     dds_uid: str,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_COMMAND))],
 ) -> dict:
     try:
         return await svc.alarm_zone_return_to_schedule(instance_id, dds_uid)
@@ -1239,7 +1218,7 @@ async def cmd_init_controller(
     instance_id: str,
     dds_uid: str,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_COMMAND))],
 ) -> dict:
     try:
         return await svc.controller_initialize(instance_id, dds_uid)
@@ -1256,7 +1235,7 @@ async def cmd_site_start_polling(
     instance_id: str,
     dds_uid: str,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_COMMAND))],
 ) -> dict:
     try:
         return await svc.site_start_polling(instance_id, dds_uid)
@@ -1273,7 +1252,7 @@ async def cmd_site_stop_polling(
     instance_id: str,
     dds_uid: str,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    _actor: Principal = Depends(require_permission(PERM_COMMAND)),
+    _actor: Annotated[Principal, Depends(require_permission(PERM_COMMAND))],
 ) -> dict:
     try:
         return await svc.site_stop_polling(instance_id, dds_uid)
@@ -1303,8 +1282,8 @@ async def list_hardware(
     instance_id: str,
     hardware_set: str,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> dict:
     # Accept both dashed and underscored (alarm-zones ↔ alarm_zones).
     key = hardware_set.replace("-", "_")
@@ -1338,8 +1317,8 @@ async def list_scheduled(
     instance_id: str,
     scheduled_set: str,
     svc: Annotated[CommandService, Depends(_cmd_service)],
-    skip: int = Query(0, ge=0),
-    limit: int = Query(200, ge=1, le=500),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 200,
 ) -> dict:
     # Accept both dashed and underscored (scheduled-mags ↔ scheduled_mags).
     key = scheduled_set.replace("-", "_")
@@ -1356,22 +1335,21 @@ async def list_scheduled(
 
 @router.get(
     "/instances/{instance_id}/events",
-    response_model=AccessEventListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
     responses={**_denied(PERM_READ), **_INSTANCE_404},
 )
 async def list_events(
     instance_id: str,
     svc: Annotated[InstanceService, Depends(_instance_service)],
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500),
-    category: Optional[str] = Query(None),
-    result: Optional[str] = Query(None),
-    door_ref: Optional[str] = Query(None),
-    cardholder_ref: Optional[str] = Query(None),
-    event_type: Optional[str] = Query(None),
-    from_dt: Optional[datetime] = Query(None, alias="from"),
-    to_dt: Optional[datetime] = Query(None, alias="to"),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    category: Annotated[Optional[str], Query()] = None,
+    result: Annotated[Optional[str], Query()] = None,
+    door_ref: Annotated[Optional[str], Query()] = None,
+    cardholder_ref: Annotated[Optional[str], Query()] = None,
+    event_type: Annotated[Optional[str], Query()] = None,
+    from_dt: Annotated[Optional[datetime], Query(alias="from")] = None,
+    to_dt: Annotated[Optional[datetime], Query(alias="to")] = None,
 ) -> AccessEventListResponse:
     return await svc.list_events(
         instance_id,
