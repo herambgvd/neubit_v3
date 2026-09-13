@@ -30,7 +30,7 @@ from .schemas import CreateReportIn, ReportJobOut
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
-@router.get("", response_model=Page[ReportJobOut])
+@router.get("")
 async def list_reports(
     params: PageParams = Depends(page_params),
     db: AsyncSession = Depends(get_db),

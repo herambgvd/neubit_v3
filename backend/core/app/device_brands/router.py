@@ -55,7 +55,7 @@ class UpdateDeviceBrandIn(BaseModel):
     is_installed: bool | None = None
 
 
-@router.get("", response_model=list[DeviceBrandOut])
+@router.get("")
 async def list_device_brands(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
@@ -65,7 +65,7 @@ async def list_device_brands(
     return [DeviceBrandOut.model_validate(b) for b in brands]
 
 
-@router.get("/{brand_pk}", response_model=DeviceBrandOut)
+@router.get("/{brand_pk}")
 async def get_device_brand(
     brand_pk: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -75,7 +75,7 @@ async def get_device_brand(
     return DeviceBrandOut.model_validate(brand)
 
 
-@router.post("", response_model=DeviceBrandOut, status_code=201)
+@router.post("", status_code=201)
 async def create_device_brand(
     data: CreateDeviceBrandIn,
     db: AsyncSession = Depends(get_db),
@@ -97,7 +97,7 @@ async def create_device_brand(
     return DeviceBrandOut.model_validate(brand)
 
 
-@router.patch("/{brand_pk}", response_model=DeviceBrandOut)
+@router.patch("/{brand_pk}")
 async def update_device_brand(
     brand_pk: uuid.UUID,
     data: UpdateDeviceBrandIn,

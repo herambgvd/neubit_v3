@@ -52,16 +52,15 @@ async def _service(
 
 @router.get(
     "",
-    response_model=FloorListResponse,
     dependencies=[Depends(require_permission(CorePerm.FLOORS_READ))],
 )
 async def list_floors(
     svc: Annotated[FloorService, Depends(_service)],
-    site_id: Optional[str] = Query(None),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
-    search: Optional[str] = Query(None, max_length=100),
-    is_active: Optional[bool] = Query(None),
+    site_id: Annotated[Optional[str], Query()] = None,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    search: Annotated[Optional[str], Query(max_length=100)] = None,
+    is_active: Annotated[Optional[bool], Query()] = None,
 ) -> FloorListResponse:
     items, total = await svc.list_(
         site_id=site_id, skip=skip, limit=limit, search=search, is_active=is_active
@@ -71,20 +70,18 @@ async def list_floors(
 
 @router.post(
     "",
-    response_model=FloorPublic,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_floor(
     body: CreateFloorRequest,
     svc: Annotated[FloorService, Depends(_service)],
-    actor: User = Depends(require_permission(CorePerm.FLOORS_CREATE)),
+    actor: Annotated[User, Depends(require_permission(CorePerm.FLOORS_CREATE))],
 ) -> FloorPublic:
     return await svc.create(body, actor=actor)
 
 
 @router.post(
     "/upload",
-    response_model=FloorPublic,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_floor_with_upload(
@@ -93,10 +90,10 @@ async def create_floor_with_upload(
     site_id: Annotated[str, Form()],
     name: Annotated[str, Form()],
     file: Annotated[UploadFile, File()],
+    actor: Annotated[User, Depends(require_permission(CorePerm.FLOORS_CREATE))],
     floor_number: Annotated[Optional[int], Form()] = None,
     description: Annotated[Optional[str], Form()] = None,
     total_area: Annotated[Optional[float], Form()] = None,
-    actor: User = Depends(require_permission(CorePerm.FLOORS_CREATE)),
 ) -> FloorPublic:
     floorplan_url = await _process_upload(file, scope=scope, site_id=site_id)
     body = CreateFloorRequest(
@@ -112,7 +109,6 @@ async def create_floor_with_upload(
 
 @router.get(
     "/{floor_id}",
-    response_model=FloorPublic,
     dependencies=[Depends(require_permission(CorePerm.FLOORS_READ))],
 )
 async def get_floor(
@@ -124,13 +120,12 @@ async def get_floor(
 
 @router.patch(
     "/{floor_id}",
-    response_model=FloorPublic,
 )
 async def update_floor(
     floor_id: str,
     body: UpdateFloorRequest,
     svc: Annotated[FloorService, Depends(_service)],
-    actor: User = Depends(require_permission(CorePerm.FLOORS_UPDATE)),
+    actor: Annotated[User, Depends(require_permission(CorePerm.FLOORS_UPDATE))],
 ) -> FloorPublic:
     return await svc.update(floor_id, body, actor=actor)
 
@@ -142,7 +137,7 @@ async def update_floor(
 async def delete_floor(
     floor_id: str,
     svc: Annotated[FloorService, Depends(_service)],
-    actor: User = Depends(require_permission(CorePerm.FLOORS_DELETE)),
+    actor: Annotated[User, Depends(require_permission(CorePerm.FLOORS_DELETE))],
 ) -> Response:
     await svc.delete(floor_id, actor=actor)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -150,14 +145,13 @@ async def delete_floor(
 
 @router.post(
     "/{floor_id}/floorplan",
-    response_model=FloorPublic,
 )
 async def replace_floorplan(
     floor_id: str,
     svc: Annotated[FloorService, Depends(_service)],
     scope: Annotated[Scope, Depends(get_scope)],
     file: Annotated[UploadFile, File()],
-    actor: User = Depends(require_permission(CorePerm.FLOORS_UPDATE)),
+    actor: Annotated[User, Depends(require_permission(CorePerm.FLOORS_UPDATE))],
 ) -> FloorPublic:
     existing = await svc.get(floor_id)  # 404s (scoped) if not the caller's floor
     floorplan_url = await _process_upload(file, scope=scope, site_id=existing.site_id)
@@ -166,12 +160,11 @@ async def replace_floorplan(
 
 @router.post(
     "/{floor_id}/restore",
-    response_model=FloorPublic,
 )
 async def restore_floor(
     floor_id: str,
     svc: Annotated[FloorService, Depends(_service)],
-    actor: User = Depends(require_permission(CorePerm.FLOORS_UPDATE)),
+    actor: Annotated[User, Depends(require_permission(CorePerm.FLOORS_UPDATE))],
 ) -> FloorPublic:
     return await svc.restore(floor_id, actor=actor)
 

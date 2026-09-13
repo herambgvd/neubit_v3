@@ -137,7 +137,7 @@ def _require_known_channel(channel: str) -> None:
 # A tenant-admin sees and edits their own tenant's channel config (reads fall back
 # to the platform default); a super-admin (tenant_id None) edits the platform
 # default. Every helper below threads ``user.tenant_id``.
-@router.get("/channels", response_model=list[ChannelOut])
+@router.get("/channels")
 async def list_channels(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
@@ -159,7 +159,7 @@ async def list_channels(
     return out
 
 
-@router.get("/channels/{channel}", response_model=ChannelOut)
+@router.get("/channels/{channel}")
 async def get_channel(
     channel: str,
     db: AsyncSession = Depends(get_db),
@@ -177,7 +177,7 @@ async def get_channel(
     )
 
 
-@router.put("/channels/{channel}", response_model=ChannelOut)
+@router.put("/channels/{channel}")
 async def update_channel(
     channel: str,
     data: ChannelUpdateIn,
@@ -237,7 +237,7 @@ async def test_channel(
 
 
 # --- device registration (user) ----------------------------------------------
-@router.post("/devices", response_model=DeviceOut)
+@router.post("/devices")
 async def register_device_endpoint(
     data: DeviceIn,
     db: AsyncSession = Depends(get_db),
@@ -249,7 +249,7 @@ async def register_device_endpoint(
 
 
 # --- in-app inbox (user) -----------------------------------------------------
-@router.get("/notifications", response_model=Page[NotificationOut])
+@router.get("/notifications")
 async def list_notifications(
     params: PageParams = Depends(page_params),
     db: AsyncSession = Depends(get_db),
@@ -277,7 +277,7 @@ async def mark_notification_read(
 # falls back to the code default (see templates.render_with_overrides). Overrides
 # resolve and write in the caller's scope, with reads falling back to the platform
 # default (see template_store.get_override).
-@router.get("/templates", response_model=list[TemplateSummaryOut])
+@router.get("/templates")
 async def list_templates(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
@@ -313,7 +313,7 @@ async def list_templates(
     return out
 
 
-@router.get("/templates/{name}", response_model=TemplateOut)
+@router.get("/templates/{name}")
 async def get_template(
     name: str,
     db: AsyncSession = Depends(get_db),
@@ -406,7 +406,7 @@ async def render_template(
     return {"subject": subject, "html": html}
 
 
-@router.put("/templates/{name}", response_model=TemplateOut)
+@router.put("/templates/{name}")
 async def upsert_template(
     name: str,
     data: TemplateUpsertIn,

@@ -43,7 +43,7 @@ async def public_settings(
     return await SettingsService(db, tenant_id).public_values()
 
 
-@router.get("/maps", response_model=MapsConfigOut)
+@router.get("/maps")
 async def get_maps_config(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(get_current_user),
@@ -71,7 +71,7 @@ async def get_maps_config(
     )
 
 
-@router.get("", response_model=SettingsOut)
+@router.get("")
 async def get_settings_config(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
@@ -86,7 +86,7 @@ async def get_settings_config(
     )
 
 
-@router.put("", response_model=SettingsOut)
+@router.put("")
 async def update_settings_config(
     data: UpdateSettingsIn,
     db: AsyncSession = Depends(get_db),

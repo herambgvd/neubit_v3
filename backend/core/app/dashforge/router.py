@@ -104,13 +104,12 @@ def normalize_category(value: str) -> str:
 
 @router.get(
     "/dashboards",
-    response_model=EmbedListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def list_embeds(
     svc: Svc,
-    search: Optional[str] = Query(None, max_length=160),
-    category: Optional[str] = Query(None, max_length=32),
+    search: Annotated[Optional[str], Query(max_length=160)] = None,
+    category: Annotated[Optional[str], Query(max_length=32)] = None,
 ) -> EmbedListResponse:
     """Every DashForge dashboard this caller's tenant shows.
 
@@ -130,7 +129,6 @@ async def list_embeds(
 
 @router.post(
     "/dashboards",
-    response_model=EmbedPublic,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_permission(PERM_MANAGE))],
 )
@@ -140,7 +138,6 @@ async def register_embed(svc: Svc, body: EmbedCreate) -> EmbedPublic:
 
 @router.get(
     "/dashboards/{embed_id}",
-    response_model=EmbedPublic,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def get_embed(svc: Svc, embed_id: str) -> EmbedPublic:
@@ -149,7 +146,6 @@ async def get_embed(svc: Svc, embed_id: str) -> EmbedPublic:
 
 @router.patch(
     "/dashboards/{embed_id}",
-    response_model=EmbedPublic,
     dependencies=[Depends(require_permission(PERM_MANAGE))],
 )
 async def update_embed(svc: Svc, embed_id: str, body: EmbedUpdate) -> EmbedPublic:
@@ -177,7 +173,6 @@ async def delete_embed(svc: Svc, embed_id: str) -> Response:
 
 @router.post(
     "/dashboards/{embed_id}/session",
-    response_model=EmbedSession,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def open_session(svc: Svc, embed_id: str) -> EmbedSession:

@@ -48,15 +48,14 @@ async def _service(
 
 @router.get(
     "",
-    response_model=SiteListResponse,
     dependencies=[Depends(require_permission(CorePerm.SITES_READ))],
 )
 async def list_sites(
     svc: Annotated[SiteService, Depends(_service)],
-    skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=500),
-    search: Optional[str] = Query(None, max_length=100),
-    is_active: Optional[bool] = Query(True),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 20,
+    search: Annotated[Optional[str], Query(max_length=100)] = None,
+    is_active: Annotated[Optional[bool], Query()] = True,
 ) -> SiteListResponse:
     items, total = await svc.list_(skip=skip, limit=limit, search=search, is_active=is_active)
     return SiteListResponse(items=items, total=total, skip=skip, limit=limit)
@@ -64,13 +63,12 @@ async def list_sites(
 
 @router.post(
     "",
-    response_model=SitePublic,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_site(
     body: CreateSiteRequest,
     svc: Annotated[SiteService, Depends(_service)],
-    actor: User = Depends(require_permission(CorePerm.SITES_CREATE)),
+    actor: Annotated[User, Depends(require_permission(CorePerm.SITES_CREATE))],
 ) -> SitePublic:
     return await svc.create(body, actor=actor)
 
@@ -88,7 +86,6 @@ async def get_site_tree(
 
 @router.get(
     "/{site_id}",
-    response_model=SitePublic,
     dependencies=[Depends(require_permission(CorePerm.SITES_READ))],
 )
 async def get_site(
@@ -100,26 +97,24 @@ async def get_site(
 
 @router.patch(
     "/{site_id}",
-    response_model=SitePublic,
 )
 async def update_site(
     site_id: str,
     body: UpdateSiteRequest,
     svc: Annotated[SiteService, Depends(_service)],
-    actor: User = Depends(require_permission(CorePerm.SITES_UPDATE)),
+    actor: Annotated[User, Depends(require_permission(CorePerm.SITES_UPDATE))],
 ) -> SitePublic:
     return await svc.update(site_id, body, actor=actor)
 
 
 @router.put(
     "/{site_id}/building-facts",
-    response_model=SitePublic,
 )
 async def set_building_facts(
     site_id: str,
     body: BuildingFactsUpdate,
     svc: Annotated[SiteService, Depends(_service)],
-    actor: User = Depends(require_permission(CorePerm.SITES_UPDATE)),
+    actor: Annotated[User, Depends(require_permission(CorePerm.SITES_UPDATE))],
 ) -> SitePublic:
     """Record area / tariff / occupancy for this site.
 
@@ -134,7 +129,6 @@ async def set_building_facts(
 
 @router.get(
     "/{site_id}/tariff-slabs",
-    response_model=TariffSlabListResponse,
     dependencies=[Depends(require_permission(CorePerm.SITES_READ))],
 )
 async def get_tariff_slabs(
@@ -147,13 +141,12 @@ async def get_tariff_slabs(
 
 @router.put(
     "/{site_id}/tariff-slabs",
-    response_model=TariffSlabListResponse,
 )
 async def set_tariff_slabs(
     site_id: str,
     body: TariffSlabsUpdate,
     svc: Annotated[SiteService, Depends(_service)],
-    actor: User = Depends(require_permission(CorePerm.SITES_UPDATE)),
+    actor: Annotated[User, Depends(require_permission(CorePerm.SITES_UPDATE))],
 ) -> TariffSlabListResponse:
     """Replace the site's time-of-use tariff slabs — the whole list, every time.
 
@@ -169,7 +162,6 @@ async def set_tariff_slabs(
 
 @router.get(
     "/{site_id}/emission-factors",
-    response_model=EmissionFactorListResponse,
     dependencies=[Depends(require_permission(CorePerm.SITES_READ))],
 )
 async def get_emission_factors(
@@ -182,13 +174,12 @@ async def get_emission_factors(
 
 @router.put(
     "/{site_id}/emission-factors",
-    response_model=EmissionFactorListResponse,
 )
 async def set_emission_factors(
     site_id: str,
     body: EmissionFactorsUpdate,
     svc: Annotated[SiteService, Depends(_service)],
-    actor: User = Depends(require_permission(CorePerm.SITES_UPDATE)),
+    actor: Annotated[User, Depends(require_permission(CorePerm.SITES_UPDATE))],
 ) -> EmissionFactorListResponse:
     """Replace the site's emission factors (kg CO2/kWh) — full list, every time.
 
@@ -207,7 +198,7 @@ async def set_emission_factors(
 async def delete_site(
     site_id: str,
     svc: Annotated[SiteService, Depends(_service)],
-    actor: User = Depends(require_permission(CorePerm.SITES_DELETE)),
+    actor: Annotated[User, Depends(require_permission(CorePerm.SITES_DELETE))],
 ) -> Response:
     await svc.delete(site_id, actor=actor)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -215,12 +206,11 @@ async def delete_site(
 
 @router.post(
     "/{site_id}/restore",
-    response_model=SitePublic,
 )
 async def restore_site(
     site_id: str,
     svc: Annotated[SiteService, Depends(_service)],
-    actor: User = Depends(require_permission(CorePerm.SITES_UPDATE)),
+    actor: Annotated[User, Depends(require_permission(CorePerm.SITES_UPDATE))],
 ) -> SitePublic:
     return await svc.restore(site_id, actor=actor)
 
@@ -232,21 +222,20 @@ async def update_threat_level(
     site_id: str,
     body: ThreatLevelUpdate,
     svc: Annotated[SiteService, Depends(_service)],
-    actor: User = Depends(require_permission(CorePerm.SITES_UPDATE)),
+    actor: Annotated[User, Depends(require_permission(CorePerm.SITES_UPDATE))],
 ) -> dict:
     return await svc.update_threat_level(site_id, body.threat_level, actor=actor)
 
 
 @router.post(
     "/{site_id}/image",
-    response_model=SitePublic,
 )
 async def upload_site_image(
     site_id: str,
     svc: Annotated[SiteService, Depends(_service)],
     file: Annotated[UploadFile, File(description="Site image")],
     scope: Annotated[Scope, Depends(get_scope)],
-    actor: User = Depends(require_permission(CorePerm.SITES_UPDATE)),
+    actor: Annotated[User, Depends(require_permission(CorePerm.SITES_UPDATE))],
 ) -> SitePublic:
     # The shared validator adds a magic-number check on top of the whitelist, and
     # read_capped enforces the size cap while streaming rather than after the whole

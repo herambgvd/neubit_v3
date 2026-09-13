@@ -48,7 +48,7 @@ async def _upsert_state(db: AsyncSession, actor_id, key: str, *, read=None, dism
     state.updated_at = datetime.now(timezone.utc)
 
 
-@router.get("", response_model=AlertListOut)
+@router.get("")
 async def list_alerts(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_superadmin),

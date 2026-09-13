@@ -38,7 +38,7 @@ router = APIRouter(prefix="/admin", tags=["admin", "platform"])
 
 
 # --- Platform-default settings ----------------------------------------------
-@router.get("/platform/settings", response_model=SettingsOut)
+@router.get("/platform/settings")
 async def get_platform_settings(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_superadmin),
@@ -50,7 +50,7 @@ async def get_platform_settings(
     )
 
 
-@router.patch("/platform/settings", response_model=SettingsOut)
+@router.patch("/platform/settings")
 async def update_platform_settings(
     data: UpdateSettingsIn,
     db: AsyncSession = Depends(get_db),
@@ -66,7 +66,7 @@ async def update_platform_settings(
 
 
 # --- Platform-default branding ----------------------------------------------
-@router.get("/platform/branding", response_model=BrandingOut)
+@router.get("/platform/branding")
 async def get_platform_branding(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_superadmin),
@@ -76,7 +76,7 @@ async def get_platform_branding(
     return await branding_to_out(branding)
 
 
-@router.patch("/platform/branding", response_model=BrandingOut)
+@router.patch("/platform/branding")
 async def update_platform_branding(
     data: UpdateBrandingIn,
     db: AsyncSession = Depends(get_db),
@@ -96,7 +96,7 @@ async def update_platform_branding(
 
 
 # --- Cross-tenant audit view -------------------------------------------------
-@router.get("/audit", response_model=Page[AuditLogOut])
+@router.get("/audit")
 async def cross_tenant_audit(
     params: PageParams = Depends(page_params),
     tenant_id: uuid.UUID | None = Query(

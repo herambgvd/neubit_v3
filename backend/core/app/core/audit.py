@@ -130,7 +130,7 @@ class AuditLogOut(BaseModel):
 audit_router = APIRouter(prefix="/audit", tags=["audit"])
 
 
-@audit_router.get("", response_model=Page[AuditLogOut])
+@audit_router.get("")
 async def list_audit(
     params: PageParams = Depends(page_params),
     action: str | None = Query(None, max_length=64),
@@ -183,7 +183,7 @@ class PurgeIn(BaseModel):
     older_than_days: int | None = None
 
 
-@audit_router.get("/retention", response_model=RetentionOut)
+@audit_router.get("/retention")
 async def audit_retention(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_permission(CorePerm.AUDIT_READ)),

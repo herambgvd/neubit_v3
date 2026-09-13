@@ -10,11 +10,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from ..auth.deps import get_current_user, require_permission
+from ..auth.models import User
 from ..auth.permissions import CorePerm
 from ..core.config import Settings, get_settings
 from ..core.errors import ValidationError
@@ -50,7 +52,9 @@ def _public_key(settings: Settings) -> str | None:
 
 
 @router.get("")
-async def license_status(request: Request, _user=Depends(get_current_user)) -> dict:
+async def license_status(
+    request: Request, _user: Annotated[User, Depends(get_current_user)]
+) -> dict:
     return _status(request.app.state.license)
 
 
@@ -58,7 +62,7 @@ async def license_status(request: Request, _user=Depends(get_current_user)) -> d
 async def update_license(
     data: LicenseUpdateIn,
     request: Request,
-    _=Depends(require_permission(CorePerm.SETTINGS_MANAGE)),
+    _: Annotated[User, Depends(require_permission(CorePerm.SETTINGS_MANAGE))],
 ) -> dict:
     settings = get_settings()
     public_key = _public_key(settings)

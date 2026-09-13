@@ -52,7 +52,7 @@ async def _to_out(branding: Branding) -> BrandingOut:
     )
 
 
-@public_router.get("", response_model=BrandingOut)
+@public_router.get("")
 async def get_branding(
     db: AsyncSession = Depends(get_db),
     tenant_id=Depends(optional_tenant_id),
@@ -67,7 +67,7 @@ async def get_branding(
     return await _to_out(branding)
 
 
-@router.put("", response_model=BrandingOut)
+@router.put("")
 async def update_branding(
     data: UpdateBrandingIn,
     db: AsyncSession = Depends(get_db),
@@ -81,7 +81,7 @@ async def update_branding(
     return await _to_out(branding)
 
 
-@router.post("/logo", response_model=BrandingOut)
+@router.post("/logo")
 async def upload_logo(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -104,7 +104,7 @@ async def upload_logo(
     return await _to_out(branding)
 
 
-@router.post("/favicon", response_model=BrandingOut)
+@router.post("/favicon")
 async def upload_favicon(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),

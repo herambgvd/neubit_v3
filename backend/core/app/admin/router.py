@@ -51,7 +51,7 @@ def _detail(tenant, users: int) -> TenantWithCountOut:
     return item
 
 
-@router.post("/tenants", response_model=TenantOut, status_code=201)
+@router.post("/tenants", status_code=201)
 async def create_tenant(
     data: CreateTenantIn,
     db: AsyncSession = Depends(get_db),
@@ -74,7 +74,7 @@ async def create_tenant(
     return out
 
 
-@router.get("/tenants", response_model=PagedTenantsOut)
+@router.get("/tenants")
 async def list_tenants(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_superadmin),
@@ -90,7 +90,7 @@ async def list_tenants(
     return PagedTenantsOut(items=items, total=total, page=page, page_size=page_size)
 
 
-@router.get("/tenants/{tenant_id}", response_model=TenantWithCountOut)
+@router.get("/tenants/{tenant_id}")
 async def get_tenant(
     tenant_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -101,7 +101,7 @@ async def get_tenant(
     return _detail(tenant, await svc.user_count(tenant.id))
 
 
-@router.patch("/tenants/{tenant_id}", response_model=TenantOut)
+@router.patch("/tenants/{tenant_id}")
 async def update_tenant(
     tenant_id: uuid.UUID,
     data: UpdateTenantIn,
@@ -124,7 +124,7 @@ async def update_tenant(
     return out
 
 
-@router.post("/tenants/{tenant_id}/suspend", response_model=TenantOut)
+@router.post("/tenants/{tenant_id}/suspend")
 async def suspend_tenant(
     tenant_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -141,7 +141,7 @@ async def suspend_tenant(
     return out
 
 
-@router.post("/tenants/{tenant_id}/reactivate", response_model=TenantOut)
+@router.post("/tenants/{tenant_id}/reactivate")
 async def reactivate_tenant(
     tenant_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -158,7 +158,7 @@ async def reactivate_tenant(
     return out
 
 
-@router.put("/tenants/{tenant_id}/license", response_model=TenantOut)
+@router.put("/tenants/{tenant_id}/license")
 async def set_license(
     tenant_id: uuid.UUID,
     data: LicenseIn,
@@ -186,7 +186,7 @@ async def set_license(
     return out
 
 
-@router.get("/tenants/{tenant_id}/usage", response_model=TenantUsageOut)
+@router.get("/tenants/{tenant_id}/usage")
 async def tenant_usage(
     tenant_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -195,7 +195,7 @@ async def tenant_usage(
     return TenantUsageOut(**await TenantService(db).usage(tenant_id))
 
 
-@router.get("/tenants/{tenant_id}/admins", response_model=list[TenantAdminOut])
+@router.get("/tenants/{tenant_id}/admins")
 async def list_tenant_admins(
     tenant_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -205,7 +205,7 @@ async def list_tenant_admins(
     return [TenantAdminOut.model_validate(u) for u in users]
 
 
-@router.post("/tenants/{tenant_id}/admins", response_model=TenantAdminOut, status_code=201)
+@router.post("/tenants/{tenant_id}/admins", status_code=201)
 async def create_tenant_admin(
     tenant_id: uuid.UUID,
     data: TenantAdminIn,
@@ -236,7 +236,7 @@ async def delete_tenant_admin(
     )
 
 
-@router.post("/tenants/{tenant_id}/impersonate", response_model=ImpersonateOut)
+@router.post("/tenants/{tenant_id}/impersonate")
 async def impersonate_tenant(
     tenant_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -292,7 +292,7 @@ def _user_row(user: User, tenant: Tenant | None) -> AdminUserOut:
     return out
 
 
-@router.get("/users", response_model=PagedUsersOut)
+@router.get("/users")
 async def list_users(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_superadmin),
@@ -330,7 +330,7 @@ async def list_users(
     return PagedUsersOut(items=items, total=total, page=page, page_size=page_size)
 
 
-@router.post("/users/{user_id}/set-active", response_model=AdminUserOut)
+@router.post("/users/{user_id}/set-active")
 async def set_user_active(
     user_id: uuid.UUID,
     data: SetActiveIn,

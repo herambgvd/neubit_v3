@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Annotated
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
@@ -107,8 +108,10 @@ def _compact_popup(envelope: dict) -> dict:
 @realtime_vms_router.get("/vms-events")
 async def vms_events_stream(
     request: Request,
-    token: str | None = Query(None, description="access token (browser EventSource)"),
-    camera_id: str | None = Query(None, description="only forward this camera's events"),
+    token: Annotated[str | None, Query(description="access token (browser EventSource)")] = None,
+    camera_id: Annotated[
+        str | None, Query(description="only forward this camera's events")
+    ] = None,
 ) -> StreamingResponse:
     """SSE stream of live VMS camera-events + operator popups for the caller's tenant.
 

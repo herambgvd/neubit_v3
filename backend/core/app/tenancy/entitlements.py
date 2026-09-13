@@ -15,6 +15,7 @@ an ``active`` license — matching the scope/feature bypass everywhere else.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -98,8 +99,8 @@ router = APIRouter(tags=["platform"])
 
 @router.get("/features")
 async def features(
-    db: AsyncSession = Depends(get_db),
-    scope: Scope = Depends(get_scope),
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
 ) -> dict:
     """The caller's effective entitlements, resolved from their tenant.
 

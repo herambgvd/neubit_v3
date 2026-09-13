@@ -53,7 +53,7 @@ def _now() -> datetime:
 
 
 # --- Plans -------------------------------------------------------------------
-@router.get("/plans", response_model=list[PlanOut])
+@router.get("/plans")
 async def list_plans(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_superadmin),
@@ -65,7 +65,7 @@ async def list_plans(
     return [PlanOut.model_validate(p) for p in rows]
 
 
-@router.post("/plans", response_model=PlanOut, status_code=201)
+@router.post("/plans", status_code=201)
 async def create_plan(
     data: CreatePlanIn,
     db: AsyncSession = Depends(get_db),
@@ -87,7 +87,7 @@ async def create_plan(
     return PlanOut.model_validate(plan)
 
 
-@router.patch("/plans/{key}", response_model=PlanOut)
+@router.patch("/plans/{key}")
 async def update_plan(
     key: str,
     data: UpdatePlanIn,
@@ -140,7 +140,7 @@ def _sub_out(sub: Subscription, plan: Plan | None) -> SubscriptionOut:
     return out
 
 
-@router.get("/tenants/{tenant_id}/subscription", response_model=SubscriptionOut | None)
+@router.get("/tenants/{tenant_id}/subscription")
 async def get_subscription(
     tenant_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -154,7 +154,7 @@ async def get_subscription(
     return _sub_out(sub, plan)
 
 
-@router.put("/tenants/{tenant_id}/subscription", response_model=SubscriptionOut)
+@router.put("/tenants/{tenant_id}/subscription")
 async def subscribe(
     tenant_id: uuid.UUID,
     data: SubscribeIn,
@@ -196,7 +196,7 @@ async def subscribe(
     return _sub_out(sub, plan)
 
 
-@router.post("/tenants/{tenant_id}/subscription/cancel", response_model=SubscriptionOut)
+@router.post("/tenants/{tenant_id}/subscription/cancel")
 async def cancel_subscription(
     tenant_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -225,7 +225,7 @@ def _invoice_out(inv: Invoice, tenant: Tenant | None) -> InvoiceOut:
     return out
 
 
-@router.get("/invoices", response_model=PagedInvoicesOut)
+@router.get("/invoices")
 async def list_invoices(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_superadmin),
@@ -256,7 +256,7 @@ async def list_invoices(
     return PagedInvoicesOut(items=items, total=total, page=page, page_size=page_size)
 
 
-@router.post("/tenants/{tenant_id}/invoices", response_model=InvoiceOut, status_code=201)
+@router.post("/tenants/{tenant_id}/invoices", status_code=201)
 async def create_invoice(
     tenant_id: uuid.UUID,
     data: CreateInvoiceIn,
@@ -292,7 +292,7 @@ async def create_invoice(
     return _invoice_out(inv, tenant)
 
 
-@router.post("/invoices/{invoice_id}/mark-paid", response_model=InvoiceOut)
+@router.post("/invoices/{invoice_id}/mark-paid")
 async def mark_invoice_paid(
     invoice_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -315,7 +315,7 @@ async def mark_invoice_paid(
     return _invoice_out(inv, tenant)
 
 
-@router.post("/invoices/{invoice_id}/void", response_model=InvoiceOut)
+@router.post("/invoices/{invoice_id}/void")
 async def void_invoice(
     invoice_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -336,7 +336,7 @@ async def void_invoice(
 
 
 # --- Summary -----------------------------------------------------------------
-@router.get("/summary", response_model=BillingSummaryOut)
+@router.get("/summary")
 async def summary(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_superadmin),

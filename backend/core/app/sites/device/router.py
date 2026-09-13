@@ -43,26 +43,24 @@ async def _service(
 
 @router.post(
     "/register",
-    response_model=DevicePlacementPublic,
     status_code=status.HTTP_201_CREATED,
 )
 async def register_device(
     body: RegisterDeviceRequest,
     svc: Annotated[DevicePlacementService, Depends(_service)],
-    actor: User = Depends(require_permission("devices.create")),
+    actor: Annotated[User, Depends(require_permission("devices.create"))],
 ) -> DevicePlacementPublic:
     return await svc.register(body, actor=actor)
 
 
 @router.get(
     "/by-floor/{floor_id}",
-    response_model=DeviceListResponse,
     dependencies=[Depends(require_permission("devices.read"))],
 )
 async def list_by_floor(
     floor_id: str,
     svc: Annotated[DevicePlacementService, Depends(_service)],
-    device_type: Optional[str] = Query(None),
+    device_type: Annotated[Optional[str], Query()] = None,
 ) -> DeviceListResponse:
     items = await svc.list_by_floor(floor_id, device_type=device_type)
     return DeviceListResponse(items=items, count=len(items))
@@ -74,7 +72,7 @@ async def list_by_floor(
 )
 async def estate_index(
     svc: Annotated[DevicePlacementService, Depends(_service)],
-    limit: int = Query(5000, ge=1, le=20000),
+    limit: Annotated[int, Query(ge=1, le=20000)] = 5000,
 ) -> dict:
     """Flat placement index for the whole tenant — what the estate map joins on.
 
@@ -87,7 +85,6 @@ async def estate_index(
 
 @router.get(
     "/by-zone/{zone_id}",
-    response_model=DeviceListResponse,
     dependencies=[Depends(require_permission("devices.read"))],
 )
 async def list_by_zone(
@@ -100,7 +97,6 @@ async def list_by_zone(
 
 @router.get(
     "/{device_id}",
-    response_model=DevicePlacementPublic,
     dependencies=[Depends(require_permission("devices.read"))],
 )
 async def get_device_placement(
@@ -112,13 +108,12 @@ async def get_device_placement(
 
 @router.patch(
     "/{device_id}",
-    response_model=DevicePlacementPublic,
 )
 async def update_device_placement(
     device_id: str,
     body: UpdateDeviceRequest,
     svc: Annotated[DevicePlacementService, Depends(_service)],
-    actor: User = Depends(require_permission("devices.update")),
+    actor: Annotated[User, Depends(require_permission("devices.update"))],
 ) -> DevicePlacementPublic:
     return await svc.update(device_id, body, actor=actor)
 
@@ -130,7 +125,7 @@ async def update_device_placement(
 async def remove_device_placement(
     device_id: str,
     svc: Annotated[DevicePlacementService, Depends(_service)],
-    actor: User = Depends(require_permission("devices.delete")),
+    actor: Annotated[User, Depends(require_permission("devices.delete"))],
 ) -> Response:
     await svc.remove(device_id, actor=actor)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

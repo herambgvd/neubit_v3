@@ -69,7 +69,7 @@ def _sso_out(row) -> SsoConfigOut:
 
 
 # === Security policy (2FA enforcement) ======================================
-@router.get("/policy", response_model=SecurityPolicyOut)
+@router.get("/policy")
 async def get_policy(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_permission(CorePerm.SECURITY_MANAGE)),
@@ -78,7 +78,7 @@ async def get_policy(
     return SecurityPolicyOut.model_validate(row)
 
 
-@router.put("/policy", response_model=SecurityPolicyOut)
+@router.put("/policy")
 async def update_policy(
     data: SecurityPolicyIn,
     db: AsyncSession = Depends(get_db),
@@ -102,7 +102,7 @@ async def get_directory(
     return _directory_out(row) if row else None
 
 
-@router.put("/directory", response_model=DirectoryConfigOut)
+@router.put("/directory")
 async def upsert_directory(
     data: DirectoryConfigIn,
     db: AsyncSession = Depends(get_db),
@@ -125,7 +125,7 @@ async def delete_directory(
     await audit_record(db, actor=actor, action="security.directory.delete", target_type="directory_config")
 
 
-@router.post("/directory/sync", response_model=DirectorySyncResult)
+@router.post("/directory/sync")
 async def sync_directory(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_permission(CorePerm.SECURITY_MANAGE)),
@@ -153,7 +153,7 @@ async def get_sso(
     return _sso_out(row) if row else None
 
 
-@router.put("/sso", response_model=SsoConfigOut)
+@router.put("/sso")
 async def upsert_sso(
     data: SsoConfigIn,
     db: AsyncSession = Depends(get_db),
@@ -177,7 +177,7 @@ async def delete_sso(
 
 
 # === Dual authorization (four-eyes) =========================================
-@router.post("/dual-auth", response_model=DualAuthRequestOut, status_code=201)
+@router.post("/dual-auth", status_code=201)
 async def create_dual_auth(
     data: DualAuthRequestIn,
     db: AsyncSession = Depends(get_db),
@@ -195,7 +195,7 @@ async def create_dual_auth(
     return DualAuthRequestOut.model_validate(req)
 
 
-@router.get("/dual-auth", response_model=Page[DualAuthRequestOut])
+@router.get("/dual-auth")
 async def list_dual_auth(
     status: str | None = Query(default=None),
     params: PageParams = Depends(page_params),
@@ -211,7 +211,7 @@ async def list_dual_auth(
     return await paginate(db, stmt, params, item_model=DualAuthRequestOut)
 
 
-@router.get("/dual-auth/{req_id}", response_model=DualAuthRequestOut)
+@router.get("/dual-auth/{req_id}")
 async def get_dual_auth(
     req_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -224,7 +224,7 @@ async def get_dual_auth(
     return DualAuthRequestOut.model_validate(req)
 
 
-@router.post("/dual-auth/{req_id}/approve", response_model=DualAuthRequestOut)
+@router.post("/dual-auth/{req_id}/approve")
 async def approve_dual_auth(
     req_id: uuid.UUID,
     data: DualAuthDecisionIn,
@@ -239,7 +239,7 @@ async def approve_dual_auth(
     return DualAuthRequestOut.model_validate(req)
 
 
-@router.post("/dual-auth/{req_id}/deny", response_model=DualAuthRequestOut)
+@router.post("/dual-auth/{req_id}/deny")
 async def deny_dual_auth(
     req_id: uuid.UUID,
     data: DualAuthDecisionIn,
@@ -254,7 +254,7 @@ async def deny_dual_auth(
     return DualAuthRequestOut.model_validate(req)
 
 
-@router.post("/dual-auth/{req_id}/consume", response_model=DualAuthRequestOut)
+@router.post("/dual-auth/{req_id}/consume")
 async def consume_dual_auth(
     req_id: uuid.UUID,
     action: str = Query(...),
@@ -327,7 +327,7 @@ async def ingest_video_audit(
 
 
 # === Right-to-erasure (DPDP/GDPR) ===========================================
-@router.post("/erasure", response_model=ErasureRequestOut, status_code=202)
+@router.post("/erasure", status_code=202)
 async def request_erasure(
     data: ErasureRequestIn,
     db: AsyncSession = Depends(get_db),
@@ -368,7 +368,7 @@ async def request_erasure(
 sso_router = APIRouter(prefix="/auth/sso", tags=["auth"])
 
 
-@sso_router.get("/login", response_model=SsoLoginStartOut)
+@sso_router.get("/login")
 async def sso_login(
     request: Request,
     tenant_id: uuid.UUID | None = Query(default=None),

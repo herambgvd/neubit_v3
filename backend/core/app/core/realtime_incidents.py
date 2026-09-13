@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Annotated
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
@@ -73,7 +74,7 @@ def _compact(envelope: dict) -> dict:
 @realtime_incidents_router.get("/incidents")
 async def incidents_stream(
     request: Request,
-    token: str | None = Query(None, description="access token (browser EventSource)"),
+    token: Annotated[str | None, Query(description="access token (browser EventSource)")] = None,
 ) -> StreamingResponse:
     """SSE stream of live workflow incidents for the caller's tenant.
 

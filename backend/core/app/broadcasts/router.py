@@ -46,7 +46,7 @@ def _validate(severity: str | None, target_type: str | None) -> None:
         raise ValidationError(f"target_type must be one of {BROADCAST_TARGETS}")
 
 
-@router.get("", response_model=list[BroadcastOut])
+@router.get("")
 async def list_broadcasts(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_superadmin),
@@ -57,7 +57,7 @@ async def list_broadcasts(
     return [BroadcastOut.model_validate(b) for b in rows]
 
 
-@router.post("", response_model=BroadcastOut, status_code=201)
+@router.post("", status_code=201)
 async def create_broadcast(
     data: CreateBroadcastIn,
     db: AsyncSession = Depends(get_db),
@@ -85,7 +85,7 @@ async def create_broadcast(
     return BroadcastOut.model_validate(b)
 
 
-@router.patch("/{broadcast_id}", response_model=BroadcastOut)
+@router.patch("/{broadcast_id}")
 async def update_broadcast(
     broadcast_id: uuid.UUID,
     data: UpdateBroadcastIn,
@@ -130,7 +130,7 @@ async def delete_broadcast(
     )
 
 
-@public_router.get("/active", response_model=list[ActiveBroadcastOut])
+@public_router.get("/active")
 async def active_broadcasts(
     db: AsyncSession = Depends(get_db),
     tenant_id: uuid.UUID | None = Depends(optional_tenant_id),

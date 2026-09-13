@@ -51,7 +51,7 @@ class UpdateModuleIn(BaseModel):
     default_enabled: bool | None = None
 
 
-@router.get("", response_model=list[ModuleOut])
+@router.get("")
 async def list_modules(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
@@ -65,7 +65,7 @@ async def list_modules(
     return [ModuleOut.model_validate(m) for m in modules]
 
 
-@router.post("", response_model=ModuleOut, status_code=201)
+@router.post("", status_code=201)
 async def create_module(
     data: CreateModuleIn,
     db: AsyncSession = Depends(get_db),
@@ -85,7 +85,7 @@ async def create_module(
     return ModuleOut.model_validate(module)
 
 
-@router.patch("/{module_id}", response_model=ModuleOut)
+@router.patch("/{module_id}")
 async def update_module(
     module_id: uuid.UUID,
     data: UpdateModuleIn,

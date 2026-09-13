@@ -48,15 +48,14 @@ async def _service(
 
 @router.get(
     "",
-    response_model=TagListResponse,
     dependencies=[Depends(require_permission(CorePerm.TAGS_READ))],
 )
 async def list_tags(
     svc: Annotated[TagService, Depends(_service)],
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
-    search: Optional[str] = Query(None, max_length=100),
-    is_active: Optional[bool] = Query(None),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    search: Annotated[Optional[str], Query(max_length=100)] = None,
+    is_active: Annotated[Optional[bool], Query()] = None,
 ) -> TagListResponse:
     items, total = await svc.list_(skip=skip, limit=limit, search=search, is_active=is_active)
     return TagListResponse(items=items, total=total, skip=skip, limit=limit)
@@ -64,20 +63,18 @@ async def list_tags(
 
 @router.post(
     "",
-    response_model=TagPublic,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_tag(
     body: CreateTagRequest,
     svc: Annotated[TagService, Depends(_service)],
-    actor: User = Depends(require_permission(CorePerm.TAGS_CREATE)),
+    actor: Annotated[User, Depends(require_permission(CorePerm.TAGS_CREATE))],
 ) -> TagPublic:
     return await svc.create(body, actor=actor)
 
 
 @router.get(
     "/for/{entity_type}/{entity_id}",
-    response_model=list[TagPublic],
     dependencies=[Depends(require_permission(CorePerm.TAGS_READ))],
 )
 async def tags_for_entity(
@@ -90,7 +87,6 @@ async def tags_for_entity(
 
 @router.get(
     "/{tag_id}",
-    response_model=TagPublic,
     dependencies=[Depends(require_permission(CorePerm.TAGS_READ))],
 )
 async def get_tag(
@@ -102,13 +98,12 @@ async def get_tag(
 
 @router.patch(
     "/{tag_id}",
-    response_model=TagPublic,
 )
 async def update_tag(
     tag_id: str,
     body: UpdateTagRequest,
     svc: Annotated[TagService, Depends(_service)],
-    actor: User = Depends(require_permission(CorePerm.TAGS_UPDATE)),
+    actor: Annotated[User, Depends(require_permission(CorePerm.TAGS_UPDATE))],
 ) -> TagPublic:
     return await svc.update(tag_id, body, actor=actor)
 
@@ -120,7 +115,7 @@ async def update_tag(
 async def delete_tag(
     tag_id: str,
     svc: Annotated[TagService, Depends(_service)],
-    actor: User = Depends(require_permission(CorePerm.TAGS_DELETE)),
+    actor: Annotated[User, Depends(require_permission(CorePerm.TAGS_DELETE))],
 ) -> Response:
     await svc.delete(tag_id, actor=actor)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -128,33 +123,30 @@ async def delete_tag(
 
 @router.post(
     "/{tag_id}/assign",
-    response_model=TagPublic,
 )
 async def assign_tag(
     tag_id: str,
     body: TagAssignRequest,
     svc: Annotated[TagService, Depends(_service)],
-    actor: User = Depends(require_permission(CorePerm.TAGS_UPDATE)),
+    actor: Annotated[User, Depends(require_permission(CorePerm.TAGS_UPDATE))],
 ) -> TagPublic:
     return await svc.assign(tag_id, body, actor=actor)
 
 
 @router.post(
     "/{tag_id}/unassign",
-    response_model=TagPublic,
 )
 async def unassign_tag(
     tag_id: str,
     body: TagAssignRequest,
     svc: Annotated[TagService, Depends(_service)],
-    actor: User = Depends(require_permission(CorePerm.TAGS_UPDATE)),
+    actor: Annotated[User, Depends(require_permission(CorePerm.TAGS_UPDATE))],
 ) -> TagPublic:
     return await svc.unassign(tag_id, body, actor=actor)
 
 
 @router.get(
     "/{tag_id}/entities",
-    response_model=list[TagLinkPublic],
     dependencies=[Depends(require_permission(CorePerm.TAGS_READ))],
 )
 async def entities_for_tag(

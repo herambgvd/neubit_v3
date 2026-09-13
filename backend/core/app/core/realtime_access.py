@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Annotated
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
@@ -82,8 +83,10 @@ def _compact(envelope: dict) -> dict:
 @realtime_access_router.get("/access-events")
 async def access_events_stream(
     request: Request,
-    token: str | None = Query(None, description="access token (browser EventSource)"),
-    instance_id: str | None = Query(None, description="only forward this instance's events"),
+    token: Annotated[str | None, Query(description="access token (browser EventSource)")] = None,
+    instance_id: Annotated[
+        str | None, Query(description="only forward this instance's events")
+    ] = None,
 ) -> StreamingResponse:
     """SSE stream of live access-control events for the caller's tenant.
 

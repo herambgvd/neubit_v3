@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Annotated
 
 import jwt
 from fastapi import APIRouter, Query, Request
@@ -118,8 +119,10 @@ def _compact_wall(envelope: dict) -> dict:
 @realtime_wall_router.get("/wall-events")
 async def wall_events_stream(
     request: Request,
-    token: str | None = Query(None, description="access token (browser EventSource)"),
-    wall_id: str | None = Query(None, description="only forward this wall's state frames"),
+    token: Annotated[str | None, Query(description="access token (browser EventSource)")] = None,
+    wall_id: Annotated[
+        str | None, Query(description="only forward this wall's state frames")
+    ] = None,
 ) -> StreamingResponse:
     """SSE stream of live Video-Wall shared-state updates for the caller's tenant.
 
