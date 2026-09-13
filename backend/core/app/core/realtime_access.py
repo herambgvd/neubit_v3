@@ -31,7 +31,6 @@ Client (matches the access ``use-access-event-stream`` hook):
 from __future__ import annotations
 
 import asyncio
-import json
 from functools import partial
 from typing import Annotated
 
@@ -39,7 +38,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 
 from .logging import get_logger
-from .shutdown import SSE_SHUTDOWN_FRAME, next_sse_frame
+from .realtime_relay import stream_sse_frames
 from ..auth.permissions import CorePerm
 from .sse_auth import StreamGuard, authorize_stream, principal_or_401
 
@@ -81,13 +80,17 @@ def _compact(envelope: dict) -> dict:
     }
 
 
-def _access_frame(envelope: dict, instance_id: str | None) -> dict | None:
-    """The event this envelope carries — or None when this subscriber asked for
-    one instance and the event belongs to another."""
+def _access_frame(envelope: dict, instance_id: str | None) -> tuple[str, dict] | None:
+    """The SSE frame this envelope becomes — or None when this subscriber asked for
+    one instance and the event belongs to another.
+
+    Every access frame carries the same event name, but it is queued WITH the frame
+    anyway, because that is the shape `stream_sse_frames` takes from all four relays.
+    """
     data = _compact(envelope)
     if instance_id and data.get("instance_id") != instance_id:
         return None
-    return data
+    return (ACCESS_EVENT_NAME, data)
 
 
 async def _enqueue_access_frame(queue, instance_id, tenant_id, envelope: dict) -> None:
@@ -113,25 +116,8 @@ async def _access_relay(request, guard, pattern: str, instance_id: str | None, t
     # Prime the connection so onopen fires and proxies flush.
     yield ": connected\n\n"
     try:
-        while True:
-            if await request.is_disconnected():
-                break
-            kind, item = await next_sse_frame(queue, KEEPALIVE_SECONDS)
-            if kind == "shutdown":
-                # Going down: end the response instead of looping, or the
-                # open stream wedges the shutdown. EventSource reconnects.
-                yield SSE_SHUTDOWN_FRAME
-                break
-            if kind == "keepalive":
-                if not await guard.still_allowed():
-                    # The 200 went out when the stream opened, so ending the
-                    # body is the only way left to refuse. EventSource
-                    # reconnects and gets a clean 401/403 then.
-                    yield "event: revoked\ndata: {}\n\n"
-                    break
-                yield ": keepalive\n\n"
-                continue
-            yield f"event: {ACCESS_EVENT_NAME}\ndata: {json.dumps(item)}\n\n"
+        async for chunk in stream_sse_frames(request, guard, queue, KEEPALIVE_SECONDS):
+            yield chunk
     finally:
         await events_nats.unsubscribe_quietly(sub)
         log.debug("SSE access stream closed (tenant=%s)", tenant_id)

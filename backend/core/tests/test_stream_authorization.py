@@ -270,12 +270,94 @@ async def test_a_guard_does_not_recheck_before_its_interval(app, db, monkeypatch
         config.get_settings.cache_clear()
 
 
-async def test_every_relay_uses_the_guard():
-    """Four relays, four copies of the same loop — the guard has to be in all four."""
+async def test_every_relay_builds_its_own_guard():
+    """The guard is constructed per relay, with THAT relay's permission.
+
+    The frame loop is shared (`core.realtime_relay`), and a guard hoisted in there
+    with it would be one permission for four streams — a wall viewer reading door
+    events. Only the construction is read from the source: whether the loop then
+    ASKS the guard is asserted by behaviour below, which is what the shared loop
+    made possible and a grep for the call could not survive.
+    """
     import pathlib
 
     core_dir = pathlib.Path(__file__).resolve().parents[1] / "app" / "core"
     for name in ("realtime_vms.py", "realtime_wall.py", "realtime_access.py", "realtime_incidents.py"):
         src = (core_dir / name).read_text()
         assert "StreamGuard(" in src, f"{name} never constructs a guard"
-        assert "await guard.still_allowed()" in src, f"{name} never asks the guard"
+
+
+# --- the relay ACTS on the guard's refusal ------------------------------------
+
+RELAY_MODULES = {
+    "/realtime/vms-events": "app.core.realtime_vms",
+    "/realtime/wall-events": "app.core.realtime_wall",
+    "/realtime/access-events": "app.core.realtime_access",
+    "/realtime/incidents": "app.core.realtime_incidents",
+}
+
+
+class _RefusesAfterTheFirstAsk:
+    """A StreamGuard that says yes once and no after — a revocation mid-stream.
+
+    Substituted for the real guard by name in the relay's own module, so a relay
+    that stops constructing one, or constructs it from somewhere else, never sees
+    this refusal and fails the test by staying open.
+    """
+
+    def __init__(self, claims: dict, *permissions: str) -> None:
+        self.asks = 0
+
+    async def still_allowed(self) -> bool:
+        self.asks += 1
+        return self.asks == 1
+
+
+@pytest.mark.parametrize("path", sorted(STREAMS))
+async def test_a_relay_ends_the_stream_once_the_guard_refuses(app, db, path, monkeypatch):
+    """A relay that stops asking the guard keeps pushing live door, camera, wall and
+    alarm traffic to a session that has been revoked, a role that has been narrowed,
+    a tenant that has been suspended or a licence that has expired — until the token
+    finally expires, which on these hours-long connections is the rest of the shift.
+
+    Asserted by behaviour rather than by the presence of the call in the source: the
+    guarantee is that the body ENDS, and a relay can lose that while still containing
+    every word of the check.
+    """
+    import asyncio
+    import importlib
+
+    # The process-wide shutdown Event binds to the first event loop that waits on
+    # it, and each test here gets a fresh one; left alone, the second test to run
+    # sees a RuntimeError from it, which the relay reads as "we are going down" and
+    # ends the stream for a reason that has nothing to do with the guard.
+    from app.core import shutdown as shutdown_mod
+
+    monkeypatch.setattr(shutdown_mod, "shutting_down", asyncio.Event())
+
+    module = importlib.import_module(RELAY_MODULES[path])
+    monkeypatch.setattr(module, "StreamGuard", _RefusesAfterTheFirstAsk)
+    # The guard is asked on the keepalive tick, and the real cadence is 20s — longer
+    # than any deadline this test can reasonably wait on.
+    monkeypatch.setattr(module, "KEEPALIVE_SECONDS", 0.01)
+
+    perm = STREAMS[path]
+    role = await make_role(db, f"Streamer-{perm}", [perm])
+    user = await make_user(db, f"streamer-{perm}@x.io", role)
+
+    async def _drain() -> str:
+        async with api_client(app) as c:
+            async with c.stream("GET", f"{PREFIX}{path}", headers=bearer(user)) as r:
+                assert r.status_code == 200, f"{path}: the stream did not even open"
+                return "".join([chunk async for chunk in r.aiter_text()])
+
+    try:
+        body = await asyncio.wait_for(_drain(), timeout=10.0)
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        pytest.fail(
+            f"{RELAY_MODULES[path]}: the guard refused and the stream stayed open — "
+            "this relay is still pushing to a caller who is no longer entitled to it"
+        )
+    assert "event: revoked" in body, (
+        f"{RELAY_MODULES[path]}: the stream ended without telling the client why"
+    )

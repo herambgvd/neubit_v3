@@ -32,7 +32,6 @@ Client (mirror of the VMS ``use-vms-event-stream`` hook — VW-D builds it):
 from __future__ import annotations
 
 import asyncio
-import json
 from functools import partial
 from typing import Annotated
 
@@ -42,7 +41,7 @@ from fastapi.responses import StreamingResponse
 
 from ..auth.security import decode_token
 from .logging import get_logger
-from .shutdown import SSE_SHUTDOWN_FRAME, next_sse_frame
+from .realtime_relay import stream_sse_frames
 from ..auth.permissions import CorePerm
 from .sse_auth import StreamGuard, authorize_stream
 
@@ -149,26 +148,8 @@ async def _wall_relay(request, guard, pattern: str, wall_id: str | None, tenant_
     # Prime the connection so onopen fires and proxies flush.
     yield ": connected\n\n"
     try:
-        while True:
-            if await request.is_disconnected():
-                break
-            kind, item = await next_sse_frame(queue, KEEPALIVE_SECONDS)
-            if kind == "shutdown":
-                # Going down: end the response instead of looping, or the
-                # open stream wedges the shutdown. EventSource reconnects.
-                yield SSE_SHUTDOWN_FRAME
-                break
-            if kind == "keepalive":
-                if not await guard.still_allowed():
-                    # The 200 went out when the stream opened, so ending the
-                    # body is the only way left to refuse. EventSource
-                    # reconnects and gets a clean 401/403 then.
-                    yield "event: revoked\ndata: {}\n\n"
-                    break
-                yield ": keepalive\n\n"
-                continue
-            name, data = item
-            yield f"event: {name}\ndata: {json.dumps(data)}\n\n"
+        async for chunk in stream_sse_frames(request, guard, queue, KEEPALIVE_SECONDS):
+            yield chunk
     finally:
         await events_nats.unsubscribe_quietly(sub)
         log.debug("SSE wall stream closed (tenant=%s)", tenant_id)
