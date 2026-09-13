@@ -20,15 +20,15 @@ from . import schemas as S
 from .service import SopService, StateService, TransitionService
 
 
-async def _sop_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Scope = Depends(get_scope)):
+async def _sop_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Annotated[Scope, Depends(get_scope)]):
     return SopService(db, scope)
 
 
-async def _state_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Scope = Depends(get_scope)):
+async def _state_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Annotated[Scope, Depends(get_scope)]):
     return StateService(db, scope)
 
 
-async def _trans_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Scope = Depends(get_scope)):
+async def _trans_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Annotated[Scope, Depends(get_scope)]):
     return TransitionService(db, scope)
 
 
@@ -40,8 +40,8 @@ sop_router = APIRouter(prefix="/workflow/sops", tags=["Workflow · SOPs"])
 @sop_router.get("", response_model=S.SopListResponse,
                 dependencies=[Depends(require_permission(perms.SOP_READ))])
 async def list_sops(svc: Annotated[SopService, Depends(_sop_svc)],
-                    skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200),
-                    is_active: Optional[bool] = Query(None), tag: Optional[str] = Query(None)):
+                    skip: Annotated[int, Query(ge=0)] = 0, limit: Annotated[int, Query(ge=1, le=200)] = 50,
+                    is_active: Annotated[Optional[bool], Query()] = None, tag: Annotated[Optional[str], Query()] = None):
     items, total = await svc.list_(skip=skip, limit=limit, is_active=is_active, tag=tag)
     return S.SopListResponse(items=[S.SopPublic.from_row(r) for r in items],
                              total=total, skip=skip, limit=limit)
@@ -49,14 +49,14 @@ async def list_sops(svc: Annotated[SopService, Depends(_sop_svc)],
 
 @sop_router.post("", response_model=S.SopPublic, status_code=status.HTTP_201_CREATED)
 async def create_sop(body: S.CreateSopRequest, svc: Annotated[SopService, Depends(_sop_svc)],
-                     actor: Principal = Depends(require_permission(perms.SOP_CREATE))):
+                     actor: Annotated[Principal, Depends(require_permission(perms.SOP_CREATE))]):
     return S.SopPublic.from_row(await svc.create(body, actor=actor))
 
 
 @sop_router.post("/starters", response_model=S.InstallStartersResponse,
                  status_code=status.HTTP_201_CREATED)
 async def install_starter_sops(svc: Annotated[SopService, Depends(_sop_svc)],
-                               actor: Principal = Depends(require_permission(perms.SOP_CREATE))):
+                               actor: Annotated[Principal, Depends(require_permission(perms.SOP_CREATE))]):
     """Install the starter playbooks this tenant is missing.
 
     Idempotent: re-running installs only what is absent, so it is safe to offer as
@@ -80,13 +80,13 @@ async def get_sop(sop_id: str, svc: Annotated[SopService, Depends(_sop_svc)]):
 
 @sop_router.patch("/{sop_id}", response_model=S.SopPublic)
 async def update_sop(sop_id: str, body: S.UpdateSopRequest, svc: Annotated[SopService, Depends(_sop_svc)],
-                     actor: Principal = Depends(require_permission(perms.SOP_UPDATE))):
+                     actor: Annotated[Principal, Depends(require_permission(perms.SOP_UPDATE))]):
     return S.SopPublic.from_row(await svc.update(sop_id, body, actor=actor))
 
 
 @sop_router.delete("/{sop_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_sop(sop_id: str, svc: Annotated[SopService, Depends(_sop_svc)],
-                     actor: Principal = Depends(require_permission(perms.SOP_DELETE))):
+                     actor: Annotated[Principal, Depends(require_permission(perms.SOP_DELETE))]):
     await svc.delete(sop_id, actor=actor)
 
 
@@ -103,14 +103,14 @@ async def list_states(sop_id: str, svc: Annotated[StateService, Depends(_state_s
 
 @state_router.post("", response_model=S.StatePublic, status_code=status.HTTP_201_CREATED)
 async def create_state(sop_id: str, body: S.CreateStateRequest, svc: Annotated[StateService, Depends(_state_svc)],
-                       actor: Principal = Depends(require_permission(perms.SOP_UPDATE))):
+                       actor: Annotated[Principal, Depends(require_permission(perms.SOP_UPDATE))]):
     return S.StatePublic.from_row(await svc.create(sop_id, body, actor=actor))
 
 
 @state_router.patch("/{state_id}", response_model=S.StatePublic)
 async def update_state(sop_id: str, state_id: str, body: S.UpdateStateRequest,
                        svc: Annotated[StateService, Depends(_state_svc)],
-                       actor: Principal = Depends(require_permission(perms.SOP_UPDATE))):
+                       actor: Annotated[Principal, Depends(require_permission(perms.SOP_UPDATE))]):
     return S.StatePublic.from_row(await svc.update(state_id, body, actor=actor))
 
 
@@ -134,14 +134,14 @@ async def list_transitions(sop_id: str, svc: Annotated[TransitionService, Depend
 @transition_router.post("", response_model=S.TransitionPublic, status_code=status.HTTP_201_CREATED)
 async def create_transition(sop_id: str, body: S.CreateTransitionRequest,
                             svc: Annotated[TransitionService, Depends(_trans_svc)],
-                            actor: Principal = Depends(require_permission(perms.SOP_UPDATE))):
+                            actor: Annotated[Principal, Depends(require_permission(perms.SOP_UPDATE))]):
     return S.TransitionPublic.from_row(await svc.create(sop_id, body, actor=actor))
 
 
 @transition_router.patch("/{transition_id}", response_model=S.TransitionPublic)
 async def update_transition(sop_id: str, transition_id: str, body: S.UpdateTransitionRequest,
                             svc: Annotated[TransitionService, Depends(_trans_svc)],
-                            actor: Principal = Depends(require_permission(perms.SOP_UPDATE))):
+                            actor: Annotated[Principal, Depends(require_permission(perms.SOP_UPDATE))]):
     return S.TransitionPublic.from_row(await svc.update(transition_id, body, actor=actor))
 
 

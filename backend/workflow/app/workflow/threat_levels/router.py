@@ -15,7 +15,7 @@ from . import schemas as S
 from .service import ThreatLevelService
 
 
-async def _threat_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Scope = Depends(get_scope)):
+async def _threat_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Annotated[Scope, Depends(get_scope)]):
     return ThreatLevelService(db, scope)
 
 
@@ -32,7 +32,7 @@ async def list_threat_levels(svc: Annotated[ThreatLevelService, Depends(_threat_
 
 @threat_router.put("", response_model=S.ThreatLevelPublic)
 async def set_threat_level(body: S.SetThreatLevelRequest, svc: Annotated[ThreatLevelService, Depends(_threat_svc)],
-                           actor: Principal = Depends(require_permission(perms.THREAT_LEVEL_UPDATE))):
+                           actor: Annotated[Principal, Depends(require_permission(perms.THREAT_LEVEL_UPDATE))]):
     return S.ThreatLevelPublic.from_row(await svc.set_level(body, actor=actor))
 
 

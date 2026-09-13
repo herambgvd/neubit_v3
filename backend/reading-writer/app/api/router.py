@@ -114,7 +114,6 @@ def _window(
 
 @bi_router.get(
     "/summary",
-    response_model=SummaryResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def summary(db: Db, scope: Caller) -> SummaryResponse:
@@ -129,7 +128,6 @@ async def summary(db: Db, scope: Caller) -> SummaryResponse:
 
 @bi_router.get(
     "/activity",
-    response_model=list[ActivityBucket],
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def activity(
@@ -150,7 +148,6 @@ async def activity(
 
 @bi_router.get(
     "/alerts",
-    response_model=AlertListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def alerts(
@@ -200,7 +197,6 @@ async def alerts(
 
 @bi_router.get(
     "/devices",
-    response_model=DeviceListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def devices(
@@ -242,7 +238,6 @@ async def devices(
 
 @bi_router.get(
     "/points",
-    response_model=PointListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def points(
@@ -374,7 +369,6 @@ async def unretire_point(db: Db, scope: Caller, point_id: uuid.UUID) -> dict:
 
 @bi_router.get(
     "/series",
-    response_model=SeriesResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def series(
@@ -466,7 +460,6 @@ async def series(
 
 @bi_router.get(
     "/correlation",
-    response_model=CorrelationResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def correlation(
@@ -717,7 +710,6 @@ async def correlation(
 
 @bi_router.get(
     "/units",
-    response_model=UnitListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def units(
@@ -877,7 +869,6 @@ async def confirm_units(db: Db, scope: Caller, who: Who, body: ConfirmUnitsReque
 
 @bi_router.get(
     "/rating/sites",
-    response_model=SiteFactsListResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def rating_sites(db: Db, scope: Caller) -> SiteFactsListResponse:
@@ -893,7 +884,6 @@ async def rating_sites(db: Db, scope: Caller) -> SiteFactsListResponse:
 
 @bi_router.get(
     "/rating",
-    response_model=RatingResponse,
     dependencies=[Depends(require_permission(PERM_READ))],
 )
 async def rating(
@@ -1331,7 +1321,7 @@ async def dataset_values(
     )
 
 
-@bi_router.post("/query", response_model=QueryResult)
+@bi_router.post("/query")
 async def query(db: Db, scope: Caller, who: Who, body: dict) -> QueryResult:
     """Execute ONE widget's BUILDER STATE and return its data.
 

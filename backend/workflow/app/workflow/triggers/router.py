@@ -21,15 +21,15 @@ from . import schemas as S
 from .service import AlertFormatService, SimulatorService, TriggerService
 
 
-async def _trig_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Scope = Depends(get_scope)):
+async def _trig_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Annotated[Scope, Depends(get_scope)]):
     return TriggerService(db, scope)
 
 
-async def _format_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Scope = Depends(get_scope)):
+async def _format_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Annotated[Scope, Depends(get_scope)]):
     return AlertFormatService(db, scope)
 
 
-async def _sim_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Scope = Depends(get_scope)):
+async def _sim_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Annotated[Scope, Depends(get_scope)]):
     return SimulatorService(db, scope)
 
 
@@ -41,8 +41,8 @@ trigger_router = APIRouter(prefix="/workflow/triggers", tags=["Workflow · Trigg
 @trigger_router.get("", response_model=S.TriggerListResponse,
                     dependencies=[Depends(require_permission(perms.TRIGGER_READ))])
 async def list_triggers(svc: Annotated[TriggerService, Depends(_trig_svc)],
-                        skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200),
-                        enabled: Optional[bool] = Query(None), event_type: Optional[str] = Query(None)):
+                        skip: Annotated[int, Query(ge=0)] = 0, limit: Annotated[int, Query(ge=1, le=200)] = 50,
+                        enabled: Annotated[Optional[bool], Query()] = None, event_type: Annotated[Optional[str], Query()] = None):
     items, total = await svc.list_(skip=skip, limit=limit, enabled=enabled, event_type=event_type)
     return S.TriggerListResponse(items=[S.TriggerPublic.from_row(r) for r in items],
                                  total=total, skip=skip, limit=limit)
@@ -50,7 +50,7 @@ async def list_triggers(svc: Annotated[TriggerService, Depends(_trig_svc)],
 
 @trigger_router.post("", response_model=S.TriggerPublic, status_code=status.HTTP_201_CREATED)
 async def create_trigger(body: S.CreateTriggerRequest, svc: Annotated[TriggerService, Depends(_trig_svc)],
-                         actor: Principal = Depends(require_permission(perms.TRIGGER_CREATE))):
+                         actor: Annotated[Principal, Depends(require_permission(perms.TRIGGER_CREATE))]):
     return S.TriggerPublic.from_row(await svc.create(body, actor=actor))
 
 
@@ -63,7 +63,7 @@ async def get_trigger(trigger_id: str, svc: Annotated[TriggerService, Depends(_t
 @trigger_router.patch("/{trigger_id}", response_model=S.TriggerPublic)
 async def update_trigger(trigger_id: str, body: S.UpdateTriggerRequest,
                          svc: Annotated[TriggerService, Depends(_trig_svc)],
-                         actor: Principal = Depends(require_permission(perms.TRIGGER_UPDATE))):
+                         actor: Annotated[Principal, Depends(require_permission(perms.TRIGGER_UPDATE))]):
     return S.TriggerPublic.from_row(await svc.update(trigger_id, body, actor=actor))
 
 
@@ -75,13 +75,13 @@ async def delete_trigger(trigger_id: str, svc: Annotated[TriggerService, Depends
 
 @trigger_router.post("/{trigger_id}/enable", response_model=S.TriggerPublic)
 async def enable_trigger(trigger_id: str, svc: Annotated[TriggerService, Depends(_trig_svc)],
-                         actor: Principal = Depends(require_permission(perms.TRIGGER_UPDATE))):
+                         actor: Annotated[Principal, Depends(require_permission(perms.TRIGGER_UPDATE))]):
     return S.TriggerPublic.from_row(await svc.set_enabled(trigger_id, True, actor=actor))
 
 
 @trigger_router.post("/{trigger_id}/disable", response_model=S.TriggerPublic)
 async def disable_trigger(trigger_id: str, svc: Annotated[TriggerService, Depends(_trig_svc)],
-                          actor: Principal = Depends(require_permission(perms.TRIGGER_UPDATE))):
+                          actor: Annotated[Principal, Depends(require_permission(perms.TRIGGER_UPDATE))]):
     return S.TriggerPublic.from_row(await svc.set_enabled(trigger_id, False, actor=actor))
 
 
@@ -93,8 +93,8 @@ alert_format_router = APIRouter(prefix="/workflow/alert-formats", tags=["Workflo
 @alert_format_router.get("", response_model=S.AlertFormatListResponse,
                          dependencies=[Depends(require_permission(perms.SOP_READ))])
 async def list_alert_formats(svc: Annotated[AlertFormatService, Depends(_format_svc)],
-                             skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200),
-                             is_active: Optional[bool] = Query(None)):
+                             skip: Annotated[int, Query(ge=0)] = 0, limit: Annotated[int, Query(ge=1, le=200)] = 50,
+                             is_active: Annotated[Optional[bool], Query()] = None):
     items, total = await svc.list_(skip=skip, limit=limit, is_active=is_active)
     return S.AlertFormatListResponse(items=[S.AlertFormatPublic.from_row(r) for r in items],
                                      total=total, skip=skip, limit=limit)
@@ -103,7 +103,7 @@ async def list_alert_formats(svc: Annotated[AlertFormatService, Depends(_format_
 @alert_format_router.post("", response_model=S.AlertFormatPublic, status_code=status.HTTP_201_CREATED)
 async def create_alert_format(body: S.CreateAlertFormatRequest,
                               svc: Annotated[AlertFormatService, Depends(_format_svc)],
-                              actor: Principal = Depends(require_permission(perms.SOP_CREATE))):
+                              actor: Annotated[Principal, Depends(require_permission(perms.SOP_CREATE))]):
     return S.AlertFormatPublic.from_row(await svc.create(body, actor=actor))
 
 
@@ -116,7 +116,7 @@ async def get_alert_format(format_id: str, svc: Annotated[AlertFormatService, De
 @alert_format_router.patch("/{format_id}", response_model=S.AlertFormatPublic)
 async def update_alert_format(format_id: str, body: S.UpdateAlertFormatRequest,
                               svc: Annotated[AlertFormatService, Depends(_format_svc)],
-                              actor: Principal = Depends(require_permission(perms.SOP_UPDATE))):
+                              actor: Annotated[Principal, Depends(require_permission(perms.SOP_UPDATE))]):
     return S.AlertFormatPublic.from_row(await svc.update(format_id, body, actor=actor))
 
 
@@ -134,7 +134,7 @@ event_router = APIRouter(prefix="/workflow/events", tags=["Workflow · Events"])
 @event_router.post("/simulate", response_model=S.SimulateEventResponse)
 async def simulate_event(body: S.SimulateEventRequest,
                          svc: Annotated[SimulatorService, Depends(_sim_svc)],
-                         actor: Principal = Depends(require_permission(perms.INSTANCE_CREATE))):
+                         actor: Annotated[Principal, Depends(require_permission(perms.INSTANCE_CREATE))]):
     return S.SimulateEventResponse(**await svc.simulate(body, actor=actor))
 
 
