@@ -16,6 +16,7 @@ function container(over: Partial<Container> = {}): Container {
     state: "running",
     status: "running",
     health: "healthy",
+    exit_code: null,
     created_at: new Date(Date.now() - 3_600_000).toISOString(),
     service: "core",
     cpu_pct: 12.5,

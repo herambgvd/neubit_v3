@@ -309,6 +309,11 @@ export interface Container {
   state: string;
   status: string;
   health: string | null;
+  /** The exit status, or null while the container is still running. `exited`
+   *  alone does not mean failed: db-init and reporting-migrate are one-shot jobs
+   *  that exit 0 and stay exited, and anything reading container state has to be
+   *  able to tell those from a service that crashed. */
+  exit_code: number | null;
   created_at: string | null;
   /** The compose service label, when the container carries one. */
   service: string | null;
