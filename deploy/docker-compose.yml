@@ -4,6 +4,61 @@
 
 name: neubit-v3
 
+# ── container ceilings: logging + memory ────────────────────────
+# Two audits found this deployment unbounded in every direction — not one of the
+# containers had a memory limit and not one had a log rotation policy, on a box
+# that is ALSO running a video recorder writing to disk, in a customer's
+# building, with nobody watching at 3am. A leaking Python service and a json log
+# that grows forever are the same outage: the appliance fills its RAM or its
+# disk and takes the recorder down with it.
+#
+# LOGGING. `json-file` with no `max-size` never rotates, ever. The recorder's
+# mediamtx alone put 64 MB on disk over 31 days; twenty containers at that rate
+# is a disk-full a year after commissioning, on a host nobody logs into. The
+# daemon-wide `log-opts` that would fix this globally live in a file we do not
+# ship on a customer's machine — this compose does.
+#
+# 10 MB x 3 files caps each container at 30 MB and the whole estate under a
+# gigabyte. 30 MB is still three to four weeks of history at these services'
+# volume, which is the window anyone actually reads back.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# MEMORY. `mem_limit` per service, NOT one number for everything: each was sized
+# from `docker stats --no-stream` against a running estate, plus headroom for
+# the burst that service actually has. The measured idle RSS is quoted in each
+# service's comment so the next person can tell a generous limit from one that
+# is already tight, instead of guessing the way a copied number forces you to.
+# The tiers:
+#
+#   256m   one job, no buffers — traefik, celery beat, the one-shot db-init
+#   512m   a FastAPI satellite: 60-120 MB idle, room for a request burst
+#   1g     anything that BUFFERS — a batching writer, a celery prefork pool,
+#          segment checksums over the recordings volume, a Node runner
+#   2-3g   the datastores and the JVM, sized from what they are CONFIGURED to
+#          allocate rather than from what they happen to be using right now
+#
+# A limit below what a process has already reserved is an OOM kill, not a
+# ceiling. That is why postgres's is derived from the shared_buffers set on its
+# own command line below, why redis's is twice its maxmemory (it forks to
+# snapshot), and why the dev override raises both frontends' — `next dev` is a
+# different program from `node server.js` and measures 2.5 GB where the
+# production runner measures 115 MB.
+#
+# These are CEILINGS, not reservations — nothing is set aside and the sum is not
+# a requirement. Measured steady state for the whole estate is ~1.5 GB; the
+# limits add up to ~15 GB only because every service would have to peak at once,
+# and two of them (db-init, reporting-migrate) exit seconds after `up`.
+#
+# CPU is deliberately NOT capped. A cpu quota on an appliance converts a burst
+# into latency rather than preventing anything: the contended resources on this
+# box are RAM and the disk the recorder is writing to, and a `cpus:` on core
+# would only make a cold-start migration take longer while the recorder keeps
+# whatever it was already getting.
+
 networks:
   neubit:
     name: neubit
@@ -31,6 +86,13 @@ services:
 
   # ── edge gateway ────────────────────────────────────────────────
   gateway:
+    # Log rotation + a memory ceiling — see the x-logging anchor and the memory
+    # tiers at the top of this file for why every service carries both.
+    logging: *logging
+    # Traefik: 57 MB idle and it is a router, not a buffer — it proxies bytes
+    # rather than holding them. 256m is ~4x measured and still the smallest
+    # ceiling in the file.
+    mem_limit: 256m
     # Comes back on its own after a host reboot or a Docker restart. Without
     # this the whole estate stays down until somebody runs `up -d` by hand —
     # and the symptom is a bare "Bad gateway", which reads as a broken build.
@@ -59,11 +121,68 @@ services:
 
   # ── data ────────────────────────────────────────────────────────
   postgres:
+    # Log rotation + a memory ceiling — see the x-logging anchor and the memory
+    # tiers at the top of this file for why every service carries both.
+    logging: *logging
+    # Derived from the command line below, not guessed: shared_buffers 1 GB +
+    # up to ~100 live backends at ~10 MB of private memory each + one autovacuum
+    # worker at maintenance_work_mem 256 MB is ~2.3 GB worst case. 3g leaves
+    # ~25% on top. (Measured 161 MB idle, because shared_buffers is reserved
+    # lazily — which is exactly why this limit cannot be sized from `docker
+    # stats`.)
+    mem_limit: 3g
     # Comes back on its own after a host reboot or a Docker restart. Without
     # this the whole estate stays down until somebody runs `up -d` by hand —
     # and the symptom is a bare "Bad gateway", which reads as a broken build.
     restart: unless-stopped
     image: timescale/timescaledb:2.17.2-pg16
+    # EXPLICIT memory and connection settings, because the image's own
+    # `timescaledb-tune` sizes them to the WHOLE HOST on first init and then
+    # never revisits the decision. On a 12 GB box it picked shared_buffers =
+    # 3 GB. That is wrong twice on an appliance: this machine is SHARED with a
+    # video recorder that wants the page cache for the segments it is writing,
+    # and a shared_buffers larger than `mem_limit` is an OOM kill the moment
+    # Postgres touches pages it already reserved. The limit above and these
+    # numbers are ONE decision, so they are written next to each other.
+    #
+    # Command-line `-c` beats postgresql.conf, so this holds on an existing
+    # pgdata volume that timescaledb-tune already wrote, not only a fresh one.
+    #
+    #   max_connections=200   THE FIX. The six services' SQLAlchemy pools sum to
+    #       98 — SQLAlchemy's default 5 + 10 per engine on core, ingest, access,
+    #       vision, workflow and reading-writer's readings engine, plus the
+    #       projector's own VE_PROJECTOR_POOL_SIZE 4 + OVERFLOW 4 — against 97
+    #       USABLE, which is the old 100 minus the 3 superuser_reserved. The
+    #       ceiling was below the demand, and the failure is `FATAL: sorry, too
+    #       many clients already` at whichever service happens to reconnect
+    #       last, so it reads as that service being broken. 200 covers the 98,
+    #       ops-agent's pg_dump/pg_restore, the migrators, a
+    #       `--scale reading-writer=2`, and an engineer's psql DURING the
+    #       incident — which is when there are no slots left to get one.
+    #   shared_buffers=1GB    the whole estate is ~250 MB of database today and
+    #       the only one that grows (neubit_reporting) is bounded by its own
+    #       90-day Timescale retention policy. 1 GB caches all of it and leaves
+    #       the rest of the box to the recorder.
+    #   work_mem=8MB          per sort/hash NODE, so it multiplies by backends
+    #       and by plan complexity. 8 MB x 200 backends is the number the
+    #       mem_limit above has to survive.
+    #   maintenance_work_mem=256MB   autovacuum and index builds, one at a time.
+    #       timescaledb-tune had this at 1.5 GB — half the container's ceiling,
+    #       held by a background job nobody is waiting on.
+    #   effective_cache_size=2GB     a planner HINT, allocates nothing; it just
+    #       has to stop claiming 8.9 GB of page cache that the recorder owns.
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - effective_cache_size=2GB
     # NOT `env_file: .env`. That file carries VE_JWT_SECRET, VE_SECRETS_KEY, the
     # DASHFORGE_* secrets, OPS_AGENT_TOKEN and VE_BOOTSTRAP_ADMIN_PASSWORD, and a
     # blanket env_file put every one of them into this container's environment —
@@ -137,6 +256,11 @@ services:
   # and could not be created — services depend on `service_completed_successfully`,
   # so a failure stops the stack here rather than surfacing as a restart loop.
   db-init:
+    # Log rotation + a memory ceiling — see the x-logging anchor and the memory
+    # tiers at the top of this file for why every service carries both.
+    logging: *logging
+    # A psql script that creates databases and exits. 256m.
+    mem_limit: 256m
     image: timescale/timescaledb:2.17.2-pg16
     # Same reasoning as postgres above: init-service-dbs.sh reads POSTGRES_USER
     # and POSTGRES_DB and nothing else, so it does not need the estate's secrets.
@@ -154,11 +278,37 @@ services:
     restart: "no"
 
   redis:
+    # Log rotation + a memory ceiling — see the x-logging anchor and the memory
+    # tiers at the top of this file for why every service carries both.
+    logging: *logging
+    # Twice `--maxmemory 256mb` above, because redis FORKS to write an RDB
+    # snapshot and the copy-on-write child can approach the parent's size. A
+    # limit equal to maxmemory would OOM-kill the save, not bound the dataset.
+    # (2.3 MB in steady state on a live estate.)
+    mem_limit: 512m
     # Comes back on its own after a host reboot or a Docker restart. Without
     # this the whole estate stays down until somebody runs `up -d` by hand —
     # and the symptom is a bare "Bad gateway", which reads as a broken build.
     restart: unless-stopped
     image: redis:7-alpine
+    # A BOUND. This is the Celery broker, and workflow-beat publishes two sweeps
+    # a minute into it forever; `maxmemory 0` means "take the host's RAM", so a
+    # worker that stops draining turns a queue into an unbounded allocation on
+    # an appliance whose RAM the video recorder is also using. Nobody is watching
+    # at 3am and the first symptom would be the OOM killer picking a victim,
+    # which need not be redis.
+    #
+    # `noeviction` is KEPT, deliberately, and is not the leftover it looks like:
+    # an eviction policy on a BROKER silently deletes queued work, which is a
+    # worse failure than refusing it. With a ceiling and noeviction the producer
+    # gets `OOM command not allowed when used memory > maxmemory` — loud, at the
+    # publisher, naming the problem, exactly as asked for.
+    #
+    # 256mb against 2.3 MB in steady state on a live estate: ~100x headroom, so
+    # touching it means something is genuinely wedged rather than merely busy.
+    # Celery's own result rows (`celery-task-meta-*`) expire on result_expires
+    # and are not what would fill this.
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -167,6 +317,14 @@ services:
     networks: [neubit]
 
   nats:
+    # Log rotation + a memory ceiling — see the x-logging anchor and the memory
+    # tiers at the top of this file for why every service carries both.
+    logging: *logging
+    # JetStream. The stream itself is a FILE store on the natsdata volume and is
+    # bounded at 8 GiB there, but the consumer state, the ack-pending window
+    # (VE_READINGS_MAX_ACK_PENDING is 5000) and in-flight messages are memory.
+    # 37 MB idle; 1g is the burst ceiling for a backlog being drained.
+    mem_limit: 1g
     # Comes back on its own after a host reboot or a Docker restart. Without
     # this the whole estate stays down until somebody runs `up -d` by hand —
     # and the symptom is a bare "Bad gateway", which reads as a broken build.
@@ -212,6 +370,14 @@ services:
   # `core`, which authenticates every call with X-Ops-Token. Never mount the
   # docker socket into core.
   ops-agent:
+    # Log rotation + a memory ceiling — see the x-logging anchor and the memory
+    # tiers at the top of this file for why every service carries both.
+    logging: *logging
+    # 61 MB idle, but it STREAMS pg_dump and pg_restore through itself. Streamed,
+    # so the dump size is not the memory size — 512m covers the buffers and the
+    # subprocess, and it is the one container holding the docker socket, so a
+    # ceiling on it is worth more than the 200 MB it saves.
+    mem_limit: 512m
     build: ../backend/ops-agent
     # NO env_file. This container holds the docker socket; `.env` would hand it
     # VE_JWT_SECRET, VE_SECRETS_KEY and every other platform credential it has no
@@ -249,6 +415,14 @@ services:
 
   # ── platform core (Python / edge) ───────────────────────────────
   core:
+    # Log rotation + a memory ceiling — see the x-logging anchor and the memory
+    # tiers at the top of this file for why every service carries both.
+    logging: *logging
+    # 117 MB idle, the highest ceiling of any of the Python APIs because core is
+    # the one that holds things: report exports are built in-process, the local
+    # object store's uploads pass through it, dashforge was folded in, and every
+    # open SSE relay is a live connection with a buffer behind it.
+    mem_limit: 1g
     # Comes back on its own after a host reboot or a Docker restart. Without
     # this the whole estate stays down until somebody runs `up -d` by hand —
     # and the symptom is a bare "Bad gateway", which reads as a broken build.
@@ -277,6 +451,24 @@ services:
       # time, which removes the cap instead of sharing it.
       # See backend/core/app/core/client_ip.py.
       VE_TRUSTED_PROXY_CIDRS: '["172.19.0.0/16"]'
+      # NO VE_DB_STATEMENT_TIMEOUT_MS HERE, and that is a finding, not an
+      # oversight. Every other Python service builds its engine through
+      # `kernel.db.Database`, which reads `db_statement_timeout_ms` off the
+      # shared settings object and SETs `statement_timeout` in asyncpg's
+      # `server_settings` for the whole pool — so a line here is all those
+      # services need, and they have one below.
+      #
+      # Core does not use the kernel. It builds its own engine in
+      # `backend/core/app/db/base.py`:
+      #     create_async_engine(get_settings().database_url, pool_pre_ping=True)
+      # with no connect_args, and `backend/core/app/core/config.py` has no
+      # statement-timeout field at all (verified: grep finds none in
+      # backend/core). Injecting the variable here would ship a setting read by
+      # nothing, which is the exact rule the four deleted knobs under `vision`
+      # broke. So core's runaway-query ceiling stays OPEN until core's own
+      # engine learns to read one — a ~5-line change in that file, which is
+      # application code and not this file's to make. Until then a wedged report
+      # query on neubit_control holds its pooled connection indefinitely.
     depends_on:
       postgres: { condition: service_healthy }
       db-init: { condition: service_completed_successfully }
@@ -337,10 +529,66 @@ services:
       - traefik.http.routers.core.entrypoints=web
       - traefik.http.services.core.loadbalancer.server.port=8000
 
+  # ── core-worker / core-beat: NOT SERVICES, ON PURPOSE ───────────
+  # `backend/core/app/tasks/retention.py` registers a beat schedule and ARMS IT
+  # AT IMPORT (`register_beat()` on the last line), so reading the file tells you
+  # three sweeps run nightly: expired password-reset tokens hourly, old report
+  # exports 03:30 UTC, audit rows 03:45 UTC. None of them has ever run. The only
+  # Celery containers in this file are `workflow-worker` and `workflow-beat`,
+  # both `-A app.worker.celery_app` — the WORKFLOW app. Nothing anywhere runs
+  # core's.
+  #
+  # Adding `core-worker` + `core-beat` here is the obvious fix and it does not
+  # work. Three things block it, and the first two are in core's code, not this
+  # file:
+  #
+  #   1. The app names a package that does not exist. `app/tasks/app.py` sets
+  #      include=["edge.reports.service", "edge.tasks.retention"], and there is
+  #      no `edge` module in the image — verified in the running container:
+  #        docker exec …core-1 python -c "import edge.tasks.retention"
+  #        → ModuleNotFoundError: No module named 'edge'
+  #      A worker started against this app fails at finalization.
+  #   2. Beat would publish task names no worker has registered. BEAT_SCHEDULE
+  #      asks for `edge.tasks.retention.cleanup_expired_reset_tokens`; the tasks
+  #      actually register under `app.tasks.retention.*` (same probe, listing
+  #      celery_app.tasks). Even past (1) every tick would NAK as unregistered.
+  #   3. THE QUEUE. Both Celery apps point at redis://redis:6379/0 and both use
+  #      the default `celery` queue — no task_routes, no task_default_queue in
+  #      either. So the first core task ever enqueued is delivered to
+  #      workflow-worker, which has never heard of it and rejects it. Adding a
+  #      core worker WITHOUT separating the queues does not fix a dormant bug, it
+  #      creates a live one, and it creates it in the container that drives every
+  #      incident escalation in the estate.
+  #
+  # So the answer is the OTHER option: fold the three sweeps into core's own
+  # lifespan, the way `backend/ingest/app/retention.py` already does it —
+  # an asyncio task created on startup and cancelled on shutdown, with its window
+  # and its interval as plain env vars. That shape is right for an appliance
+  # twice over. It deletes two containers instead of adding two, on a box that is
+  # also running a video recorder. And it removes the broker from the path
+  # entirely: these are three DELETE statements on a timer, and routing them
+  # through Redis buys retries and fan-out that housekeeping does not need while
+  # costing a queue collision, a second scheduler to keep alive, and two more
+  # processes that can wedge silently — which is what workflow-worker's and
+  # workflow-beat's elaborate /readyz probes further down exist to catch.
+  #
+  # That is application code in backend/core and therefore not this file's to
+  # write. What belongs here is the record that the containers are absent
+  # deliberately and that adding them is the wrong repair. Whoever picks it up:
+  # ingest's sweep is the working reference, including its batching (5,000 rows a
+  # statement, so one purge cannot hold a long lock) and its note on picking an
+  # INDEXED column for the cutoff predicate.
+
   # ── ingest service (Python / neubit_common) ─────────────────────
   # External webhooks / event ingestion. Owns its own DB (neubit_ingest).
   # Authorizes core-minted JWTs locally; cross-domain via NATS.
   ingest:
+    # Log rotation + a memory ceiling — see the x-logging anchor and the memory
+    # tiers at the top of this file for why every service carries both.
+    logging: *logging
+    # 73 MB idle. A webhook receiver: bounded request bodies in, rows out, no
+    # accumulation. 512m is ~7x measured.
+    mem_limit: 512m
     # Comes back on its own after a host reboot or a Docker restart. Without
     # this the whole estate stays down until somebody runs `up -d` by hand —
     # and the symptom is a bare "Bad gateway", which reads as a broken build.
@@ -355,6 +603,19 @@ services:
       # scopes this service's publish permissions to.
       VE_NATS_URL: nats://ingest:${NATS_PASS_INGEST}@nats:4222
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_ingest
+      # A ceiling on every query this service runs, SET server-side on each
+      # pooled connection by kernel.db. Without it (the default is 0, unlimited)
+      # a query blocked on a lock holds its pooled connection forever: the pool
+      # drains, /readyz stays green because the process is fine, and the service
+      # stops answering with nothing in the logs to say why. The timeout turns
+      # that silence into an exception the request path already handles.
+      #
+      # 15s for ingest. This is a webhook RECEIVER: bounded body in, one row
+      # out, no scan and no report. Anything here that has not finished in 15
+      # seconds has already lost its delivery — the device on the other end
+      # timed out and will retry — so a low ceiling frees the connection for the
+      # next delivery instead of holding it for a caller that has gone.
+      VE_DB_STATEMENT_TIMEOUT_MS: ${VE_DB_STATEMENT_TIMEOUT_MS_INGEST:-15000}
       # The origin integrators point their devices at, used to build the webhook's
       # copy-pasteable receiver URL. This is the GATEWAY (Traefik routes
       # /ingest/hooks here), never the frontend dev server on :3000 — that origin
@@ -409,6 +670,12 @@ services:
   # SOP / automation engine. Owns its own DB (neubit_workflow). API + a Celery
   # worker + beat (three containers sharing one image).
   workflow:
+    # Log rotation + a memory ceiling — see the x-logging anchor and the memory
+    # tiers at the top of this file for why every service carries both.
+    logging: *logging
+    # 100 MB idle — the API half, plus the inline NATS correlation consumer
+    # (VE_WORKFLOW_INLINE_CORRELATION). 512m.
+    mem_limit: 512m
     # Comes back on its own after a host reboot or a Docker restart. Without
     # this the whole estate stays down until somebody runs `up -d` by hand —
     # and the symptom is a bare "Bad gateway", which reads as a broken build.
@@ -423,6 +690,12 @@ services:
       # scopes this service's publish permissions to.
       VE_NATS_URL: nats://workflow:${NATS_PASS_WORKFLOW}@nats:4222
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_workflow
+      # 15s — same reasoning as ingest's (read the long note there). This is the
+      # API half: an operator waiting on a console panel has given up long before
+      # 15 seconds, so holding the connection past that helps nobody. The WORKER
+      # and BEAT containers below get a different number, and that is the point
+      # of setting these per service rather than once in .env.
+      VE_DB_STATEMENT_TIMEOUT_MS: ${VE_DB_STATEMENT_TIMEOUT_MS_WORKFLOW:-15000}
       # Host the NATS→incident correlation consumer in this API process (v1 simple).
       VE_WORKFLOW_INLINE_CORRELATION: "1"
     depends_on:
@@ -451,6 +724,14 @@ services:
     networks: [neubit]
 
   workflow-worker:
+    # Log rotation + a memory ceiling — see the x-logging anchor and the memory
+    # tiers at the top of this file for why every service carries both.
+    logging: *logging
+    # 310 MB idle, the largest of the Python processes by a wide margin, because
+    # a celery prefork pool is N child processes each holding its own interpreter
+    # and its own connection pool. It is also the one that runs the sweeps, so
+    # its peak is furthest from its idle. 1g.
+    mem_limit: 1g
     # Comes back on its own after a host reboot or a Docker restart. Without
     # this the whole estate stays down until somebody runs `up -d` by hand —
     # and the symptom is a bare "Bad gateway", which reads as a broken build.
@@ -465,6 +746,15 @@ services:
       # scopes this service's publish permissions to.
       VE_NATS_URL: nats://workflow:${NATS_PASS_WORKFLOW}@nats:4222
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_workflow
+      # 30s, twice the API's, because THIS process runs the sweeps — escalation,
+      # timeout, notification drain — and each walks a set of instances rather
+      # than fetching one row. 30s is not a round number: beat publishes two
+      # sweeps a minute, so a sweep still running at 30 seconds is about to be
+      # lapped by the next one, and cutting it there is what stops a slow sweep
+      # stacking copies of itself on the pool. The failure surfaces as a task
+      # error the retry path already handles — strictly better than a worker
+      # wedged on a lock while `celery inspect ping` keeps answering pong.
+      VE_DB_STATEMENT_TIMEOUT_MS: ${VE_DB_STATEMENT_TIMEOUT_MS_WORKFLOW_WORKER:-30000}
     depends_on:
       redis: { condition: service_healthy }
       # service_HEALTHY, not service_started. The API container is the one that
@@ -493,6 +783,11 @@ services:
     networks: [neubit]
 
   workflow-beat:
+    # Log rotation + a memory ceiling — see the x-logging anchor and the memory
+    # tiers at the top of this file for why every service carries both.
+    logging: *logging
+    # 60 MB idle. Beat publishes two sweeps a minute and holds nothing. 256m.
+    mem_limit: 256m
     # Comes back on its own after a host reboot or a Docker restart. Without
     # this the whole estate stays down until somebody runs `up -d` by hand —
     # and the symptom is a bare "Bad gateway", which reads as a broken build.
@@ -507,6 +802,11 @@ services:
       # scopes this service's publish permissions to.
       VE_NATS_URL: nats://workflow:${NATS_PASS_WORKFLOW}@nats:4222
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_workflow
+      # 30s, matching the worker. Beat barely touches the database, but it shares
+      # this image and this DSN, and a scheduler blocked on a query stops
+      # publishing — which the worker's own /readyz then reports as a SILENT
+      # WORKER, pointing whoever is paged at the wrong container.
+      VE_DB_STATEMENT_TIMEOUT_MS: ${VE_DB_STATEMENT_TIMEOUT_MS_WORKFLOW_BEAT:-30000}
     depends_on:
       redis: { condition: service_healthy }
       workflow: { condition: service_healthy }
@@ -530,6 +830,13 @@ services:
   # (tenant.<id>.access.<category>.<type>) for workflow correlation. Owns its own
   # DB (neubit_access). Authorizes core-minted JWTs locally; cross-domain via NATS.
   access:
+    # Log rotation + a memory ceiling — see the x-logging anchor and the memory
+    # tiers at the top of this file for why every service carries both.
+    logging: *logging
+    # 73 MB idle, with one burst worth naming: the nightly reconcile
+    # (VE_ACCESS_RECONCILE_SCHEDULER) pulls a controller's whole entity set and
+    # bulk-upserts it. That is a list in memory, so 512m rather than 256m.
+    mem_limit: 512m
     # Comes back on its own after a host reboot or a Docker restart. Without
     # this the whole estate stays down until somebody runs `up -d` by hand —
     # and the symptom is a bare "Bad gateway", which reads as a broken build.
@@ -544,6 +851,13 @@ services:
       # scopes this service's publish permissions to.
       VE_NATS_URL: nats://access:${NATS_PASS_ACCESS}@nats:4222
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_access
+      # 30s, not ingest's 15s, and the reconcile below is why: it pulls a
+      # controller's whole entity set over OData and bulk-upserts it under a
+      # Postgres advisory lock. That is a legitimately long statement on an
+      # estate with real hardware, and cutting it at 15s would abort a nightly
+      # sync that was working. 30s still bounds it — a mirror that cannot write
+      # in half a minute is blocked, not busy.
+      VE_DB_STATEMENT_TIMEOUT_MS: ${VE_DB_STATEMENT_TIMEOUT_MS_ACCESS:-30000}
       # The periodic reconcile. `reconciler_cron` (default 0 3 * * *) has been on
       # every controller row since the port and nothing fired it, so a nightly
       # sync only ever happened when somebody pressed the button.
@@ -581,6 +895,15 @@ services:
   # Reuses core RBAC (verifies core-minted JWTs locally); interoperates with the Go
   # `nvr` data-plane over NATS + REST. Emits tenant.<id>.vms.* + device.camera.*.
   vision:
+    # Log rotation + a memory ceiling — see the x-logging anchor and the memory
+    # tiers at the top of this file for why every service carries both.
+    logging: *logging
+    # 92 MB idle, but this is the one that touches VIDEO: it reads and checksums
+    # fmp4 segments off the /recordings volume, and it holds the camera, NVR and
+    # ONVIF state for the estate. A checksum is streamed, not slurped, so the
+    # segment size is not the memory size — 1g is for the ONVIF discovery and
+    # health-aggregation bursts across many cameras at once.
+    mem_limit: 1g
     # Comes back on its own after a host reboot or a Docker restart. Without
     # this the whole estate stays down until somebody runs `up -d` by hand —
     # and the symptom is a bare "Bad gateway", which reads as a broken build.
@@ -595,6 +918,13 @@ services:
       # scopes this service's publish permissions to.
       VE_NATS_URL: nats://vision:${NATS_PASS_VISION}@nats:4222
       VE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/neubit_vision
+      # 30s. Vision's reads are not point lookups: health aggregation spans every
+      # camera in the estate and the recording/evidence listings are range scans
+      # over a growing table, so an API-tier 15s would cut work that is genuinely
+      # finishing. It is also the service holding every EVIDENCE LOCK, and a
+      # lock held by a hung transaction is the one failure here that outlives the
+      # request — 30s puts a ceiling on how long that can last.
+      VE_DB_STATEMENT_TIMEOUT_MS: ${VE_DB_STATEMENT_TIMEOUT_MS_VISION:-30000}
       # P2-B live streaming: where vision reaches the Go nvr data-plane (internal
       # docker DNS) + the media-token TTL (browser HLS/WHEP token; renewable).
       VE_NVR_URL: ${VE_NVR_URL:-http://nvr:8000}
@@ -604,18 +934,43 @@ services:
       # when an estate runs more than one.
       VE_FEDERATION_LABEL: ${VE_FEDERATION_LABEL:-Neubit VMS}
       VE_MEDIA_TOKEN_TTL_SEC: ${VE_MEDIA_TOKEN_TTL_SEC:-300}
-      # P3-B storage — where the recording segments are mounted (same volume MediaMTX
-      # writes to + nvr scans), the retention/tiering sweep interval, and the global
-      # retention fallback used when a camera has no explicit retention_days.
+      # ── WHERE THE SEGMENTS ARE. Paths only. ────────────────────────────────
+      # VE_RECORDINGS_DIR is the shared volume MediaMTX writes and the Go nvr
+      # scans, mounted at the same path on both sides so the on-disk
+      # cameras/<tenant>/<cam>/<profile>/<seg>.mp4 layout matches. Vision READS
+      # it (checksums, clip assembly); it does not sweep it.
+      # VE_DOWNLOADS_DIR is where an assembled clip is written, a subdirectory
+      # of the same volume by default. Both are read by
+      # backend/vision/app/vms/storage/service.py and .../vms/common/downloads.py.
       VE_RECORDINGS_DIR: ${VE_RECORDINGS_DIR:-/recordings}
-      VE_RETENTION_TICK_SEC: ${VE_RETENTION_TICK_SEC:-300}
-      VE_DEFAULT_RETENTION_DAYS: ${VE_DEFAULT_RETENTION_DAYS:-30}
-      # P4-B clip export: the export worker ffmpeg-concats recorded fmp4 segments into
-      # a single mp4 written under the downloads area (a subdir of the recordings
-      # volume by default → same mount). Tune the poll interval + concurrency.
       VE_DOWNLOADS_DIR: ${VE_DOWNLOADS_DIR:-/recordings/downloads}
-      VE_EXPORT_TICK_SEC: ${VE_EXPORT_TICK_SEC:-5}
-      VE_EXPORT_CONCURRENCY: ${VE_EXPORT_CONCURRENCY:-2}
+      #
+      # RETENTION IS NOT SET HERE, AND NOTHING IN THIS FILE PRUNES FOOTAGE.
+      #
+      # Four settings stood in this block until 2026-09-14 —
+      # VE_RETENTION_TICK_SEC, VE_DEFAULT_RETENTION_DAYS, VE_EXPORT_TICK_SEC and
+      # VE_EXPORT_CONCURRENCY — shipped, documented and injected into this
+      # container, and read by NOTHING. Their workers went with the storage
+      # data-plane when the NVR took ownership of recording storage (the same
+      # change that removed the minio cold tier a few lines below); the
+      # environment lines did not, and the comment above them went on describing
+      # a "retention/tiering sweep" and an "export worker" that no longer exist.
+      # Verified before deleting: `grep -rn` for each name across backend/,
+      # frontend/ and deploy/ found only this file and one line of
+      # backend/vision/README.md.
+      #
+      # The cost of leaving them was not clutter. An engineer sizing a
+      # customer's disk read `VE_DEFAULT_RETENTION_DAYS: 30`, believed the VMS
+      # prunes footage at 30 days, and sized for 30 days of video. It does not.
+      # The REAL control is the RECORDER's per-camera `retention_days`, held and
+      # enforced in the NVR's own repository and database — a different codebase
+      # on a different release train. Set it there, per camera. Nothing you can
+      # write in this file will delete a segment.
+      #
+      # (The other retention knobs in this stack are unrelated and do work:
+      # VE_READINGS_* under `reporting-migrate` are Timescale policies on the
+      # IoT readings hypertable, and VE_INGEST_LOG_RETENTION_DAYS drives
+      # ingest's in-process delivery-log sweep. Neither touches video.)
       # G8 stream codec policy (zero-transcode live view): when on (default), onboarding a
       # camera whose SUB (web) stream is H.265 best-effort pushes it to H.264 at the device
       # so browsers play live with no transcode (main stays H.265 for recording). The
@@ -670,6 +1025,12 @@ services:
   # querying — the documented exception to the platform's no-cross-service-reads
   # rule. It reads no other service's private schema; data arrives over NATS.
   reporting-migrate:
+    # Log rotation + a memory ceiling — see the x-logging anchor and the memory
+    # tiers at the top of this file for why every service carries both.
+    logging: *logging
+    # A one-shot migrator: alembic plus the Timescale policy reconcile, then it
+    # exits. 512m covers an index build's client side.
+    mem_limit: 512m
     build:
       context: ../backend
       dockerfile: reporting/Dockerfile
@@ -727,6 +1088,15 @@ services:
   # relations a projection declares, because those are declared as data and no
   # migration can know them (see app/projections/ensure.py).
   reading-writer:
+    # Log rotation + a memory ceiling — see the x-logging anchor and the memory
+    # tiers at the top of this file for why every service carries both.
+    logging: *logging
+    # 75 MB idle, and 1g rather than 512m because everything about this service is
+    # a BUFFER: 500-row batches x a queue of 4 on the readings half, 200 x 4 on
+    # the projections half, both with their own connection pool, plus up to
+    # VE_READINGS_MAX_ACK_PENDING (5000) messages in flight from NATS. Its idle
+    # figure is the least representative number in this file.
+    mem_limit: 1g
     build:
       context: ../backend
       dockerfile: reading-writer/Dockerfile
@@ -857,6 +1227,15 @@ services:
 
   # ── operator console (Next.js) ──────────────────────────────────
   frontend:
+    # Log rotation + a memory ceiling — see the x-logging anchor and the memory
+    # tiers at the top of this file for why every service carries both.
+    logging: *logging
+    # PRODUCTION `node server.js` — the standalone runner this file builds, which
+    # measures ~115 MB like the admin console. 1g is generous for it on purpose:
+    # Next's server-side render path allocates per request. THE DEV OVERRIDE
+    # RAISES THIS to 4g, because `next dev` with webpack measured 2.5 GB on a
+    # live machine and this limit would OOM-kill it on the first `up`.
+    mem_limit: 1g
     # Comes back on its own after a host reboot or a Docker restart. Without
     # this the whole estate stays down until somebody runs `up -d` by hand —
     # and the symptom is a bare "Bad gateway", which reads as a broken build.
@@ -894,6 +1273,14 @@ services:
   #   TILES_AUTO_PROVISION=0   never download; serve only what is already in
   #                            deploy/tiles/ (the air-gapped setting)
   tiles:
+    # Log rotation + a memory ceiling — see the x-logging anchor and the memory
+    # tiers at the top of this file for why every service carries both.
+    logging: *logging
+    # nginx at 3 MB idle, plus the self-provisioner, which is the actual reason
+    # this is not 128m: a pmtiles extract of a multi-GB planet archive runs in
+    # this container. It streams, so 512m is the buffer ceiling, not the
+    # archive size.
+    mem_limit: 512m
     # Comes back on its own after a host reboot or a Docker restart. Without
     # this the whole estate stays down until somebody runs `up -d` by hand —
     # and the symptom is a bare "Bad gateway", which reads as a broken build.
@@ -920,6 +1307,16 @@ services:
   # minutes to become useful on a cold volume. Nothing else waits on it: the
   # picker falls back to its built-in city list until it answers.
   geocoder:
+    # Log rotation + a memory ceiling — see the x-logging anchor and the memory
+    # tiers at the top of this file for why every service carries both.
+    logging: *logging
+    # Photon, a JVM over a multi-GB OpenStreetMap index — 239 MB idle and the
+    # largest non-datastore in the estate. Sized from what it is CONFIGURED to
+    # take, not what it is taking: a modern JVM reads the cgroup limit and takes
+    # ~25% of it as max heap, so this limit is what SETS the heap at ~512 MB,
+    # which is what a country extract needs. Lowering it silently shrinks the
+    # heap until Photon starts GC-thrashing on a query.
+    mem_limit: 2g
     # Comes back on its own after a host reboot or a Docker restart. Without
     # this the whole estate stays down until somebody runs `up -d` by hand —
     # and the symptom is a bare "Bad gateway", which reads as a broken build.
@@ -935,6 +1332,12 @@ services:
 
   # ── super-admin panel (separate app) ────────────────────────────
   admin-frontend:
+    # Log rotation + a memory ceiling — see the x-logging anchor and the memory
+    # tiers at the top of this file for why every service carries both.
+    logging: *logging
+    # PRODUCTION standalone runner, 115 MB idle. The dev override raises it —
+    # same reason as the frontend above.
+    mem_limit: 512m
     # Comes back on its own after a host reboot or a Docker restart. Without
     # this the whole estate stays down until somebody runs `up -d` by hand —
     # and the symptom is a bare "Bad gateway", which reads as a broken build.

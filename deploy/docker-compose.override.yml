@@ -24,6 +24,13 @@
 # To run WITHOUT hot-reload (prod-like), use the base file only:
 #   docker compose -f docker-compose.yml up -d
 #
+# It also RAISES two memory limits. The base file caps every container, sized for
+# what an appliance runs; `next dev` is a different program from `node
+# server.js` and needs several times the production runner's memory, so both
+# frontends get a bigger ceiling here rather than the base file carrying a
+# development-shaped number into a customer install. Nothing else is relaxed:
+# the log rotation and every other limit apply in dev exactly as they ship.
+#
 # It also OWNS every published host port except the gateway's :80. The base file
 # publishes the gateway alone, because it is what an appliance install runs: with
 # postgres/redis/nats published there, an appliance put its datastores on the
@@ -87,6 +94,20 @@ services:
   # bind-mount the source over it, and run `npm run dev`. So `docker compose up`
   # (auto-merges this) = dev; `docker compose -f docker-compose.yml up` = production.
   frontend:
+    # RAISED from the base file's 1g, and without this the dev stack OOM-kills
+    # itself on the first `up`. The base limit is sized for `node server.js`,
+    # the production standalone runner, which measures ~115 MB. This container
+    # runs `next dev`, which is a compiler: it holds the module graph, the
+    # webpack cache and the HMR client for every route a developer has touched.
+    # Measured on a live dev machine with `docker stats --no-stream`: 2.535 GiB.
+    # 4g is that plus real headroom, because the figure climbs the longer a dev
+    # session runs.
+    #
+    # The symptom of getting this wrong is not a clear error — the container is
+    # SIGKILLed mid-compile, `restart: unless-stopped` brings it back, and it
+    # looks like the flaky-dev-server class of failure this file already carries
+    # two long notes about.
+    mem_limit: 4g
     # A DISTINCT TAG, and it matters more than it looks.
     #
     # Without it this `target: deps` build writes to `neubit-v3-frontend:latest` —
@@ -163,6 +184,9 @@ services:
       - ../frontend/package-lock.json:/app/package-lock.json
 
   admin-frontend:
+    # Same reason as the frontend above, smaller number: this console is a much
+    # smaller app, so `next dev` on it has far less to hold. 2g.
+    mem_limit: 2g
     image: neubit-v3-admin-frontend:dev        # distinct tag — see the frontend note
     build:
       context: ../admin-frontend
