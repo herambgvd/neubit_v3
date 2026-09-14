@@ -49,7 +49,7 @@ import { randomInt } from "@/lib/random";
 
 import { vms } from "../api";
 import type { WallClock } from "../hooks/useWallPlayback";
-import { acquireSlot, releaseSlot } from "../lib/connectGate";
+import { acquireSlot, type ConnectSlot } from "../lib/connectGate";
 import type { EstateCamera } from "../types";
 
 // ── keeping step WITHOUT seeking ───────────────────────────────────────────
@@ -345,27 +345,25 @@ function TilePlayback({
   // tracked this with a boolean set AFTER the await, so two opens racing each
   // took a slot and only one was ever given back — the gate leaked until no tile
   // on the page could open anything, which from the outside looks like tiles that
-  // simply never load. The claim is now made SYNCHRONOUSLY, before the await.
-  const gateRef = useRef<Promise<unknown> | "held" | null>(null); // null | Promise (pending) | "held"
+  // simply never load. The claim is now made SYNCHRONOUSLY, before the await, and
+  // the gate's own handle decides what giving it back means (queued → leave the
+  // queue; granted → hand on), so this component no longer tracks that race.
+  const gateRef = useRef<ConnectSlot | null>(null);
   const gateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dropGate = useCallback(() => {
-    const g = gateRef.current;
+    const slot = gateRef.current;
     if (gateTimerRef.current) clearTimeout(gateTimerRef.current);
     gateTimerRef.current = null;
-    if (!g) return;
+    if (!slot) return;
     gateRef.current = null;
-    // A slot that has not been granted yet cannot be given back yet — hand it
-    // straight on the moment it arrives.
-    if (g === "held") releaseSlot();
-    else Promise.resolve(g).then(() => releaseSlot());
+    slot.release();
   }, []);
   const takeGate = useCallback(async () => {
     if (gateRef.current) return; // already held, or being taken
-    const p = acquireSlot();
-    gateRef.current = p;
-    await p;
-    if (gateRef.current !== p) return; // dropped while we waited
-    gateRef.current = "held";
+    const slot = acquireSlot();
+    gateRef.current = slot;
+    await slot.granted;
+    if (gateRef.current !== slot) return; // dropped while we waited
     // The backstop: a tile that never becomes comfortable must not hold the wall.
     gateTimerRef.current = setTimeout(dropGate, GATE_MAX_HOLD_MS);
   }, [dropGate]);

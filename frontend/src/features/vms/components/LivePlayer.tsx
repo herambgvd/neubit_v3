@@ -35,7 +35,7 @@ import { Icon } from "@iconify/react";
 import type Hls from "hls.js";
 
 import { useLiveSession } from "../hooks/useLiveSession";
-import { acquireSlot, releaseSlot } from "../lib/connectGate";
+import { acquireSlot } from "../lib/connectGate";
 import type { LiveSessionSource } from "../types";
 import TalkButton from "./TalkButton";
 
@@ -397,21 +397,21 @@ function LivePlayer({
     const whepAbort = new AbortController();
 
     // ── connection-concurrency gate ────────────────────────────────────────
-    // We hold ONE slot from `connectGate` while THIS connection is forming, and
-    // release it the instant the connection SETTLES — the first of: stream
-    // playing/ready, terminal failure (ladder exhausted), or unmount. Releasing
-    // hands the slot to the next waiting tile so the wall fills a few at a time
-    // instead of bursting the NVR's connection limit. `releaseGate` is idempotent
-    // — safe to call from every exit path; only the first call frees the slot.
-    let slotReleased = false;
+    // We claim ONE slot from `connectGate` while THIS connection is forming, and
+    // give it back the instant the connection SETTLES — the first of: stream
+    // playing/ready, terminal failure (ladder exhausted), or unmount. A granted
+    // slot passes to the next waiting tile so the wall fills a few at a time
+    // instead of bursting the NVR's connection limit; a slot we are still
+    // QUEUED for just leaves the queue, because a tile that unmounts before it
+    // was ever granted has nothing to hand on. The slot handle draws that line
+    // itself and is idempotent, so every exit path may call `releaseGate`.
+    const slot = acquireSlot();
     const releaseGate = () => {
-      if (slotReleased) return;
-      slotReleased = true;
       if (gateTimer) {
         clearTimeout(gateTimer);
         gateTimer = null;
       }
-      releaseSlot();
+      slot.release();
     };
 
     // Two timers bound how long this attach may cost the rest of the wall.
@@ -800,16 +800,14 @@ function LivePlayer({
       }
     };
 
-    // Gate the START of this connection. `acquireSlot()` resolves immediately
-    // when a slot is free (single-camera modal → instant, no user-visible delay);
-    // on the wall it queues so connections form a few at a time. If the tile
-    // unmounted while we were queued, `disposed` is already true → release the
-    // slot we were just handed and bail without opening a connection.
-    acquireSlot().then(() => {
-      if (disposed) {
-        settle();
-        return;
-      }
+    // Gate the START of this connection. The slot is granted immediately when
+    // one is free (single-camera modal → instant, no user-visible delay); on the
+    // wall the claim queues so connections form a few at a time. If the tile
+    // unmounted while we were queued, cleanup has already released the claim —
+    // this resolver never runs for it, and if it does (granted in the same tick
+    // as the unmount) `disposed` is true and there is nothing left to give back.
+    slot.granted.then(() => {
+      if (disposed) return;
       gateTimer = setTimeout(releaseGate, GATE_MAX_HOLD_MS);
       deadlineTimer = setTimeout(
         () => giveUp("No video — the camera did not start streaming."),
@@ -823,8 +821,8 @@ function LivePlayer({
 
     return () => {
       disposed = true;
-      // Unmount is a settle point: free our slot (whether still queued, mid-
-      // connect, or already settled — releaseGate is idempotent) so the next
+      // Unmount is a settle point: give back our claim (whether still queued,
+      // mid-connect, or already settled — releaseGate is idempotent) so the next
       // tile can proceed and the gate never deadlocks, and drop both budget
       // timers so neither fires against a torn-down player.
       settle();
