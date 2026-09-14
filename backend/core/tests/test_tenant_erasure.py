@@ -439,3 +439,57 @@ async def test_a_cascade_table_loses_its_row_when_the_tenant_is_deleted(fk_db, t
 
     await fk_db.execute(tenants.delete().where(tenants.c.id == tid))
     assert not await _row_exists(fk_db, table, row_id), f"{table_name} survived its tenant"
+
+
+async def test_an_offboard_deletes_the_tenants_exports_not_just_their_rows(
+    db, tmp_path, monkeypatch
+):
+    """`report_jobs.result_key` is the only reference anything holds to a stored
+    export, so deleting the row on its own leaves the tenant's own data in the
+    object store with nothing able to name it, let alone delete it — an erasure
+    that keeps the data and throws away the pointer."""
+    from sqlalchemy import func, select
+
+    from app.core import config, storage
+    from app.reports.models import ReportJob
+
+    monkeypatch.setenv("VE_STORAGE_LOCAL_DIR", str(tmp_path / "storage"))
+    config.get_settings.cache_clear()
+    storage.get_storage.cache_clear()
+    try:
+        made = await _seed_two_tenants(db)
+        doomed, _ = made["doomed"]
+        neighbour, _ = made["neighbour"]
+        store = storage.get_storage()
+        await store.put("reports/doomed.csv", b"their,data\n", "text/csv")
+        await store.put("reports/neighbour.csv", b"other,data\n", "text/csv")
+        db.add_all([
+            ReportJob(
+                name="doomed export", format="csv", status="done",
+                result_key="reports/doomed.csv", tenant_id=doomed.id,
+            ),
+            ReportJob(
+                name="neighbour export", format="csv", status="done",
+                result_key="reports/neighbour.csv", tenant_id=neighbour.id,
+            ),
+        ])
+        await db.commit()
+
+        removed = await erase_tenant_data(db, doomed.id)
+        await db.commit()
+
+        assert removed["report_jobs"] == 1
+        assert not await store.exists("reports/doomed.csv"), (
+            "the export survived the erasure of the row that named it"
+        )
+        assert await store.exists("reports/neighbour.csv")
+        left = int(
+            await db.scalar(
+                select(func.count()).select_from(ReportJob).where(ReportJob.tenant_id == doomed.id)
+            )
+            or 0
+        )
+        assert left == 0
+    finally:
+        config.get_settings.cache_clear()
+        storage.get_storage.cache_clear()

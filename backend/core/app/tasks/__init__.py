@@ -10,9 +10,12 @@ Define a task:
     from app.tasks import task
 
     @task
-    def cleanup_old_files(): ...
+    def do_expensive_thing(): ...
 
-Run a worker:  celery -A edge.tasks.app.celery_app worker -l info
+Run a worker:  celery -A app.tasks.app.celery_app worker -l info
+
+NOT for periodic housekeeping — that is ``app/retention.py``, which runs in the
+API process's lifespan. See the note in ``app/tasks/app.py``.
 """
 
 from .app import celery_app

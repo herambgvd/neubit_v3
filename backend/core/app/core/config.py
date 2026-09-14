@@ -66,6 +66,17 @@ class Settings(BaseSettings):
 
     # --- Databases ---------------------------------------------------------
     database_url: str = "postgresql+asyncpg://vizor:vizor@localhost:5432/vizor"
+    # Per-STATEMENT ceiling, in milliseconds, SET on every pooled connection
+    # (`db/base.py` passes it to asyncpg as a server setting). Without one a
+    # runaway query holds a pooled connection until somebody notices, and on an
+    # appliance with a 15-connection pool and no DBA nobody does.
+    #
+    # 0 = no timeout, the same meaning the kernel's `db_statement_timeout_ms`
+    # gives it, and the same default: the value belongs to the deployment, which
+    # knows how long this service's slowest legitimate query is. A default that
+    # cancelled queries here and nowhere else would be a surprise, and the
+    # surprise costs a failed report export rather than a hung one.
+    db_statement_timeout_ms: int = 0
     # Redis — Celery broker/result backend + realtime pub/sub.
     redis_url: str = "redis://localhost:6379/0"
     # NATS + JetStream event spine. Empty = events are no-ops (standalone core).

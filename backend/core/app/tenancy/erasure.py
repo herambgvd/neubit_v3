@@ -25,12 +25,15 @@ The dispositions:
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 from typing import Callable
 
 from sqlalchemy import delete, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
+
+log = logging.getLogger("core.erasure")
 
 CASCADE = "cascade"
 ERASE = "erase"
@@ -85,6 +88,48 @@ async def _scrub_broadcast_targets(session: AsyncSession, tid: uuid.UUID) -> int
             row.target_tenant_ids = kept
             changed += 1
     return changed
+
+
+async def _erase_report_jobs_and_exports(session: AsyncSession, tid: uuid.UUID) -> int:
+    """Delete the tenant's report jobs AND the exported files they point at.
+
+    A plain ERASE deleted the rows, and each row carried ``result_key`` — the only
+    reference anything held to the stored export. So an offboard left a CSV/XLSX/PDF
+    of the tenant's own data sitting in the object store with nothing left able to
+    name it, let alone delete it: an erasure that keeps the data and throws away the
+    pointer to it. Exports are signed-URL material (``signed_url_prefixes``), which
+    is the measure of how much this was not a disk-space concern.
+
+    The blob goes before the row, for the same reason ``retention.purge_old_reports``
+    does it in that order. The store is not transactional, so a rollback after this
+    point leaves a row whose export is gone — the harmless direction: the download
+    404s, and the next sweep or offboard removes the row.
+    """
+    from ..core.storage import get_storage
+    from ..reports.models import ReportJob
+
+    rows = (
+        await session.execute(
+            select(ReportJob.id, ReportJob.result_key).where(ReportJob.tenant_id == tid)
+        )
+    ).all()
+    storage = get_storage()
+    for job_id, result_key in rows:
+        if not result_key:
+            continue
+        try:
+            await storage.delete(result_key)
+        except Exception:  # noqa: BLE001 — a stuck blob must not abort the offboard
+            # Loud, because this is the residual: the row is about to go and with
+            # it the only reference to this file.
+            log.warning(
+                "erasure: could not delete export %s for report %s; "
+                "the file is now unreferenced and must be removed by hand",
+                result_key,
+                job_id,
+            )
+    result = await session.execute(delete(ReportJob).where(ReportJob.tenant_id == tid))
+    return result.rowcount or 0
 
 
 async def _snapshot_and_retain_invoices(session: AsyncSession, tid: uuid.UUID) -> int:
@@ -153,7 +198,12 @@ DISPOSITIONS: dict[str, Disposition] = {
         "tenant's data — erased on its own terms rather than as a side effect",
     ),
     "report_jobs": Disposition(
-        ERASE, "the tenant's report runs, including the storage key of the output"
+        ERASE_CUSTOM,
+        "the tenant's report runs. ERASE_CUSTOM rather than ERASE because the row "
+        "holds the storage key of the exported file, and deleting the row without "
+        "the file leaves the tenant's data in the object store with nothing able to "
+        "reach it",
+        handler=_erase_report_jobs_and_exports,
     ),
     "dual_auth_requests": Disposition(
         ERASE,

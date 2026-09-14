@@ -4,9 +4,11 @@ Run locally:   uvicorn app.main:app --reload
 In Docker:     see deploy/docker-compose.yml (migrations run first, then this app).
 
 The lifespan bootstraps the first admin from VE_BOOTSTRAP_ADMIN_EMAIL/PASSWORD (only
-if the users table is empty), then seeds tenancy and the platform catalogs.
+if the users table is empty), then seeds tenancy and the platform catalogs, and
+starts the retention sweep (app/retention.py) that owns core's housekeeping.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from app.app import create_base_app
@@ -16,6 +18,7 @@ from app.core.logging import get_logger
 from app.db.base import get_sessionmaker
 from app.device_brands import seed_brands
 from app.module_catalog import seed_modules
+from app.retention import sweep_forever
 from app.tenancy.seed import seed_tenancy
 from app.core import events_nats
 from app.core.shutdown import install_signal_handlers
@@ -48,8 +51,22 @@ async def lifespan(app):
     install_signal_handlers()
     await events_nats.connect()
     await events_nats.publish("system", "core", "startup", {"service": "core"})
-    yield
-    await events_nats.close()
+    # Housekeeping (expired reset tokens, old report exports, audit retention) runs
+    # HERE rather than in a Celery worker: there is no core worker in the
+    # deployment, and adding one would put core's tasks on the queue the workflow
+    # worker consumes. See app/retention.py.
+    sweeper = asyncio.create_task(sweep_forever(get_sessionmaker()))
+    try:
+        yield
+    finally:
+        # Cancel and wait: an unawaited cancelled task logs "Task exception was
+        # never retrieved" on the way down, which reads like a crash on shutdown.
+        sweeper.cancel()
+        try:
+            await sweeper
+        except asyncio.CancelledError:
+            pass
+        await events_nats.close()
 
 
 app = create_base_app(title="Neubit Command Center", lifespan=lifespan)

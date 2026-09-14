@@ -24,7 +24,8 @@ Layout (what each package owns):
   infra/          super-admin view/control of the compose stack
   security/       enterprise hardening
   system/         CPU/RAM/GPU/disk resources
-  tasks/          Celery app + beat + retention cleanup
+  tasks/          Celery app + the @task decorator (the report export path)
+  retention.py    the housekeeping sweeps, run from the lifespan
   db/             async SQLAlchemy base + TimescaleDB helpers
 """
 

@@ -18,7 +18,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import JSON, DateTime, String, Uuid, delete, func, or_, select
+from sqlalchemy import JSON, DateTime, Index, String, Uuid, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -33,6 +33,15 @@ class AuditLog(Base):
     """One immutable row per audited action."""
 
     __tablename__ = "audit_log"
+
+    # (tenant_id, ts) is the shape every purge and every scoped read uses: the
+    # retention sweep deletes one tenant's rows older than that tenant's window,
+    # and the audit screen lists one tenant's rows newest-first. With only the two
+    # single-column indexes that existed, Postgres had to bitmap-AND them or scan
+    # by ts, on the one table in core designed to grow forever. It subsumes the old
+    # index on tenant_id alone (a composite serves its own leading column), which
+    # migration 0030 therefore drops rather than pay for twice on every write.
+    __table_args__ = (Index("ix_audit_log_tenant_ts", "tenant_id", "ts"),)
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     # Actor snapshot: id AND email at the time of the action. The email is stored
@@ -53,7 +62,7 @@ class AuditLog(Base):
     # --- multi-tenancy -----------------------------------------------------
     # The actor's tenant at the time. NULL = a platform/super-admin/system action.
     # Tenant-admins only see their own rows.
-    tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     # What happened, e.g. "user.delete", "license.replace", "role.update".
     action: Mapped[str] = mapped_column(String, nullable=False)
     # What it happened to (optional): a type name + its id, e.g. ("user", "<uuid>").
