@@ -1241,6 +1241,16 @@ services:
     # and the symptom is a bare "Bad gateway", which reads as a broken build.
     restart: unless-stopped
     # PRODUCTION by default: builds the standalone runner image (node server.js).
+    #
+    # START THE LOCAL STACK AS `docker compose up -d` FROM THIS DIRECTORY, never as
+    # `docker compose -f deploy/docker-compose.yml ...` from the repo root. Naming a
+    # file with -f DISABLES compose's automatic merge of docker-compose.override.yml,
+    # and the override is the only thing that pins this service to the `:dev` tag.
+    # Without it compose reuses whatever sits on `neubit-v3-frontend:latest` — which
+    # on a machine that has ever run the dev build is the DEPS STAGE: CMD=[node], no
+    # server.js, exits 0 immediately, restart loop, console never comes up. Observed,
+    # not theorised. The override's own comment explains the tag; this explains how
+    # you end up bypassing it.
     # The dev override adds the bind-mount + `npm run dev` for hot-reload.
     build: ../frontend
     # NOT `env_file: .env`. The Next.js server reads NEXT_PUBLIC_API_URL and
