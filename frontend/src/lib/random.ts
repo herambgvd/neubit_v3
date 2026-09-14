@@ -42,11 +42,19 @@ export function randomInt(max: number): number {
   // The largest multiple of `max` that fits in the range; anything at or above it
   // is redrawn, so every value below `max` is equally likely.
   const limit = Math.floor(range / max) * max;
-  for (;;) {
+  // BOUNDED, DELIBERATELY. `limit` is always more than half of `range`, so a draw
+  // is accepted with probability > 0.5 and the chance of using all of these tries
+  // is below 2**-64 — this never trips on real randomness. It exists because the
+  // failure it replaces is the worst kind: when the arithmetic above is wrong,
+  // nothing is ever accepted, an unbounded loop spins the renderer at 100% with
+  // no exception and no console output, and the operator sees a dead tab with
+  // nothing to report. Throwing turns that back into a bug someone can read.
+  for (let tries = 0; tries < 64; tries += 1) {
     let value = 0;
     for (const b of bytes(width)) value = value * 256 + b;
     if (value < limit) return value % max;
   }
+  throw new Error(`randomInt(${max}) drew 64 rejected values — the rejection limit (${limit}) is wrong`);
 }
 
 /** A float in [0, 1), the shape `Math.random()` returns. */

@@ -71,6 +71,26 @@ describe("randomInt", () => {
     expect(share).toBeLessThan(0.53);
   });
 
+  // The guard that makes the class of bug above impossible to reintroduce
+  // silently. Starve the generator so no draw can ever clear the rejection
+  // limit; the old unbounded loop hung the renderer here with no exception, so
+  // a test could only catch it by timing out. Now it reports itself.
+  it("throws instead of spinning when no draw can be accepted", () => {
+    const real = globalThis.crypto.getRandomValues.bind(globalThis.crypto);
+    const stub = (a: ArrayBufferView) => {
+      new Uint8Array(a.buffer, a.byteOffset, a.byteLength).fill(0xff);
+      return a;
+    };
+    globalThis.crypto.getRandomValues = stub as typeof real;
+    try {
+      // 0xff…ff is at or above the rejection limit for any max that does not
+      // divide the range, so every draw is rejected.
+      expect(() => randomInt(1000)).toThrow(/rejection limit/);
+    } finally {
+      globalThis.crypto.getRandomValues = real;
+    }
+  });
+
   it("refuses a range too wide to draw exactly", () => {
     expect(() => randomInt(2 ** 48 + 2)).toThrow(RangeError);
   });
