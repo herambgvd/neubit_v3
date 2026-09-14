@@ -23,16 +23,29 @@ function bytes(n: number): Uint8Array {
   return out;
 }
 
+/** The widest range this draws from: 2**48, which stays exactly representable as
+ *  a JS number, so the rejection arithmetic below is never approximate. */
+const MAX_RANGE = 2 ** 48;
+
 /** A uniform integer in [0, max). */
 export function randomInt(max: number): number {
   if (!Number.isInteger(max) || max <= 0) throw new RangeError("max must be a positive integer");
+  if (max > MAX_RANGE) throw new RangeError(`max must be at most ${MAX_RANGE}`);
   if (max === 1) return 0;
-  // The largest multiple of `max` that fits in a byte; anything at or above it is
-  // redrawn, so every value below `max` is equally likely.
-  const limit = Math.floor(256 / max) * max;
+  // DRAW ENOUGH BYTES FOR `max`. A single byte only covers max <= 256; for
+  // anything wider `Math.floor(256 / max)` is 0, so the rejection limit is 0, no
+  // draw is ever accepted and the loop below never returns — a hung tab, not a
+  // wrong number. So the width comes from `max`: `randomInt(1000)` draws two
+  // bytes, `randomInt(45_000)` two, and the limit is computed against that range.
+  const width = Math.ceil(Math.log2(max) / 8);
+  const range = 2 ** (width * 8);
+  // The largest multiple of `max` that fits in the range; anything at or above it
+  // is redrawn, so every value below `max` is equally likely.
+  const limit = Math.floor(range / max) * max;
   for (;;) {
-    const b = bytes(1)[0];
-    if (b < limit) return b % max;
+    let value = 0;
+    for (const b of bytes(width)) value = value * 256 + b;
+    if (value < limit) return value % max;
   }
 }
 

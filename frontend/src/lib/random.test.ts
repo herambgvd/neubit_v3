@@ -46,6 +46,35 @@ describe("randomInt", () => {
     expect(randomInt(1)).toBe(0);
   });
 
+  // A one-byte draw only covers max <= 256. Above that the old rejection limit
+  // computed to 0, nothing was ever accepted, and the call spun forever — which
+  // is how a marketing page (randomInt(1000)) and the playback wall
+  // (randomInt(45_000)) both wedged the browser tab with no error in the console.
+  it("returns for a range wider than one byte", () => {
+    for (const max of [257, 1000, 45_000, 70_000, 16_777_217]) {
+      for (let i = 0; i < 200; i += 1) {
+        const v = randomInt(max);
+        expect(Number.isInteger(v)).toBe(true);
+        expect(v).toBeGreaterThanOrEqual(0);
+        expect(v).toBeLessThan(max);
+      }
+    }
+  });
+
+  it("still spreads evenly when the range needs two bytes", () => {
+    const max = 1000;
+    const n = 20_000;
+    let low = 0;
+    for (let i = 0; i < n; i += 1) if (randomInt(max) < max / 2) low += 1;
+    const share = low / n;
+    expect(share).toBeGreaterThan(0.47);
+    expect(share).toBeLessThan(0.53);
+  });
+
+  it("refuses a range too wide to draw exactly", () => {
+    expect(() => randomInt(2 ** 48 + 2)).toThrow(RangeError);
+  });
+
   it("refuses a range that cannot produce a value", () => {
     expect(() => randomInt(0)).toThrow(RangeError);
     expect(() => randomInt(-3)).toThrow(RangeError);
