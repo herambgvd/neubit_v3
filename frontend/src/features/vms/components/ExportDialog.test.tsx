@@ -12,6 +12,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const createExport = vi.fn();
 const getExport = vi.fn();
 const downloadExportBlob = vi.fn();
+const verifyExport = vi.fn();
+const exportManifestBlob = vi.fn();
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("../api", () => ({
   vms: {
@@ -20,8 +22,8 @@ vi.mock("../api", () => ({
         createExport: (...a: unknown[]) => createExport(...a),
         getExport: (...a: unknown[]) => getExport(...a),
         downloadExportBlob: (...a: unknown[]) => downloadExportBlob(...a),
-        verifyExport: vi.fn(),
-        exportManifestBlob: vi.fn(),
+        verifyExport: (...a: unknown[]) => verifyExport(...a),
+        exportManifestBlob: (...a: unknown[]) => exportManifestBlob(...a),
       },
     },
   },
@@ -200,5 +202,143 @@ describe("ExportDialog footer", () => {
         true,
       ),
     );
+  });
+});
+
+/**
+ * THE EVIDENCE A FINISHED EXPORT CARRIES.
+ *
+ * A clip that leaves the building is only worth what can be said about it later.
+ * The recorder hashes it, signs a manifest over that hash, and this panel is the
+ * only place an operator ever sees either. Every claim on it is one somebody may
+ * repeat in a statement, so a badge that is present when it should not be — or a
+ * "tampered" with no numbers behind it — is worse than a blank panel.
+ */
+const DONE = {
+  id: "job-1",
+  status: "done",
+  sha256: "a".repeat(64),
+  signed: true,
+  encode_mode: "copy",
+};
+
+/** The dialog only learns the hash, the signature and the encode mode from the
+ *  POLL — the create response carries an id and a status and nothing else. So
+ *  every assertion below has to travel through one real poll tick (2s), which is
+ *  why this block is the slow one. Fake timers do not help: userEvent's own
+ *  delays run on the same clock and the click never lands. */
+async function pollTo(job: Record<string, unknown>) {
+  createExport.mockResolvedValue({ id: "job-1", status: "running" });
+  getExport.mockResolvedValue(job);
+  const view = open();
+  await userEvent.click(screen.getByRole("button", { name: "Export" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: /Download/ })).toBeInTheDocument(), {
+    timeout: 4000,
+  });
+  return view;
+}
+
+describe("the tamper-evidence panel", () => {
+  beforeEach(() => {
+    createExport.mockReset();
+    getExport.mockReset();
+    verifyExport.mockReset();
+    exportManifestBlob.mockReset();
+  });
+
+  it("picks the finished job up from the poll rather than making the operator reopen it", async () => {
+    // The dialog is opened on a job that is still running. If the poll did not
+    // replace the job, the panel would sit on "Export running…" forever and the
+    // finished clip would only appear on a reopen.
+    await pollTo(DONE);
+    expect(screen.getByText("Export ready")).toBeInTheDocument();
+  });
+
+  it("claims a signature only for a job the recorder actually signed", async () => {
+    // Signing is best-effort: a signing failure still produces a valid, hashed
+    // clip. A badge shown regardless would put an Ed25519 claim on a manifest
+    // that does not exist.
+    const { unmount } = await pollTo(DONE);
+    expect(screen.getByText(/Signed \(Ed25519\)/)).toBeInTheDocument();
+    unmount();
+
+    await pollTo({ ...DONE, signed: false });
+    expect(screen.getByText("Not signed")).toBeInTheDocument();
+    expect(screen.queryByText(/Signed \(Ed25519\)/)).not.toBeInTheDocument();
+  });
+
+  it("prints the clip's own SHA-256, which is what anybody checks it against", async () => {
+    await pollTo(DONE);
+    expect(screen.getByText("a".repeat(64))).toBeInTheDocument();
+  });
+
+  it("says when the clip was re-encoded and is no longer the recorded bytes", async () => {
+    // A stream copy is bit-identical to what was recorded; a re-encode is not.
+    // On an evidence artefact that is a fact the recipient has to be told.
+    const { unmount } = await pollTo(DONE);
+    expect(screen.queryByText("Re-encoded")).not.toBeInTheDocument();
+    unmount();
+
+    await pollTo({ ...DONE, encode_mode: "reencode" });
+    expect(screen.getByText("Re-encoded")).toBeInTheDocument();
+  });
+
+  it("confirms a clip that still hashes to its signed manifest", async () => {
+    verifyExport.mockResolvedValue({ valid: true, signed_by_this_node: true });
+    await pollTo(DONE);
+    await userEvent.click(screen.getByRole("button", { name: /Verify signature/ }));
+    expect(await screen.findByText("Verified authentic")).toBeInTheDocument();
+  });
+
+  it("shows both hashes when the clip no longer matches its manifest", async () => {
+    // "Tampered" with no numbers behind it is not something anybody can act on,
+    // and it is the one word on this panel that ends up in a report.
+    verifyExport.mockResolvedValue({
+      valid: false,
+      reason: "tampered",
+      detail: "The clip on disk does not hash to the value in its manifest.",
+      expected_sha256: "b".repeat(64),
+      actual_sha256: "c".repeat(64),
+    });
+    await pollTo(DONE);
+    await userEvent.click(screen.getByRole("button", { name: /Verify signature/ }));
+
+    expect(await screen.findByText("Not verified — tampered")).toBeInTheDocument();
+    expect(screen.getByText(/does not hash to the value/)).toBeInTheDocument();
+    expect(screen.getByText("b".repeat(64))).toBeInTheDocument();
+    expect(screen.getByText("c".repeat(64))).toBeInTheDocument();
+  });
+
+  it("separates a valid manifest this recorder did not sign from a failure", async () => {
+    // A manifest from before a key rotation, or from another recorder, is still
+    // internally valid. Reporting it as a failure would have an operator discard
+    // sound evidence; saying nothing would overstate what was proved.
+    verifyExport.mockResolvedValue({ valid: true, signed_by_this_node: false });
+    await pollTo(DONE);
+    await userEvent.click(screen.getByRole("button", { name: /Verify signature/ }));
+
+    expect(await screen.findByText("Verified authentic")).toBeInTheDocument();
+    expect(screen.getByText(/predates a key rotation, or it came from another recorder/)).toBeInTheDocument();
+  });
+
+  it("downloads the manifest as its own file, beside the clip", async () => {
+    // The manifest is the chain of custody. A download that produced the clip
+    // again, or a file named .mp4, leaves the recipient nothing to verify with.
+    exportManifestBlob.mockResolvedValue(new Blob(["{}"]));
+    const createObjectURL = vi.fn(() => "blob:manifest");
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
+    const names: string[] = [];
+    const realClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function click(this: HTMLAnchorElement) {
+      names.push(this.download);
+    };
+
+    await pollTo(DONE);
+    await userEvent.click(screen.getByRole("button", { name: /Manifest/ }));
+    await waitFor(() => expect(exportManifestBlob).toHaveBeenCalledWith("recorder-a", "job-1"));
+    expect(names).toEqual(["Loading bay-job-1.manifest.json"]);
+
+    HTMLAnchorElement.prototype.click = realClick;
+    vi.unstubAllGlobals();
   });
 });

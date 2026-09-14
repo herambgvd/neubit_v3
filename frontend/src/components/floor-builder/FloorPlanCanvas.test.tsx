@@ -834,3 +834,213 @@ describe("fitting the floor plan into the viewport", () => {
     expect(x).toBeCloseTo(40 / 0.95);
   });
 });
+
+// ── Placing, selecting and panning without the renderer ───────────────
+//
+// Everything below is a decision the canvas makes before it draws anything: what
+// a press means in the mode the toolbar is in, what the cursor promises, and
+// where the plan is. The DRAWING itself (`draw`, ~200 lines) cannot be exercised
+// here at all — jsdom has no canvas backend, so `getContext("2d")` returns null
+// and the function returns on its second line. Nothing below depends on it.
+
+describe("placing a device with the placement tool", () => {
+  withBox();
+
+  it("creates the device where the press landed, not where a zone is", () => {
+    // With a placement tool armed, a press is a PLACEMENT — it must not also be
+    // read as selecting the zone it happens to be over, or the click both drops
+    // a camera and moves the sidebar off the thing just dropped.
+    const onDeviceCreate = vi.fn();
+    const onSelectZone = vi.fn();
+    render(
+      <FloorPlanCanvas
+        editorMode={EDITOR_MODES.DEVICE_PLACE}
+        activeTool={TOOL_TYPES.CAMERA_PLACE}
+        zones={[ZONE]}
+        onDeviceCreate={onDeviceCreate}
+        onSelectZone={onSelectZone}
+      />,
+    );
+
+    fireEvent.mouseDown(surface(), { clientX: 250, clientY: 150 });
+    expect(onDeviceCreate).toHaveBeenCalledWith({ x: 250, y: 150 });
+    expect(onSelectZone).not.toHaveBeenCalled();
+  });
+
+  it("places a recorder with the recorder tool, on the same press", () => {
+    // Both placement tools share the arm. A tool that fell through to the select
+    // path would leave the operator pressing a plan that does nothing.
+    const onDeviceCreate = vi.fn();
+    render(
+      <FloorPlanCanvas
+        editorMode={EDITOR_MODES.DEVICE_PLACE}
+        activeTool={TOOL_TYPES.NVR_PLACE}
+        zones={[ZONE]}
+        onDeviceCreate={onDeviceCreate}
+      />,
+    );
+
+    fireEvent.mouseDown(surface(), { clientX: 100, clientY: 300 });
+    expect(onDeviceCreate).toHaveBeenCalledWith({ x: 100, y: 300 });
+  });
+});
+
+describe("selecting a device on a plan that is not in placement mode", () => {
+  withBox();
+
+  const CAM: EditorPlacement = {
+    device_id: "cam-1",
+    device_type: "camera",
+    service: "vms",
+    x: 200,
+    y: 200,
+    rotation: 0,
+  };
+
+  it("selects the device under the press rather than the zone it sits in", () => {
+    // Every device is inside a zone. Testing the zone first would make a placed
+    // camera unclickable, because the zone always wins.
+    const onSelectDevice = vi.fn();
+    const onDeviceClick = vi.fn();
+    const onSelectZone = vi.fn();
+    render(
+      <FloorPlanCanvas
+        editorMode={EDITOR_MODES.ZONE_EDIT}
+        zones={[ZONE]}
+        devices={[CAM]}
+        onSelectDevice={onSelectDevice}
+        onDeviceClick={onDeviceClick}
+        onSelectZone={onSelectZone}
+      />,
+    );
+
+    fireEvent.mouseDown(surface(), { clientX: 200, clientY: 200 });
+    expect(onSelectDevice).toHaveBeenCalledWith(CAM);
+    expect(onDeviceClick).toHaveBeenCalledWith(CAM);
+    expect(onSelectZone).not.toHaveBeenCalled();
+  });
+
+  it("does not start a device drag here — this mode only ever selects", () => {
+    // The same press in DEVICE_PLACE begins a move. Outside that mode a drag
+    // across the plan would relocate a device the operator only meant to look at.
+    const onDeviceMove = vi.fn();
+    render(
+      <FloorPlanCanvas
+        editorMode={EDITOR_MODES.ZONE_EDIT}
+        zones={[ZONE]}
+        devices={[CAM]}
+        onDeviceMove={onDeviceMove}
+      />,
+    );
+
+    fireEvent.mouseDown(surface(), { clientX: 200, clientY: 200 });
+    fireEvent.mouseMove(surface(), { clientX: 300, clientY: 300 });
+    fireEvent.mouseUp(surface());
+    expect(onDeviceMove).not.toHaveBeenCalled();
+  });
+});
+
+describe("what the cursor promises before the press", () => {
+  withBox();
+
+  it("offers the rotate grab over a selected camera's cone, and not elsewhere", () => {
+    // The grab cursor is the only thing that tells an operator the cone is a
+    // handle. Out of step with the grab itself, it either hides the rotation or
+    // promises one that will not happen.
+    render(
+      <FloorPlanCanvas
+        editorMode={EDITOR_MODES.DEVICE_PLACE}
+        activeTool={TOOL_TYPES.SELECT}
+        zones={[ZONE]}
+        devices={[{ device_id: "cam-1", device_type: "camera", service: "vms", x: 200, y: 200, rotation: 0 }]}
+        selectedDeviceId="cam-1"
+      />,
+    );
+    const plan = surface().parentElement!;
+
+    fireEvent.mouseMove(surface(), { clientX: 200, clientY: 160 });
+    expect(plan).toHaveStyle({ cursor: "grab" });
+
+    // Behind the lens, well outside both the cone and the grip.
+    fireEvent.mouseMove(surface(), { clientX: 200, clientY: 380 });
+    expect(plan).not.toHaveStyle({ cursor: "grab" });
+  });
+});
+
+describe("panning the plan from the keyboard", () => {
+  withBox();
+
+  it("slides the plan by a step, and clicks follow it", () => {
+    // Alt is what pans mid-draw with the mouse, and the arrows honour the same
+    // modifier. Without the pan arm a keyboard-only operator can reach the
+    // polygon points under the viewport and nothing else on the plan.
+    const onZoneCreate = vi.fn();
+    render(
+      <FloorPlanCanvas
+        editorMode={EDITOR_MODES.ZONE_DRAW}
+        activeTool={TOOL_TYPES.ZONE_POLYGON}
+        onZoneCreate={onZoneCreate}
+      />,
+    );
+
+    // One step right: the plan slides 48px left under a fixed viewport, so the
+    // world point that was at screen 148 is now at screen 100.
+    fireEvent.keyDown(surface(), { key: "ArrowRight", altKey: true });
+
+    fireEvent.mouseDown(surface(), { clientX: 100, clientY: 100 });
+    fireEvent.mouseDown(surface(), { clientX: 140, clientY: 100 });
+    fireEvent.mouseDown(surface(), { clientX: 140, clientY: 140 });
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(onZoneCreate.mock.calls.at(-1)![0][0]).toEqual([148, 100]);
+  });
+});
+
+describe("a drop the palette did not write", () => {
+  withBox();
+
+  it("places nothing when the dragged payload is not the JSON we serialise", () => {
+    // Another app can set our mime type. Parsing it into a device would put a
+    // marker on the plan that maps to no camera, and the parse throwing would
+    // take the whole canvas down with it.
+    const onDeviceDrop = vi.fn();
+    const onInvalidDrop = vi.fn();
+    render(
+      <FloorPlanCanvas zones={[ZONE]} onDeviceDrop={onDeviceDrop} onInvalidDrop={onInvalidDrop} />,
+    );
+
+    const event = new MouseEvent("drop", { bubbles: true, cancelable: true, clientX: 250, clientY: 150 });
+    Object.defineProperty(event, "dataTransfer", {
+      value: {
+        types: ["application/x-neubit-device"],
+        dropEffect: "",
+        getData: (type: string) => (type === "application/x-neubit-device" ? "{not json" : ""),
+      },
+    });
+    fireEvent(surface(), event);
+
+    expect(onDeviceDrop).not.toHaveBeenCalled();
+    // And the drop was still consumed as ours: it landed in a zone, so it is not
+    // reported to the operator as a drop outside one.
+    expect(onInvalidDrop).not.toHaveBeenCalled();
+  });
+
+  it("ignores a drop carrying no device mime type at all", () => {
+    // A file dragged onto the plan must not be read as a placement.
+    const onDeviceDrop = vi.fn();
+    const onInvalidDrop = vi.fn();
+    render(
+      <FloorPlanCanvas zones={[ZONE]} onDeviceDrop={onDeviceDrop} onInvalidDrop={onInvalidDrop} />,
+    );
+
+    const event = new MouseEvent("drop", { bubbles: true, cancelable: true, clientX: 250, clientY: 150 });
+    Object.defineProperty(event, "dataTransfer", {
+      value: { types: ["Files"], dropEffect: "", getData: () => "" },
+    });
+    const consumed = !fireEvent(surface(), event);
+
+    expect(onDeviceDrop).not.toHaveBeenCalled();
+    expect(onInvalidDrop).not.toHaveBeenCalled();
+    // Not consumed either: the page below is still free to handle it.
+    expect(consumed).toBe(false);
+  });
+});
