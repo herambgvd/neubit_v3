@@ -209,7 +209,8 @@ class TestWriteWithRetries:
 
         with _writing(write):
             res = run(w._write_with_retries(_sessionmaker(), w.row.spec, ["r"]))
-        assert res is not None and res.rows_inserted == 5
+        assert res is not None, "the retry gave up instead of committing"
+        assert res.rows_inserted == 5
         assert n["i"] == 2
 
     def test_a_failed_write_leaves_no_batch_marked_in_flight_for_this_projection(self):
@@ -247,8 +248,9 @@ class TestWriteWithRetries:
         async def write(session, proj, rows):
             raise asyncio.CancelledError()
 
+        attempt = w._write_with_retries(_sessionmaker(), w.row.spec, ["r"])
         with _writing(write), pytest.raises(asyncio.CancelledError):
-            run(w._write_with_retries(_sessionmaker(), w.row.spec, ["r"]))
+            run(attempt)
 
 
 # ── ack and nak are mutually exclusive ───────────────────────────────────────

@@ -276,6 +276,35 @@ class CategoryService:
 # ── Webhook CRUD ───────────────────────────────────────────────────────
 
 
+def _assert_stored_secret_still_serves(row: Webhook, effective_auth: str) -> None:
+    """The three ways the secret already on the row cannot carry the new type.
+
+    Reached only when the update rotates no secret, so every answer here is a
+    refusal or silence — there is nothing to write.
+    """
+    if not row.auth_secret_hash:
+        raise ValidationError(f"{effective_auth} auth requires auth_secret")
+    # The stored value only counts as a credential if it ever WAS one.
+    # _validate_auth_inputs now refuses auth_secret alongside
+    # auth_type="none", but rows written before that refusal existed can
+    # still carry one, and this is the transition that would wake it up:
+    # none → api_key/bearer with no secret in the body, landing on the
+    # `row.auth_secret_hash` check above. Demand a fresh secret instead,
+    # so turning auth ON is always an act someone performed knowingly.
+    if row.auth_type == "none":
+        raise ValidationError(
+            f"enabling {effective_auth} auth requires a new auth_secret"
+        )
+    # store_secret encodes per type (hmac reversibly, the rest hashed),
+    # so a stored secret can't be reinterpreted under a new type.
+    # Demand a fresh one rather than leaving the receiver rejecting.
+    if effective_auth != row.auth_type and "hmac" in (effective_auth, row.auth_type):
+        raise ValidationError(
+            f"changing auth_type from {row.auth_type} to {effective_auth} "
+            "requires a new auth_secret"
+        )
+
+
 def _auth_update_fields(row: Webhook, effective_auth: str, new_secret: str | None) -> dict:
     """The auth columns an update writes — and the refusals that stop it.
 
@@ -284,32 +313,12 @@ def _auth_update_fields(row: Webhook, effective_auth: str, new_secret: str | Non
     """
     fields: dict = {}
     if effective_auth != "none":
-        if not new_secret:
-            if not row.auth_secret_hash:
-                raise ValidationError(f"{effective_auth} auth requires auth_secret")
-            # The stored value only counts as a credential if it ever WAS one.
-            # _validate_auth_inputs now refuses auth_secret alongside
-            # auth_type="none", but rows written before that refusal existed can
-            # still carry one, and this is the transition that would wake it up:
-            # none → api_key/bearer with no secret in the body, landing on the
-            # `row.auth_secret_hash` check above. Demand a fresh secret instead,
-            # so turning auth ON is always an act someone performed knowingly.
-            if row.auth_type == "none":
-                raise ValidationError(
-                    f"enabling {effective_auth} auth requires a new auth_secret"
-                )
-            # store_secret encodes per type (hmac reversibly, the rest hashed),
-            # so a stored secret can't be reinterpreted under a new type.
-            # Demand a fresh one rather than leaving the receiver rejecting.
-            if effective_auth != row.auth_type and "hmac" in (effective_auth, row.auth_type):
-                raise ValidationError(
-                    f"changing auth_type from {row.auth_type} to {effective_auth} "
-                    "requires a new auth_secret"
-                )
-        else:
+        if new_secret:
             fields["auth_secret_hash"] = store_secret(
                 row.tenant_id, effective_auth, new_secret
             )
+        else:
+            _assert_stored_secret_still_serves(row, effective_auth)
 
     # Canonicalize auth fields when the type changes.
     if effective_auth == "none":

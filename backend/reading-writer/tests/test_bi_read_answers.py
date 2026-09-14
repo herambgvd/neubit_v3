@@ -67,8 +67,9 @@ class TestTenantFromTheToken:
         """The dangerous case. A non-superadmin with no tenant claim cannot be
         scoped to anything — falling through to None would hand that caller the
         super-admin's unfiltered view of the whole platform."""
+        scope = Scope(tenant_id=None, is_superadmin=False)
         with pytest.raises(ValidationError, match="no tenant"):
-            r._tenant(Scope(tenant_id=None, is_superadmin=False))
+            r._tenant(scope)
 
 
 class TestWindow:
@@ -76,8 +77,10 @@ class TestWindow:
         """The store is timestamptz. A naive datetime compared against it drifts
         by the server's offset, and the chart is silently shifted by hours."""
         start, end = r._window(dt.datetime(2026, 3, 1), dt.datetime(2026, 3, 2), 24)
-        assert start.tzinfo is not None and end.tzinfo is not None
-        assert start == at(1) and end == at(2)
+        assert start.tzinfo is not None
+        assert end.tzinfo is not None
+        assert start == at(1)
+        assert end == at(2)
 
     def test_an_omitted_start_is_the_default_span_back_from_the_end(self):
         _, end = r._window(None, at(2), 24)
@@ -87,8 +90,9 @@ class TestWindow:
     def test_an_inverted_window_is_refused_rather_than_returning_nothing(self):
         """`start > end` matches no rows, so the chart draws an empty panel and
         the caller is told nothing about why."""
+        later, earlier = at(2), at(1)
         with pytest.raises(ValidationError, match="before"):
-            r._window(at(2), at(1), 24)
+            r._window(later, earlier, 24)
 
 
 # ── correlation: which points, and at which grain ────────────────────────────
@@ -117,8 +121,9 @@ class TestCorrelationInputs:
         """Correlating raw samples correlates whatever happened to share a
         timestamp, which is a different question from the one the screen asks.
         A silent swap to a rollup would answer a question nobody asked."""
+        start, end = at(1), at(2)
         with pytest.raises(ValidationError, match="never on raw"):
-            r._correlation_resolution("raw", at(1), at(2))
+            r._correlation_resolution("raw", start, end)
 
     def test_a_named_resolution_is_honoured_and_says_why_it_is_the_one(self):
         """The reason is printed beside the chart. `1m` is materialized-only and
@@ -154,15 +159,18 @@ class TestCorrelationSeries:
         wired and stuck, a silent one is not reporting at all."""
         out = r._correlation_series([A], {A: meta(A)}, {})
         row = out["series"][0]
-        assert row["buckets"] == 0 and row["frozen"] is False
-        assert out["silent"] == {A} and out["frozen"] == set()
+        assert row["buckets"] == 0
+        assert row["frozen"] is False
+        assert out["silent"] == {A}
+        assert out["frozen"] == set()
         assert row["min"] is row["max"] is row["mean"] is None
 
     def test_a_varying_series_is_neither(self):
         """The negative case, and it matters most: a rule that flagged healthy
         series would be switched off, taking the real protection with it."""
         out = r._correlation_series([A], {A: meta(A)}, {A: stats()})
-        assert out["frozen"] == set() and out["silent"] == set()
+        assert out["frozen"] == set()
+        assert out["silent"] == set()
         assert out["series"][0]["buckets"] == 10
 
     def test_each_series_carries_the_labels_a_reader_needs_to_identify_it(self):
@@ -237,7 +245,8 @@ class TestCorrelationPairs:
         (pair,) = _pairs([], META, silent=[B])
         assert pair["status"] == "no_overlap"
         assert pair["n"] == 0
-        assert "IWT" in pair["reason"] and "no numeric bucket" in pair["reason"]
+        assert "IWT" in pair["reason"]
+        assert "no numeric bucket" in pair["reason"]
 
     def test_two_series_that_both_reported_but_never_aligned_say_exactly_that(self):
         (pair,) = _pairs([], META)
@@ -290,7 +299,8 @@ class TestMeterSelection:
         """The other half. Here there ARE confirmed kWh registers; nobody has
         said which is the supply, and guessing from a tag would be an invention."""
         why = r._no_meter_reason([meta(A)])
-        assert "energy_register" in why and "Metric Roles" in why
+        assert "energy_register" in why
+        assert "Metric Roles" in why
 
 
 class TestEpi:
@@ -312,14 +322,17 @@ class TestEpi:
         """An EPI with no working shown cannot be checked, and this one is graded
         against a national benchmark."""
         out = r._epi_from(self._ok(1000.0, at(1), at(11)), 100, self.SITE)
-        assert "365" in out["epi"]["formula"] and "kWh/m²/yr" in out["epi"]["formula"]
+        assert "365" in out["epi"]["formula"]
+        assert "kWh/m²/yr" in out["epi"]["formula"]
 
     def test_a_span_shorter_than_one_bucket_is_blocked_rather_than_extrapolated(self):
         """`365 / 0` is not the problem; `365 / 0.001` is. Annualising a few
         minutes produces an enormous confident number."""
         out = r._epi_from(self._ok(5.0, at(1), at(1)), 100, self.SITE)
-        assert out["epi"] is None and out["cost"] is None
-        assert out["blocked"] and "annualise" in out["blocked"][0]
+        assert out["epi"] is None
+        assert out["cost"] is None
+        assert out["blocked"], "nothing was blocked, so nothing says why"
+        assert "annualise" in out["blocked"][0]
 
     def test_the_cost_is_priced_on_what_was_MEASURED_not_on_the_annualised_figure(self):
         """The annualised kWh is an extrapolation. Charging for it would present

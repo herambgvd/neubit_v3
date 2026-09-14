@@ -265,9 +265,10 @@ class TestNothingIsInterpolated:
         """`alias` is free text from the client and lands in an IDENTIFIER
         position, where no bind can help. It has to be refused, not quoted and
         hoped for."""
+        q = _q(select=[{"measure": "value", "aggregate": "avg", "alias": 'a" , (SELECT 1) x'}],
+               group_by=["point_id"])
         with pytest.raises(ValidationError):
-            _build(_q(select=[{"measure": "value", "aggregate": "avg", "alias": 'a" , (SELECT 1) x'}],
-                      group_by=["point_id"]))
+            _build(q)
 
     def test_only_a_select_is_ever_emitted(self):
         g = _build(_q(select=VALUE_AVG, group_by=["point_id"]))
@@ -299,7 +300,8 @@ class TestTimeColumn:
         double-count it."""
         g = _build(_q(select=VALUE_AVG, group_by=["point_id"]))
         assert '"t"."bucket" >= :p2 AND "t"."bucket" < :p3' in g.sql
-        assert ">= " in g.sql and "<= " not in g.sql
+        assert ">= " in g.sql
+        assert "<= " not in g.sql
 
     def test_a_time_series_is_ordered_by_the_bucket_ahead_of_whatever_was_asked_for(self):
         """A line chart drawn out of time order is a scribble. The user's own
@@ -364,8 +366,9 @@ class TestAggregateChosen:
     def test_an_aggregate_the_measure_does_not_permit_is_refused_by_name(self):
         """Samples is a count; there is no `avg` mapping for it. Falling through
         to some default would chart a number nothing computed."""
+        q = _q(select=[{"measure": "samples", "aggregate": "avg"}], group_by=["point_id"])
         with pytest.raises(ValidationError, match="Samples"):
-            _build(_q(select=[{"measure": "samples", "aggregate": "avg"}], group_by=["point_id"]))
+            _build(q)
 
     def test_count_star_takes_no_column(self):
         g = _build(_q(select=[{"measure": "samples", "aggregate": "sum"}], group_by=["point_id"]),
@@ -425,11 +428,12 @@ class TestShape:
     def test_a_condition_on_an_aggregate_without_a_grouping_is_refused(self):
         """HAVING with no GROUP BY collapses the whole result to one row that
         passes or vanishes — never what the widget meant."""
+        q = _q(
+            select=[{"measure": "samples", "aggregate": "sum"}],
+            having=[{"measure": "samples", "aggregate": "sum", "op": ">", "value": 10}],
+        )
         with pytest.raises(ValidationError, match="grouping"):
-            _build(_q(
-                select=[{"measure": "samples", "aggregate": "sum"}],
-                having=[{"measure": "samples", "aggregate": "sum", "op": ">", "value": 10}],
-            ))
+            _build(q)
 
     def test_a_split_time_series_is_capped_by_buckets_not_by_the_series_limit(self):
         """`limit` on a split chart counts SERIES — `discover_series` already
@@ -466,9 +470,10 @@ class TestPredicates:
     def test_a_uuid_dimension_refuses_a_value_that_is_not_one(self):
         """Bound or not, `point_id = 'chiller'` is a type error at execution time
         — a 500 for what is a user's typo."""
+        q = _q(select=VALUE_AVG, group_by=["point_id"],
+               filters=[{"column": "point_id", "op": "=", "value": "not-a-uuid"}])
         with pytest.raises(ValidationError, match="needs an id"):
-            _build(_q(select=VALUE_AVG, group_by=["point_id"],
-                      filters=[{"column": "point_id", "op": "=", "value": "not-a-uuid"}]))
+            _build(q)
 
     def test_is_null_carries_no_bind_at_all(self):
         """There is no value to bind. A bind here would become `= NULL`, which
@@ -569,8 +574,10 @@ class TestColumnMetadata:
 
     def test_a_band_adds_the_stores_own_min_and_max_rather_than_the_chart_inventing_one(self):
         g = _build(_q(select=VALUE_AVG, time_series=True, series_by="point_id", band=True))
-        assert '"__band_lo"' in g.sql and '"__band_hi"' in g.sql
-        assert 'min("t"."num_min")' in g.sql and 'max("t"."num_max")' in g.sql
+        assert '"__band_lo"' in g.sql
+        assert '"__band_hi"' in g.sql
+        assert 'min("t"."num_min")' in g.sql
+        assert 'max("t"."num_max")' in g.sql
 
     def test_the_band_columns_are_not_grouped_by(self):
         """They are aggregates. In the GROUP BY they would split every bucket by

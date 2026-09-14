@@ -178,10 +178,13 @@ async def test_another_tenants_camera_is_not_found_before_anything_is_deleted(db
     cam = await _camera(db, tenant=TENANT_B)
     await _grant(db, tenant=TENANT_B, target_type="camera", target_id=cam.id, subject_id="theirs")
 
+    outsider = CameraService(db, _scope(TENANT_A))
+    actor = _Actor()
+
     with pytest.raises(NotFoundError):
-        await CameraService(db, _scope(TENANT_A)).put_acl(cam.id, [], actor=_Actor())
+        await outsider.put_acl(cam.id, [], actor=actor)
     with pytest.raises(NotFoundError):
-        await CameraService(db, _scope(TENANT_A)).get_acl(cam.id)
+        await outsider.get_acl(cam.id)
 
     assert len(await _all_acl(db)) == 1
 

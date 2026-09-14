@@ -225,8 +225,9 @@ async def test_a_talk_uplink_that_answers_html_says_so_rather_than_reporting_sil
     # without it a proxy's error page returns {} and the console shows a successful
     # talk that nobody heard.
     recorder.answers(200, text="<html>502</html>")
+    mic = _mic()
     with pytest.raises(fed.NodeUnavailable) as e:
-        await fed.talk_uplink_node(API, "cam-9", _mic(), credential=CRED)
+        await fed.talk_uplink_node(API, "cam-9", mic, credential=CRED)
     assert "non-JSON" in str(e.value)
 
 
@@ -234,8 +235,9 @@ async def test_a_refused_talk_reads_out_the_recorders_own_sentence(recorder):
     # A node with no talk transport configured answers an honest 501. The operator
     # needs to read "the path is not built", not a status code.
     recorder.answers(501, json={"error": {"message": "no talk transport configured"}})
+    mic = _mic()
     with pytest.raises(fed.NodeUnavailable) as e:
-        await fed.talk_uplink_node(API, "cam-9", _mic(), credential=CRED)
+        await fed.talk_uplink_node(API, "cam-9", mic, credential=CRED)
     assert str(e.value) == "501: no talk transport configured"
 
 

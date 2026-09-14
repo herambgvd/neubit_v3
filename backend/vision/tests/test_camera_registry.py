@@ -126,8 +126,9 @@ class TestCreate:
         """Operators identify a camera by its name on every screen. Two "Lobby"s
         make every one of those screens ambiguous."""
         await svc(db).create(body("Lobby"), actor=_Actor())
+        s, again, actor = svc(db), body("Lobby"), _Actor()
         with pytest.raises(ConflictError):
-            await svc(db).create(body("Lobby"), actor=_Actor())
+            await s.create(again, actor=actor)
 
     async def test_the_same_name_in_another_tenant_is_not_a_duplicate(self, db, bus):
         """The uniqueness check has to be tenant-SCOPED. Global, one customer
@@ -145,7 +146,8 @@ class TestCreate:
             actor=_Actor(),
         )
         row = await db.get(Camera, pub.id)
-        assert row.onvif_enc_pass and "s3cret" not in row.onvif_enc_pass
+        assert row.onvif_enc_pass, "no secret was stored at all"
+        assert "s3cret" not in row.onvif_enc_pass
         assert decrypt_secret(row.onvif_enc_pass) == "s3cret"
 
     async def test_an_onvif_block_with_no_password_stores_no_secret(self, db, bus):
@@ -197,8 +199,9 @@ class TestCreate:
 class TestSingleCameraAccess:
     async def test_another_tenants_camera_is_not_found(self, db, bus):
         cam = await mk(db, tenant=TENANT_B)
+        s = svc(db)
         with pytest.raises(NotFoundError):
-            await svc(db).get(cam.id)
+            await s.get(cam.id)
 
     async def test_a_camera_outside_the_callers_sites_is_not_found_rather_than_forbidden(
         self, db, bus
@@ -206,8 +209,9 @@ class TestSingleCameraAccess:
         """FORBIDDEN would confirm the camera exists, which is information about
         a site this caller has no access to."""
         cam = await mk(db, site_id=SITE_2)
+        s = svc(db, site_ids=[SITE_1])
         with pytest.raises(NotFoundError):
-            await svc(db, site_ids=[SITE_1]).get(cam.id)
+            await s.get(cam.id)
 
     async def test_a_camera_inside_the_callers_sites_is_readable(self, db, bus):
         """The negative case. A scope check that refused everything would be
@@ -220,8 +224,9 @@ class TestSingleCameraAccess:
         alternative — treating "no site" as "every site" — hands every
         site-scoped operator every camera nobody has placed yet."""
         cam = await mk(db, site_id=None)
+        s = svc(db, site_ids=[SITE_1])
         with pytest.raises(NotFoundError):
-            await svc(db, site_ids=[SITE_1]).get(cam.id)
+            await s.get(cam.id)
         # …and an UNRESTRICTED caller still sees it.
         assert (await svc(db).get(cam.id)).id == cam.id
 
@@ -290,8 +295,9 @@ class TestList:
         grp = CameraGroup(id=str(uuid.uuid4()), tenant_id=TENANT_B, name="g", camera_ids=[])
         db.add(grp)
         await db.commit()
+        s = svc(db)
         with pytest.raises(NotFoundError):
-            await svc(db).list_(group_id=grp.id)
+            await s.list_(group_id=grp.id)
 
     async def test_cameras_come_back_in_the_operators_own_order(self, db, bus):
         """`display_order` is a wall layout somebody arranged deliberately. A
@@ -368,8 +374,9 @@ class TestUpdate:
 
     async def test_another_tenants_camera_cannot_be_updated(self, db, bus):
         cam = await mk(db, tenant=TENANT_B)
+        s, patch, actor = svc(db), CameraUpdate(name="x"), _Actor()
         with pytest.raises(NotFoundError):
-            await svc(db).update(cam.id, CameraUpdate(name="x"), actor=_Actor())
+            await s.update(cam.id, patch, actor=actor)
 
 
 # ── delete ───────────────────────────────────────────────────────────────────
@@ -393,8 +400,9 @@ class TestDelete:
 
     async def test_another_tenants_camera_cannot_be_deleted(self, db, bus):
         cam = await mk(db, tenant=TENANT_B)
+        s, actor = svc(db), _Actor()
         with pytest.raises(NotFoundError):
-            await svc(db).delete(cam.id, actor=_Actor())
+            await s.delete(cam.id, actor=actor)
         assert await db.get(Camera, cam.id) is not None
 
 
@@ -432,8 +440,9 @@ class TestBulk:
         missing setting, and the footage policy for those cameras becomes
         whatever the default is. The operator asked for a number."""
         cam = await mk(db, retention_days=30)
+        s = svc(db)
         with pytest.raises(ValidationError, match="retention_days"):
-            await _bulk(svc(db), [cam.id], "retention")
+            await _bulk(s, [cam.id], "retention")
         assert (await db.get(Camera, cam.id)).retention_days == 30
 
     async def test_a_retention_change_with_a_value_is_applied(self, db, bus):
@@ -480,8 +489,9 @@ class TestBulk:
 
     async def test_a_group_action_with_no_group_is_refused(self, db, bus):
         cam = await mk(db)
+        s = svc(db)
         with pytest.raises(ValidationError, match="group_id"):
-            await _bulk(svc(db), [cam.id], "group")
+            await _bulk(s, [cam.id], "group")
 
 
 # ── reorder ──────────────────────────────────────────────────────────────────

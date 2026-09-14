@@ -158,7 +158,8 @@ async def test_a_misconfigured_email_server_does_not_swallow_push_and_webhook(
     await _tokens(db, ALICE, "tok-a1")
     await _notify_all(db)
 
-    assert channels.push and channels.webhook, "email took the other channels down with it"
+    assert channels.push, "email took push down with it"
+    assert channels.webhook, "email took the webhook down with it"
     assert await _inapp(db)
 
 
@@ -170,7 +171,8 @@ async def test_a_webhook_that_is_down_does_not_swallow_email_and_push(db, channe
     await _tokens(db, ALICE, "tok-a1")
     await _notify_all(db)
 
-    assert channels.email and channels.push
+    assert channels.email
+    assert channels.push
     assert await _inapp(db)
 
 
@@ -182,7 +184,8 @@ async def test_a_push_failure_does_not_swallow_email_and_webhook(db, channels, m
     await _tokens(db, ALICE, "tok-a1")
     await _notify_all(db)
 
-    assert channels.email and channels.webhook
+    assert channels.email
+    assert channels.webhook
     assert await _inapp(db)
 
 
@@ -200,7 +203,8 @@ async def test_a_template_that_will_not_render_costs_the_email_and_nothing_else(
     await _notify_all(db, template="gate_breach", template_ctx={})
 
     assert channels.email == []
-    assert channels.push and channels.webhook
+    assert channels.push
+    assert channels.webhook
 
 
 async def test_one_users_in_app_row_failing_does_not_cost_the_other_users_or_the_channels(
@@ -224,7 +228,9 @@ async def test_one_users_in_app_row_failing_does_not_cost_the_other_users_or_the
 
     assert seen == [ALICE, BOB], "the loop stopped at the first failing user"
     assert await _inapp(db) == [(BOB, "Gate forced")]
-    assert channels.email and channels.push and channels.webhook
+    assert channels.email
+    assert channels.push
+    assert channels.webhook
 
 
 async def test_notify_never_raises_into_the_scenario_that_called_it(db, channels, monkeypatch):

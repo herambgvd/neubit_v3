@@ -195,7 +195,8 @@ class TestWriteWithRetries:
 
         with _writing(write):
             res = run(p._write_with_retries(_sessionmaker(), ["r"], 0.0))
-        assert res is not None and res.rows_inserted == 3
+        assert res is not None, "the retry gave up instead of committing"
+        assert res.rows_inserted == 3
         assert n["i"] == 2
 
     def test_a_failed_attempt_forgets_the_dimension_cache(self):
@@ -235,8 +236,9 @@ class TestWriteWithRetries:
         async def write(session, rows, cache, now):
             raise asyncio.CancelledError()
 
+        attempt = p._write_with_retries(_sessionmaker(), ["r"], 0.0)
         with _writing(write), pytest.raises(asyncio.CancelledError):
-            run(p._write_with_retries(_sessionmaker(), ["r"], 0.0))
+            run(attempt)
 
 
 # ── ack and nak are mutually exclusive ───────────────────────────────────────

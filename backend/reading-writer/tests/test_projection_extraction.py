@@ -126,8 +126,9 @@ def test_a_value_that_does_not_fit_its_type_stops_the_row_and_names_the_column(
     """The reason is a LOW-CARDINALITY LABEL that reaches a metric and a log
     line. Without the column name in it, "some field in some projection is the
     wrong type" is all an operator ever learns."""
+    col = _col("v", type_)
     with pytest.raises(ex.Malformed) as exc:
-        _extract({"payload": {"v": given}}, _col("v", type_))
+        _extract({"payload": {"v": given}}, col)
     assert exc.value.reason == reason
 
 
@@ -136,16 +137,18 @@ def test_a_non_finite_number_is_refused_rather_than_stored_or_nulled(given):
     """NaN and ±Inf cannot be charted, and writing them as NULL would claim the
     publisher sent nothing when it sent something unusable. Refusing counts the
     message; nulling it would hide a broken sensor as a quiet gap."""
+    col = _col("v", "double precision")
     with pytest.raises(ex.Malformed) as exc:
-        _extract({"payload": {"v": given}}, _col("v", "double precision"))
+        _extract({"payload": {"v": given}}, col)
     assert exc.value.reason == "bad_number:v"
 
 
 def test_a_type_the_table_does_not_carry_refuses_instead_of_storing_the_raw_value():
     """`_COERCERS.get` returning None is the only thing between an unknown type
     and a python object handed to the driver. It must be a named refusal."""
+    col = _col("v", "numeric")
     with pytest.raises(ex.Malformed) as exc:
-        _extract({"payload": {"v": 3}}, _col("v", "numeric"))
+        _extract({"payload": {"v": 3}}, col)
     assert exc.value.reason == "unsupported_type:v"
 
 
@@ -181,8 +184,9 @@ def test_seconds_milliseconds_and_microseconds_all_land_on_the_same_instant(give
 def test_an_epoch_too_large_for_a_datetime_is_malformed_not_an_unhandled_error():
     """An `OverflowError` escaping here would kill the batch behind this message
     rather than acking and counting the one that is broken."""
+    col = _col("v", "timestamptz")
     with pytest.raises(ex.Malformed) as exc:
-        _extract({"payload": {"v": 1e30}}, _col("v", "timestamptz"))
+        _extract({"payload": {"v": 1e30}}, col)
     assert exc.value.reason == "bad_time:v"
 
 
@@ -197,8 +201,9 @@ def test_an_absent_optional_column_is_null_and_never_a_zero():
 
 
 def test_an_absent_required_column_refuses_by_name():
+    col = _col("v", "text", required=True)
     with pytest.raises(ex.Malformed) as exc:
-        _extract({"payload": {}}, _col("v", "text", required=True))
+        _extract({"payload": {}}, col)
     assert exc.value.reason == "missing:v"
 
 
@@ -227,8 +232,9 @@ def test_an_empty_string_in_a_uuid_column_is_absence_and_not_a_parse_failure():
 def test_a_required_uuid_sent_as_an_empty_string_reports_missing_not_bad_uuid():
     """The distinction is the whole point: `bad_uuid` sends somebody hunting for
     a malformed value that was never there. `missing` is what happened."""
+    col = _col("v", "uuid", required=True)
     with pytest.raises(ex.Malformed) as exc:
-        _extract({"payload": {"v": "  "}}, _col("v", "uuid", required=True))
+        _extract({"payload": {"v": "  "}}, col)
     assert exc.value.reason == "missing:v"
 
 
@@ -247,7 +253,8 @@ def test_a_tenant_column_always_resolves_and_is_never_the_reason_a_row_is_droppe
 
 def test_a_json_body_is_decoded_and_a_broken_one_is_named_undecodable():
     col = _col("v", "text")
-    assert _extract(json.dumps({"payload": {"v": "ok"}}).encode(), col)["v"] == "ok"
+    body = json.dumps({"payload": {"v": "ok"}}).encode()
+    assert _extract(body, col)["v"] == "ok"
     with pytest.raises(ex.Malformed) as exc:
         _extract(b"{not json", col)
     assert exc.value.reason == "undecodable_body"
@@ -257,8 +264,9 @@ def test_a_body_that_decodes_to_something_other_than_an_object_is_refused():
     """A bare list or number decodes fine and then every `_walk` returns None,
     so without this guard the message would become a row of NULLs — a row that
     claims an event happened and says nothing about it."""
+    col = _col("v", "text")
     with pytest.raises(ex.Malformed) as exc:
-        _extract(b"[1, 2]", _col("v", "text"))
+        _extract(b"[1, 2]", col)
     assert exc.value.reason == "body_not_an_object"
 
 
@@ -273,7 +281,8 @@ def test_every_declared_column_is_present_in_the_row_even_when_it_has_no_value()
         _col("c", "double precision"),
     )
     assert set(row) == {"a", "b", "c"}
-    assert row["b"] is None and row["c"] is None
+    assert row["b"] is None
+    assert row["c"] is None
 
 
 def test_a_nan_float_is_not_confused_with_a_finite_one_in_the_guard():

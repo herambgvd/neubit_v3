@@ -169,7 +169,8 @@ def test_a_composite_carries_the_unit_and_dimension_its_definition_declares():
         {"output": {"unit": "kWh/m²", "dimension": "energy_intensity"}},
         [{"metric": "a", "weight": 1.0, "status": "ok", "value": 1.0}],
     )
-    assert out["unit"] == "kWh/m²" and out["dimension"] == "energy_intensity"
+    assert out["unit"] == "kWh/m²"
+    assert out["dimension"] == "energy_intensity"
 
 
 # ── a device-scope component combined across a site's devices ────────────────
@@ -191,7 +192,8 @@ def test_devices_that_all_evaluated_combine_as_their_arithmetic_mean():
         [{"device_id": DEV_1, "device_tag": "AHU-1", "status": "ok", "value": 10.0},
          {"device_id": DEV_2, "device_tag": "AHU-2", "status": "ok", "value": 20.0}],
     )
-    assert out["status"] == "ok" and out["value"] == pytest.approx(15.0)
+    assert out["status"] == "ok"
+    assert out["value"] == pytest.approx(15.0)
     assert "over 2 device(s)" in out["arithmetic"]
 
 
@@ -288,8 +290,9 @@ def test_asking_for_a_site_that_is_not_in_this_tenants_mirror_is_an_error():
     """An empty success would render as "this building has no data", which is a
     statement about a building that is not this tenant's to make."""
     db = MetricDb(definitions={"ccei": _SITE_COMPOSITE}, sites=[])
+    asking = ev.evaluate(db, None, "ccei", site_id=SITE_A, start=at(1), end=at(2))
     with pytest.raises(ev.EvaluationError, match="no such site"):
-        run(ev.evaluate(db, None, "ccei", site_id=SITE_A, start=at(1), end=at(2)))
+        run(asking)
 
 
 def test_a_portfolio_with_no_sites_at_all_is_an_empty_item_list_not_an_error():
@@ -389,8 +392,9 @@ def test_a_metric_nothing_defines_is_an_error_naming_the_key_and_the_instant():
     """Version selection is by the window's END, so "no `ccei` is effective"
     depends on WHEN — the instant has to be in the sentence or the operator
     cannot tell a missing metric from a historical window."""
+    asking = ev.evaluate(MetricDb(), None, "ccei", start=at(1), end=at(2))
     with pytest.raises(ev.EvaluationError) as exc:
-        run(ev.evaluate(MetricDb(), None, "ccei", start=at(1), end=at(2)))
+        run(asking)
     assert "`ccei`" in str(exc.value)
     assert at(2).isoformat() in str(exc.value)
 
@@ -402,7 +406,8 @@ def test_the_answer_states_the_version_the_window_and_the_rollup_it_read():
     db = MetricDb(definitions={"ccei": {**_SITE_COMPOSITE, "version": 7}},
                   sites=[_site(SITE_A, "HQ")])
     out = run(ev.evaluate(db, None, "ccei", start=at(1), end=at(1, 2)))
-    assert out["metric"] == "ccei" and out["version"] == 7
+    assert out["metric"] == "ccei"
+    assert out["version"] == 7
     assert out["kind"] == "composite"
     assert out["window"] == {"start": at(1), "end": at(1, 2)}
     assert out["resolution"] == "1m"
@@ -423,7 +428,8 @@ def test_a_definition_with_no_declared_scope_fans_out_over_devices():
                   devices=[], device_roles=[])
     out = run(ev.evaluate(db, None, "epi", start=at(1), end=at(2)))
     assert out["items"] == []
-    assert "devices" in db.asked and "sites" not in db.asked
+    assert "devices" in db.asked
+    assert "sites" not in db.asked
 
 
 # ── a leaf that actually computes, under a site composite ────────────────────
@@ -462,7 +468,8 @@ def test_a_site_composite_over_a_device_leaf_reports_the_mean_and_every_device()
     assert item["status"] == "ok"
     assert item["value"] == pytest.approx(42.0)
     part = item["components"][0]
-    assert part["metric"] == "leaf" and part["version"] == 1
+    assert part["metric"] == "leaf"
+    assert part["version"] == 1
     assert [d["device_tag"] for d in part["devices"]] == ["AHU-1"]
 
 

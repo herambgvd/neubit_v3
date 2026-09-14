@@ -393,7 +393,8 @@ def test_a_migrated_spec_carries_no_key_the_v2_models_would_reject():
 def test_a_migrated_spec_that_cannot_validate_is_visible_as_such():
     """The guard on this file's own method: `_validated` must actually be able
     to fail, or every "it validates" assertion above is vacuous."""
+    q = b.BuilderQuery.model_validate(
+        {"dataset": "iot_readings", "select": [{"dimension": "not_a_dimension"}]}
+    )
     with pytest.raises(ValidationError):
-        b.BuilderQuery.model_validate(
-            {"dataset": "iot_readings", "select": [{"dimension": "not_a_dimension"}]}
-        ).validated(DATASET)
+        q.validated(DATASET)

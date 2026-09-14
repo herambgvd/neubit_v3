@@ -348,8 +348,9 @@ async def test_a_truncated_payload_is_refused_rather_than_replayed_as_something_
     row.raw_truncated = True
     await session.commit()
 
+    svc = EventLogService(session, _scope(), bus)
     with pytest.raises(ValidationError):
-        await EventLogService(session, _scope(), bus).replay(row.id)
+        await svc.replay(row.id)
 
 
 async def test_another_tenants_event_log_cannot_be_replayed(session, bus):
@@ -358,9 +359,10 @@ async def test_another_tenants_event_log_cannot_be_replayed(session, bus):
     wh = await _webhook(session, tenant=OTHER_TENANT)
     row = await _run(session, bus, wh, {"temp": 21})
     before = len(bus.published)
+    svc = EventLogService(session, _scope(TENANT), bus)
 
     with pytest.raises(NotFoundError):
-        await EventLogService(session, _scope(TENANT), bus).replay(row.id)
+        await svc.replay(row.id)
     assert len(bus.published) == before
 
 
@@ -372,6 +374,7 @@ async def test_a_log_row_with_no_webhook_is_refused_rather_than_replayed_blind(s
     row = await _run(session, bus, wh, {"temp": 21})
     row.webhook_id = None
     await session.commit()
+    svc = EventLogService(session, _scope(), bus)
 
     with pytest.raises(ValidationError):
-        await EventLogService(session, _scope(), bus).replay(row.id)
+        await svc.replay(row.id)

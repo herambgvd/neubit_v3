@@ -265,7 +265,8 @@ def test_a_message_that_says_nothing_about_tariffs_leaves_the_mirrored_list_alon
     absence replaced the list, every non-tariff site edit would delete the
     tariff an operator entered."""
     r = _apply(_facts())
-    assert r.writes[0]["slabs"] is None and r.writes[0]["factors"] is None
+    assert r.writes[0]["slabs"] is None
+    assert r.writes[0]["factors"] is None
     assert r.stats.skipped_malformed == 0
 
 
@@ -325,8 +326,10 @@ class FakeMsg:
 def test_an_applied_message_is_acked():
     r, msg = Recorder(), FakeMsg(_facts(gross_floor_area_sqm=100))
     run(r._handle(msg))
-    assert msg.acked and not msg.naked
-    assert r.stats.messages == 1 and r.stats.applied == 1
+    assert msg.acked
+    assert not msg.naked
+    assert r.stats.messages == 1
+    assert r.stats.applied == 1
 
 
 def test_an_unparseable_message_is_acked_and_counted_rather_than_redelivered_forever():
@@ -350,7 +353,8 @@ def test_a_store_failure_is_naked_for_redelivery_and_never_acked_away():
 
     r, msg = Broken(), FakeMsg(_facts(gross_floor_area_sqm=100))
     run(r._handle(msg))
-    assert msg.naked and not msg.acked
+    assert msg.naked
+    assert not msg.acked
     assert r.stats.errors == 1
     assert "the store is down" in r.stats.last_error
 
@@ -364,8 +368,9 @@ def test_a_cancellation_is_not_swallowed_as_a_failed_message():
             raise asyncio.CancelledError()
 
     r = Cancelling()
+    msg = FakeMsg(_facts())
     with pytest.raises(asyncio.CancelledError):
-        run(r._handle(FakeMsg(_facts())))
+        run(r._handle(msg))
 
 
 def test_the_snapshot_names_every_counter_the_metrics_endpoint_publishes():

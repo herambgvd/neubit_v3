@@ -37,6 +37,8 @@ import uuid
 import pytest
 import reporting.models
 
+from kernel.errors import ValidationError
+
 from app.api import execute as ex
 from app.api import sqlgen
 from app.api.builder import BuilderQuery, BuilderSpec
@@ -169,7 +171,8 @@ def test_a_falsy_but_real_value_is_passed_through_unchanged(v):
     """A guard written as `if not v: return None` would erase a measured zero,
     which is exactly the fact the NULL rule exists to protect."""
     out = ex.cell(v)
-    assert out == v and type(out) is type(v)
+    assert out == v
+    assert type(out) is type(v)
 
 
 def test_a_timestamp_is_left_alone_for_the_serialiser_to_render():
@@ -206,7 +209,9 @@ def test_an_empty_result_still_reports_its_columns_so_a_renderer_can_say_nothing
            group_by=["point_tag"])
     out = _flat(ScriptedDb(select=[[]]), q)
     assert out.columns == ["Point name", "Samples"]
-    assert out.rows == [] and out.matched == 0 and out.truncated is False
+    assert out.rows == []
+    assert out.matched == 0
+    assert out.truncated is False
 
 
 def test_the_matched_total_comes_from_the_window_function_and_flags_truncation():
@@ -217,13 +222,15 @@ def test_the_matched_total_comes_from_the_window_function_and_flags_truncation()
            group_by=["point_tag"], limit=1)
     db = ScriptedDb(select=[[{"point_tag": "A", "samples_sum": 3, sqlgen.COL_TOTAL: 400}]])
     out = _flat(db, q)
-    assert out.matched == 400 and out.truncated is True
+    assert out.matched == 400
+    assert out.truncated is True
 
 
 def test_without_a_total_column_the_row_count_is_the_match_count_and_nothing_is_truncated():
     q = _q(select=[{"dimension": "point_tag"}], group_by=["point_tag"])
     out = _flat(ScriptedDb(select=[[{"point_tag": "A"}, {"point_tag": "B"}]]), q)
-    assert out.matched == 2 and out.truncated is False
+    assert out.matched == 2
+    assert out.truncated is False
 
 
 def test_an_alias_names_the_column_and_otherwise_the_registry_label_does():
@@ -260,7 +267,9 @@ def test_a_discovery_that_finds_no_series_never_runs_the_chart_query():
     assertion: an unscripted `select` here is an AssertionError."""
     db = ScriptedDb(discover=[[]])
     out = _split(db, _q(**_SPLIT))
-    assert out.columns == ["time"] and out.rows == [] and out.matched == 0
+    assert out.columns == ["time"]
+    assert out.rows == []
+    assert out.matched == 0
     assert db.asked == ["discover"]
 
 
@@ -321,7 +330,8 @@ def test_more_series_matched_than_drawn_is_reported_as_truncated():
         select=[[]],
     )
     out = _split(db, _q(**_SPLIT))
-    assert out.matched == 40 and out.truncated is True
+    assert out.matched == 40
+    assert out.truncated is True
 
 
 def test_pinned_series_keys_skip_discovery_entirely():
@@ -332,7 +342,8 @@ def test_pinned_series_keys_skip_discovery_entirely():
     db = ScriptedDb(select=[[{sqlgen.COL_TIME: START, sqlgen.COL_SERIES: P1, "value_avg": 5.0}]])
     out = _split(db, _q(**_SPLIT), series_keys=[P1])
     assert db.asked == ["select"]
-    assert out.columns == ["time", str(P1)] and out.rows == [[START, 5.0]]
+    assert out.columns == ["time", str(P1)]
+    assert out.rows == [[START, 5.0]]
 
 
 def test_a_row_for_a_series_the_chart_is_not_drawing_is_ignored_not_mispositioned():
@@ -508,7 +519,8 @@ def test_a_result_always_carries_its_resolution_and_reason_even_when_it_is_empty
     out = run(ex.run(ScriptedDb(select=[[]]), TENANT, DATASET, spec))
     assert out.resolution == "1h"
     assert out.resolution_reason
-    assert out.rows == [] and out.comparison is None
+    assert out.rows == []
+    assert out.comparison is None
 
 
 def test_a_comparison_over_a_window_with_only_nulls_reports_no_data():
@@ -577,8 +589,9 @@ def test_a_column_that_is_not_a_published_dimension_never_reaches_a_select():
     """`column` arrives from the client. The registry lookup is the allowlist,
     and it has to run BEFORE the statement is built — the scripted session has
     nothing to answer with, so a query at all is the failure."""
-    with pytest.raises(Exception):
-        _distinct(ScriptedDb(), column="tenant_id; DROP TABLE points")
+    db = ScriptedDb()
+    with pytest.raises(ValidationError, match="unknown column"):
+        _distinct(db, column="tenant_id; DROP TABLE points")
 
 
 @pytest.mark.parametrize("term", ["%", "_", "50%_off", "a\\b"])

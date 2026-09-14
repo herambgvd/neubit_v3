@@ -206,8 +206,10 @@ def test_a_row_carries_every_slot_even_when_the_mirror_knows_nothing():
         "last_seen_at", "categories", "alerts", "score", "score_reason",
         "score_detail", "kwh",
     }
-    assert row["devices"] == 0 and row["points"] == 0
-    assert row["score"] is None and row["score_reason"] is None
+    assert row["devices"] == 0
+    assert row["points"] == 0
+    assert row["score"] is None
+    assert row["score_reason"] is None
 
 
 def test_the_mirrors_site_name_wins_over_the_one_denormalised_onto_points():
@@ -247,7 +249,8 @@ def test_a_site_the_points_know_but_the_mirror_does_not_is_still_listed(no_metri
     db = ScriptedDb(facts=[], by_site=[_by_site(SITE_A, points=12)], categories=[], alerts=[])
     out = _breakdown(db)
     assert [r["site_id"] for r in out] == [SITE_A]
-    assert out[0]["points"] == 12 and out[0]["is_active"] is None
+    assert out[0]["points"] == 12
+    assert out[0]["is_active"] is None
 
 
 def test_the_unplaced_points_are_reported_as_their_own_last_row(no_metric):
@@ -260,7 +263,8 @@ def test_the_unplaced_points_are_reported_as_their_own_last_row(no_metric):
     )
     out = _breakdown(db)
     assert [r["site_id"] for r in out] == [SITE_A, None]
-    assert out[-1]["points"] == 121 and out[-1]["placed"] is False
+    assert out[-1]["points"] == 121
+    assert out[-1]["placed"] is False
 
 
 def test_an_empty_unplaced_bucket_is_not_shown_as_a_row(no_metric):
@@ -368,7 +372,8 @@ def test_a_site_whose_every_register_is_unusable_reports_no_data_and_not_zero(mo
     db = ScriptedDb(facts=[_fact(SITE_A)], by_site=[_by_site(SITE_A, kwh_points=1)],
                     categories=[], alerts=[])
     kwh = _breakdown(db)[0]["kwh"]
-    assert kwh["status"] == "no_data" and kwh["consumption_kwh"] is None
+    assert kwh["status"] == "no_data"
+    assert kwh["consumption_kwh"] is None
 
 
 # ── the score slot relays the registry, and never rounds it ──────────────────
