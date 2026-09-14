@@ -369,8 +369,11 @@ def test_a_cancellation_is_not_swallowed_as_a_failed_message():
 
     r = Cancelling()
     msg = FakeMsg(_facts())
+    # The coroutine is built outside the block: `_handle(msg)` only creates it,
+    # and leaving both inside reads as though either could be the one that raises.
+    handling = r._handle(msg)
     with pytest.raises(asyncio.CancelledError):
-        run(r._handle(msg))
+        run(handling)
 
 
 def test_the_snapshot_names_every_counter_the_metrics_endpoint_publishes():
