@@ -8,6 +8,8 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { Icon } from "@iconify/react";
+
+import { bundledIcon } from "@/lib/icons";
 import { toast } from "sonner";
 
 import { ConfirmDialog, Badge } from "@/components/ui/kit";
@@ -108,7 +110,7 @@ export default function FormatsTab() {
                 >
                   {isSel && <span className="absolute left-0 top-0 bottom-0 w-0.5" style={{ background: f.color_code || "#ef4444" }} />}
                   <span className="inline-flex h-8 w-8 items-center justify-center rounded-md text-white shrink-0" style={{ background: f.color_code || "#ef4444" }}>
-                    <Icon icon={f.icon || "heroicons-outline:swatch"} className="text-base" />
+                    <Icon icon={bundledIcon(f.icon, "heroicons-outline:swatch")} className="text-base" />
                   </span>
                   <span className="flex-1 min-w-0">
                     <span className="flex items-center gap-1.5 flex-wrap">

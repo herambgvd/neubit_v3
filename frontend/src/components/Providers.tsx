@@ -5,16 +5,13 @@ import { useState, type ReactNode } from "react";
 import { Toaster } from "sonner";
 
 // SIDE EFFECT, and it must run before the first <Icon> mounts: it registers the
-// offline icon collections. Without it @iconify/react fetches every glyph from
+// offline icon bundle. Without it @iconify/react fetches every glyph from
 // api.iconify.design at runtime, so on a restricted or air-gapped network the
-// whole console renders with no icons at all and says nothing. See lib/icons.ts.
+// whole console renders with no icons at all and says nothing. See lib/icons/.
 import "@/lib/icons";
 
 import { AppearanceProvider } from "@/lib/appearance";
 import { AuthProvider } from "@/lib/auth";
-// Side-effect import: registers the bundled Iconify icon set so nothing is
-// fetched from api.iconify.design at runtime (offline/air-gapped installs).
-import "@/lib/icons";
 import { ThemeProvider } from "@/components/theme";
 import TitleSync from "@/components/TitleSync";
 

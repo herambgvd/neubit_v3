@@ -5,7 +5,7 @@
  *
  * SELF-HOSTED, deliberately. `next/font/google` fetches the files at build time,
  * which quietly makes the build need the public internet — and this console is
- * installed on air-gapped networks (the same reason `lib/icons.ts` bundles its
+ * installed on air-gapped networks (the same reason `lib/icons/` bundles its
  * icon set instead of hitting api.iconify.design). The five .woff2 in ./files
  * are the latin subset of each family's VARIABLE face: one file covers every
  * weight, ~185KB for the whole catalogue.

@@ -7,6 +7,8 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { Icon } from "@iconify/react";
+
+import { bundledIcon } from "@/lib/icons";
 import { Badge } from "@/components/ui/kit";
 import { TabBar } from "@/components/common";
 import type { TabItem } from "@/components/common/TabBar";
@@ -38,7 +40,7 @@ export default function FormatDetail({ format, sopName, onEdit, onDelete }: Read
       <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-nb-line">
         <div className="flex items-start gap-3 min-w-0">
           <span className="inline-flex h-10 w-10 items-center justify-center rounded-md text-white shrink-0" style={{ background: f.color_code || "#ef4444" }}>
-            <Icon icon={f.icon || "heroicons-outline:swatch"} className="text-lg" />
+            <Icon icon={bundledIcon(f.icon, "heroicons-outline:swatch")} className="text-lg" />
           </span>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">

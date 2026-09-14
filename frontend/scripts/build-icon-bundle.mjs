@@ -1,29 +1,36 @@
 // Builds the OFFLINE Iconify bundle.
 //
-// Why: `@iconify/react`'s <Icon icon="heroicons-outline:camera" /> fetches icon
-// data from api.iconify.design at runtime. On an air-gapped install every icon
-// in the console renders blank. Same for the handful of `content: url(...)`
-// icons our SCSS pulls from that API.
+// Why: `@iconify/react`'s <Icon icon="heroicons-outline:camera" /> resolves a name
+// it does not already hold by fetching it from api.iconify.design at runtime. On
+// an air-gapped install every icon in the console renders blank — and silently,
+// because Iconify treats an unresolvable name as "not ready yet", forever. Same
+// for the handful of `content: url(...)` icons our SCSS used to pull from there.
 //
-// This script is the ONLY place that talks to the Iconify API, and it runs on a
-// developer machine — never at build or run time. It scans src/ for every
-// `"prefix:name"` icon literal, downloads exactly those icons once, and writes
-// two committed artefacts:
+// It scans src/ for every `"prefix:name"` icon literal and writes two committed
+// artefacts containing EXACTLY those icons:
 //
 //   src/lib/icons/icon-bundle.json   → registered with addCollection() at boot
 //   src/styles/scss/_icon-assets.scss → data: URIs for the CSS-only icons
 //
-// Re-run it (with network) after adding a new icon:  npm run icons
+// NO NETWORK. Icon data comes from the `@iconify-json/*` packages already in
+// node_modules, so this runs in CI and on an air-gapped developer machine, and
+// `npm run icons:check` can be a gate rather than advice. (It used to fetch from
+// api.iconify.design, which meant a stale bundle could only be repaired by
+// someone with internet — and so it stayed stale.)
 //
-// Usage: node scripts/build-icon-bundle.mjs
+// Re-run it after adding a new icon:  npm run icons
+//
+// Usage: node scripts/build-icon-bundle.mjs [--check]
 
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+const require = createRequire(import.meta.url);
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = path.join(ROOT, "src");
-const API = process.env.ICONIFY_API || "https://api.iconify.design";
 
 // Icon-set prefixes we actually ship. Whitelisting keeps false positives out:
 // plenty of unrelated strings ("sm:hover", "09:00") match the prefix:name shape.
@@ -63,12 +70,16 @@ const V2_FALLBACKS = {
 
 const SKIP_DIRS = new Set(["node_modules", ".next", ".git"]);
 const SCAN_EXT = new Set([".js", ".jsx", ".mjs", ".ts", ".tsx", ".scss", ".css"]);
+// Tests name icons that must NOT be bundled — src/lib/icons.test.tsx asserts that
+// an unresolvable name falls back to a visible glyph, and does it with a name
+// chosen for not existing. Bundling those would make the assertion vacuous.
+const SKIP_FILE = /\.test\.[jt]sx?$/;
 
 function walk(dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (entry.isDirectory()) {
       if (!SKIP_DIRS.has(entry.name)) walk(path.join(dir, entry.name), out);
-    } else if (SCAN_EXT.has(path.extname(entry.name))) {
+    } else if (SCAN_EXT.has(path.extname(entry.name)) && !SKIP_FILE.test(entry.name)) {
       out.push(path.join(dir, entry.name));
     }
   }
@@ -97,43 +108,85 @@ function collectUsedIcons() {
   return used;
 }
 
-// The API rejects over-long query strings, so ask in batches and merge.
-function batchNames(names, maxChars = 1000) {
-  const batches = [[]];
-  let len = 0;
-  for (const name of [...names].sort()) {
-    if (len + name.length + 1 > maxChars && batches.at(-1).length) {
-      batches.push([]);
-      len = 0;
+// ── mdi: three icons, not seven thousand ────────────────────────────────────
+// The full Material Design Icons set is ~7,500 glyphs and several megabytes; the
+// console uses three, and there is no @iconify-json/mdi in node_modules. They are
+// inlined here rather than pulled in wholesale.
+//
+// ADDING AN MDI ICON: add it here too, or it will not render — `icons:check`
+// will tell you. Copy the `body` from https://api.iconify.design/mdi.json?icons=<name>.
+// Prefer a heroicons equivalent where one exists.
+const INLINE_SETS = {
+  mdi: {
+    prefix: "mdi",
+    width: 24,
+    height: 24,
+    icons: {
+      "crop-free": {
+        body: '<path fill="currentColor" d="M19 3h-4v2h4v4h2V5a2 2 0 0 0-2-2m0 16h-4v2h4a2 2 0 0 0 2-2v-4h-2M5 15H3v4a2 2 0 0 0 2 2h4v-2H5M3 5v4h2V5h4V3H5a2 2 0 0 0-2 2"/>',
+      },
+      "fit-to-screen-outline": {
+        body: '<path fill="currentColor" d="M17 4h3c1.1 0 2 .9 2 2v2h-2V6h-3zM4 8V6h3V4H4c-1.1 0-2 .9-2 2v2zm16 8v2h-3v2h3c1.1 0 2-.9 2-2v-2zM7 18H4v-2H2v2c0 1.1.9 2 2 2h3zm9-8v4H8v-4zm2-2H6v8h12z"/>',
+      },
+      leaf: {
+        body: '<path fill="currentColor" d="M17 8C8 10 5.9 16.17 3.82 21.34l1.89.66l.95-2.3c.48.17.98.3 1.34.3C19 20 22 3 22 3c-1 2-8 2.25-13 3.25S2 11.5 2 13.5s1.75 3.75 1.75 3.75C7 8 17 8 17 8"/>',
+      },
+    },
+  },
+};
+
+// The published set for a prefix, or null when we neither ship nor inline one.
+// Loaded once — each of these files is megabytes, and `heroicons` is read twice
+// (once for its own names, once for the v2 rescue pass).
+const sourceCache = new Map();
+function sourceSet(prefix) {
+  if (!sourceCache.has(prefix)) {
+    let set = INLINE_SETS[prefix] || null;
+    if (!set) {
+      try {
+        set = require(`@iconify-json/${prefix}/icons.json`);
+      } catch {
+        set = null;
+      }
     }
-    batches.at(-1).push(name);
-    len += name.length + 1;
+    sourceCache.set(prefix, set);
   }
-  return batches.filter((b) => b.length);
+  return sourceCache.get(prefix);
 }
 
-async function fetchCollection(prefix, names) {
-  const data = { prefix, icons: {}, aliases: {} };
-  for (const batch of batchNames(names)) {
-    const url = `${API}/${prefix}.json?icons=${batch.join(",")}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`${prefix}: HTTP ${res.status} from ${API}`);
-    const chunk = await res.json();
-    // An entirely unknown prefix answers 200 with a bare `404` body. Treat it as
-    // "nothing here" — every name falls through to the v2 rescue pass.
-    if (chunk === 404) continue;
-    if (typeof chunk !== "object" || chunk === null) {
-      throw new Error(`${prefix}: unexpected response ${JSON.stringify(chunk)} for ${url}`);
-    }
-    Object.assign(data.icons, chunk.icons);
-    Object.assign(data.aliases, chunk.aliases);
-    // Collection-level defaults are identical across batches; keep the first seen.
-    if (chunk.width && !data.width) data.width = chunk.width;
-    if (chunk.height && !data.height) data.height = chunk.height;
+// Aliases are FLATTENED into concrete entries: an alias is a pointer into its own
+// collection, and these names get re-homed under other prefixes by the v2 rescue
+// pass below, where the parent it points at does not exist.
+function resolveEntry(set, name) {
+  let entry = set.icons?.[name];
+  let alias = set.aliases?.[name];
+  const seen = new Set();
+  while (!entry && alias && !seen.has(alias.parent)) {
+    seen.add(alias.parent);
+    entry = set.icons?.[alias.parent];
+    alias = set.aliases?.[alias.parent];
   }
-  const missing = [...names].filter((n) => !data.icons[n] && !data.aliases[n]);
-  if (missing.length) console.warn(`  ! ${prefix}: not found → ${missing.join(", ")}`);
-  // Drop the metadata blocks the renderer never reads; they double the file size.
+  if (!entry) return null;
+  // Width/height made explicit so the entry survives being re-homed under a
+  // collection whose defaults differ (heroicons is 24px, heroicons-solid 20px).
+  return { ...entry, width: entry.width || set.width || 24, height: entry.height || set.height || 24 };
+}
+
+function takeCollection(prefix, names) {
+  const set = sourceSet(prefix);
+  const data = { prefix, icons: {} };
+  if (set) {
+    if (set.width) data.width = set.width;
+    if (set.height) data.height = set.height;
+    for (const name of [...names].sort()) {
+      const entry = resolveEntry(set, name);
+      if (entry) data.icons[name] = entry;
+    }
+  }
+  const missing = [...names].filter((n) => !data.icons[n]);
+  if (missing.length && !V2_FALLBACKS[prefix]) {
+    console.warn(`  ! ${prefix}: not found → ${missing.join(", ")}`);
+  }
   return { data, found: Object.keys(data.icons).length, missing };
 }
 
@@ -182,26 +235,15 @@ function writeScssAssets(byPrefix) {
 }
 
 // Pull `wanted` (v2 names) out of the heroicons set and hand back a lookup of
-// fully-resolved icon entries — aliases flattened, width/height made explicit so
-// each one survives being re-homed under a collection with different defaults.
-async function fetchV2Rescues(wanted) {
+// fully-resolved icon entries, for the names the v1 sets could not supply.
+function v2Rescues(wanted) {
   if (!wanted.size) return {};
-  const { data } = await fetchCollection("heroicons", wanted);
+  const set = sourceSet("heroicons");
   const out = {};
+  if (!set) return out;
   for (const name of wanted) {
-    let entry = data.icons?.[name];
-    let alias = data.aliases?.[name];
-    while (!entry && alias) {
-      entry = data.icons?.[alias.parent];
-      alias = data.aliases?.[alias.parent];
-    }
-    if (entry) {
-      out[name] = {
-        ...entry,
-        width: entry.width || data.width || 24,
-        height: entry.height || data.height || 24,
-      };
-    }
+    const entry = resolveEntry(set, name);
+    if (entry) out[name] = entry;
   }
   return out;
 }
@@ -232,7 +274,7 @@ function check() {
   console.log(`✓ every icon used in src/ is bundled (${count} icons, ${bundle.length} collections)`);
 }
 
-async function main() {
+function main() {
   if (process.argv.includes("--check")) return check();
 
   const used = collectUsedIcons();
@@ -243,7 +285,7 @@ async function main() {
     const names = used.get(prefix);
     if (!names?.size) continue;
     console.log(`→ ${prefix}: ${names.size} icons`);
-    const { data, found, missing } = await fetchCollection(prefix, names);
+    const { data, found, missing } = takeCollection(prefix, names);
     fetched.push({ prefix, data, missing });
     total += found;
   }
@@ -255,7 +297,7 @@ async function main() {
     if (!candidates) continue;
     for (const name of missing) for (const c of candidates(name)) rescueNames.add(c);
   }
-  const rescues = await fetchV2Rescues(rescueNames);
+  const rescues = v2Rescues(rescueNames);
 
   for (const { prefix, data, missing } of fetched) {
     const candidates = V2_FALLBACKS[prefix];
@@ -289,7 +331,9 @@ async function main() {
   console.log(`✓ ${CSS_ICONS.length} data: URIs → ${path.relative(ROOT, scssPath)}`);
 }
 
-main().catch((err) => {
+try {
+  main();
+} catch (err) {
   console.error(`\n✗ ${err.message}`);
   process.exit(1);
-});
+}
