@@ -57,12 +57,18 @@ def recorder(monkeypatch):
     """
     state = {"handler": lambda request: httpx.Response(200, json={"ok": True})}
     calls: list[httpx.Request] = []
+    # How each client was BUILT, not just what it was asked for. The per-call
+    # timeout is a property of the client, not of the request, so a wrapper that
+    # gives a talk uplink or a footage search the 8 s control-call budget is
+    # invisible from the request alone.
+    client_kwargs: list[dict] = []
 
     def dispatch(request: httpx.Request) -> httpx.Response:
         calls.append(request)
         return state["handler"](request)
 
     def factory(*args, **kwargs):
+        client_kwargs.append(dict(kwargs))
         kwargs["transport"] = httpx.MockTransport(dispatch)
         return httpx.AsyncClient(*args, **kwargs)
 
@@ -75,9 +81,28 @@ def recorder(monkeypatch):
     class Rig:
         # Bound below: a class body cannot see the fixture's local.
         calls: list = []
+        client_kwargs: list = []
 
-        def answers(self, status: int, *, json=None, text: str | None = None):
-            kw = {"json": json} if json is not None else {"text": text or ""}
+        def answers(
+            self,
+            status: int,
+            *,
+            json=None,
+            text: str | None = None,
+            content: bytes | None = None,
+            headers: dict | None = None,
+        ):
+            # `content` + `headers` for the two calls that relay BYTES and read the
+            # node's own Content-Disposition (manifest, export download); the rest
+            # answer JSON or text as before.
+            if json is not None:
+                kw = {"json": json}
+            elif content is not None:
+                kw = {"content": content}
+            else:
+                kw = {"text": text or ""}
+            if headers:
+                kw["headers"] = headers
             state["handler"] = lambda r: httpx.Response(status, **kw)
 
         def raises(self, exc: httpx.HTTPError):
@@ -89,6 +114,7 @@ def recorder(monkeypatch):
 
     rig = Rig()
     rig.calls = calls
+    rig.client_kwargs = client_kwargs
     return rig
 
 
