@@ -306,13 +306,12 @@ function DiskUsageCard({
   reachable: boolean;
 }>) {
   const { total, free, used, usedPct } = figures;
+
+  // Loading and error leave as themselves; only the third case is a card.
+  if (query.isLoading) return <InlineLoading />;
+  if (query.isError) return <InlineError error={query.error} fallback="Failed to load disk usage" />;
+
   return (
-    <>
-      {query.isLoading ? (
-        <InlineLoading />
-      ) : query.isError ? (
-        <InlineError error={query.error} fallback="Failed to load disk usage" />
-      ) : (
         <div className="rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] p-3">
           {total > 0 ? (
             <>
@@ -336,8 +335,6 @@ function DiskUsageCard({
             </div>
           )}
         </div>
-      )}
-    </>
   );
 }
 

@@ -133,6 +133,35 @@ describe("destructive recorder actions", () => {
   });
 });
 
+describe("a credential list this VMS is not allowed to read", () => {
+  // The subtle one, and the reason it is worth a test: for a SEPARATELY DEPLOYED
+  // recorder this call is expected to fail. Listing a recorder's keys needs
+  // settings.manage on the recorder, which a pairing-issued credential
+  // deliberately never holds — so the VMS holds a working key and still cannot
+  // enumerate the recorder's own list. Painting that red reports a broken
+  // federation that is in fact working exactly as designed, and sends somebody to
+  // re-pair a recorder that needs nothing.
+  it("explains itself instead of reporting a fault, when the VMS holds a credential", async () => {
+    listReturns([node("r1", "edge-one", { has_credential: true })]);
+    vi.spyOn(vms.mediaNodes, "credentials").mockRejectedValue(new Error("settings.manage required"));
+
+    renderWithProviders(<RecordersPage />);
+
+    expect(await screen.findByText(/managed on the recorder and is not readable from here/i)).toBeInTheDocument();
+    expect(screen.queryByText(/settings\.manage required/i)).not.toBeInTheDocument();
+  });
+
+  it("does report the failure when there is no credential to explain it away", async () => {
+    listReturns([node("r1", "edge-one", { has_credential: false })]);
+    vi.spyOn(vms.mediaNodes, "credentials").mockRejectedValue(new Error("recorder refused the listing"));
+
+    renderWithProviders(<RecordersPage />);
+
+    expect(await screen.findByText(/recorder refused the listing/i)).toBeInTheDocument();
+    expect(screen.queryByText(/not readable from here/i)).not.toBeInTheDocument();
+  });
+});
+
 describe("revoking a federation credential", () => {
   beforeEach(() => {
     vi.spyOn(vms.mediaNodes, "credentials").mockResolvedValue({

@@ -441,30 +441,43 @@ function CredentialList({
   revoking: boolean;
   onRevoke: (cred: NodeCredentialPublic) => void;
 }>) {
-  return (
-    <>
-    {query.isLoading ? (
+  // The four states as early returns rather than a chain. Each is a whole
+  // subtree, and the one that is easiest to get wrong is the middle pair: an
+  // error here is NOT necessarily a fault.
+  if (query.isLoading) {
+    return (
       <p className="px-1 py-2 text-xs text-[#9a92c8]"><Icon icon="svg-spinners:180-ring" className="mr-1 inline text-sm text-[#67e8f9]" />Loading…</p>
-    ) : query.isError ? (
-      hasCredential ? (
-        // Listing a recorder's keys needs settings.manage on the recorder, which a
-        // pairing-issued credential deliberately never holds. For a separately
-        // deployed box this call is EXPECTED to fail — the VMS holds a working key
-        // and simply cannot enumerate the recorder's own list. Showing a red error
-        // would report a broken federation that is in fact working as designed.
-        <p className="rounded-[10px] border border-dashed border-[rgba(160,150,245,.28)] px-3 py-3 text-xs text-[#9a92c8]">
-          This VMS holds a credential for this recorder. The recorder&apos;s own credential list is
-          managed on the recorder and is not readable from here — revoke keys on its console.
-        </p>
-      ) : (
-        <p className="px-1 py-2 text-xs text-[#f87171]">{apiError(query.error, "Failed to load credentials")}</p>
-      )
-    ) : creds.length === 0 ? (
+    );
+  }
+
+  // Listing a recorder's keys needs settings.manage on the recorder, which a
+  // pairing-issued credential deliberately never holds. For a separately
+  // deployed box this call is EXPECTED to fail — the VMS holds a working key
+  // and simply cannot enumerate the recorder's own list. Showing a red error
+  // would report a broken federation that is in fact working as designed.
+  if (query.isError && hasCredential) {
+    return (
+      <p className="rounded-[10px] border border-dashed border-[rgba(160,150,245,.28)] px-3 py-3 text-xs text-[#9a92c8]">
+        This VMS holds a credential for this recorder. The recorder&apos;s own credential list is
+        managed on the recorder and is not readable from here — revoke keys on its console.
+      </p>
+    );
+  }
+
+  if (query.isError) {
+    return <p className="px-1 py-2 text-xs text-[#f87171]">{apiError(query.error, "Failed to load credentials")}</p>;
+  }
+
+  if (creds.length === 0) {
+    return (
       <p className="rounded-[10px] border border-dashed border-[rgba(160,150,245,.28)] px-3 py-3 text-center text-xs text-[#9a92c8]">
         No credentials issued yet. Pair this recorder with a code from its console — or enroll it,
         if it shares this stack&apos;s signing secret.
       </p>
-    ) : (
+    );
+  }
+
+  return (
       <ul className="space-y-1.5">
         {creds.map((c) => {
           const revoked = !!c.revoked_at;
@@ -506,8 +519,6 @@ function CredentialList({
           );
         })}
       </ul>
-    )}
-    </>
   );
 }
 
