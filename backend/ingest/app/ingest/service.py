@@ -133,6 +133,22 @@ def _validate_auth_inputs(
     since an update omitting the secret means "keep the stored one".
     """
     if auth_type == "none":
+        if secret:
+            # A secret under auth_type="none" is not merely useless — it is a
+            # credential in waiting. It was stored, no receiver ever consulted
+            # it, and a later PATCH to api_key/bearer that omitted a secret found
+            # a non-null auth_secret_hash sitting there and promoted it: a value
+            # nobody remembers setting silently became the live key to a public
+            # endpoint. Refusing here is what keeps "auth_secret_hash is set ⇒
+            # some auth_type consults it" true for every row this API can write.
+            #
+            # It is also the likelier operator mistake read correctly. Someone
+            # who types a secret believes the webhook is protected; answering
+            # 201/200 and leaving it wide open is the worst way to be wrong.
+            raise ValidationError(
+                'auth_type "none" takes no auth_secret — set an auth_type that '
+                "uses one, or omit the secret"
+            )
         return
     if auth_type == "basic":
         if not username:
@@ -271,6 +287,17 @@ def _auth_update_fields(row: Webhook, effective_auth: str, new_secret: str | Non
         if not new_secret:
             if not row.auth_secret_hash:
                 raise ValidationError(f"{effective_auth} auth requires auth_secret")
+            # The stored value only counts as a credential if it ever WAS one.
+            # _validate_auth_inputs now refuses auth_secret alongside
+            # auth_type="none", but rows written before that refusal existed can
+            # still carry one, and this is the transition that would wake it up:
+            # none → api_key/bearer with no secret in the body, landing on the
+            # `row.auth_secret_hash` check above. Demand a fresh secret instead,
+            # so turning auth ON is always an act someone performed knowingly.
+            if row.auth_type == "none":
+                raise ValidationError(
+                    f"enabling {effective_auth} auth requires a new auth_secret"
+                )
             # store_secret encodes per type (hmac reversibly, the rest hashed),
             # so a stored secret can't be reinterpreted under a new type.
             # Demand a fresh one rather than leaving the receiver rejecting.
@@ -716,13 +743,32 @@ class EventLogService:
 # ── Public receiver pipeline ───────────────────────────────────────────
 
 
+#: The ONE sentence every refusal before a caller is authorized answers with.
+#:
+#: Do not make this more helpful. The receiver is anonymous and internet-facing,
+#: and the slug is the only thing an attacker needs to guess. When "no such
+#: webhook" and "wrong credential" answered with different sentences, an
+#: anonymous caller could walk a wordlist and read the slug table off the
+#: difference — the service docstring says this endpoint leaks nothing, and two
+#: sentences was the leak. Every 401 out of this pipeline, whatever the cause,
+#: must be byte-identical: same status, same code, same message, no details, no
+#: WWW-Authenticate. A more specific message belongs in the log and the metric,
+#: which is where both of them already are.
+UNAUTHORIZED_REFUSAL = "unauthorized"
+
+
 class ReceiverService:
     """Handles ``POST /ingest/hooks/{slug}``. No JWT; the slug is the lookup key.
 
-    Every inbound request produces exactly one ``IngestEventLog`` row, auth
-    failures and unknown tokens included, written in the same txn as the accept so
-    the audit trail never lags. A rejected stage commits the log, then re-raises
-    the kernel error (401/422).
+    Every inbound request from an AUTHORIZED caller produces exactly one
+    ``IngestEventLog`` row, written in the same txn as the accept so the audit
+    trail never lags. A rejected stage commits the log, then re-raises the kernel
+    error (401/422).
+
+    Before authorization the rule is inverted: what an anonymous caller can cause
+    us to WRITE is bounded (see the unknown-slug branch in ``handle``), and what
+    it can LEARN is nothing — every pre-auth refusal is the same 401 carrying
+    ``UNAUTHORIZED_REFUSAL``.
     """
 
     def __init__(self, db: AsyncSession, bus: EventBus) -> None:
@@ -735,6 +781,42 @@ class ReceiverService:
         await self.db.commit()
         await self.db.refresh(log)
         return log
+
+    def _pre_auth_refusal_log(
+        self, webhook: Webhook, source_ip: str | None, *, error: str
+    ) -> IngestEventLog:
+        """The row for a request that was refused BEFORE it proved who it was.
+
+        It carries everything the operator needs — which webhook, from where,
+        when, and why — and none of the caller's body.
+
+        The body is the part an anonymous caller CHOOSES. ``_cap_raw`` caps a
+        stored payload at 64 KB, ingest runs no retention sweep of its own, and
+        anyone who can guess a slug can send a refused request as often as they
+        like. Storing their text meant a stranger picked how much of our disk a
+        refusal cost — the same reasoning that already removed the unknown-slug
+        row entirely, applied to the refusals that still have to leave a trace.
+
+        What this gives up is real and small: the body of a delivery from a
+        sender with the wrong credential. The answer to "who is 401ing me" is the
+        source IP, the timestamp and the reason, all of which are here; the body
+        of a request nobody could authenticate is not the operator's data in the
+        first place.
+        """
+        return IngestEventLog(
+            tenant_id=webhook.tenant_id,
+            webhook_id=webhook.id,
+            category_id=webhook.category_id,
+            source_ip=source_ip,
+            status=EventStatus.REJECTED_AUTH.value,
+            auth_outcome="failed",
+            schema_outcome="skipped",
+            transform_outcome="skipped",
+            published=False,
+            error=error,
+            raw_payload=None,
+            raw_truncated=False,
+        )
 
     async def handle(
         self, slug: str, request: Request, payload: Any, raw_body: bytes = b""
@@ -760,53 +842,21 @@ class ReceiverService:
             # our disk it costs.
             unknown_slug_attempts.inc()
             log.warning("ingest: unknown slug %r from %s", slug[:64], source_ip)
-            raise UnauthorizedError("invalid webhook")
+            raise UnauthorizedError(UNAUTHORIZED_REFUSAL)
 
         if not webhook.is_active:
-            # A real webhook that an operator disabled. This one IS worth a row:
-            # it is bounded by the number of webhooks that exist, and "why did my
-            # integration stop" is the question the log is for.
+            # A real webhook that an operator disabled. This one IS worth a row —
+            # "why did my integration stop" is the question the log is for — but
+            # it is written WITHOUT the caller's body. See _pre_auth_refusal_log.
             await self._record(
-                IngestEventLog(
-                    tenant_id=webhook.tenant_id,
-                    webhook_id=webhook.id,
-                    category_id=webhook.category_id,
-                    source_ip=source_ip,
-                    status=EventStatus.REJECTED_AUTH.value,
-                    auth_outcome="failed",
-                    schema_outcome="skipped",
-                    transform_outcome="skipped",
-                    published=False,
-                    error="webhook is disabled",
-                    raw_payload=raw_stored,
-                    raw_truncated=raw_truncated,
+                self._pre_auth_refusal_log(
+                    webhook, source_ip, error="webhook is disabled"
                 )
             )
-            raise UnauthorizedError("invalid webhook")
-
-        # Enforce the webhook's configured HTTP method (405 on mismatch).
-        expected_method = (getattr(webhook, "request_method", "post") or "post").upper()
-        if request is not None and request.method.upper() != expected_method:
-            await self._record(
-                IngestEventLog(
-                    tenant_id=webhook.tenant_id,
-                    webhook_id=webhook.id,
-                    category_id=webhook.category_id,
-                    source_ip=source_ip,
-                    status=EventStatus.REJECTED_METHOD.value,
-                    auth_outcome="failed",
-                    schema_outcome="skipped",
-                    transform_outcome="skipped",
-                    published=False,
-                    error=f"method {request.method.upper()} not allowed; expected {expected_method}",
-                    raw_payload=raw_stored,
-                    raw_truncated=raw_truncated,
-                )
-            )
-            raise ValidationError(
-                f"method not allowed; expected {expected_method}",
-                details={"expected_method": expected_method},
-            )
+            # Same sentence as the unknown slug above, deliberately: telling the
+            # two apart is telling a stranger the slug is real. See
+            # UNAUTHORIZED_REFUSAL.
+            raise UnauthorizedError(UNAUTHORIZED_REFUSAL)
 
         # Per-webhook auth (bare 401, generic reason). raw_body feeds HMAC verify.
         auth = verify_inbound(
@@ -824,22 +874,51 @@ class ReceiverService:
             else:
                 auth_failures.inc()
             await self._record(
+                self._pre_auth_refusal_log(
+                    webhook, source_ip, error=f"auth failed: {auth.reason}"
+                )
+            )
+            raise UnauthorizedError(UNAUTHORIZED_REFUSAL)
+
+        # Enforce the webhook's configured HTTP method — AFTER auth, on purpose.
+        #
+        # The router mounts GET and POST together and the service picks, so a
+        # caller who merely knows a slug can send the other verb. When that check
+        # ran before auth it bought an anonymous caller two things it should not
+        # have: a 64 KB event-log row per request, unbounded (unlike the
+        # disabled-webhook row above, which is capped by the number of webhooks
+        # that exist), and a 422 naming ``expected_method`` — which only a real
+        # slug can produce, so it was a second way to enumerate the table.
+        #
+        # The row itself is worth keeping. "My integration sends GET and gets
+        # 422" is exactly the question the delivery log answers, and deleting it
+        # would leave the operator with a silent endpoint. It is worth keeping
+        # for the SENDER, though, not for a stranger — so the credential is what
+        # buys it. A webhook with auth_type="none" is open by definition and is
+        # unchanged either way; every configured webhook now writes this row only
+        # for a caller that proved it is the configured sender.
+        expected_method = (getattr(webhook, "request_method", "post") or "post").upper()
+        if request is not None and request.method.upper() != expected_method:
+            await self._record(
                 IngestEventLog(
                     tenant_id=webhook.tenant_id,
                     webhook_id=webhook.id,
                     category_id=webhook.category_id,
                     source_ip=source_ip,
-                    status=EventStatus.REJECTED_AUTH.value,
-                    auth_outcome="failed",
+                    status=EventStatus.REJECTED_METHOD.value,
+                    auth_outcome="ok",  # the credential passed; the verb did not
                     schema_outcome="skipped",
                     transform_outcome="skipped",
                     published=False,
-                    error=f"auth failed: {auth.reason}",
+                    error=f"method {request.method.upper()} not allowed; expected {expected_method}",
                     raw_payload=raw_stored,
                     raw_truncated=raw_truncated,
                 )
             )
-            raise UnauthorizedError("unauthorized")
+            raise ValidationError(
+                f"method not allowed; expected {expected_method}",
+                details={"expected_method": expected_method},
+            )
 
         row = await self.run_pipeline(
             webhook,
