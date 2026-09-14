@@ -40,11 +40,31 @@ async def prune_once(sessionmaker) -> int:
     removed = 0
     while True:
         async with sessionmaker() as db:
+            # ``received_at``, not ``created_at``. The table carries ten indexes and
+            # none of them is on ``created_at``, so the old predicate planned as a
+            # Seq Scan — and because the sweep loops until a batch comes back empty,
+            # steady state meant scanning the WHOLE retained table every hour to
+            # return zero rows. The purge that exists to bound the table was the
+            # table's heaviest recurring reader, over rows holding verbatim customer
+            # JSON.
+            #
+            # The two columns are interchangeable here: both are Python-side
+            # ``default=_utcnow`` on the same INSERT and no writer sets either
+            # explicitly, so they differ by the microseconds between two
+            # ``datetime.now()`` calls (measured on live data: 1–7 µs, always
+            # received_at ≤ created_at). Against a window measured in days that is
+            # not a difference. ``received_at`` is also the column the operator's
+            # own since/until filters use — "how long is a delivery kept" is a
+            # question about when it was received.
+            #
+            # Indexing ``created_at`` instead would buy the same plan at the cost of
+            # an ELEVENTH index on a write-hot table, to order a column nothing else
+            # reads.
             ids = (
                 await db.execute(
                     IngestEventLog.__table__.select()
                     .with_only_columns(IngestEventLog.id)
-                    .where(IngestEventLog.created_at < cutoff)
+                    .where(IngestEventLog.received_at < cutoff)
                     .limit(BATCH)
                 )
             ).scalars().all()

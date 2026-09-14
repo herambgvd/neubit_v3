@@ -27,11 +27,25 @@ Auto-purge: each cycle drops ``CameraHealth`` rows older than ``retention_days``
 time-series table doesn't grow unbounded (the gvd_nvr map flagged this scaling gap —
 fixed here as a set-based DELETE, not a per-camera LIMIT sweep).
 
+The same cycle now also bounds the other three tables that grew per camera per day
+with nothing deleting from them — ``vms_events``, ``linkage_fires`` and
+``playback_sessions``. They ride this loop rather than a loop of their own because a
+sweeper is a thing you have to remember to start, and this one is already started,
+already restarted on failure, and already stopped cleanly (``HealthSampler.stop``).
+Each keeps its OWN window and env var: an ONVIF event stream, a rule-fire audit row
+and a five-minute viewer session are three different retention questions, and one
+number for all three would be wrong for at least two of them. See ``purge_all``.
+
+``recordings`` is deliberately NOT swept — see the note on ``purge_all``.
+
 Config (env, ``VE_`` prefix — read directly; not part of the shared kernel Settings):
   * ``VE_HEALTH_SAMPLE_INTERVAL_SEC``  — seconds between sampler cycles (default 45).
   * ``VE_HEALTH_SAMPLE_CONCURRENCY``   — max concurrent probes per cycle (default 32).
   * ``VE_HEALTH_PROBE_TIMEOUT_SEC``    — per-probe TCP connect timeout (default 2.5).
-  * ``VE_HEALTH_RETENTION_DAYS``       — history retention window (default 30).
+  * ``VE_HEALTH_RETENTION_DAYS``       — camera-health history window (default 30).
+  * ``VE_VMS_EVENT_RETENTION_DAYS``    — device/system event window (default 365).
+  * ``VE_LINKAGE_FIRE_RETENTION_DAYS`` — rule-fire audit window (default 365).
+  * ``VE_PLAYBACK_SESSION_RETENTION_DAYS`` — viewer-session window (default 7).
 """
 
 from __future__ import annotations
@@ -42,6 +56,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
+from sqlalchemy import and_, or_
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -50,7 +65,7 @@ from kernel.auth import Scope, assert_owned, scoped
 
 from app.vms.common.events import emit_camera_event, emit_camera_status, emit_nvr_status
 from app.vms.events.normalize import dedup_key, event_payload
-from app.vms.models import NVR, Camera, CameraHealth, VmsEvent
+from app.vms.models import NVR, Camera, CameraHealth, LinkageFire, PlaybackSession, VmsEvent
 
 from .schemas import (
     CameraHealthHistoryResponse,
@@ -94,6 +109,59 @@ def probe_timeout_sec() -> float:
 
 def retention_days() -> int:
     return max(1, _env_int("VE_HEALTH_RETENTION_DAYS", 30))
+
+
+# Every retention window below is floored at 1 day for the same reason the sampler
+# knobs are floored: a typo or an empty env var must not turn into "delete
+# everything older than now". ``_env_int`` already falls back to the default on
+# garbage; the floor covers a deliberate 0.
+
+
+def vms_event_retention_days() -> int:
+    """Device/system event window — default 365 days.
+
+    A year, because this table is the investigation record: a tamper or video-loss
+    event is what an incident review, an insurance claim or a police request is
+    reconstructed from, and those arrive months late. Shorter would bound the table
+    a little better and lose evidence, which is the worse failure of the two. A year
+    still bounds it, and the supervisor's dedup grain means a flapping camera does
+    not write a row per notification.
+    """
+    return max(1, _env_int("VE_VMS_EVENT_RETENTION_DAYS", 365))
+
+
+def linkage_fire_retention_days() -> int:
+    """Rule-fire audit window — default 365 days, deliberately the same as events.
+
+    A fire row exists to answer "why did that camera start recording / why did the
+    wall display switch" about a specific event. Expiring it sooner than the event
+    it explains would leave the event in the feed with its explanation already
+    swept — so the two windows move together unless an operator separates them.
+    """
+    return max(1, _env_int("VE_LINKAGE_FIRE_RETENTION_DAYS", 365))
+
+
+def playback_session_retention_days() -> int:
+    """Viewer-session window — default 7 days, measured from ``expires_at``.
+
+    Not evidence: the row is the control-plane bookkeeping for a media token whose
+    whole life is ``VE_MEDIA_TOKEN_TTL_SEC`` (300s), kept only so release/renew can
+    find the MediaMTX path. Once it has expired its remaining value is the audit
+    line "this operator streamed this camera at this time", and a week covers the
+    shift-review that asks. This is the fastest-growing of the three — one row per
+    viewer stream, every tile of every wall — so it gets the shortest window.
+    """
+    return max(1, _env_int("VE_PLAYBACK_SESSION_RETENTION_DAYS", 7))
+
+
+#: Rows deleted per statement. Matches the one batching sweep already in the
+#: codebase (``ingest/app/retention.py``) — big enough that a year of backlog drains
+#: in a few cycles, small enough that each DELETE takes row locks briefly and the
+#: request path never waits on a retention sweep. The CameraHealth purge below stays
+#: a single set-based DELETE because it is bounded by cameras × cycles-per-day; these
+#: three are not, and a first sweep against an appliance that has been running
+#: unbounded for a year could otherwise be one enormous statement.
+PURGE_BATCH = 5_000
 
 
 # ── reachability probe (self-contained; mirrors gvd_nvr camera_monitor) ──────────
@@ -327,6 +395,33 @@ async def _emit_camera_status_event(db: AsyncSession, camera: Camera, new_status
         log.debug("camera status event emit failed for %s: %s", camera.id, exc)
 
 
+async def purge_batched(sessionmaker, model, whereclause, *, batch: int = PURGE_BATCH) -> int:
+    """Delete rows matching ``whereclause`` from ``model``, ``batch`` at a time.
+
+    Selects a batch of primary keys, deletes exactly those, commits, repeats. The
+    shape is the ingest log sweep's, and the reason is the same: a single DELETE
+    over a year of backlog holds row locks for as long as it runs, and this sweep
+    shares its database with the request path. Committing per batch also means an
+    interrupted sweep (a restart mid-purge) keeps the work it already did.
+
+    Returns the number of rows removed. Raises — the caller decides whether one
+    table's failure should stop the others.
+    """
+    removed = 0
+    while True:
+        async with sessionmaker() as db:
+            ids = (
+                await db.execute(select(model.id).where(whereclause).limit(batch))
+            ).scalars().all()
+            if not ids:
+                return removed
+            await db.execute(sa_delete(model).where(model.id.in_(ids)))
+            await db.commit()
+            removed += len(ids)
+        if len(ids) < batch:
+            return removed
+
+
 class HealthSampler:
     """Estate-wide background reachability sampler (all tenants) + auto-purge.
 
@@ -408,7 +503,7 @@ class HealthSampler:
             await db.commit()
 
         # Purge in its own short transaction (kept off the sample commit for clarity).
-        await self.purge()
+        await self.purge_all()
         return len(cameras)
 
     async def _sample_nvrs(self, db: AsyncSession) -> None:
@@ -462,3 +557,97 @@ class HealthSampler:
         if deleted:
             log.info("health auto-purge removed %s CameraHealth rows older than %sd", deleted, d)
         return deleted
+
+    # ── estate retention: every table this service grows without bound ──────────
+    async def purge_all(self) -> dict[str, int]:
+        """Run every retention sweep this service owns. Returns rows removed per table.
+
+        One table's failure does not cancel the rest: these are independent windows
+        and a lock-timeout on the events table is no reason to let viewer sessions
+        accumulate for another cycle. Nothing raises out of here — the caller is the
+        sampler loop, and a purge is not worth a backoff on sampling.
+
+        ``recordings`` is NOT in this list and must not be added. A ``Recording`` row
+        is a pointer to a video segment the RECORDER owns and stores: deleting the
+        row orphans the footage (nothing else names that file), and deleting the
+        footage is the recorder's call, not this service's — under the single-
+        ownership architecture the VMS aggregates and commands, it does not manage
+        the recorder's disk. Recording retention belongs to the NVR's own retention
+        worker, which is why this service's storage/tiering workers are not run at
+        all (see ``app/main.py``). Bounding ``recordings`` from here would mean this
+        service deciding when evidence stops existing on a box it does not own.
+        """
+        now = _utcnow()
+        results: dict[str, int] = {}
+
+        # (label, model, predicate) — evaluated fresh each cycle so an operator's env
+        # change takes effect on the next sweep, not the next restart.
+        sweeps = (
+            (
+                "camera_health",
+                None,  # handled by purge(): a set-based DELETE, already bounded.
+                None,
+            ),
+            (
+                "vms_events",
+                VmsEvent,
+                and_(
+                    VmsEvent.occurred_at
+                    < now - timedelta(days=vms_event_retention_days()),
+                    # An event that captured a snapshot or points at a recording is
+                    # not just a log line — it is the index INTO evidence that still
+                    # exists on disk. Sweeping it would leave an unreferenced
+                    # snapshot file and a clip nobody can explain, which is the
+                    # ``recordings`` problem wearing a different table's name. These
+                    # rows are a small minority (only a capture rule writes them) and
+                    # they age out with the media the recorder owns, not with us.
+                    VmsEvent.snapshot_path.is_(None),
+                    VmsEvent.recording_id.is_(None),
+                ),
+            ),
+            (
+                "linkage_fires",
+                LinkageFire,
+                and_(
+                    LinkageFire.fired_at
+                    < now - timedelta(days=linkage_fire_retention_days()),
+                    # Same exemption, same reason: a fire that started a recording is
+                    # the provenance of that clip.
+                    LinkageFire.recording_id.is_(None),
+                ),
+            ),
+            (
+                "playback_sessions",
+                PlaybackSession,
+                or_(
+                    PlaybackSession.expires_at
+                    < now - timedelta(days=playback_session_retention_days()),
+                    # ``expires_at`` is nullable and set a statement after the INSERT.
+                    # A row that never got one would be immortal under an expiry-only
+                    # predicate — the one row shape a sweep must not miss is the one
+                    # written by a half-failed request. ``created_at`` is the floor
+                    # for those.
+                    and_(
+                        PlaybackSession.expires_at.is_(None),
+                        PlaybackSession.created_at
+                        < now - timedelta(days=playback_session_retention_days()),
+                    ),
+                ),
+            ),
+        )
+
+        for label, model, predicate in sweeps:
+            try:
+                if model is None:
+                    results[label] = await self.purge()  # logs its own count
+                else:
+                    removed = await purge_batched(self._sessionmaker, model, predicate)
+                    results[label] = removed
+                    if removed:
+                        log.info("retention sweep removed %s %s rows", removed, label)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — one table must not block the rest
+                results[label] = 0
+                log.warning("retention sweep for %s failed: %s", label, exc)
+        return results
