@@ -209,47 +209,51 @@ DOM text — and now a reformat cannot change any of it.
 The rule earned its keep even so: it pointed at twenty places where what renders
 depended on invisible whitespace, and none of them depends on it any more.
 
-## Open on purpose: `typescript:S1874` on Web Audio (7 findings)
+## Closed: `typescript:S1874` on Web Audio (was 7 findings)
 
-`frontend/src/features/vms/components/TalkButton.tsx` uses `ScriptProcessorNode`,
-which is deprecated in the spec and is being removed from browsers. The seven
-findings stay open because they are the honest signal that a real migration is
-outstanding — suppressing them would turn a scheduled piece of work into a
-forgotten one.
+`TalkButton` used `ScriptProcessorNode` for push-to-talk capture. The seven
+findings were left open rather than waived, because suppressing them would have
+turned a scheduled piece of work into a forgotten one. The work is now done and
+there is nothing left to suppress: `createScriptProcessor` does not appear in
+`frontend/src` any more.
 
-WHAT IT DOES TODAY. Push-to-talk into a camera's speaker through the recorder: an
-8 kHz `AudioContext` (the browser resamples the mic to G.711's rate, so there is no
-hand-rolled resampler), a 2048-frame `ScriptProcessorNode` converting Float32 to
-PCM16LE, enqueued into a `ReadableStream` that is the body of one long-lived
-streamed POST. Its output buffer is zero-filled deliberately: without that the
-operator's microphone feeds back through their own speakers.
+WHAT CHANGED. Capture runs in an `AudioWorklet`, on the audio thread:
 
-WHAT AN `AudioWorklet` VERSION MUST DO DIFFERENTLY — this is the part worth having
-written down before somebody starts:
+  * `public/audio/talk-capture-worklet.js` — served at a stable unhashed path,
+    because a worklet is fetched by URL and evaluated in its own global scope, so
+    it cannot be bundled into the React chunk. It is still covered:
+    `features/vms/lib/talkWorklet.test.ts` reads THAT file and drives `process()`
+    directly, so the tested code is the shipped bytes.
+  * `features/vms/lib/talkWorklet.ts` — the main-thread half: the URL, the frame
+    size, the capability probe and the node construction. Split out because the
+    REFUSAL is the safety property, and it is worth being unit-testable on its own
+    rather than reachable only by pressing a button in a browser.
+  * Framing improved rather than degraded. `process()` is handed fixed 128-sample
+    render quanta, so the old `PROCESSOR_BUFFER = 2048` is gone; the worklet
+    accumulates to 160 samples, exactly the 20 ms the recorder re-frames to. That
+    is 20 ms of granularity where there used to be 256.
+  * PCM16 conversion moved INTO the worklet, and frames are posted as transferred
+    buffers. Leaving the conversion on the main thread would have given up most of
+    the reason to move.
 
-  * The processor becomes a separately-served module loaded by URL. It cannot be
-    bundled into the React chunk; under Next it belongs in `public/`, served at a
-    stable unhashed path, and excluded from any transform that would rewrite it —
-    the worklet's global scope has no `window`.
-  * The buffer size stops being a choice. `process()` is called with fixed 128-frame
-    render quanta, so `PROCESSOR_BUFFER = 2048` disappears and the worklet
-    accumulates instead. At 8 kHz, 160 samples is exactly the 20 ms the recorder
-    re-frames to — better granularity than today's 256 ms, not worse.
-  * The PCM16 conversion should move INTO the worklet, so the audio thread posts
-    already-encoded transferable bytes over the MessagePort. Leaving the conversion
-    on the main thread gives up most of the benefit.
-  * `ReadableStream` enqueueing stays on the main thread — the body belongs to
-    `fetch` — so the port handler becomes the enqueue point, and teardown becomes
-    `port.close()` plus returning `false` from `process()`.
-  * THE ANTI-FEEDBACK GUARD HAS TO BE RE-ESTABLISHED AND TESTED ON A DEVICE, not
-    reasoned about. A worklet does not need the destination connection a
-    ScriptProcessor did, so the zero-filled-output trick does not carry across
-    unchanged.
+THE ANTI-FEEDBACK GUARD was the part the plan said had to be re-established and
+measured rather than reasoned about, because a worklet has no main-thread output
+buffer to zero-fill the way a ScriptProcessor did. It is now two independent
+things, either of which alone is silence: the processor never writes to `outputs`
+(the spec zero-fills them each quantum), and the node reaches the destination only
+through a gain pinned to 0. Both are needed — the connection to the destination is
+what guarantees the graph is PULLED, and a capture node that is never pulled is a
+microphone that feeds nothing while the button says "Talking".
 
-ALSO TRUE TODAY, not only at removal: a `ScriptProcessorNode` runs on the MAIN
-thread, so it already drops frames under UI load.
+MEASURED IN REAL CHROMIUM, not asserted: a full-scale 440 Hz tone into the node
+produced 49 frames in one second (50/s = 20 ms each), every frame 320 bytes
+(160 samples × 2) and every one carrying audio; peak amplitude before the gain was
+1.0 and after it 0; and `postMessage("stop")` retired the processor, after which
+no further frames arrived.
 
-What was done in the meantime is the cheap half: the capability is checked BEFORE
-the recorder is asked to begin a talk session, so a browser without the node
-refuses loudly instead of opening the microphone, booking the session and writing
-an audit record for a talkspurt that never happened.
+STILL NOT PROVEN, and it is the same gap as before this change: that a specific
+camera accepts the handshake and plays the audio, and that a real microphone in a
+real control room does not find a feedback path outside the graph. The guard above
+is measured in a synthetic graph with an oscillator, not with a microphone in a
+room with speakers in it.
+

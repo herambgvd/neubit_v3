@@ -8,7 +8,8 @@
 //      receive talk-back, or when the recorder cannot carry the microphone to it.
 //   2. getUserMedia({ audio:true }) into an 8 kHz AudioContext — the browser resamples
 //      the mic (usually 48 kHz) to G.711's rate natively, so there is no hand-rolled
-//      resampler here to get wrong.
+//      resampler here to get wrong. Capture runs in an AudioWorklet, on the audio
+//      thread; see lib/talkWorklet.ts and public/audio/talk-capture-worklet.js.
 //   3. Stream the raw little-endian PCM16 samples as the BODY of one long-lived POST
 //      to …/talk/uplink, held open for the whole press. The recorder reads frames off
 //      it, compands to the camera's G.711 and pushes RTP over the ONVIF/RTSP
@@ -31,14 +32,7 @@ import { toast } from "sonner";
 
 import { api, apiError, tokens } from "@/lib/api";
 import vms from "../api";
-
-// 8 kHz mono is G.711's rate; capturing straight into an 8 kHz AudioContext lets the
-// browser resample for us.
-const TALK_SAMPLE_RATE = 8000;
-// 20 ms frames (160 samples) match the recorder's packetizer ptime; this buffer is
-// the nearest power of two and only governs flush granularity — the recorder re-frames
-// to exactly 20 ms regardless.
-const PROCESSOR_BUFFER = 2048;
+import { TALK_SAMPLE_RATE, canCaptureTalk, createTalkCaptureNode } from "../lib/talkWorklet";
 
 /** The live capture pipeline for one press, held in a ref so start and stop share it
  *  without re-rendering. */
@@ -46,7 +40,10 @@ interface AudioGraph {
   ctx: AudioContext;
   stream: MediaStream;
   source: MediaStreamAudioSourceNode;
-  processor: ScriptProcessorNode;
+  /** Capture, on the audio thread. Posts encoded PCM16LE frames over its port. */
+  node: AudioWorkletNode;
+  /** Gain pinned to 0, between the capture node and the destination. See `start`. */
+  mute: GainNode;
   /** Pushes one PCM16LE chunk into the request body; closing it ends the press. */
   bodyController: ReadableStreamDefaultController<Uint8Array> | null;
   abort: AbortController;
@@ -83,8 +80,13 @@ export default function TalkButton({ nodeId, cameraId, disabled = false }: Reado
     graphRef.current = null;
     if (g) {
       try {
-        g.processor.onaudioprocess = null;
-        g.processor.disconnect();
+        // Tell the processor to retire (its `process` returns false), then stop
+        // listening: a frame posted between these two lines must not be enqueued
+        // into a body that is about to close.
+        g.node.port.onmessage = null;
+        g.node.port.postMessage("stop");
+        g.node.disconnect();
+        g.mute.disconnect();
         g.source.disconnect();
       } catch {
         /* graph already torn down */
@@ -112,14 +114,12 @@ export default function TalkButton({ nodeId, cameraId, disabled = false }: Reado
   const start = useCallback(async () => {
     if (disabled || activeRef.current) return;
 
-    // The capture leg rests on ScriptProcessorNode, which is deprecated and on its
-    // way out of browsers (its replacement, AudioWorklet, is a different shape of
-    // pipeline, not a drop-in). The day it goes, the press must REFUSE rather than
-    // open a mic that feeds nothing: an operator who believes the room heard them is
-    // the dangerous failure here. Checked before the recorder is asked, so a browser
-    // that cannot talk never books a talk session or writes the audit record for one.
+    // A browser without AudioWorklet must REFUSE rather than open a mic that feeds
+    // nothing: an operator who believes the room heard them is the dangerous failure
+    // here. Checked before the recorder is asked, so such a browser never books a
+    // talk session or writes the audit record for a talkspurt that never happened.
     if (!canCaptureTalk()) {
-      toast.error("This browser can no longer capture audio for talk-back — use a supported browser.");
+      toast.error("This browser cannot capture audio for talk-back — use a supported browser.");
       return;
     }
 
@@ -152,8 +152,27 @@ export default function TalkButton({ nodeId, cameraId, disabled = false }: Reado
         return;
       }
 
+      // Loading the worklet is a fetch, so it can fail on a bad deploy or an offline
+      // appliance — and it is awaited, so a release can land during it.
+      let node: AudioWorkletNode;
+      try {
+        node = await createTalkCaptureNode(ctx);
+      } catch {
+        stream.getTracks().forEach((t) => t.stop());
+        void ctx.close().catch(() => {});
+        activeRef.current = false;
+        setConnecting(false);
+        toast.error("Talk-back audio could not start on this device.");
+        return;
+      }
+      if (!activeRef.current) {
+        node.port.postMessage("stop");
+        stream.getTracks().forEach((t) => t.stop());
+        void ctx.close().catch(() => {});
+        return;
+      }
+
       const source = ctx.createMediaStreamSource(stream);
-      const processor = ctx.createScriptProcessor(PROCESSOR_BUFFER, 1, 1);
 
       let bodyController: ReadableStreamDefaultController<Uint8Array> | null = null;
       const body = new ReadableStream<Uint8Array>({
@@ -166,21 +185,36 @@ export default function TalkButton({ nodeId, cameraId, disabled = false }: Reado
       });
 
       const abort = new AbortController();
-      const graph: AudioGraph = { ctx, stream, source, processor, bodyController: null, abort };
+      // THE ANTI-FEEDBACK GUARD, re-established for the worklet.
+      //
+      // The ScriptProcessor version zero-filled its output buffer every callback,
+      // because a node connected to the destination plays whatever it emits — in a
+      // control room that is the operator's own microphone coming back out of their
+      // speakers and into the mic again. A worklet does not carry that trick across:
+      // it has no output buffer handed to a main-thread callback.
+      //
+      // So the guard is two independent things, either of which alone is silence:
+      // the processor never writes to `outputs` (the spec zero-fills them each
+      // quantum), and everything it could emit passes through this gain pinned at 0.
+      // Two, because the connection to the destination is not decoration — it is what
+      // guarantees the graph is PULLED, and a capture node that is never pulled is
+      // the silent failure this whole path is written to avoid.
+      const mute = ctx.createGain();
+      mute.gain.value = 0;
 
-      processor.onaudioprocess = (ev: AudioProcessingEvent) => {
+      const graph: AudioGraph = { ctx, stream, source, node, mute, bodyController: null, abort };
+
+      node.port.onmessage = (ev: MessageEvent<ArrayBuffer>) => {
         try {
-          bodyController?.enqueue(floatToPCM16LE(ev.inputBuffer.getChannelData(0)));
+          bodyController?.enqueue(new Uint8Array(ev.data));
         } catch {
-          // The stream was cancelled (released mid-callback).
+          // The stream was cancelled (released mid-frame).
         }
-        // Silence the output leg, or the mic echoes back out of the operator's own
-        // speakers — which in a control room is a feedback loop.
-        ev.outputBuffer.getChannelData(0).fill(0);
       };
 
-      source.connect(processor);
-      processor.connect(ctx.destination);
+      source.connect(node);
+      node.connect(mute);
+      mute.connect(ctx.destination);
       graph.bodyController = bodyController;
       graphRef.current = graph;
       setConnecting(false);
@@ -274,13 +308,6 @@ export default function TalkButton({ nodeId, cameraId, disabled = false }: Reado
   );
 }
 
-/** Whether this browser still offers the capture node the uplink is built on. Probed
- *  by name rather than by touching the member, so the check itself does not become
- *  another use of the deprecated API. */
-function canCaptureTalk(): boolean {
-  return typeof AudioContext === "function" && "createScriptProcessor" in AudioContext.prototype;
-}
-
 /** The uplink endpoint as an absolute path on the same origin the api client uses.
  *
  *  Built here rather than in api.ts because this is the ONE call that cannot go
@@ -289,18 +316,4 @@ function canCaptureTalk(): boolean {
 function uplinkUrl(nodeId: string, cameraId: string): string {
   const base = api.defaults.baseURL || "/api/v1";
   return `${base}/vms/federation/nodes/${encodeURIComponent(nodeId)}/cameras/${encodeURIComponent(cameraId)}/talk/uplink`;
-}
-
-/** Float32 samples ([-1,1]) → little-endian PCM16 bytes, the wire format the
- *  recorder reads. Full scale is asymmetric: the negative range is one step larger
- *  than the positive one, and scaling both by 0x7fff clips the loudest negative
- *  samples. */
-function floatToPCM16LE(input: Float32Array): Uint8Array {
-  const out = new Uint8Array(input.length * 2);
-  const view = new DataView(out.buffer);
-  for (let i = 0; i < input.length; i++) {
-    const s = Math.max(-1, Math.min(1, input[i]));
-    view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-  }
-  return out;
 }
