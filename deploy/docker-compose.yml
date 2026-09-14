@@ -451,24 +451,14 @@ services:
       # time, which removes the cap instead of sharing it.
       # See backend/core/app/core/client_ip.py.
       VE_TRUSTED_PROXY_CIDRS: '["172.19.0.0/16"]'
-      # NO VE_DB_STATEMENT_TIMEOUT_MS HERE, and that is a finding, not an
-      # oversight. Every other Python service builds its engine through
-      # `kernel.db.Database`, which reads `db_statement_timeout_ms` off the
-      # shared settings object and SETs `statement_timeout` in asyncpg's
-      # `server_settings` for the whole pool — so a line here is all those
-      # services need, and they have one below.
-      #
-      # Core does not use the kernel. It builds its own engine in
-      # `backend/core/app/db/base.py`:
-      #     create_async_engine(get_settings().database_url, pool_pre_ping=True)
-      # with no connect_args, and `backend/core/app/core/config.py` has no
-      # statement-timeout field at all (verified: grep finds none in
-      # backend/core). Injecting the variable here would ship a setting read by
-      # nothing, which is the exact rule the four deleted knobs under `vision`
-      # broke. So core's runaway-query ceiling stays OPEN until core's own
-      # engine learns to read one — a ~5-line change in that file, which is
-      # application code and not this file's to make. Until then a wedged report
-      # query on neubit_control holds its pooled connection indefinitely.
+      # Core builds its own engine rather than the kernel's, so this setting had
+      # to be added there before a line here could do anything (it was, and
+      # defaults to 0 = no ceiling, which is the kernel's meaning). 30s matches
+      # the other request-path services; the SSE relays are unaffected, because
+      # the long thing there is the stream and not any query — authorisation does
+      # two primary-key reads and closes its session, and the relay loop touches
+      # no database at all.
+      VE_DB_STATEMENT_TIMEOUT_MS: ${VE_DB_STATEMENT_TIMEOUT_MS_CORE:-30000}
     depends_on:
       postgres: { condition: service_healthy }
       db-init: { condition: service_completed_successfully }
@@ -529,55 +519,22 @@ services:
       - traefik.http.routers.core.entrypoints=web
       - traefik.http.services.core.loadbalancer.server.port=8000
 
-  # ── core-worker / core-beat: NOT SERVICES, ON PURPOSE ───────────
-  # `backend/core/app/tasks/retention.py` registers a beat schedule and ARMS IT
-  # AT IMPORT (`register_beat()` on the last line), so reading the file tells you
-  # three sweeps run nightly: expired password-reset tokens hourly, old report
-  # exports 03:30 UTC, audit rows 03:45 UTC. None of them has ever run. The only
-  # Celery containers in this file are `workflow-worker` and `workflow-beat`,
-  # both `-A app.worker.celery_app` — the WORKFLOW app. Nothing anywhere runs
-  # core's.
+  # ── core-worker / core-beat: still not services, and now they never will be ──
+  # Core's three housekeeping sweeps — expired reset tokens, old report exports,
+  # audit rows — run inside the core API process, started from its lifespan and
+  # cancelled on shutdown, the same shape ingest and vision use.
   #
-  # Adding `core-worker` + `core-beat` here is the obvious fix and it does not
-  # work. Three things block it, and the first two are in core's code, not this
-  # file:
+  # They used to be Celery tasks that had never once executed: the app named an
+  # `edge` package that does not exist, the beat schedule asked for task names
+  # that register under a different module, and both Celery apps shared one Redis
+  # DB and the default queue — so core's first enqueued task would have been
+  # delivered to workflow-worker, the container driving every incident escalation
+  # in the estate. Adding the two containers would have turned a dormant bug into
+  # a live one. That path is deleted now, not merely unused.
   #
-  #   1. The app names a package that does not exist. `app/tasks/app.py` sets
-  #      include=["edge.reports.service", "edge.tasks.retention"], and there is
-  #      no `edge` module in the image — verified in the running container:
-  #        docker exec …core-1 python -c "import edge.tasks.retention"
-  #        → ModuleNotFoundError: No module named 'edge'
-  #      A worker started against this app fails at finalization.
-  #   2. Beat would publish task names no worker has registered. BEAT_SCHEDULE
-  #      asks for `edge.tasks.retention.cleanup_expired_reset_tokens`; the tasks
-  #      actually register under `app.tasks.retention.*` (same probe, listing
-  #      celery_app.tasks). Even past (1) every tick would NAK as unregistered.
-  #   3. THE QUEUE. Both Celery apps point at redis://redis:6379/0 and both use
-  #      the default `celery` queue — no task_routes, no task_default_queue in
-  #      either. So the first core task ever enqueued is delivered to
-  #      workflow-worker, which has never heard of it and rejects it. Adding a
-  #      core worker WITHOUT separating the queues does not fix a dormant bug, it
-  #      creates a live one, and it creates it in the container that drives every
-  #      incident escalation in the estate.
-  #
-  # So the answer is the OTHER option: fold the three sweeps into core's own
-  # lifespan, the way `backend/ingest/app/retention.py` already does it —
-  # an asyncio task created on startup and cancelled on shutdown, with its window
-  # and its interval as plain env vars. That shape is right for an appliance
-  # twice over. It deletes two containers instead of adding two, on a box that is
-  # also running a video recorder. And it removes the broker from the path
-  # entirely: these are three DELETE statements on a timer, and routing them
-  # through Redis buys retries and fan-out that housekeeping does not need while
-  # costing a queue collision, a second scheduler to keep alive, and two more
-  # processes that can wedge silently — which is what workflow-worker's and
-  # workflow-beat's elaborate /readyz probes further down exist to catch.
-  #
-  # That is application code in backend/core and therefore not this file's to
-  # write. What belongs here is the record that the containers are absent
-  # deliberately and that adding them is the wrong repair. Whoever picks it up:
-  # ingest's sweep is the working reference, including its batching (5,000 rows a
-  # statement, so one purge cannot hold a long lock) and its note on picking an
-  # INDEXED column for the cutoff predicate.
+  # Their windows are `VE_CORE_RETENTION_SWEEP_SEC` and `VE_REPORT_RETENTION_DAYS`
+  # in core's environment above. The audit window stays operator-set and defaults
+  # to keep-forever on purpose — see the comment there.
 
   # ── ingest service (Python / neubit_common) ─────────────────────
   # External webhooks / event ingestion. Owns its own DB (neubit_ingest).
