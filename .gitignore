@@ -71,3 +71,11 @@ coverage/
 *.lcov
 .coverage
 .coverage.*
+
+# --- Backups (deploy/backup.sh) ---
+# Every archive contains deploy/.env, and therefore VE_SECRETS_KEY — the key the
+# platform's stored credentials are encrypted with — plus every database
+# password. These must never reach a remote. The .env.before-restore-* copies
+# restore.sh leaves behind hold the same thing.
+deploy/backups/
+deploy/.env.before-restore-*
