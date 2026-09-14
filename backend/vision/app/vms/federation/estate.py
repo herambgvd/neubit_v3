@@ -8,6 +8,7 @@ this service relays.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Body, Depends, Query, Request, Response
@@ -37,9 +38,54 @@ from app.vms.federation._common import (
     _unreachable,
     log,
 )
+from app.vms.media_nodes.service import heartbeat_concurrency
 from app.vms.models import MediaNode
 
 router = APIRouter()
+
+
+async def _fan_out(nodes: list[MediaNode], call) -> list[tuple[MediaNode, object, str | None]]:
+    """Ask every recorder the same question AT ONCE, and hand each answer back still
+    attached to the recorder that gave it.
+
+    Walked one at a time, an estate read costs the SUM of every node's latency, so
+    one slow-but-reachable recorder delays every recorder queued behind it — and at
+    the client's 8 s per-node budget a sixteen-recorder estate that has gone quiet
+    takes two minutes to say so, on a page an operator is watching precisely
+    because something is wrong. That is the argument ``pulse/router.py`` already
+    made for the same node set; this is deliberately the same shape rather than a
+    second one.
+
+    The failure is caught INSIDE each task instead of by
+    ``gather(..., return_exceptions=True)``: that form hands back bare exceptions
+    carrying nothing that says which node raised them, and the caller has to re-zip
+    results against inputs to find out. The ``unreachable`` list is only worth
+    anything while every entry still names the recorder that is sick, so the node
+    travels with its own outcome and the pairing cannot drift. Anything that is not
+    a node failure still propagates, exactly as it did when this was a loop.
+
+    Bounded at ``heartbeat_concurrency()`` (``VE_NODE_HEARTBEAT_CONCURRENCY``,
+    default 16) — the knob that already governs how many recorders this VMS holds
+    connections to at once, in the heartbeat cycle that walks this very node set.
+    A second number for the same question would only drift from the first.
+
+    ``gather`` answers in the order it was given, so the merged list still runs node
+    by node in ``_online_nodes`` order however fast each one answered.
+    """
+    sem = asyncio.Semaphore(heartbeat_concurrency())
+
+    async def _one(n: MediaNode):
+        async with sem:
+            try:
+                return n, await call(n), None
+            except fed.NodeUnavailable as e:
+                # NodeRefused subclasses this, and its message is the node's own
+                # sentence naming the missing grant and the re-enrol that fixes it
+                # — which is why this list carries a reason per node, not a count.
+                log.warning("federation: node %s unreachable: %s", n.name, e)
+                return n, None, str(e)
+
+    return await asyncio.gather(*(_one(n) for n in nodes)) if nodes else []
 
 
 @router.get("/nodes", dependencies=[Depends(require_permission(PERM_READ))])
@@ -94,14 +140,14 @@ async def federated_cameras(
     """Every online recorder's own cameras, each tagged with its source node. A node
     that can't be reached is reported in ``unreachable`` and skipped, never fatal."""
     nodes = await _online_nodes(db, scope)
+    results = await _fan_out(
+        nodes, lambda n: fed.list_estate_cameras(n.api_url, credential=n.credential)
+    )
     items: list[dict] = []
     unreachable: list[dict] = []
-    for n in nodes:
-        try:
-            cams = await fed.list_estate_cameras(n.api_url, credential=n.credential)
-        except fed.NodeUnavailable as e:
-            log.warning("federation: node %s unreachable: %s", n.name, e)
-            unreachable.append({"node_id": str(n.id), "name": n.name, "error": str(e)})
+    for n, cams, error in results:
+        if error is not None:
+            unreachable.append({"node_id": str(n.id), "name": n.name, "error": error})
             continue
         for c in cams:
             c["node_id"] = str(n.id)
@@ -123,14 +169,14 @@ async def federated_nvrs_all(
     skipped, never fatal, because one recorder rebooting must not empty the inventory.
     """
     nodes = await _online_nodes(db, scope)
+    results = await _fan_out(
+        nodes, lambda n: fed.list_nvrs_node(n.api_url, credential=n.credential)
+    )
     items: list[dict] = []
     unreachable: list[dict] = []
-    for n in nodes:
-        try:
-            payload = await fed.list_nvrs_node(n.api_url, credential=n.credential)
-        except fed.NodeUnavailable as e:
-            log.warning("federation: node %s unreachable: %s", n.name, e)
-            unreachable.append({"node_id": str(n.id), "name": n.name, "error": str(e)})
+    for n, payload, error in results:
+        if error is not None:
+            unreachable.append({"node_id": str(n.id), "name": n.name, "error": error})
             continue
         for row in (payload or {}).get("items") or []:
             if not isinstance(row, dict):
