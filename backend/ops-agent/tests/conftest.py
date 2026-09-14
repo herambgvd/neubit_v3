@@ -16,7 +16,8 @@ TOKEN = "test-ops-token"
 
 
 class FakeContainer:
-    def __init__(self, name, *, service=None, project="neubit-v3", status="running"):
+    def __init__(self, name, *, service=None, project="neubit-v3", status="running",
+                 health="healthy", exit_code=0):
         self.name = name
         self.short_id = name[:12]
         self.status = status
@@ -25,7 +26,9 @@ class FakeContainer:
             self.labels["com.docker.compose.project"] = project
         if service:
             self.labels["com.docker.compose.service"] = service
-        self.attrs = {"State": {"Status": status, "Health": {"Status": "healthy"}},
+        self.attrs = {"State": {"Status": status,
+                                "Health": {"Status": health} if health else {},
+                                "ExitCode": exit_code},
                       "Created": "2026-01-01T00:00:00Z"}
         self.image = type("Img", (), {"tags": ["img:latest"], "short_id": "abc"})()
         self.actions: list[str] = []

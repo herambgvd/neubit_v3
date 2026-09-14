@@ -202,6 +202,17 @@ def _health(container) -> str | None:
         return None
 
 
+def _exit_code(container) -> int | None:
+    """The container's exit status, or None while it is still running."""
+    try:
+        state = container.attrs.get("State", {}) or {}
+        if (state.get("Status") or "").lower() == "running":
+            return None
+        return int(state.get("ExitCode"))
+    except (KeyError, AttributeError, TypeError, ValueError):
+        return None
+
+
 def _serialize(container, *, with_stats: bool = True) -> dict:
     image = ""
     try:
@@ -226,6 +237,11 @@ def _serialize(container, *, with_stats: bool = True) -> dict:
         "state": container.status,  # created|running|paused|restarting|exited|dead
         "status": container.attrs.get("State", {}).get("Status", container.status),
         "health": _health(container),
+        # An exited container is not automatically a problem: db-init and
+        # reporting-migrate are one-shot jobs that are SUPPOSED to be exited, and
+        # they exit 0. Without this field a watcher cannot tell those apart from
+        # a service that crashed, so it either alerts on every boot or on none.
+        "exit_code": _exit_code(container),
         "created_at": container.attrs.get("Created"),
         "service": (container.labels or {}).get(_COMPOSE_SERVICE_LABEL),
         "cpu_pct": cpu_pct,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import auth
+from conftest import FakeContainer, auth
 
 OUTSIDE = "someone-elses-db"
 
@@ -129,3 +129,35 @@ async def test_no_since_reads_the_whole_tail(client, containers):
     assert r.status_code == 200
     core = next(c for c in containers if c.name == "neubit-v3-core-1")
     assert core.log_calls[-1]["since"] is None
+
+
+# --- exit_code ----------------------------------------------------------------
+# `status` alone cannot tell a finished one-shot job from a crashed service: both
+# read "exited". db-init and reporting-migrate run at boot, exit 0 and stay
+# exited, so anything watching container state needs the code to avoid reporting
+# them as failures after every restart of the stack.
+def _by_name(body, name):
+    return next(c for c in body if c["name"] == name)
+
+
+async def test_a_running_container_reports_no_exit_code(client):
+    body = (await client.get("/containers", headers=auth())).json()
+    assert _by_name(body, "neubit-v3-core-1")["exit_code"] is None
+
+
+async def test_a_completed_job_reports_zero(client, containers):
+    containers.append(
+        FakeContainer("neubit-v3-db-init-1", service="db-init", status="exited",
+                      health=None, exit_code=0)
+    )
+    body = (await client.get("/containers", headers=auth())).json()
+    assert _by_name(body, "neubit-v3-db-init-1")["exit_code"] == 0
+
+
+async def test_a_crashed_service_reports_its_code(client, containers):
+    containers.append(
+        FakeContainer("neubit-v3-vision-1", service="vision", status="exited",
+                      health=None, exit_code=137)
+    )
+    body = (await client.get("/containers", headers=auth())).json()
+    assert _by_name(body, "neubit-v3-vision-1")["exit_code"] == 137

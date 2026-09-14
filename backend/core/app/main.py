@@ -19,6 +19,7 @@ from app.db.base import get_sessionmaker
 from app.device_brands import seed_brands
 from app.module_catalog import seed_modules
 from app.retention import sweep_forever
+from app.watchdog import watch_forever
 from app.tenancy.seed import seed_tenancy
 from app.core import events_nats
 from app.core.shutdown import install_signal_handlers
@@ -56,16 +57,21 @@ async def lifespan(app):
     # deployment, and adding one would put core's tasks on the queue the workflow
     # worker consumes. See app/retention.py.
     sweeper = asyncio.create_task(sweep_forever(get_sessionmaker()))
+    # Infrastructure alarms (disk, container health, EVENTS_DLQ depth) fan out
+    # through the same notification channels as everything else. Same reasoning
+    # as the sweeper above for why it is a lifespan task. See app/watchdog.py.
+    watchdog = asyncio.create_task(watch_forever(get_sessionmaker()))
     try:
         yield
     finally:
         # Cancel and wait: an unawaited cancelled task logs "Task exception was
         # never retrieved" on the way down, which reads like a crash on shutdown.
-        sweeper.cancel()
-        try:
-            await sweeper
-        except asyncio.CancelledError:
-            pass
+        for task in (sweeper, watchdog):
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         await events_nats.close()
 
 

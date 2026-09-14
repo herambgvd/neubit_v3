@@ -415,6 +415,17 @@ services:
 
   # ── platform core (Python / edge) ───────────────────────────────
   core:
+    # INFRASTRUCTURE ALARMS run in this container (app/watchdog.py): disk usage
+    # from the ops-agent, container health from the ops-agent, EVENTS_DLQ depth
+    # from reading-writer, delivered to super-admins through the notification
+    # channels. Every knob has a working default and none is listed here, because
+    # a variable in this file that only restates a default is a setting somebody
+    # later has to check is real. To tune one, ADD it here:
+    #   VE_WATCHDOG_ENABLED       "0" turns it off entirely
+    #   VE_WATCHDOG_INTERVAL_SEC  poll interval (default 300)
+    #   VE_WATCHDOG_REARM_SEC     re-send a standing alarm after this (default 86400)
+    #   VE_WATCHDOG_DISK_PCT      disk-used alarm threshold (default 85)
+    #   VE_WATCHDOG_DLQ_DEPTH     EVENTS_DLQ depth threshold (default 1)
     # Log rotation + a memory ceiling — see the x-logging anchor and the memory
     # tiers at the top of this file for why every service carries both.
     logging: *logging

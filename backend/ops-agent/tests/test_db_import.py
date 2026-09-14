@@ -32,13 +32,31 @@ async def test_an_empty_body_is_400(client):
     assert r.status_code == 400
 
 
+def _staged_path_is_gone(pg) -> bool:
+    """Whether the dump the restore staged was removed again.
+
+    Asserted against the PATH rather than against `rm -f`, which is what these
+    two tests used to pin. Staging moved from a bare file to a directory, `rm -f`
+    became `rm -rf`, and both tests went red while the behaviour they exist for —
+    the dump does not linger inside the postgres container — was never broken. A
+    test that fails when the implementation changes but the property holds is a
+    test people learn to edit rather than read.
+    """
+    staged = [cmd[-1] for cmd in pg.execs if cmd and cmd[0] == "psql"]
+    removed = [cmd[-1] for cmd in pg.execs if cmd and cmd[0] == "rm"]
+    return bool(staged) and all(
+        any(path == gone or path.startswith(gone.rstrip("/") + "/") for gone in removed)
+        for path in staged
+    )
+
+
 async def test_the_staged_file_is_removed_afterwards(client, containers):
     """It held the whole control-DB dump — password hashes, encrypted tenant
     secrets, the audit log — inside the postgres container."""
     r = await client.post("/db/import", headers=auth(), content=b"SELECT 1;\n")
     assert r.status_code == 200
     pg = next(c for c in containers if c.name == "neubit-v3-postgres-1")
-    assert any(cmd[:2] == ["rm", "-f"] for cmd in pg.execs), pg.execs
+    assert _staged_path_is_gone(pg), pg.execs
 
 
 async def test_the_staged_file_is_removed_even_when_the_restore_fails(client, containers):
@@ -46,7 +64,7 @@ async def test_the_staged_file_is_removed_even_when_the_restore_fails(client, co
     pg.exec_result = (1, (b"", b"ERROR: boom"))
     r = await client.post("/db/import", headers=auth(), content=b"SELECT 1;\n")
     assert r.json()["ok"] is False
-    assert any(cmd[:2] == ["rm", "-f"] for cmd in pg.execs)
+    assert _staged_path_is_gone(pg), pg.execs
 
 
 async def test_two_restores_do_not_share_a_path(client, containers):
