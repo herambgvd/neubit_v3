@@ -69,11 +69,18 @@ http:
     # and proxying it through this gateway would put a bearer credential in the
     # platform edge's access log for no gain.
     reading-writer:
-      # Building Intelligence read API under /api/v1/bi. ONLY that prefix: the
-      # rest of the reading-writer (/health, /readyz, /metrics, /stats) stays an
-      # operational surface reachable on the container port, never through the
-      # tenant edge — and a bare /metrics prefix here would collide with core's.
-      rule: "PathPrefix(`/api/v1/bi`)"
+      # Two tenant-facing prefixes, both served by this one service:
+      #   /api/v1/bi   Building Intelligence — what the estate MEASURED.
+      #   /api/v1/iot  the fleet surface — what is doing the measuring.
+      # They are separate prefixes rather than one because they gate on
+      # different modules ("analytics" vs "iot") and different permissions, and
+      # a tenant may license one without the other.
+      #
+      # ONLY those prefixes: the rest of the reading-writer (/health, /readyz,
+      # /metrics, /stats) stays an operational surface reachable on the
+      # container port, never through the tenant edge — and a bare /metrics
+      # prefix here would collide with core's.
+      rule: "PathPrefix(`/api/v1/bi`) || PathPrefix(`/api/v1/iot`)"
       service: reading-writer
       entryPoints: [web]
       priority: 110

@@ -405,9 +405,18 @@ Schema changes happen in the writer, in one place.
    answer is a change to this contract, not a bypass of it.
 3. Verify against the running stack, not against source. Both defects in §1 were
    found by reading what the code actually does, not what its comments claim.
-4. Conflux ships as a cloud-hosted software gateway — not to sites, not
-   air-gapped. Deployment-weight arguments that assume per-site installs do not
-   apply.
+4. Conflux is a software protocol parser, and a deployment runs SEVERAL of
+   them — one near each broker or controller network it has to reach — with one
+   instance acting as the fleet server the others enrol into
+   (`edge/internal/api/fleet.go`). Settled with the platform owner 2026-09-17.
+
+   This REPLACES the rule that stood here until then: *"ships as a cloud-hosted
+   software gateway — not to sites, not air-gapped; deployment-weight arguments
+   that assume per-site installs do not apply."* That was written when one
+   instance was the whole picture, and it is now wrong in the direction that
+   matters — it reads as a standing objection to anything that treats conflux
+   as a fleet, which is exactly what §23 builds. Deployment-weight arguments
+   are admissible again.
 
 ---
 
@@ -1971,3 +1980,211 @@ untouched: no database left the list, so the healthcheck's completion marker
 (`dashforge`) is unchanged. Checked against a FRESH volume in a throwaway compose
 project rather than by reading the list, because reading the list is what failed
 on 2026-09-01.
+
+---
+
+## 23. Gateway identity — on alerts, not on readings (2026-09-17)
+
+Phase 1 of the conflux → NeuBit *management* integration. The pipeline above
+carries measurements; this is the first thing that carries provenance.
+
+### The question
+
+Neubit_v3's Devices section onboards access controllers, cameras and recorders
+and has no IoT surface at all, so an operator can read what the estate measured
+and cannot see what is measuring it. The console being built for that (§24,
+when it lands) drills Gateways → Connections → Devices → Points. Levels three
+and four exist already — `points` holds 839 rows. Levels one and two do not
+exist anywhere on the platform.
+
+So: does the gateway's identity belong on the wire?
+
+### The answer, and the asymmetry that produces it
+
+**Alerts carry `gateway_id`. Readings do not.** These look inconsistent and are
+not; they answer different questions.
+
+`points.conn_id` maps a connection to a gateway *as it stands today*, and for a
+live inventory that is the correct and sufficient answer — the fleet sync
+supplies it, and it costs the reading path nothing. §5 already said so, listing
+"gateway" among the things that belong in the `points` dimension and not on a
+reading row. That judgement stands and is reaffirmed here: this store holds
+460k readings against 73 alerts, and paying ~40 bytes per reading for an
+attribute that changes approximately never is the trade §5 refused.
+
+The mapping is **not stable over time**, though. Conflux HA promotes a standby
+by importing the primary's configuration wholesale (§0), so the survivor comes
+up carrying the SAME connection, device and point ids under a DIFFERENT gateway
+id. A live lookup therefore answers "who owns this connection now", which is not
+what an operator asks of a fault. They ask "what was carrying this when it
+fired", and that can only be recorded when it fires.
+
+Hence the rule, which is the general form and should survive this feature:
+
+> **Facts that must stay true about the past ride on the wire. Inventory that
+> describes the present is synced.**
+
+### What this specifies
+
+`alertPayload` gains one field, before `conn_id`:
+
+```json
+"payload": {
+  "gateway_id": "8f1d0e2a-…",
+  "conn_id":    "e39a8b77-…",
+  "device_id":  "1010cb50-…",
+  …
+}
+```
+
+- Source: `config.Store.GatewayID()` — a uuid generated and persisted in
+  conflux's `settings` table on first use, stable across restarts, the same id
+  the fleet API reports for `self`.
+- It is **publisher config, not per-message Origin** (`NATSConfig.GatewayID`):
+  it describes the process doing the publishing, not the point the alert came
+  from.
+- `omitempty`, following §11 exactly. A deployment with no fleet identity, and
+  an alert replayed from an outbox row written before this existed, both publish
+  it ABSENT — which §12's COALESCE rule reads as "no opinion" rather than as an
+  instruction to blank what the platform holds.
+- It means **which gateway DELIVERED the alert**. In every ordinary case that is
+  also the one that raised it; the exception is a replay after an HA promotion,
+  which is attributed to the survivor. The dataset description says so.
+
+**The subject does not change.** `tenant.{tenant_id}.iot.alert.{conn_id}` is
+already seven tokens and the stream config, every consumer and every relay are
+built on it. A gateway filter is not worth widening it for; the body is where
+this belongs.
+
+### The store half
+
+`0021_iot_alerts_gateway` adds the column and `ix_iot_alerts_gateway_ts` to the
+`iot_alerts` projection spec. Deliberately NOT registered as a dimension,
+although its cardinality would permit it: the values are raw uuids and nothing
+on this platform can yet turn one into a name. A dimension whose dropdown lists
+`8f1d0e2a-…` is one no operator can use. When the gateway registry arrives with
+the fleet sync, registering it is a spec UPDATE and no DDL — the column and its
+index are already here, which is the point of splitting it this way.
+
+No continuous aggregate was rebuilt: nothing was added to a GROUP BY, so
+`iot_alerts_1h` is untouched.
+
+### Two defects found while building this, both unrelated to IoT
+
+1. **Every alembic migration was a silent no-op.** `migrations/env.py` ran
+   `connection.run_sync(do_run_migrations)` and never committed. SQLAlchemy 2.0
+   opens an implicit transaction on first execute, so alembic finds the
+   connection already in one, reads that as "the caller manages transactions"
+   and declines to commit — correctly. Nobody then did, and
+   `async with connectable.connect()` rolled back on exit. Measured: an empty
+   migration whose `upgrade()` was `pass` printed "Running upgrade 0020 → 0022",
+   exited 0, and left `alembic_version` at 0020. **All six services shared the
+   shape**; each was at its file head only because none had added a migration
+   since. Fixed in all six with an explicit `await connection.commit()`.
+
+2. **reading-writer could not shut down.** `app/projections/dlq_watch.py`
+   called `stop_tasks` and `close_nats` and imported neither, so every stop
+   raised `NameError`, uvicorn logged "Application shutdown failed. Exiting.",
+   and the container was killed with the DLQ consumer's connection never
+   drained. Only reachable on the way out, which is why it survived. Fixed, and
+   `tests/test_shutdown.py` now covers `DlqWatch.stop()`.
+
+---
+
+## 24. The fleet channel — a path back, and only one (2026-09-17)
+
+Phase 2 of the management integration. §23 gave alerts a gateway; this gives the
+platform a way to ASK about gateways at all.
+
+### What existed, and why it could not answer the question
+
+The coupling between the two systems was one NATS stream, gateway → platform,
+with no path back — `edge/internal/publish/nats.go` says so outright, and that
+was correct for a pipeline whose job is to move measurements.
+
+It cannot serve a console. The IoT drill-down is Gateways → Connections →
+Devices → Points; levels three and four are `points` in this database, and
+levels one and two existed nowhere on this side.
+
+Worse, conflux's own fleet server could not fully answer them either. A
+heartbeat carried `counts` — how MANY connections a gateway has — and nothing
+about WHICH, so a fleet server could show a remote gateway and never show what
+was inside it. It cannot simply ask: a gateway that phoned home from behind a
+firewall is not reachable the other way.
+
+### Two changes, one on each side
+
+**conflux — the heartbeat carries an inventory.** `FleetGateway.Connections` is
+a list of `{id, slug, name, proto, devices, points}`, built by
+`Store.ListConnectionInventory()` and reported by `FleetSelfSnapshot`. It is
+deliberately NOT `model.Connection`: that carries `Config`, which holds broker
+hosts and driver credentials, and a heartbeat travels to a central server.
+
+Three states, all distinct and all load-bearing:
+
+| stored | means | console shows |
+|---|---|---|
+| `''` | never reported — the gateway is on an older build | unknown |
+| `'[]'` | reported, and has none | none |
+| `'[…]'` | reported | the list |
+
+The upsert therefore keeps the stored list when a beat carries none, the same
+missing-never-clobbers rule §11 sets for the northbound payload.
+
+**The platform — `app/fleet_sync.py`, the only outbound dependency in the
+reading-writer.** It polls the fleet server (`VE_IOT_FLEET_URL`, default 300s)
+and writes exactly one thing: `points.gateway_id`. There is no gateway table.
+
+### Rules this channel follows
+
+1. **No mirror.** Conflux owns the fleet — it mints enrolment tokens, decides
+   pending vs approved, and gateways phone home to IT. A copy here would be a
+   second answer to "what gateways are there", and the copy is the one that
+   goes stale while looking authoritative. `/api/v1/iot/gateways` proxies live
+   and returns **502 with the host it tried** when the server is unreachable.
+   That is the whole cost, and it is a sentence a console can show.
+2. **Enrich only. It never clears and never retires.** The sync sets a gateway
+   where it learns one and does not NULL one it stopped hearing about. It does
+   not retire points whose connection vanished from the inventory, although the
+   phase plan said it would — see below.
+3. **Both numbers, never merged.** Each connection carries the gateway's
+   configured `devices`/`points` AND an `arrived` block counted from `points`.
+   The gap is the finding: the first live call showed 437 configured against
+   436 arrived, which is one point that has never delivered a reading and which
+   neither side could have reported alone.
+
+### Why the retire-on-sync was dropped
+
+It was in the plan and it is wrong. 0006 already built retirement with a
+HORIZON: `last_seen_at` older than `VE_READINGS_RETIRE_AFTER_DAYS`, applied at
+query time, writing nothing, self-healing the moment a reading lands.
+
+A sync-driven retire would fire on "conflux did not mention this connection",
+which is also what a gateway being rebuilt, migrated, or switched off looks
+like. This deployment hit exactly that: a machine was off for six days and its
+connections looked deleted from here. The horizon rides that out; an
+authoritative retire would have marked 403 points dead because a laptop was
+closed.
+
+Measured after the first sync: 436 points stamped to the live gateway, 403 left
+NULL. NULL is "not known", not "retired", and the BI counts are unchanged.
+
+### Gating, and the one deployment step
+
+`/api/v1/iot` is a separate prefix from `/api/v1/bi` on the same service,
+gated on the **`iot` module** and the **`iot.read`** permission rather than
+`analytics`/`bi.read`: managing what measures the estate is a different product
+surface from analysing what it measured, and a tenant may license one alone.
+
+`iot` ships `default_enabled: False`, so **a platform super-admin must enable it
+per tenant** before the surface appears. A module switched on with nothing
+behind it is a menu entry that leads to an empty screen.
+
+### The credential, and what is wrong with it
+
+`VE_IOT_FLEET_TOKEN` is conflux's `EDGE_TOKEN`, a long-lived machine bearer — an
+operator JWT expires and nothing renews it on a server-to-server call.
+
+It authenticates as `service` with the **superadmin** role, which is far wider
+than the read this performs. conflux has no read-only machine credential today.
+Issuing one, and narrowing this to it, is the right follow-up and is not done.

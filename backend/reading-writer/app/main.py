@@ -139,6 +139,9 @@ from .pipeline import Pipeline
 from .placement_sync import PlacementStats, PlacementSync
 from .projections import DlqWatch, DlqWatchStats, Projector, ProjectorConfig, ProjectorMetrics
 from .site_facts_sync import SiteFactsStats, SiteFactsSync
+from .config import FleetConfig
+from .fleet_sync import FleetClient, FleetStats, FleetSync
+from .api.iot import iot_router, configure as configure_iot
 
 logging.basicConfig(level=os.getenv("VE_LOG_LEVEL", "INFO").upper(),
                     format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -169,6 +172,17 @@ projector = Projector(projector_config, projector_metrics)
 # watch can never stall a projection or a reading.
 dlq_stats = DlqWatchStats()
 dlq_watch = DlqWatch(dlq_stats)
+# The IoT fleet channel — the only OUTBOUND dependency in this service, and the
+# only one that is not a NATS consumer. It polls conflux's fleet server over
+# HTTP to learn which gateway each connection lives on, and stamps that onto
+# `points.gateway_id` so the console can drill from a gateway to its points.
+#
+# Unconfigured (no VE_IOT_FLEET_URL) is a normal state: the sync never starts
+# and /api/v1/iot answers that there is no gateway server. A deployment with no
+# conflux is not a broken one.
+fleet_config = FleetConfig()
+fleet_stats = FleetStats()
+fleet_sync: FleetSync | None = None
 # A SIXTH consumer: core's tenant offboard, the DPDP right-to-erase. Its own
 # EventBus, so it gets its own NATS connection like every other consumer here.
 #
@@ -226,6 +240,21 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 — a broken watch must not stop anything
         projector_metrics.note_error(exc)
         log.exception("DLQ watch failed to start — dead letters will not be visible here")
+    global fleet_sync
+    if fleet_config.enabled:
+        try:
+            client = FleetClient(fleet_config.url, fleet_config.token, fleet_config.timeout_sec)
+            configure_iot(client, fleet_stats)
+            fleet_sync = FleetSync(client, fleet_config.sync_every_sec, fleet_stats)
+            await fleet_sync.start()
+            log.info("IoT fleet sync enabled: %s every %ss", fleet_config.url, fleet_config.sync_every_sec)
+        except Exception as exc:  # noqa: BLE001 — same rule as every consumer here
+            # NOT red on /readyz: an unreachable gateway server means the IoT
+            # console cannot list gateways, which is a degraded feature, not a
+            # reading path that has stopped. The endpoint says so itself.
+            log.exception("IoT fleet sync failed to start — gateways will not be listed")
+    else:
+        log.info("IoT fleet disabled (VE_IOT_FLEET_URL unset)")
     global _offboard_error
     try:
         await offboard_bus.connect()
@@ -249,6 +278,8 @@ async def lifespan(app: FastAPI):
         log.exception("tenant offboard consumer failed to start — RIGHT-TO-ERASE IS OFF")
     yield
     await offboard_bus.close()
+    if fleet_sync is not None:
+        await fleet_sync.stop()
     await dlq_watch.stop()
     await projector.stop()
     await placement_sync.stop()
@@ -280,6 +311,15 @@ app.include_router(
     bi_router,
     prefix=_settings.api_prefix,
     dependencies=[Depends(require_feature("analytics")), Depends(require_active_license())],
+)
+
+# The IoT fleet read API. Gated on its own module ("iot"), not on "analytics":
+# managing the estate's gateways is a different product surface from analysing
+# what they measure, and a tenant may license one without the other.
+app.include_router(
+    iot_router,
+    prefix=_settings.api_prefix,
+    dependencies=[Depends(require_feature("iot")), Depends(require_active_license())],
 )
 
 

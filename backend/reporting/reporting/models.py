@@ -80,6 +80,16 @@ class Point(Base):
     # The gateway connection (conflux conn_id) this point arrives on.
     conn_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
+    # The conflux GATEWAY behind that connection. Filled by the fleet sync, not
+    # by the reading wire — contract §23 keeps the hot path narrow and puts the
+    # gateway in this dimension instead.
+    #
+    # NULL means "not known yet", never "none": a point whose gateway has not
+    # reported an inventory keeps NULL rather than being guessed from conn_id.
+    # This answers who owns the point NOW; `iot_alerts.gateway_id` answers who
+    # was carrying it THEN, and after an HA promotion the two differ legitimately.
+    gateway_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
     # Owning device.
     device_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     device_tag: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -228,6 +238,8 @@ class Point(Base):
         # console filters on. Zone is deliberately unindexed: it is only ever
         # reached through a floor, and an index nothing uses is a write cost.
         Index("ix_points_tenant_site", "tenant_id", "site_id"),
+        # The IoT drill-down's query: this tenant's points on one gateway.
+        Index("ix_points_tenant_gateway", "tenant_id", "gateway_id"),
         Index("ix_points_tenant_floor", "tenant_id", "floor_id"),
         # The live set, which is what every BI count actually reads. Partial:
         # almost every point is live, so the retired tail costs nothing to carry.

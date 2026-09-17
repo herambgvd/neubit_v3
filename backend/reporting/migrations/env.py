@@ -120,6 +120,24 @@ async def run_online():
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
+        # COMMIT EXPLICITLY. Without this every migration is a silent no-op:
+        # alembic logs "Running upgrade X -> Y", the process exits 0, and
+        # `alembic current` still reports X.
+        #
+        # Why it happens. SQLAlchemy 2.0 opens an implicit transaction on the
+        # first execute, so by the time alembic's MigrationContext looks at the
+        # connection it is ALREADY in one. Alembic reads that as "the caller is
+        # managing transactions" and declines to commit — correctly, because
+        # committing someone else's transaction would be worse. Nobody then
+        # does, and `async with connectable.connect()` rolls back on exit.
+        #
+        # Measured, not reasoned: an empty migration whose upgrade() was `pass`
+        # printed "Running upgrade 0020 -> 0022", exited 0, and left
+        # alembic_version at 0020.
+        #
+        # Safe when alembic DID commit: Connection.commit() with no transaction
+        # open is a no-op in SQLAlchemy 2.0.
+        await connection.commit()
     await connectable.dispose()
 
 

@@ -146,6 +146,14 @@ class CorePerm:
     # Both write a dimension row; neither touches a measurement. Separate from
     # bi.read because reading the estate and asserting about it differ.
     BI_MANAGE = "bi.manage"
+    # --- IoT gateways -----------------------------------------------------
+    # Read side of the conflux fleet surface, enforced by the reading-writer
+    # (`backend/reading-writer/app/api/iot.py`). Separate from bi.read because
+    # it answers a different question: bi.read is "what did the estate
+    # measure", iot.read is "what is doing the measuring". A key missing from
+    # this catalog is not grantable by any role.
+    IOT_READ = "iot.read"
+
     # DashForge embeds — the dashboards NeuBit shows but does not build.
     # DASHFORGE_READ is the only gate in front of that data: DashForge's
     # `/public/embed/:token` is unauthenticated, and this key is what decides
@@ -272,6 +280,16 @@ PERMISSIONS.register(
         "floor-wise question, and retire a point that is no longer part of the "
         "estate. Both write a dimension row; neither deletes a reading. Placing "
         "also needs sites.read / floors.read to choose the place.",
+    ),
+    # --- IoT gateways -------------------------------------------------------
+    Permission(
+        CorePerm.IOT_READ,
+        "View IoT gateways and what they carry",
+        "IoT Gateways",
+        "List the protocol gateways this platform reads from, the connections "
+        "inside each one, and the points they deliver. Read-only, and the "
+        "gateways themselves are managed on the gateway server — nothing in "
+        "this API changes one.",
     ),
     Permission(
         CorePerm.DASHFORGE_READ,

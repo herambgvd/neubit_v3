@@ -179,3 +179,37 @@ class WriterConfig:
                 "the consumer will throttle itself",
                 self.max_ack_pending, need,
             )
+
+
+@dataclass(frozen=True)
+class FleetConfig:
+    """How this service reaches conflux's FLEET server.
+
+    Conflux is a protocol parser and a deployment runs several of them, with one
+    instance acting as the fleet server the rest enrol into (pipeline contract
+    §8.4). That server is the single place that knows which gateways exist and
+    what is inside each — a gateway that phoned home from behind a firewall is
+    not reachable the other way, so there is no per-gateway URL to hold.
+
+    Unset ``VE_IOT_FLEET_URL`` disables the whole IoT fleet surface: the sync
+    does not run and the API answers that it is not configured. That is the
+    correct default for a deployment with no conflux, and it is why nothing here
+    raises at import.
+    """
+
+    #: Base URL of the conflux fleet server, e.g. ``http://conflux-edge:8000``.
+    url: str = field(default_factory=lambda: _str("VE_IOT_FLEET_URL", "").rstrip("/"))
+    #: An operator token for that server. Fleet reads need an operator login;
+    #: the enrolment token is a gateway's credential and cannot list anything.
+    token: str = field(default_factory=lambda: _str("VE_IOT_FLEET_TOKEN", ""))
+    #: How often to re-read the inventory and stamp `points.gateway_id`.
+    #: Minutes, not seconds: this maps connections to gateways, and that mapping
+    #: changes when somebody adds a connection, not continuously.
+    sync_every_sec: int = field(default_factory=lambda: _int("VE_IOT_FLEET_SYNC_SEC", 300))
+    #: A console request waits on this. Short on purpose — an unreachable fleet
+    #: server must fail the page fast and say so, not hang it.
+    timeout_sec: float = field(default_factory=lambda: float(_int("VE_IOT_FLEET_TIMEOUT_SEC", 8)))
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.url)

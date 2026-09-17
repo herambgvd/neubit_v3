@@ -54,6 +54,13 @@ from kernel.events import DLQ_STREAM, DLQ_SUBJECT_PREFIX, ensure_dlq_stream
 from nats.errors import TimeoutError as NatsTimeoutError
 from nats.js.api import AckPolicy, ConsumerConfig
 
+# stop() calls both of these and this module never imported them, so every
+# shutdown of this service raised NameError and the container was SIGKILLed a
+# few seconds later — "Application shutdown failed. Exiting." in the log, with
+# the DLQ consumer's connection never drained. Same import the other four
+# consumers in this service use (app/shutdown.py).
+from ..shutdown import close_nats, stop_tasks
+
 log = logging.getLogger("projector.dlq_watch")
 
 DURABLE = "projector-dlq-watch"

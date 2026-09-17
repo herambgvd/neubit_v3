@@ -1091,6 +1091,25 @@ services:
       # The live aeon feed publishes the literal key `default`, which is not a
       # UUID, and `readings.tenant_id` is `uuid NOT NULL`. Map it, or unmapped
       # keys get a stable synthetic UUID and a loud warning. See app/tenants.py.
+      # ── IoT fleet channel (Phase 2) ─────────────────────────────────────
+      # The conflux FLEET SERVER this platform reads gateways from. conflux is
+      # a protocol parser and a deployment runs several, with one acting as the
+      # fleet server the rest enrol into; this is that one.
+      #
+      # Unset disables the whole surface — the sync never starts and
+      # /api/v1/iot answers that no gateway server is configured. That is the
+      # right default for a deployment with no conflux.
+      #
+      # host.docker.internal because conflux runs in its OWN compose project on
+      # its own network and publishes 8600 on the host; it reaches this
+      # platform's NATS the same way, in the other direction.
+      VE_IOT_FLEET_URL: ${VE_IOT_FLEET_URL:-}
+      # conflux's EDGE_TOKEN — a machine bearer. An operator JWT expires and
+      # nothing would renew it on a server-to-server call.
+      VE_IOT_FLEET_TOKEN: ${VE_IOT_FLEET_TOKEN:-}
+      # Minutes, not seconds: this maps connections to gateways, and that
+      # mapping changes when somebody adds a connection.
+      VE_IOT_FLEET_SYNC_SEC: ${VE_IOT_FLEET_SYNC_SEC:-300}
       VE_READINGS_TENANT_MAP: ${VE_READINGS_TENANT_MAP:-}
       VE_READINGS_DEFAULT_TENANT_ID: ${VE_READINGS_DEFAULT_TENANT_ID:-}
       # ── a hung database must not look healthy ──────────────────────────────

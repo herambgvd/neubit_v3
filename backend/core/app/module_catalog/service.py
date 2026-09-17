@@ -68,6 +68,21 @@ DEFAULT_MODULES: list[dict] = [
         "category": "Analytics",
         "default_enabled": True,
     },
+    {
+        # Managing the gateways that MEASURE the estate, which is a different
+        # product surface from analysing what they measured — a tenant can
+        # license the dashboards without also managing the plumbing behind
+        # them, so this does not ride on "analytics".
+        #
+        # Off by default: it is useful only to a deployment that runs conflux,
+        # and a module switched on with nothing behind it is a menu entry that
+        # leads to an empty screen.
+        "key": "iot",
+        "name": "IoT Gateways",
+        "description": "Protocol gateways, their connections and the points they carry.",
+        "category": "Operations",
+        "default_enabled": False,
+    },
 ]
 
 

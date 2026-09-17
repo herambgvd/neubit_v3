@@ -122,3 +122,49 @@ async def test_a_drain_that_hangs_does_not_hang_the_shutdown():
 
 async def test_no_connection_is_not_an_error():
     await close_nats(None)
+
+
+# ── DlqWatch.stop() ──────────────────────────────────────────────────────────
+# The helpers above are only useful to a consumer that actually imports them.
+# DlqWatch called both and imported neither, so every stop() raised NameError —
+# uvicorn logged "Application shutdown failed. Exiting." and the container was
+# killed with the DLQ connection never drained. Nothing tested stop(), which is
+# why a missing import survived: it is only reachable while the service is on
+# its way out.
+async def test_dlq_watch_stops_without_having_started():
+    from app.projections.dlq_watch import DlqWatch, DlqWatchStats
+
+    w = DlqWatch(DlqWatchStats())
+    await w.stop()  # NameError before the import was added
+    assert w.stats.connected is False
+
+
+async def test_dlq_watch_stop_cancels_its_task_and_closes_its_connection():
+    from app.projections.dlq_watch import DlqWatch, DlqWatchStats
+
+    closed: list[str] = []
+
+    class FakeNats:
+        async def drain(self) -> None:
+            closed.append("drain")
+
+        async def close(self) -> None:
+            closed.append("close")
+
+    async def forever() -> None:
+        await asyncio.sleep(3600)
+
+    w = DlqWatch(DlqWatchStats())
+    w.stats.connected = True
+    w._running = True
+    w._task = asyncio.create_task(forever())
+    w._nc = FakeNats()
+    await asyncio.sleep(0)
+
+    await w.stop()
+
+    assert w._task is None
+    assert w._nc is None
+    assert w._running is False
+    assert w.stats.connected is False
+    assert closed == ["drain", "close"]
