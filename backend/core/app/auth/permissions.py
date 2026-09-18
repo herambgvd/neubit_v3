@@ -153,6 +153,10 @@ class CorePerm:
     # measure", iot.read is "what is doing the measuring". A key missing from
     # this catalog is not grantable by any role.
     IOT_READ = "iot.read"
+    # Write side: acknowledging a fault. It is a judgement about whether
+    # something has been dealt with, not a reading of the estate, and it takes
+    # effect ON THE GATEWAY — this platform holds a projection of the answer.
+    IOT_MANAGE = "iot.manage"
 
     # DashForge embeds — the dashboards NeuBit shows but does not build.
     # DASHFORGE_READ is the only gate in front of that data: DashForge's
@@ -290,6 +294,14 @@ PERMISSIONS.register(
         "inside each one, and the points they deliver. Read-only, and the "
         "gateways themselves are managed on the gateway server — nothing in "
         "this API changes one.",
+    ),
+    Permission(
+        CorePerm.IOT_MANAGE,
+        "Acknowledge IoT faults",
+        "IoT Gateways",
+        "Mark a gateway fault as dealt with, or reopen one. The acknowledgement "
+        "is recorded on the gateway that raised it, so it is visible there too "
+        "and to anyone else reading that gateway.",
     ),
     Permission(
         CorePerm.DASHFORGE_READ,

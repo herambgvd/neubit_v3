@@ -106,6 +106,15 @@ export const deviceTabs: NavItem[] = [
   // the only Devices onboarding surface — 3rd-party NVRs are onboarded ON a recorder,
   // so the old VMS-side "NVR" onboarding tab has been retired.
   { title: "Recorders", icon: "heroicons:cpu-chip", link: "/devices/recorders", perm: "vms.camera.read", module: "vms" },
+  // IoT = the protocol gateways that MEASURE the estate, as opposed to the ones
+  // that watch it. Read-only and federated, the same shape as Cameras: gateways
+  // enrol on the gateway server, and connections, devices and points are
+  // configured there. Nothing is onboarded from this console.
+  //
+  // Its own module and permission rather than vms.* — a tenant can license the
+  // video estate without the measurement one, and the reading-writer gates
+  // /api/v1/iot on exactly this pair.
+  { title: "IoT", icon: "heroicons-outline:cpu-chip", link: "/devices/iot", perm: "iot.read", module: "iot" },
 ];
 
 // The route the Devices top-nav item jumps to (first enabled device tab).
