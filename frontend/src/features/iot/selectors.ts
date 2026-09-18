@@ -200,3 +200,50 @@ export function openAlerts(alerts: IotAlert[]): IotAlert[] {
     return v === "open" || v === "reopened";
   });
 }
+
+/** One category tab: what it is, and how many devices sit under it. */
+export interface CategoryTab {
+  key: string;
+  label: string;
+  devices: number;
+  /** Points on those devices that are not reporting. Drives the tab's warning. */
+  quiet: number;
+}
+
+/**
+ * The tabs, in a fixed order with "all" first.
+ *
+ * Order is deliberate and NOT by count: a tab bar whose tabs move when a device
+ * is retired is one an operator cannot build muscle memory on. Categories the
+ * estate does not have are dropped — an empty "Water" tab on a site with no
+ * water meters is a dead end, not information.
+ */
+export const CATEGORY_ORDER = ["energy", "hvac", "water", "unclassified"] as const;
+
+export function categoryTabs(rows: DeviceRow[]): CategoryTab[] {
+  const tabs: CategoryTab[] = [
+    {
+      key: "all",
+      label: "All",
+      devices: rows.length,
+      quiet: rows.reduce((s, d) => s + d.quiet, 0),
+    },
+  ];
+  for (const key of CATEGORY_ORDER) {
+    const mine = rows.filter((d) => (d.category || "unclassified") === key);
+    if (mine.length === 0) continue;
+    tabs.push({
+      key,
+      label: key === "hvac" ? "HVAC" : key[0].toUpperCase() + key.slice(1),
+      devices: mine.length,
+      quiet: mine.reduce((s, d) => s + d.quiet, 0),
+    });
+  }
+  return tabs;
+}
+
+/** Devices under one tab. "all" is every device, not a category named "all". */
+export function inCategory(rows: DeviceRow[], key: string): DeviceRow[] {
+  if (key === "all") return rows;
+  return rows.filter((d) => (d.category || "unclassified") === key);
+}

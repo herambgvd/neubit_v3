@@ -31,11 +31,17 @@ import { apiError } from "@/lib/api";
 import { fmtRelative } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import StatusBadge, { StatusDot } from "@/features/vms/components/StatusBadge";
+// One definition of how a reading renders, shared with the Building
+// Intelligence screens. Two would drift, and the same number would read
+// differently depending on which screen an operator opened.
+import { fmtReading, qualityTone } from "@/features/bi/constants";
 import { iot } from "./api";
 import {
   ackView,
   ageSec,
   canAcknowledge,
+  categoryTabs,
+  inCategory,
   devicesFrom,
   filterDevices,
   filterGateways,
@@ -232,18 +238,24 @@ function GatewayRow({
 function GatewayDetail({ gw }: Readonly<{ gw: IotGateway }>) {
   const [deviceSearch, setDeviceSearch] = useState("");
   const [openDevice, setOpenDevice] = useState<string | null>(null);
+  const [showRetired, setShowRetired] = useState(false);
+  const [category, setCategory] = useState("all");
 
   const ptsQ = useQuery({
-    queryKey: ["iot-gateway-points", gw.gatewayId],
-    queryFn: () => iot.gateways.points(gw.gatewayId),
+    queryKey: ["iot-gateway-points", gw.gatewayId, showRetired],
+    queryFn: () => iot.gateways.points(gw.gatewayId, showRetired),
     staleTime: 20_000,
   });
   const points: IotPoint[] | undefined = ptsQ.data?.points;
   const totals = gatewayTotals(gw, points);
   const devices = useMemo(() => (points ? devicesFrom(points) : []), [points]);
+  // Tabs are built from EVERY device, not the filtered set: a count that moved
+  // as you typed in the search box would be a different number every keystroke
+  // and could never be compared with anything.
+  const tabs = useMemo(() => categoryTabs(devices), [devices]);
   const shownDevices = useMemo(
-    () => filterDevices(devices, points || [], deviceSearch),
-    [devices, points, deviceSearch],
+    () => filterDevices(inCategory(devices, category), points || [], deviceSearch),
+    [devices, category, points, deviceSearch],
   );
 
   return (
@@ -368,7 +380,34 @@ function GatewayDetail({ gw }: Readonly<{ gw: IotGateway }>) {
 
         {/* Devices, derived from the points we hold — there is no device table
             on this side, only `points.device_tag`. */}
-        <div className="mb-2 mt-4 flex flex-wrap items-center gap-2">
+        {/* Category tabs. Energy, HVAC and water answer different questions and
+            are read by different people; one list of 38 mixes them. */}
+        {tabs.length > 1 && (
+          <div className="mt-4 flex flex-wrap gap-1 border-b border-nb-line">
+            {tabs.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setCategory(t.key)}
+                aria-current={category === t.key ? "page" : undefined}
+                className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-1.5 text-[12px] transition ${
+                  category === t.key
+                    ? "border-nb-teal text-nb-ink"
+                    : "border-transparent text-nb-faint hover:text-nb-soft"
+                }`}
+              >
+                {t.label}
+                <span className="rounded-full border border-nb-line bg-[rgba(150,180,245,.06)] px-1.5 font-mono text-[10px] tabular-nums text-nb-soft">
+                  {t.devices}
+                </span>
+                {/* The warning rides on the tab, so a fault in a category
+                    nobody is looking at is still visible from here. */}
+                {t.quiet > 0 && <span className="text-[10px] text-nb-warn">{t.quiet} quiet</span>}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="mb-2 mt-3 flex flex-wrap items-center gap-2">
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-nb-faint">Devices</p>
           <span className="rounded-full border border-nb-line bg-[rgba(150,180,245,.06)] px-1.5 font-mono text-[10px] font-semibold tabular-nums text-nb-soft">
             {devices.length}
@@ -381,7 +420,28 @@ function GatewayDetail({ gw }: Readonly<{ gw: IotGateway }>) {
             aria-label="Filter devices"
             className="w-56 rounded-[8px] border border-nb-line bg-nb-field px-2.5 py-1 text-xs text-nb-ink placeholder:text-nb-faint focus:border-nb-teal focus:outline-none"
           />
+          <button
+            onClick={() => setShowRetired(!showRetired)}
+            aria-pressed={showRetired}
+            className={`rounded-[8px] border px-2.5 py-1 text-[11px] transition ${
+              showRetired
+                ? "border-nb-teal/45 bg-nb-teal/[.1] text-nb-teal"
+                : "border-nb-line text-nb-soft hover:text-nb-ink"
+            }`}
+          >
+            {showRetired ? "Hiding nothing" : "Show retired"}
+          </button>
         </div>
+        {/* Says WHY something is missing, in the operator's own units. "Some
+            points are hidden" is the kind of sentence that sends somebody
+            looking for a bug. */}
+        <p className="mb-2 text-[11px] leading-relaxed text-nb-faint">
+          Points that were retired, or that have been silent for more than{" "}
+          {ptsQ.data?.retire_after_days ?? 30} days, are left out of this list and out of every
+          count above. Values are read raw over the last{" "}
+          {ptsQ.data?.value_lookback_minutes ?? 60} minutes — a dash means nothing arrived in that
+          window, not zero.
+        </p>
 
         {ptsQ.isLoading ? (
           <p className="px-1 py-3 text-xs text-nb-faint">
@@ -399,7 +459,11 @@ function GatewayDetail({ gw }: Readonly<{ gw: IotGateway }>) {
             next runs.
           </p>
         ) : shownDevices.length === 0 ? (
-          <p className="px-1 py-3 text-xs text-nb-faint">No device or point tag matches “{deviceSearch}”.</p>
+          <p className="px-1 py-3 text-xs text-nb-faint">
+            {deviceSearch
+              ? `No device or point tag matches “${deviceSearch}”${category === "all" ? "" : ` under ${category}`}.`
+              : `No devices under ${category}.`}
+          </p>
         ) : (
           <ul className="flex flex-col gap-1.5">
             {shownDevices.map((d) => (
@@ -407,6 +471,7 @@ function GatewayDetail({ gw }: Readonly<{ gw: IotGateway }>) {
                 key={d.tag}
                 dev={d}
                 points={points || []}
+                gatewayId={gw.gatewayId}
                 open={openDevice === d.tag}
                 onToggle={() => setOpenDevice(openDevice === d.tag ? null : d.tag)}
               />
@@ -421,20 +486,75 @@ function GatewayDetail({ gw }: Readonly<{ gw: IotGateway }>) {
 function DeviceItem({
   dev,
   points,
+  gatewayId,
   open,
   onToggle,
-}: Readonly<{ dev: DeviceRow; points: IotPoint[]; open: boolean; onToggle: () => void }>) {
+}: Readonly<{
+  dev: DeviceRow;
+  points: IotPoint[];
+  gatewayId: string;
+  open: boolean;
+  onToggle: () => void;
+}>) {
+  const qc = useQueryClient();
+  const { can } = useAuth();
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+
   const mine = useMemo(
     () => points.filter((p) => (p.device_tag || "(no device)") === dev.tag),
     [points, dev.tag],
   );
   const live = dev.points - dev.quiet;
+  // A device is "retired" when every one of its points is. There is no device
+  // row on this side — a device IS its points — so retiring one means retiring
+  // each of them, and a half-retired device is a real state rather than an error.
+  const retiredCount = mine.filter((p) => p.retired_at).length;
+  const allRetired = mine.length > 0 && retiredCount === mine.length;
+
+  const remove = useMutation({
+    mutationFn: async () => {
+      let readings = 0;
+      // Sequential and point by point: a failure half way leaves the rest of
+      // the device intact and visible, rather than a device in an unknown
+      // state across two systems.
+      for (const p of mine) {
+        const r = await iot.points.remove(p.point_id);
+        readings += r?.readings_deleted ?? 0;
+      }
+      return readings;
+    },
+    onSuccess: (readings) => {
+      toast.success(`${dev.tag} deleted — ${readings.toLocaleString()} readings removed`);
+      qc.invalidateQueries({ queryKey: ["iot-gateway-points", gatewayId] });
+      qc.invalidateQueries({ queryKey: ["iot-gateways"] });
+    },
+    onError: (e) => toast.error(apiError(e, "Could not delete that device")),
+  });
+
+  const retire = useMutation({
+    mutationFn: async (retired: boolean) => {
+      // Sequential, not Promise.all: this is a handful of rows and a failure
+      // half way through should leave the rest untouched and visible rather
+      // than scattering partial writes across the estate.
+      for (const p of mine) await iot.points.retire(p.point_id, retired);
+    },
+    onSuccess: (_d, retired) => {
+      toast.success(
+        retired
+          ? `${dev.tag} retired — it stays on the gateway and stops counting here`
+          : `${dev.tag} restored`,
+      );
+      qc.invalidateQueries({ queryKey: ["iot-gateway-points", gatewayId] });
+    },
+    onError: (e) => toast.error(apiError(e, "Could not retire that device")),
+  });
   return (
     <li className="overflow-hidden rounded-[10px] border border-nb-line bg-[rgba(150,180,245,.04)]">
+      <div className="flex items-center gap-2 pr-3">
       <button
         onClick={onToggle}
         aria-expanded={open}
-        className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-left transition hover:bg-white/5"
+        className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-left transition hover:bg-white/5"
       >
         <Icon
           icon={open ? "heroicons-outline:chevron-down" : "heroicons-outline:chevron-right"}
@@ -457,21 +577,127 @@ function DeviceItem({
           {relAge(dev.newestSec)}
         </span>
       </button>
+      {can("bi.manage") && (
+        <div className="flex shrink-0 items-center gap-2">
+          {allRetired ? (
+            <>
+              <span className="hidden text-[11px] text-nb-faint sm:inline">retired</span>
+              <button
+                onClick={() => retire.mutate(false)}
+                disabled={retire.isPending}
+                className="rounded-[7px] border border-nb-line px-2 py-0.5 text-[11px] text-nb-soft transition hover:border-nb-teal hover:text-nb-teal disabled:opacity-50"
+              >
+                Restore
+              </button>
+            </>
+          ) : (
+            <>
+              {retiredCount > 0 && (
+                <span className="hidden text-[11px] text-nb-faint sm:inline">
+                  {retiredCount}/{mine.length} retired
+                </span>
+              )}
+              <button
+                onClick={() =>
+                  setConfirm({
+                    // The danger flag, the word "permanently", the reading
+                    // count and the alternative are all in here on purpose:
+                    // this is the only action on the screen that cannot be
+                    // undone, and the one an operator is most likely to reach
+                    // for when they actually wanted Retire.
+                    title: `Delete ${dev.tag}`,
+                    message:
+                      `Permanently delete this device's ${mine.length} point(s) from the gateway ` +
+                      `AND every reading they ever produced from this platform. This cannot be undone.` +
+                      (live > 0
+                        ? ` ${live} of its points are still reporting — if the connection has ` +
+                          `auto-watch on, deleting will remove the history and the point will come ` +
+                          `straight back as a new, empty one.`
+                        : ``) +
+                      ` If this device is only offline, Retire instead — that keeps everything.`,
+                    confirmLabel: "Delete permanently",
+                    danger: true,
+                    onConfirm: () => { remove.mutate(); setConfirm(null); },
+                  })
+                }
+                disabled={remove.isPending || retire.isPending || mine.length === 0}
+                className="rounded-[7px] border border-nb-line px-2 py-0.5 text-[11px] text-nb-faint transition hover:border-nb-crit hover:text-nb-crit disabled:opacity-50"
+              >
+                Delete
+              </button>
+              <button
+                onClick={() =>
+                  setConfirm({
+                    title: `Retire ${dev.tag}`,
+                    message:
+                      `Stop counting this device's ${mine.length} point(s) here. Nothing is deleted: ` +
+                      `it stays configured on the gateway and every reading it produced is kept. ` +
+                      `If it starts reporting again it comes back on its own.`,
+                    confirmLabel: "Retire",
+                    onConfirm: () => { retire.mutate(true); setConfirm(null); },
+                  })
+                }
+                disabled={retire.isPending || remove.isPending || mine.length === 0}
+                className="rounded-[7px] border border-nb-line px-2 py-0.5 text-[11px] text-nb-faint transition hover:border-nb-warn hover:text-nb-warn disabled:opacity-50"
+              >
+                Retire
+              </button>
+            </>
+          )}
+          <ConfirmDialog
+            state={confirm}
+            onClose={() => setConfirm(null)}
+            pending={retire.isPending || remove.isPending}
+          />
+        </div>
+      )}
+      </div>
       {open && (
         <div className="border-t border-nb-line px-3 py-2">
+          {allRetired && (
+            <p className="mb-2 text-[11px] text-nb-faint">
+              Retired — not counted here. It is still configured on the gateway, and it comes back
+              on its own if it starts reporting again.
+            </p>
+          )}
           <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2">
             {mine.map((p) => {
               const age = ageSec(p.last_seen_at);
               const quiet = age == null || age > 900;
               return (
                 <li key={p.point_id} className="flex items-center gap-2 text-[12px]">
-                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${quiet ? "bg-nb-warn" : "bg-nb-good"}`} />
-                  <span className="min-w-0 flex-1 truncate text-nb-soft" title={p.point_tag || ""}>
+                  <span
+                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                      p.retired_at ? "bg-nb-faint" : quiet ? "bg-nb-warn" : "bg-nb-good"
+                    }`}
+                  />
+                  <span
+                    className={`min-w-0 flex-1 truncate ${p.retired_at ? "text-nb-faint line-through" : "text-nb-soft"}`}
+                    title={p.point_tag || ""}
+                  >
                     {p.point_tag || "—"}
+                  </span>
+                  {/* THE VALUE. A dash here means "no reading inside the
+                      server's lookback", never zero — the server returns no
+                      value at all rather than an hours-old number dressed as
+                      live. Colour comes from the envelope's quality flag: the
+                      device saying a sample is suspect is not something to
+                      hide behind a tidy number. */}
+                  <span
+                    className={`w-24 shrink-0 text-right font-mono text-[12px] tabular-nums ${
+                      p.latest ? qualityTone(p.latest.quality) || "text-nb-ink" : "text-nb-faint"
+                    }`}
+                    title={
+                      p.latest && p.latest.quality !== 0
+                        ? `the device reported quality ${p.latest.quality} for this sample`
+                        : undefined
+                    }
+                  >
+                    {fmtReading(p.latest)}
                   </span>
                   {/* Unit is NULL on every point of this estate and is shown as
                       a dash rather than inferred from a tag like KWH_kwh. */}
-                  <span className="w-12 shrink-0 text-right text-[11px] text-nb-faint">{p.unit || "—"}</span>
+                  <span className="w-10 shrink-0 text-right text-[11px] text-nb-faint">{p.unit || ""}</span>
                   <span className="w-20 shrink-0 text-right font-mono text-[11px] tabular-nums text-nb-faint">
                     {relAge(age)}
                   </span>

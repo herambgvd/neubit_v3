@@ -309,3 +309,168 @@ async def _command_via(handler, call, *, url="http://conflux:8000", token="t"):
         return await call(client)
     finally:
         httpx.AsyncClient = real  # type: ignore[misc]
+
+
+# ── delete ──────────────────────────────────────────────────────────────────
+#
+# The only irreversible action on this surface. What matters is the order it
+# happens in and what it treats as success.
+
+@pytest.mark.asyncio
+async def test_delete_goes_to_the_gateways_point_route():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["url"] = str(request.url)
+        return httpx.Response(204)
+
+    await _command_via(handler, lambda c: c.delete_point("p1"))
+    assert seen["method"] == "DELETE"
+    assert seen["url"].endswith("/api/points/p1")
+
+
+@pytest.mark.asyncio
+async def test_a_point_the_gateway_has_already_forgotten_is_a_SUCCESS():
+    # The caller's intent is "this should not exist". A gateway that no longer
+    # has it has satisfied that — and failing here would leave an operator
+    # unable to clean up this store's copy of something already gone.
+    got = await _command_via(lambda r: httpx.Response(404), lambda c: c.delete_point("p1"))
+    assert got == "absent"
+
+
+@pytest.mark.asyncio
+async def test_a_drifted_id_is_resolved_by_IDENTITY_and_still_deleted():
+    # THE bug this fallback exists for. A gateway re-materialises a point when
+    # its topic publishes again and the new point carries a NEW uuid, while this
+    # store still holds the old one. Deleting by id alone 404s and the gateway
+    # quietly keeps the live point — "delete it everywhere" that deletes it in
+    # one place.
+    deleted: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if request.method == "DELETE":
+            deleted.append(url)
+            # Only the NEW id exists on the gateway.
+            return httpx.Response(204 if "p-new" in url else 404)
+        if url.endswith("/api/connections/c1/devices"):
+            return httpx.Response(200, json=[{"id": "d1", "tag": "1F York Chiller1"}])
+        if url.endswith("/api/devices/d1/points"):
+            # Still one point left after the delete, so the device survives.
+            return httpx.Response(200, json=[{"id": "p-new", "tag": "1FYC1_Sys Load"}])
+        return httpx.Response(404)
+
+    got = await _command_via(
+        handler,
+        lambda c: c.delete_point(
+            "p-old", conn_id="c1", device_tag="1F York Chiller1", point_tag="1FYC1_Sys Load"
+        ),
+    )
+    assert got == "by-identity"
+    assert any("p-old" in u for u in deleted), "it should try the id it was given first"
+    assert any("p-new" in u for u in deleted), "and then the one the gateway actually has"
+
+
+@pytest.mark.asyncio
+async def test_the_device_goes_when_its_LAST_point_does():
+    # An empty device is not configuration anybody wants; it is the residue of
+    # this operation, and leaving it is how `1F York Chiller1` survived a delete
+    # as a bare row with nothing in it.
+    deleted: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if request.method == "DELETE":
+            deleted.append(url)
+            return httpx.Response(204 if "p-new" in url or "/devices/" in url else 404)
+        if url.endswith("/api/connections/c1/devices"):
+            return httpx.Response(200, json=[{"id": "d1", "tag": "dev"}])
+        if url.endswith("/api/devices/d1/points"):
+            # First call lists the point; the re-read after the delete is empty.
+            return httpx.Response(
+                200, json=[] if any("p-new" in u for u in deleted) else [{"id": "p-new", "tag": "pt"}]
+            )
+        return httpx.Response(404)
+
+    await _command_via(
+        handler,
+        lambda c: c.delete_point("p-old", conn_id="c1", device_tag="dev", point_tag="pt"),
+    )
+    assert any("/api/devices/d1" in u for u in deleted), "the emptied device should go too"
+
+
+@pytest.mark.asyncio
+async def test_a_device_that_gained_a_point_meanwhile_is_KEPT():
+    # The re-read is not a formality: another point can be materialised between
+    # the delete and the check, and taking the device then would delete a live
+    # point with it.
+    deleted: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if request.method == "DELETE":
+            deleted.append(url)
+            return httpx.Response(204 if "p-new" in url else 404)
+        if url.endswith("/api/connections/c1/devices"):
+            return httpx.Response(200, json=[{"id": "d1", "tag": "dev"}])
+        if url.endswith("/api/devices/d1/points"):
+            return httpx.Response(200, json=[{"id": "p-new", "tag": "pt"}, {"id": "p-fresh", "tag": "other"}])
+        return httpx.Response(404)
+
+    await _command_via(
+        handler,
+        lambda c: c.delete_point("p-old", conn_id="c1", device_tag="dev", point_tag="pt"),
+    )
+    assert not any("/api/devices/d1" in u for u in deleted), "a device with points left must survive"
+
+
+@pytest.mark.asyncio
+async def test_without_an_identity_a_missing_point_stays_absent():
+    # Nothing to look up: report honestly rather than guessing at a tag.
+    got = await _command_via(lambda r: httpx.Response(404), lambda c: c.delete_point("p1"))
+    assert got == "absent"
+
+
+@pytest.mark.asyncio
+async def test_a_point_deleted_by_its_own_id_does_not_go_looking():
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(f"{request.method} {request.url}")
+        return httpx.Response(204)
+
+    got = await _command_via(
+        handler, lambda c: c.delete_point("p1", conn_id="c1", device_tag="d", point_tag="p")
+    )
+    assert got == "by-id"
+    assert len(calls) == 1, f"the id worked; nothing else should have been fetched: {calls}"
+
+
+@pytest.mark.asyncio
+async def test_a_refused_delete_reports_the_gateways_reason():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(409, json={"error": "a rule still watches this point"})
+
+    with pytest.raises(FleetError) as err:
+        await _command_via(handler, lambda c: c.delete_point("p1"))
+    assert "a rule still watches this point" in str(err.value)
+
+
+@pytest.mark.asyncio
+async def test_a_403_on_delete_names_the_role_setting():
+    with pytest.raises(FleetError) as err:
+        await _command_via(lambda r: httpx.Response(403, json={}), lambda c: c.delete_point("p1"))
+    assert "EDGE_TOKEN_ROLE" in str(err.value)
+
+
+@pytest.mark.asyncio
+async def test_an_unreachable_gateway_fails_the_delete_rather_than_half_doing_it():
+    # If this did not raise, the caller would go on to delete the readings while
+    # the gateway still had the point — and the next reading would recreate a
+    # point with no history.
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    with pytest.raises(FleetError):
+        await _command_via(handler, lambda c: c.delete_point("p1"))

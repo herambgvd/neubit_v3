@@ -98,11 +98,29 @@ export interface IotPoint {
   device_type: string | null;
   last_seen_at: string | null;
   retired_at: string | null;
+  /**
+   * Whether this point still counts. Computed by the SERVER, from explicit
+   * retirement OR the silence horizon — a client that re-derived it would
+   * disagree the moment somebody changed the horizon.
+   */
+  live: boolean;
+  /**
+   * The most recent reading inside the server's lookback window, or null.
+   *
+   * NULL means "nothing recent", never "zero". A point silent longer than the
+   * window reports no value at all rather than an hours-old number rendered as
+   * live — the same rule the Building Intelligence screens follow.
+   */
+  latest: { ts: string; num: number | null; txt: string | null; quality: number } | null;
 }
 
 export interface IotPointList {
   gateway_id: string;
   points: IotPoint[];
+  /** The silence horizon, in days, so the console can say why in real units. */
+  retire_after_days: number;
+  /** How far back a "current value" may be read. Why a dash is a dash. */
+  value_lookback_minutes: number;
 }
 
 /** One fault the gateway raised, as the platform holds it. */

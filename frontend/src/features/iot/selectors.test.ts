@@ -14,12 +14,15 @@ import {
   ageSec,
   devicesFrom,
   filterDevices,
+  categoryTabs,
   filterGateways,
   gatewayName,
+  inCategory,
   gatewayTotals,
   isQuiet,
   missingPoints,
 } from "./selectors";
+import type { DeviceRow } from "./selectors";
 import type { IotAlert, IotConnection, IotGateway, IotPoint } from "./types";
 
 const NOW = Date.parse("2026-09-18T12:00:00Z");
@@ -34,6 +37,8 @@ const point = (p: Partial<IotPoint> = {}): IotPoint => ({
   device_type: "incomer",
   last_seen_at: ago(60),
   retired_at: null,
+  live: true,
+  latest: null,
   ...p,
 });
 
@@ -377,5 +382,86 @@ describe("openAlerts", () => {
     // A queue that counted these would tell an operator there is outstanding
     // work it cannot actually name.
     expect(openAlerts([alert("a", null)])).toHaveLength(0);
+  });
+});
+
+describe("categoryTabs", () => {
+  const dev = (tag: string, category: string | null, quiet = 0): DeviceRow => ({
+    tag,
+    category,
+    type: null,
+    points: 5,
+    quiet,
+    newestSec: 60,
+  });
+
+  it("puts All first and keeps a FIXED order after it", () => {
+    // Not ordered by count, and not alphabetical: a tab bar whose tabs move
+    // when a device is retired is one nobody can build muscle memory on.
+    //
+    // `unclassified` is in here on purpose — it is the one category where the
+    // declared order and alphabetical order disagree (water would sort after
+    // it), so without it this test passes against a plain sort().
+    const rows = [
+      dev("a", "water"),
+      dev("b", "energy"),
+      dev("c", "hvac"),
+      dev("d", null),
+    ];
+    expect(categoryTabs(rows).map((t) => t.key)).toEqual([
+      "all",
+      "energy",
+      "hvac",
+      "water",
+      "unclassified",
+    ]);
+  });
+
+  it("drops a category the estate does not have", () => {
+    // An empty "Water" tab on a site with no water meters is a dead end.
+    expect(categoryTabs([dev("a", "energy")]).map((t) => t.key)).toEqual(["all", "energy"]);
+  });
+
+  it("files a device with no category under unclassified", () => {
+    const tabs = categoryTabs([dev("a", null)]);
+    expect(tabs.map((t) => t.key)).toEqual(["all", "unclassified"]);
+    expect(tabs[1].devices).toBe(1);
+  });
+
+  it("counts devices and their quiet points per tab", () => {
+    const rows = [dev("a", "energy", 2), dev("b", "energy", 1), dev("c", "hvac", 0)];
+    const tabs = categoryTabs(rows);
+    expect(tabs.find((t) => t.key === "all")).toMatchObject({ devices: 3, quiet: 3 });
+    expect(tabs.find((t) => t.key === "energy")).toMatchObject({ devices: 2, quiet: 3 });
+    expect(tabs.find((t) => t.key === "hvac")).toMatchObject({ devices: 1, quiet: 0 });
+  });
+
+  it("spells HVAC in capitals and the rest in title case", () => {
+    const tabs = categoryTabs([dev("a", "hvac"), dev("b", "energy")]);
+    expect(tabs.map((t) => t.label)).toEqual(["All", "Energy", "HVAC"]);
+  });
+
+  it("is just All for an empty estate", () => {
+    expect(categoryTabs([]).map((t) => t.key)).toEqual(["all"]);
+  });
+});
+
+describe("inCategory", () => {
+  const dev = (tag: string, category: string | null): DeviceRow => ({
+    tag, category, type: null, points: 1, quiet: 0, newestSec: 1,
+  });
+
+  it("returns everything for all", () => {
+    const rows = [dev("a", "energy"), dev("b", "hvac")];
+    expect(inCategory(rows, "all")).toHaveLength(2);
+  });
+
+  it("narrows to one category", () => {
+    const rows = [dev("a", "energy"), dev("b", "hvac")];
+    expect(inCategory(rows, "hvac").map((d) => d.tag)).toEqual(["b"]);
+  });
+
+  it("matches uncategorised devices under unclassified", () => {
+    expect(inCategory([dev("a", null)], "unclassified").map((d) => d.tag)).toEqual(["a"]);
   });
 });

@@ -32,8 +32,17 @@ export const iot = {
   gateways: {
     list: () => api.get<IotGatewayList>("/iot/gateways").then((r) => r.data),
     get: (id: string) => api.get<IotGateway>(`/iot/gateways/${id}`).then((r) => r.data),
-    points: (id: string, limit = 500) =>
-      api.get<IotPointList>(`/iot/gateways/${id}/points`, { params: { limit } }).then((r) => r.data),
+    /**
+     * `includeRetired` brings back what retirement hides. Retired points are
+     * returned MARKED rather than omitted then, because "what did I retire and
+     * why did the total move" is a real question.
+     */
+    points: (id: string, includeRetired = false) =>
+      api
+        .get<IotPointList>(`/iot/gateways/${id}/points`, {
+          params: { limit: 2000, include_retired: includeRetired },
+        })
+        .then((r) => r.data),
     alerts: (id: string, limit = 100) =>
       api.get<IotAlertList>(`/iot/gateways/${id}/alerts`, { params: { limit } }).then((r) => r.data),
   },
@@ -54,6 +63,24 @@ export const iot = {
      */
     mint: (name: string) => api.post<IotMintedToken>("/iot/tokens", { name }).then((r) => r.data),
     revoke: (id: string) => api.delete(`/iot/tokens/${id}`).then((r) => r.data),
+  },
+  points: {
+    /**
+     * Retire or restore a point. This DELETES NOTHING and does not touch the
+     * gateway: the point stays configured there and its readings stay here —
+     * retiring only takes it out of the counts. It also reverses itself, since
+     * the writer clears the flag on the next reading.
+     */
+    retire: (pointId: string, retired: boolean) =>
+      api.post(`/iot/points/${pointId}/retire`, { retired }).then((r) => r.data),
+    /**
+     * Delete from the gateway AND from this store. IRREVERSIBLE, and it takes
+     * every reading the point ever produced with it — `readings` has no foreign
+     * key to `points`, so leaving them would strand measurements nothing can
+     * find. For anything that is merely offline, retire instead.
+     */
+    remove: (pointId: string) =>
+      api.delete<{ deleted: boolean; readings_deleted: number }>(`/iot/points/${pointId}`).then((r) => r.data),
   },
   alerts: {
     /**

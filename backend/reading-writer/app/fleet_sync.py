@@ -234,6 +234,99 @@ class FleetClient:
         """
         await self._post(f"/api/fleet/gateways/{gateway_id}/revoke", what="revoke that gateway")
 
+    async def _delete(self, path: str, *, what: str) -> int:
+        """DELETE and return the status. 404 is not an error here — see callers."""
+        headers = {"Authorization": f"Bearer {self._token}"} if self._token else {}
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.delete(f"{self._url}{path}", headers=headers)
+        except httpx.HTTPError as exc:
+            raise FleetError(f"gateway server at {self._url} is unreachable: {exc}") from exc
+        if resp.status_code in (401, 403):
+            raise FleetError(
+                f"the gateway server refused to delete that {what} "
+                f"(HTTP {resp.status_code}) — EDGE_TOKEN_ROLE must be operator or higher"
+            )
+        if resp.status_code >= 300 and resp.status_code != 404:
+            raise FleetError(
+                _detail(resp) or f"gateway server at {self._url} returned HTTP {resp.status_code}"
+            )
+        return resp.status_code
+
+    async def _get_json(self, path: str):
+        headers = {"Authorization": f"Bearer {self._token}"} if self._token else {}
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.get(f"{self._url}{path}", headers=headers)
+        except httpx.HTTPError as exc:
+            raise FleetError(f"gateway server at {self._url} is unreachable: {exc}") from exc
+        if resp.status_code != 200:
+            return None
+        try:
+            return resp.json()
+        except ValueError:
+            return None
+
+    async def delete_point(
+        self,
+        point_id: str,
+        *,
+        conn_id: str | None = None,
+        device_tag: str | None = None,
+        point_tag: str | None = None,
+    ) -> str:
+        """Delete a point ON THE GATEWAY, by id and — if that misses — by IDENTITY.
+
+        Returns what it did: "by-id", "by-identity", or "absent".
+
+        WHY THE FALLBACK EXISTS, and it is the whole point of this method.
+        A gateway re-materialises a point when its topic publishes again, and
+        the new point gets a NEW uuid. The platform's copy still carries the
+        OLD one. Deleting by id then hits a point the gateway has already
+        forgotten, returns 404, and the gateway quietly keeps the live one —
+        so "delete it everywhere" removed it here and nowhere else. That is
+        exactly what happened to `1F York Chiller1`.
+
+        The identity — connection, device tag, point tag — survives that churn,
+        because it is what the topic is made of. So a 404 on the id is not the
+        end: look the point up by what it IS and delete that.
+
+        A device left with no points is removed too. An empty device is not
+        configuration anybody wants; it is the residue of this operation.
+        """
+        status_code = await self._delete(f"/api/points/{point_id}", what="point")
+        if status_code != 404:
+            return "by-id"
+        # Redundant and deliberate. Without an identity the lookup below finds
+        # nothing anyway and returns "absent" by itself — this says so up front
+        # instead of issuing two pointless requests to the gateway to reach the
+        # same answer.
+        if not (conn_id and device_tag and point_tag):
+            return "absent"
+
+        devices = await self._get_json(f"/api/connections/{conn_id}/devices") or []
+        device = next(
+            (d for d in devices if isinstance(d, dict) and d.get("tag") == device_tag), None
+        )
+        if not device:
+            return "absent"
+
+        points = await self._get_json(f"/api/devices/{device['id']}/points") or []
+        target = next(
+            (p for p in points if isinstance(p, dict) and p.get("tag") == point_tag), None
+        )
+        if not target:
+            return "absent"
+
+        await self._delete(f"/api/points/{target['id']}", what="point")
+        # Was that the device's last point? Re-read rather than subtracting from
+        # the list above: another point may have been materialised in between,
+        # and deleting a device that has just gained one would take it with it.
+        remaining = await self._get_json(f"/api/devices/{device['id']}/points")
+        if remaining is not None and len(remaining) == 0:
+            await self._delete(f"/api/devices/{device['id']}", what="device")
+        return "by-identity"
+
     async def tokens(self) -> list[dict]:
         """Enrolment tokens the gateway server has issued.
 
