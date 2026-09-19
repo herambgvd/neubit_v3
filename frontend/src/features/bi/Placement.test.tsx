@@ -1,6 +1,7 @@
 /**
- * BUILDINGS & DEVICES — one table, a building pre-filled where the store holds
- * evidence, the reason beside it, and nothing placed until a person saves.
+ * BUILDINGS & DEVICES — cards grouped by the evidence for where each device
+ * is, a building pre-filled where there is evidence, and nothing placed until
+ * a person saves.
  */
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -68,32 +69,53 @@ beforeEach(() => {
   for (const k of Object.keys(query)) delete query[k];
 });
 
-describe("the table", () => {
-  it("pre-fills a building where there is evidence, and says why", async () => {
+const section = (name: string) => screen.getByRole("region", { name });
+
+describe("the cards", () => {
+  it("groups the devices by the evidence, and says it once per group", async () => {
     wire();
     renderWithProviders(<Placement />);
 
-    expect(await screen.findByText("same name already there")).toBeInTheDocument();
+    await screen.findByText("Same name already in a building");
+    expect(within(section("Same name already in a building")).getByText("1F York Chiller01")).toBeInTheDocument();
+    expect(within(section("On the same gateway as placed devices")).getByText("4F_Incomer1_EM")).toBeInTheDocument();
+    expect(within(section("No evidence — choose a building")).getByText("Mystery")).toBeInTheDocument();
+    expect(within(section("Quiet — probably an old copy")).getByText("1F Khem Chiller01")).toBeInTheDocument();
+  });
+
+  it("pre-fills a building where there is evidence", async () => {
+    wire();
+    renderWithProviders(<Placement />);
+
+    await screen.findByText("Same name already in a building");
     expect(select("1F York Chiller01")).toHaveValue("aeon");
     expect(select("4F_Incomer1_EM")).toHaveValue("aeon");
-    expect(screen.getByText("same gateway as 1 device there")).toBeInTheDocument();
   });
 
   it("pre-fills nothing without evidence — two buildings to choose from, and no guess", async () => {
     wire();
     renderWithProviders(<Placement />);
 
-    await screen.findByText("same name already there");
+    await screen.findByText("Same name already in a building");
     expect(select("Mystery")).toHaveValue("");
-    expect(screen.getByText("no evidence — choose a building")).toBeInTheDocument();
   });
 
   it("never pre-fills a quiet device, and says since when", async () => {
     wire();
     renderWithProviders(<Placement />);
 
-    expect(await screen.findByText(/quiet since 11 Sept — an old copy\?/)).toBeInTheDocument();
+    expect(await screen.findByText("since 11 Sept")).toBeInTheDocument();
     expect(select("1F Khem Chiller01")).toHaveValue("");
+  });
+
+  it("marks a card a person has changed", async () => {
+    wire();
+    const user = userEvent.setup();
+    renderWithProviders(<Placement />);
+
+    await screen.findByText("Same name already in a building");
+    await user.selectOptions(select("Mystery"), "b2");
+    expect(select("Mystery").closest("div[title]")?.className).toMatch(/border-nb-blue/);
   });
 
   it("counts what it suggested", async () => {
@@ -123,7 +145,7 @@ describe("saving", () => {
     const user = userEvent.setup();
     renderWithProviders(<Placement />);
 
-    await screen.findByText("same name already there");
+    await screen.findByText("Same name already in a building");
     await user.selectOptions(select("Mystery"), "b2");
     await user.click(screen.getByRole("button", { name: "Save 3 changes" }));
 
@@ -163,7 +185,7 @@ describe("scope and permission", () => {
     query.category = "energy";
     wire();
     renderWithProviders(<Placement />);
-    await screen.findByText("same name already there");
+    await screen.findByText("Same name already in a building");
     expect(bi.devices).toHaveBeenCalledWith(expect.objectContaining({ placement: "unplaced", category: "energy" }));
   });
 
@@ -172,7 +194,7 @@ describe("scope and permission", () => {
     wire();
     renderWithProviders(<Placement />);
 
-    expect(await screen.findByText("same name already there")).toBeInTheDocument();
+    expect(await screen.findByText("Same name already in a building")).toBeInTheDocument();
     expect(select("Mystery")).toBeDisabled();
     expect(screen.queryByRole("button", { name: /Accept|Save/ })).not.toBeInTheDocument();
     expect(screen.getByText(/Placing needs/)).toHaveTextContent("devices.create");
@@ -194,7 +216,7 @@ describe("the layout", () => {
   it("scrolls the table's rows, not the page, so the save stays in reach", async () => {
     wire();
     renderWithProviders(<Placement />);
-    await screen.findByText("same name already there");
+    await screen.findByText("Same name already in a building");
 
     const rows = screen.getByTestId("placement-rows");
     expect(rows.className).toMatch(/overflow-y-auto/);
