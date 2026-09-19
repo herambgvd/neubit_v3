@@ -2,17 +2,16 @@
 
 // Building Intelligence → Setup → BUILDINGS & DEVICES (gate 3).
 //
-// CARDS, GROUPED BY EVIDENCE. Every device without a building is a small card
-// with a building PRE-FILLED where the store holds evidence for one
-// (`setup/placement/suggest.ts`): a same-named device already in that building,
-// or a gateway whose other devices are all in it. The evidence heads its
-// SECTION, so it is read once rather than repeated on every card. The operator
-// changes any card they disagree with, and saves. Nothing is placed until they
-// press — and no card is pre-filled from the mere fact that the estate has one
-// building.
+// ONE TABLE. Every device without a building is a row, with a building
+// PRE-FILLED where the store holds evidence for one and the reason printed
+// beside it (`setup/placement/suggest.ts`): a same-named device already in that
+// building, or a gateway whose other devices are all in it. The operator reads
+// the reasons, changes any row they disagree with, and saves. Nothing is placed
+// until they press — and no row is pre-filled from the mere fact that the
+// estate has one building.
 //
-// Devices already in a building are a last, folded section of the same grid,
-// so moving one is the same gesture as placing one.
+// Devices already in a building are a second, folded section of the same
+// table, so moving one is the same gesture as placing one.
 //
 // `?category=energy` from a domain strip narrows both lists, as before.
 import { Suspense, useMemo, useState } from "react";
@@ -36,6 +35,13 @@ import { useAssignDevices } from "./useAssignDevices";
 
 /** The server's cap on one `/bi/devices` page. */
 const PAGE = 500;
+
+const TONE: Record<Row["tone"], string> = {
+  evidence: "text-nb-blueb",
+  gateway: "text-nb-soft",
+  warn: "text-nb-warn",
+  none: "text-nb-faint",
+};
 
 export default function Placement() {
   return (
@@ -210,70 +216,53 @@ function PlacementInner() {
         )}
 
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] border border-white/[.08]">
-          <div data-testid="placement-rows" className="min-h-0 flex-1 overflow-y-auto p-4">
-            {loading && <p className="py-10 text-center text-[13px] text-nb-faint">Reading the devices…</p>}
-            {!loading && rows.length === 0 && !loadErr && (
-              <p className="py-8 text-center text-[13px] text-nb-muted">Every device is in a building.</p>
-            )}
+          <Header />
+          <div data-testid="placement-rows" className="min-h-0 flex-1 overflow-y-auto">
+          {loading && <p className="px-5 py-10 text-center text-[13px] text-nb-faint">Reading the devices…</p>}
+          {!loading && rows.length === 0 && !loadErr && (
+            <p className="px-5 py-8 text-center text-[13px] text-nb-muted">Every device is in a building.</p>
+          )}
+          {rows.map((r, i) => (
+            <DeviceLine
+              key={r.device.device_id ?? `${r.device.device_tag}-${i}`}
+              device={r.device}
+              value={choices[r.device.device_id ?? ""] ?? ""}
+              buildings={buildings}
+              reason={r.reason}
+              tone={r.tone}
+              quiet={!!r.quietSince}
+              mayAssign={mayAssign}
+              onChange={(siteId) => r.device.device_id && setEdits((e) => ({ ...e, [r.device.device_id!]: siteId }))}
+            />
+          ))}
 
-            {SECTIONS.map((s) => {
-              const members = rows.filter((r) => sectionOf(r) === s.key);
-              if (!members.length) return null;
-              return (
-                <Section key={s.key} title={s.title} hint={s.hint} count={members.length} tone={s.tone}>
-                  {members.map((r, i) => (
-                    <DeviceCard
-                      key={r.device.device_id ?? `${r.device.device_tag}-${i}`}
-                      device={r.device}
-                      value={choices[r.device.device_id ?? ""] ?? ""}
-                      buildings={buildings}
-                      note={s.key === "none" && r.tone === "warn" ? r.reason : s.key === "quiet" ? `since ${fmtDay(r.quietSince)}` : null}
-                      reason={r.reason}
-                      quiet={!!r.quietSince}
-                      edited={!!r.device.device_id && r.device.device_id in edits}
-                      mayAssign={mayAssign}
-                      onChange={(siteId) =>
-                        r.device.device_id && setEdits((e) => ({ ...e, [r.device.device_id!]: siteId }))
-                      }
-                    />
-                  ))}
-                </Section>
-              );
-            })}
-
-            {placed.length > 0 && (
-              <div className="mt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowPlaced((v) => !v)}
-                  className="flex items-center gap-2 py-2 text-[12.5px] text-nb-muted transition hover:text-nb-ink"
-                >
-                  <Icon
-                    icon="heroicons-outline:chevron-right"
-                    className={`text-[13px] transition-transform ${showPlaced ? "rotate-90" : ""}`}
-                  />
-                  {placedQ.data?.total ?? placed.length} already in a building
-                </button>
-                {showPlaced && (
-                  <div className={GRID}>
-                    {placed.map((d, i) => (
-                      <DeviceCard
-                        key={d.device_id ?? `p-${d.device_tag}-${i}`}
-                        device={d}
-                        value={choices[d.device_id ?? ""] ?? ""}
-                        buildings={buildings}
-                        note={null}
-                        reason={d.site_name ? `in ${d.site_name}` : ""}
-                        quiet={false}
-                        edited={!!d.device_id && d.device_id in edits}
-                        mayAssign={mayAssign}
-                        onChange={(siteId) => d.device_id && setEdits((e) => ({ ...e, [d.device_id!]: siteId }))}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+          {placed.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowPlaced((s) => !s)}
+              className="flex w-full items-center gap-2 border-t border-white/[.06] px-5 py-3 text-left text-[12.5px] text-nb-muted transition hover:text-nb-ink"
+            >
+              <Icon
+                icon="heroicons-outline:chevron-right"
+                className={`text-[13px] transition-transform ${showPlaced ? "rotate-90" : ""}`}
+              />
+              {placedQ.data?.total ?? placed.length} already in a building
+            </button>
+          )}
+          {showPlaced &&
+            placed.map((d, i) => (
+              <DeviceLine
+                key={d.device_id ?? `p-${d.device_tag}-${i}`}
+                device={d}
+                value={choices[d.device_id ?? ""] ?? ""}
+                buildings={buildings}
+                reason={d.site_name ? `in ${d.site_name}` : ""}
+                tone="none"
+                quiet={false}
+                mayAssign={mayAssign}
+                onChange={(siteId) => d.device_id && setEdits((e) => ({ ...e, [d.device_id!]: siteId }))}
+              />
+            ))}
           </div>
         </div>
       </div>
@@ -281,106 +270,46 @@ function PlacementInner() {
   );
 }
 
-/** Six across on a wide screen — about four rows before the cards scroll. */
-const GRID = "grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6";
+const COLS = "grid grid-cols-[minmax(0,1.2fr)_220px_minmax(0,1fr)_110px] items-center gap-x-5";
 
-type SectionKey = "same_name" | "same_gateway" | "none" | "quiet";
-
-/** The evidence, said ONCE per group instead of on every card. */
-const SECTIONS: { key: SectionKey; title: string; hint: string; tone: string }[] = [
-  {
-    key: "same_name",
-    title: "Same name already in a building",
-    hint: "a gateway rebuild saved these again under a new id",
-    tone: "text-nb-blueb",
-  },
-  {
-    key: "same_gateway",
-    title: "On the same gateway as placed devices",
-    hint: "every placed device on their gateway is in one building",
-    tone: "text-nb-soft",
-  },
-  {
-    key: "none",
-    title: "No evidence — choose a building",
-    hint: "nothing in the store says where these are",
-    tone: "text-nb-muted",
-  },
-  {
-    key: "quiet",
-    title: "Quiet — probably an old copy",
-    hint: "stopped reporting a day or more before the rest",
-    tone: "text-nb-warn",
-  },
-];
-
-function sectionOf(r: Row): SectionKey {
-  if (r.quietSince) return "quiet";
-  if (r.suggestion?.why === "same_name") return "same_name";
-  if (r.suggestion?.why === "same_gateway") return "same_gateway";
-  return "none";
-}
-
-function Section({
-  title,
-  hint,
-  count,
-  tone,
-  children,
-}: Readonly<{ title: string; hint: string; count: number; tone: string; children: React.ReactNode }>) {
+function Header() {
   return (
-    <section aria-label={title} className="mb-5">
-      <div className="mb-2.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
-        <h3 className={`text-[13px] font-medium ${tone}`}>{title}</h3>
-        <span className="text-[12px] tabular-nums text-nb-faint">{count}</span>
-        <span className="text-[11.5px] text-nb-faint">· {hint}</span>
-      </div>
-      <div className={GRID}>{children}</div>
-    </section>
+    <div className={`${COLS} bg-white/[.02] px-5 py-2.5 text-[10.5px] tracking-[.6px] text-nb-faint`}>
+      <span>DEVICE</span>
+      <span>BUILDING</span>
+      <span>WHY</span>
+      <span className="text-right">LAST SEEN</span>
+    </div>
   );
 }
 
-function DeviceCard({
+function DeviceLine({
   device,
   value,
   buildings,
-  note,
   reason,
+  tone,
   quiet,
-  edited,
   mayAssign,
   onChange,
 }: Readonly<{
   device: BiDeviceRow;
   value: string;
   buildings: { site_id: string; site_name: string | null }[];
-  /** Only what the section title does not already say. */
-  note: string | null;
-  /** The full reason, for the tooltip. */
   reason: string;
+  tone: Row["tone"];
   quiet: boolean;
-  edited: boolean;
   mayAssign: boolean;
   onChange: (siteId: string) => void;
 }>) {
   const can = mayAssign && assignable(device);
   const label = device.device_tag ?? "unnamed device";
   return (
-    <div
-      title={reason}
-      className={`flex flex-col gap-2.5 rounded-[10px] border p-3 transition-colors ${
-        edited
-          ? "border-nb-blue/55 bg-nb-blue/[.05]"
-          : value
-            ? "border-white/[.1] bg-white/[.02]"
-            : "border-white/[.07]"
-      } ${quiet ? "opacity-80" : ""}`}
-    >
+    <div className={`${COLS} border-t border-white/[.05] px-5 py-2.5 ${quiet ? "bg-white/[.012]" : ""}`}>
       <div className="min-w-0">
         <div className={`truncate text-[13px] ${quiet ? "text-nb-muted" : "text-nb-ink"}`}>{label}</div>
-        <div className="mt-0.5 truncate text-[11px] text-nb-faint">
-          {device.category ?? "no category"} · {device.points} pts ·{" "}
-          {device.last_seen_at ? fmtRelative(device.last_seen_at) : "—"}
+        <div className="text-[11px] text-nb-faint">
+          {device.category ?? "no category"} · {device.points} pts
         </div>
       </div>
       <select
@@ -388,7 +317,7 @@ function DeviceCard({
         value={value}
         disabled={!can}
         onChange={(e) => onChange(e.target.value)}
-        className={`h-8 w-full rounded-[7px] border bg-transparent px-2 text-[12.5px] outline-none transition disabled:opacity-50 ${
+        className={`h-8 rounded-[7px] border bg-transparent px-2 text-[12.5px] outline-none transition disabled:opacity-50 ${
           value ? "border-nb-blue/40 text-nb-blueb" : "border-white/[.14] text-nb-muted"
         }`}
       >
@@ -399,11 +328,12 @@ function DeviceCard({
           </option>
         ))}
       </select>
-      {!assignable(device) ? (
-        <div className="text-[11px] text-nb-warn">has no device id — cannot be placed</div>
-      ) : note ? (
-        <div className={`text-[11px] ${quiet ? "text-nb-muted" : "text-nb-warn"}`}>{note}</div>
-      ) : null}
+      <span className={`truncate text-[12px] ${TONE[tone]}`} title={reason}>
+        {assignable(device) ? reason : "has no device id — cannot be placed"}
+      </span>
+      <span className="text-right text-[12px] text-nb-muted" title={device.last_seen_at ?? ""}>
+        {quiet ? fmtDay(device.last_seen_at) : device.last_seen_at ? fmtRelative(device.last_seen_at) : "—"}
+      </span>
     </div>
   );
 }
