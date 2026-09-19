@@ -3,13 +3,19 @@
 Mounted under the api_prefix → ``{prefix}/sites/{site_id}/infrastructure``, plus
 the static vocabulary at ``{prefix}/site-infrastructure/vocabulary``.
 
-PERMISSIONS: ``sites.read`` to read, ``sites.update`` to write — including
-deleting a system or a piece of equipment. The registry is a set of facts ABOUT
-a site, the same standing as its area, tariff slabs and emission factors, which
-are all written under ``sites.update``. ``sites.delete`` means deleting the
-building; asking for it to remove one pump would hand out the power to delete
-the building in order to edit it. A new ``infrastructure.*`` permission would be
-one no existing role holds and no operator could be told they need.
+PERMISSIONS: the Building Intelligence module (``analytics``) on every route,
+then ``bi.read`` to read and ``bi.manage`` to write — including deleting a system
+or a piece of equipment.
+
+These were ``sites.read`` / ``sites.update`` when the registry shipped, and that
+was the wrong axis. neubit_v3 is sold first as a VMS / command-center product and
+Building Intelligence as a module on top of it. Under ``sites.update`` a VMS admin
+who manages cameras could describe chillers, and a tenant that never bought BI
+could reach the registry at all. The registry is BI configuration: the person
+who fills it in is a BI commissioning engineer, and the screen for it lives in
+BI → Setup, not in Configurations → Sites. The SITE is still read here — as the
+shared reference every equipment row hangs off, with the same confinement
+SiteService applies — but nothing about the building is written.
 """
 
 from __future__ import annotations
@@ -24,6 +30,7 @@ from ...auth.models import User
 from ...auth.permissions import CorePerm
 from ...core.uploads import read_capped
 from ...db.base import get_db
+from ...tenancy.features import require_feature
 from ...tenancy.scope import Scope, get_scope
 from . import schedule_import
 from . import vocabulary as vocab
@@ -40,10 +47,18 @@ from .schemas import (
 )
 from .service import InfrastructureService
 
-router = APIRouter(prefix="/sites/{site_id}/infrastructure", tags=["Site infrastructure"])
-vocabulary_router = APIRouter(prefix="/site-infrastructure", tags=["Site infrastructure"])
+# The module gate sits on the ROUTER, so no route added here later can forget it.
+_MODULE = [Depends(require_feature("analytics"))]
+router = APIRouter(
+    prefix="/sites/{site_id}/infrastructure",
+    tags=["Site infrastructure"],
+    dependencies=_MODULE,
+)
+vocabulary_router = APIRouter(
+    prefix="/site-infrastructure", tags=["Site infrastructure"], dependencies=_MODULE
+)
 
-_READ = Depends(require_permission(CorePerm.SITES_READ))
+_READ = Depends(require_permission(CorePerm.BI_READ))
 
 
 async def _service(
@@ -58,7 +73,7 @@ async def _service(
 
 
 Svc = Annotated[InfrastructureService, Depends(_service)]
-Writer = Annotated[User, Depends(require_permission(CorePerm.SITES_UPDATE))]
+Writer = Annotated[User, Depends(require_permission(CorePerm.BI_MANAGE))]
 
 
 @vocabulary_router.get("/vocabulary", dependencies=[_READ])

@@ -39,8 +39,11 @@ FIXTURE = __import__("pathlib").Path(__file__).parent / "fixtures" / "io_schedul
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
-async def _tenant(db, slug: str) -> Tenant:
-    t = Tenant(name=slug, slug=slug, status="active", features={}, limits={})
+async def _tenant(db, slug: str, *, analytics: bool = True) -> Tenant:
+    # The registry is Building Intelligence configuration and rides on the BI
+    # module; a tenant that never bought it is refused at the router.
+    t = Tenant(name=slug, slug=slug, status="active",
+               features={"analytics": analytics}, limits={})
     db.add(t)
     await db.commit()
     await db.refresh(t)
@@ -53,7 +56,7 @@ async def _site(db, tenant, site_id="site-1", *, active=True):
     await db.commit()
 
 
-async def _operator(db, tenant, email, perms=("sites.read", "sites.update"), site_ids=None):
+async def _operator(db, tenant, email, perms=("bi.read", "bi.manage"), site_ids=None):
     role = await make_role(db, f"Role-{email}", list(perms))
     user = await make_user(db, email, role)
     user.tenant_id = tenant.id
@@ -254,10 +257,10 @@ async def test_a_site_confined_user_sees_only_their_sites_registry(app, db):
     assert hidden.status_code == 404, hidden.text
 
 
-async def test_reading_needs_sites_read_and_writing_needs_sites_update(app, db):
+async def test_reading_needs_bi_read_and_writing_needs_bi_manage(app, db):
     t = await _tenant(db, "inf-perm")
     await _site(db, t)
-    reader = await _operator(db, t, "reader@x.io", perms=("sites.read",))
+    reader = await _operator(db, t, "reader@x.io", perms=("bi.read",))
     nobody = await _operator(db, t, "nobody@x.io", perms=("devices.read",))
 
     async with api_client(app) as c:
@@ -914,3 +917,34 @@ async def test_a_tenant_erasure_takes_its_registry_and_only_its_registry(db):
     for table in ("site_systems", "site_equipment", "equipment_point_slots"):
         left = (await db.execute(text(f"SELECT tenant_id FROM {table}"))).scalars().all()
         assert [str(v).replace("-", "") for v in left] == [neighbour.id.hex], table
+
+
+
+# ── Building Intelligence configuration, not site administration ─────────────
+
+
+async def test_a_vms_admin_with_sites_update_cannot_describe_a_chiller(app, db):
+    """`sites.update` manages buildings for the VMS side. Describing a building's
+    plant is BI configuration, and holding the first grants nothing here."""
+    t = await _tenant(db, "inf-vms-admin")
+    await _site(db, t)
+    admin = await _operator(db, t, "vmsadmin@x.io", perms=("sites.read", "sites.update"))
+
+    async with api_client(app) as c:
+        read = await c.get(_base(), headers=bearer(admin))
+        write = await c.post(f"{_base()}/systems", json={"name": "L", "kind": "power"},
+                             headers=bearer(admin))
+    assert (read.status_code, write.status_code) == (403, 403)
+
+
+async def test_a_tenant_without_the_bi_module_is_refused_even_with_bi_manage(app, db):
+    t = await _tenant(db, "inf-no-module", analytics=False)
+    await _site(db, t)
+    user = await _operator(db, t, "nomodule@x.io")
+
+    async with api_client(app) as c:
+        tree = await c.get(_base(), headers=bearer(user))
+        vocab_r = await c.get(f"{PREFIX}/site-infrastructure/vocabulary", headers=bearer(user))
+    assert tree.status_code == 403
+    assert tree.json()["error"]["code"] == "FEATURE_DISABLED"
+    assert vocab_r.status_code == 403
