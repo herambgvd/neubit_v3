@@ -323,7 +323,7 @@ describe("the whole estate — the unscoped console", () => {
     // Every count ships with the action that changes it, and placement is owned
     // by Sites — this console has no placement worklist and must not grow one.
     expect(remainder).toHaveTextContent("Assign them to a building");
-    expect(remainder).toHaveAttribute("href", "/bi/placement?category=hvac");
+    expect(remainder).toHaveAttribute("href", "/bi/setup/placement?category=hvac");
   });
 
   it("does not imply a portfolio that is not there", async () => {

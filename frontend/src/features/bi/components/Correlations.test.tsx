@@ -237,7 +237,7 @@ describe("a card", () => {
     expect(within(card).getByText(/Ambient temperature — unit unconfirmed/)).toBeInTheDocument();
     expect(within(card).getByRole("link", { name: /Building Intelligence → Units/ })).toHaveAttribute(
       "href",
-      "/bi/ratings",
+      "/bi/setup/units",
     );
   });
 

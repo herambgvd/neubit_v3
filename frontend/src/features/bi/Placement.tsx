@@ -1,6 +1,7 @@
 "use client";
 
-// Building Intelligence → UNPLACED DEVICES. Gate 3: the point BELONGS to a place.
+// Building Intelligence → Setup → BUILDINGS & DEVICES. Gate 3: the point
+// BELONGS to a place.
 //
 // Most of this estate's points belong to no building, and until the backend
 // could say "this device is in Aeon Tower" without an {x, y}, the only way to
@@ -27,7 +28,6 @@ import {
   ActionButton,
   ConsolePage,
   ConsolePanel,
-  EstateHeader,
   PanelFooter,
   PanelHeader,
   PanelList,
@@ -43,6 +43,7 @@ import type { BiDeviceListResponse, BiDeviceRow } from "@/lib/types";
 
 import AssignDevices from "./components/AssignDevices";
 import { bi } from "./api";
+import SetupHeader from "./setup/SetupHeader";
 import { assignable } from "./assign";
 import { categoryMeta, MODULE, PERM_ASSIGN, PERM_READ, PERM_SITES_READ } from "./constants";
 
@@ -118,7 +119,7 @@ function PlacementInner() {
   if (!mayRead) {
     return (
       <ConsolePage>
-        <EstateHeader crumbs={[{ label: "Unplaced devices" }]} />
+        <SetupHeader task="placement" />
         <p className="text-[11.5px] text-nb-faint">
           Reading this list needs <span className="font-mono">bi.read</span> and the analytics module.
         </p>
@@ -128,8 +129,8 @@ function PlacementInner() {
 
   return (
     <ConsolePage>
-      <EstateHeader
-        crumbs={[{ label: "Unplaced devices" }]}
+      <SetupHeader
+        task="placement"
         desc={
           <span title="A device belongs to a building because an operator said so. Tick the devices, name the building, optionally a floor. No pin is needed — pin later on the floor plan if you want one. Nothing is assigned automatically and there is no default building.">
             {scope ? `${scope} · ` : ""}tick, name the building, confirm · no pin needed

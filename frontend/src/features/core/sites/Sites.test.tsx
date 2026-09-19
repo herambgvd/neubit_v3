@@ -13,7 +13,6 @@ import { httpError, paged, stubApi, type ApiStub, type Recorded } from "@/test/a
 import { renderWithProviders } from "@/test/render";
 
 import SitesConfigPage from "./Sites";
-import { infraDesignerHref } from "./links";
 
 
 /**
@@ -21,8 +20,8 @@ import { infraDesignerHref } from "./links";
  * the list and the form, so the tenant here has everything; the gate itself is
  * covered in SiteDetail.test.tsx.
  */
-// The page reads its starting selection from the URL (the deep link other
-// consoles build with `infraDesignerHref`). Empty unless a test sets it.
+// The page reads its starting selection from the URL (`?site=`). Empty unless
+// a test sets it.
 const nav = { params: new URLSearchParams() };
 vi.mock("next/navigation", () => ({ useSearchParams: () => nav.params }));
 
@@ -108,35 +107,18 @@ describe("which row is open", () => {
   });
 });
 
-describe("a deep link into the equipment designer", () => {
-  it("opens the named site on its Equipment tab, on the named equipment", async () => {
-    // Building Intelligence sends an operator here when a chiller has no design
-    // band on file. Landing on the FIRST site's info tab would lose the errand.
-    nav.params = new URLSearchParams(infraDesignerHref("s2", "e9").split("?")[1]);
-    stub.set({
-      "GET /site-infrastructure/vocabulary": { system_kinds: [], equipment_classes: [], slots: [], design_facts: [] },
-      "GET /sites/s2/infrastructure": {
-        site_id: "s2",
-        systems: [
-          {
-            system_id: "sys9", site_id: "s2", name: "Plant N", kind: "chw_plant", description: null,
-            created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
-            equipment: [
-              {
-                equipment_id: "e9", site_id: "s2", system_id: "sys9", tag: "CH-09", name: null,
-                equipment_class: "chiller", design: {}, design_units: {}, slots: [],
-                created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
-              },
-            ],
-          },
-        ],
-      },
-    });
+describe("an old deep link into the equipment designer", () => {
+  it("opens the named site on Site info — the designer is not in Sites any more", async () => {
+    // `?site=&tab=equipment&equipment=` is what BI used to build. The designer
+    // moved to BI → Setup → Equipment, so the tab must not come back from a
+    // stale link, and the site must still open rather than the first one.
+    nav.params = new URLSearchParams("site=s2&tab=equipment&equipment=e9");
 
     renderWithProviders(<SitesConfigPage />);
 
-    expect(await screen.findByRole("heading", { name: "CH-09" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Nashik Depot" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Nashik Depot" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Equipment" })).not.toBeInTheDocument();
+    expect(stub.matching("GET /sites/s2/infrastructure")).toHaveLength(0);
   });
 });
 

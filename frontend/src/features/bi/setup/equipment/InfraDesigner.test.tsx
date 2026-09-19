@@ -10,21 +10,25 @@
  *   • the design PUT replaces the whole set, so editing one fact must send the
  *     others back unchanged, and clearing one must be asked for;
  *   • an import is a dry run first, and writes only on a second, explicit press;
- *   • a viewer without `sites.update` is offered nothing that writes.
+ *   • it rides BI's gate, not Sites': `bi.read` + the `analytics` module to
+ *     read, `bi.manage` to write. `sites.*` opens nothing here any more.
  */
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { EquipmentPublic, InfraVocabulary, InfrastructureTree, SitePublic } from "@/lib/types";
+import type { EquipmentPublic, InfraVocabulary, InfrastructureTree } from "@/lib/types";
 import { httpError, stubApi, type ApiStub } from "@/test/apiStub";
 import { renderWithProviders } from "@/test/render";
 
 import InfraDesigner from "./InfraDesigner";
 
-const perms = { granted: new Set(["sites.read", "sites.update", "bi.read"]) };
+const perms = { granted: new Set(["bi.read", "bi.manage"]), modules: new Set(["analytics"]) };
 vi.mock("@/lib/auth", () => ({
-  useAuth: () => ({ can: (p: string) => perms.granted.has(p), hasModule: () => true }),
+  useAuth: () => ({
+    can: (p: string) => perms.granted.has(p),
+    hasModule: (m: string) => perms.modules.has(m),
+  }),
 }));
 
 // Deliberately NOT the backend's word list: a kind and a class no hard-coded
@@ -75,7 +79,6 @@ const VOCAB: InfraVocabulary = {
   ],
 };
 
-const SITE = { site_id: "s1", name: "Aeon Tower" } as SitePublic;
 const T = "2026-09-01T00:00:00Z";
 
 const equipment = (over: Partial<EquipmentPublic>): EquipmentPublic => ({
@@ -119,7 +122,8 @@ const tree = (eq: EquipmentPublic[] = [CHILLER, PUMP]): InfrastructureTree => ({
 let stub: ApiStub;
 
 beforeEach(() => {
-  perms.granted = new Set(["sites.read", "sites.update", "bi.read"]);
+  perms.granted = new Set(["bi.read", "bi.manage"]);
+  perms.modules = new Set(["analytics"]);
   stub = stubApi({
     "GET /site-infrastructure/vocabulary": VOCAB,
     "GET /sites/s1/infrastructure": tree(),
@@ -141,7 +145,7 @@ beforeEach(() => {
 });
 
 const render = (props: { initialEquipmentId?: string } = {}) => {
-  renderWithProviders(<InfraDesigner site={SITE} {...props} />);
+  renderWithProviders(<InfraDesigner siteId="s1" {...props} />);
   return userEvent.setup();
 };
 
@@ -345,9 +349,11 @@ describe("the schedule import", () => {
   });
 });
 
-describe("a viewer without sites.update", () => {
+describe("a viewer without bi.manage", () => {
   it("is offered no control that writes", async () => {
-    perms.granted = new Set(["sites.read", "bi.read"]);
+    // `sites.update` is the key this designer USED to write under. Holding it
+    // must open nothing now: the registry is BI configuration.
+    perms.granted = new Set(["bi.read", "sites.read", "sites.update"]);
     const user = render();
     await user.click(await screen.findByRole("button", { name: /^CH-01/ }));
 
@@ -370,5 +376,29 @@ describe("a viewer without sites.update", () => {
     for (const name of ["Add equipment", "Edit system", "Delete system"]) {
       expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
     }
+  });
+});
+
+describe("the gate it rides", () => {
+  it("is BI's, not Sites': sites.read + sites.update without bi.read reads nothing", async () => {
+    perms.granted = new Set(["sites.read", "sites.update"]);
+    render();
+
+    expect(await screen.findByText(/Needs/)).toHaveTextContent("bi.read");
+    expect(stub.matching("GET /sites/s1/infrastructure")).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: "New system" })).not.toBeInTheDocument();
+  });
+
+  it("needs the analytics module as well as bi.read", async () => {
+    perms.modules = new Set();
+    render();
+
+    expect(await screen.findByText(/Needs/)).toBeInTheDocument();
+    expect(stub.matching("GET /sites/s1/infrastructure")).toHaveLength(0);
+  });
+
+  it("writes under bi.manage", async () => {
+    render();
+    expect(await screen.findByRole("button", { name: "New system" })).toBeInTheDocument();
   });
 });

@@ -649,6 +649,28 @@ export interface BiPointRow {
   unit: string | null;
 }
 
+/** `SiteFactsRow` — a site as the reporting store mirrors it, with its rating
+ *  inputs (`GET /bi/rating/sites`). Building Intelligence's own list of
+ *  buildings: BI → Setup picks a building from this, under `bi.read`, rather
+ *  than from core's `/sites`. Every fact is nullable and null is NOT RECORDED. */
+export interface BiSiteFactsRow {
+  site_id: string;
+  site_name: string | null;
+  is_active: boolean;
+  gross_floor_area_sqm: number | null;
+  energy_tariff_per_kwh: number | null;
+  tariff_currency: string | null;
+  occupancy: number | null;
+  facts_updated_at: string | null;
+  mirrored_at: string | null;
+  points: number;
+  kwh_points: number;
+}
+
+export interface BiSiteFactsListResponse {
+  items: BiSiteFactsRow[];
+}
+
 /* --- site infrastructure (backend/core/app/sites/infrastructure/) ---------- */
 
 /** One system kind of the closed vocabulary (`vocabulary.SYSTEM_KINDS`). */

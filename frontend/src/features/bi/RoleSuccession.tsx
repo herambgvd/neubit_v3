@@ -57,7 +57,6 @@ import {
   ConsolePanel,
   DangerButton,
   EmptyPane,
-  EstateHeader,
   PanelFooter,
   PanelHeader,
   PanelList,
@@ -72,6 +71,8 @@ import { useAuth } from "@/lib/auth";
 import Reason from "./components/Reason";
 import { bi } from "./api";
 import { PERM_MANAGE } from "./constants";
+import SetupHeader from "./setup/SetupHeader";
+import { taskHref } from "./setup/routes";
 
 /** One stranded assertion. `point_roles` is keyed by point, so the pair is
  *  unique — and it stays a pair rather than the bare id because the role is what
@@ -289,8 +290,9 @@ export default function RoleSuccession() {
 
   return (
     <ConsolePage>
-      <EstateHeader
-        crumbs={[{ label: "Stranded roles" }]}
+      <SetupHeader
+        task="roles"
+        sub="Stranded roles"
         desc={
           <span title="A role says what a number MEANS. A gateway rebuild renames the tag it was bound to, and the assertion is left on a point that stopped reporting — so the metric above it refuses for a machine that is running. This is where an operator moves the assertion onto the point that replaced it. Nothing is ever moved automatically: the successors below are proposed with the evidence that ranked them, and only ids a person names are written. Where the point row is gone entirely there is nothing to move onto, and the one thing left to decide is whether to forget the assertion — which deletes it.">
             an operator&apos;s assertion, left on a point that stopped · nothing moves unless you
@@ -705,7 +707,7 @@ export default function RoleSuccession() {
                                 point already carries{" "}
                                 <span className="font-mono">{c.conflicting_role}</span>
                               </span>
-                              <Link href="/bi/metrics" className="underline">
+                              <Link href={taskHref("roles")} className="underline">
                                 Settle it on the metric roles screen →
                               </Link>
                             </p>

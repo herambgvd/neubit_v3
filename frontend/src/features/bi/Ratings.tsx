@@ -12,10 +12,11 @@
 //
 // So this screen is two things at once, in the honest order:
 //
-//   1. THE INPUTS. A units surface where an operator confirms what each point
-//      measures (suggested from the tag, never stored from it), and a link to
-//      Configurations → Sites where the area / tariff / occupancy are typed
-//      beside the address. Neither is invented here.
+//   1. THE INPUTS, DISPLAYED. The area, tariff and occupancy the rating divides
+//      by are shown beside it; they are RECORDED in Setup → Building facts, and
+//      what each point measures in Setup → Units. Both links are one press from
+//      the sentence that says what is missing. Nothing is edited here: every
+//      piece of BI configuration lives in Setup.
 //   2. THE RATING, computed only where every input it needs is present.
 //
 // FOUR THINGS IT REFUSES TO DO:
@@ -29,6 +30,7 @@
 //     annualisation factor and the division are all on screen. A number an
 //     operator cannot audit is not a rating.
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
@@ -38,7 +40,6 @@ import {
   ConsolePanel,
   PanelHeader,
   PanelList,
-  PanelFooter,
   EmptyPane,
   InfoCell,
   Segmented,
@@ -48,10 +49,8 @@ import {
 import { apiError } from "@/lib/api";
 import { fmtRelative } from "@/lib/format";
 
-import UnitsPanel from "./components/UnitsPanel";
-import BuildingFactsPanel from "./components/building/BuildingFactsPanel";
 import { bi } from "./api";
-import sitesApi from "@/lib/api/sites";
+import { buildingFactsHref, taskHref } from "./setup/routes";
 
 const RANGES = [
   { value: 30, label: "30D" },
@@ -59,15 +58,8 @@ const RANGES = [
   { value: 365, label: "1Y" },
 ];
 
-const TABS = [
-  { value: "rating", label: "RATING" },
-  { value: "units", label: "UNITS" },
-  // The EPI's own denominator, recorded where it is used. It was a "Building"
-  // tab on the Sites console — beside the address, in a console that reads none
-  // of these numbers, while THIS screen showed them read-only and linked back
-  // there. One fact, one surface, and this is the surface that consumes it.
-  { value: "building", label: "BUILDING" },
-];
+const linkCls =
+  "inline-flex items-center gap-1.5 rounded-[7px] border border-[rgba(96,165,250,.45)] bg-[rgba(96,165,250,.12)] px-2.5 py-1 text-[11.5px] text-nb-blueb transition hover:bg-[rgba(96,165,250,.2)]";
 
 const num = (v: any, digits = 1) =>
   typeof v === "number" && Number.isFinite(v)
@@ -77,7 +69,6 @@ const num = (v: any, digits = 1) =>
 export default function Ratings() {
   const [siteId, setSiteId] = useState<string | null>(null);
   const [days, setDays] = useState(30);
-  const [tab, setTab] = useState("rating");
   const [meters, setMeters] = useState<string[]>([]);
 
   const sitesQ = useQuery<any>({
@@ -117,16 +108,6 @@ export default function Ratings() {
     setMeters([]);
   }, [effectiveSiteId]);
 
-  // The full site row, for the BUILDING tab. The rating list carries the three
-  // headline numbers but not the emission factors or the tariff slabs, and the
-  // form writes back to `sites` — so it needs the record it is editing, not a
-  // projection of it. Fetched only when that tab is open.
-  const siteRowQ = useQuery({
-    queryKey: ["site", effectiveSiteId],
-    queryFn: () => sitesApi.get(effectiveSiteId as string),
-    enabled: !!effectiveSiteId && tab === "building",
-  });
-
   const ratingQ = useQuery<any>({
     queryKey: ["bi-rating", effectiveSiteId, days, meters.join(",")],
     queryFn: () => bi.rating({ site_id: effectiveSiteId, point_id: meters, days }),
@@ -138,7 +119,7 @@ export default function Ratings() {
     <ConsolePage>
       <EstateHeader
         crumbs={[{ label: "Ratings" }]}
-        desc="EPI = annualised kWh / gross floor area — computed only where every input exists. Both inputs are supplied here: what each point measures on UNITS, and the area, tariff and occupancy on BUILDING. Nothing is defaulted, and a missing input renders its reason instead of a number."
+        desc="EPI = annualised kWh / gross floor area · computed only where every input exists · inputs are recorded in Setup"
       />
       <ConsoleGrid cols="xl:grid-cols-[25%_1fr]">
         {/* ── sites ───────────────────────────────────────────────── */}
@@ -181,12 +162,6 @@ export default function Ratings() {
               );
             })}
           </PanelList>
-          <PanelFooter>
-            <p className="text-[10.5px] leading-relaxed text-nb-faint">
-              A site is listed because core told this store about it. Its area, tariff and occupancy
-              are recorded on the BUILDING tab — nothing here infers them.
-            </p>
-          </PanelFooter>
         </ConsolePanel>
 
         {/* ── rating ──────────────────────────────────────────────── */}
@@ -206,35 +181,23 @@ export default function Ratings() {
                     Energy performance index · kWh per m² per year
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Segmented value={tab} onChange={setTab} options={TABS} />
-                  {tab === "rating" && (
-                    <Segmented value={days} onChange={setDays} options={RANGES} />
-                  )}
-                </div>
+                <Segmented value={days} onChange={setDays} options={RANGES} />
               </header>
 
-              {tab === "units" ? (
-                <div className="px-5 py-4">
-                  <UnitsPanel />
-                </div>
-              ) : tab === "building" ? (
-                <div className="px-5 py-4">
-                  {siteRowQ.isLoading ? (
-                    <LoadingBlock label="Loading site…" />
-                  ) : siteRowQ.error ? (
-                    // A failed read must not render an empty form: saving it
-                    // would write blanks over numbers that are actually there.
-                    <p className="text-[12px] text-nb-crit">
-                      {apiError(siteRowQ.error, "Couldn't load this site's record")}
-                    </p>
-                  ) : siteRowQ.data ? (
-                    <BuildingFactsPanel site={siteRowQ.data} />
-                  ) : null}
-                </div>
-              ) : (
-                <div className="space-y-3 px-5 py-4">
-                  {/* ── the inputs, always visible ─────────────────── */}
+              <div className="space-y-3 px-5 py-4">
+                  {/* ── the inputs it divides by: DISPLAYED, recorded in Setup ── */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">
+                      Inputs
+                    </span>
+                    <Link
+                      href={buildingFactsHref(site.site_id)}
+                      title="Area, tariff and occupancy are recorded in Setup → Building facts"
+                      className="text-[11px] text-nb-blueb hover:underline"
+                    >
+                      Building facts →
+                    </Link>
+                  </div>
                   <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
                     <InfoCell
                       label="Gross floor area"
@@ -275,18 +238,15 @@ export default function Ratings() {
                     {confirmedQ.isLoading ? (
                       <LoadingBlock label="Loading confirmed registers…" />
                     ) : !candidates.length ? (
-                      <p className="text-[11.5px] leading-relaxed text-nb-faint">
-                        No point at this site has a <b>confirmed</b> kWh unit yet. A rating counts
-                        only registers somebody has confirmed are kilowatt-hours — the source sends
-                        no unit, so nothing can be added up until then. Open the{" "}
-                        <button
-                          type="button"
-                          onClick={() => setTab("units")}
-                          className="text-nb-blueb underline"
-                        >
-                          UNITS
-                        </button>{" "}
-                        tab to record them.
+                      <p
+                        className="flex flex-wrap items-center gap-2 text-[11.5px] text-nb-faint"
+                        title="A rating counts only registers somebody has confirmed are kilowatt-hours — the source sends no unit, so nothing can be added up until then."
+                      >
+                        No confirmed kWh register at this site
+                        <Link href={taskHref("units")} className={linkCls}>
+                          <Icon icon="heroicons:arrow-right-circle" className="text-[14px]" />
+                          Confirm units in Setup
+                        </Link>
                       </p>
                     ) : (
                       <>
@@ -398,17 +358,12 @@ export default function Ratings() {
                             ))}
                           </ul>
                           {site.gross_floor_area_sqm == null && (
-                            // Was a link to Configurations → Sites. The form is
-                            // on this screen now, so the fix is one click from
-                            // the sentence that says what is missing.
-                            <button
-                              type="button"
-                              onClick={() => setTab("building")}
-                              className="mt-3 inline-flex items-center gap-1.5 rounded-[7px] border border-[rgba(96,165,250,.45)] bg-[rgba(96,165,250,.12)] px-2.5 py-1 text-[11.5px] text-nb-blueb transition hover:bg-[rgba(96,165,250,.2)]"
-                            >
+                            // The fix is one press from the sentence that says
+                            // what is missing — in Setup, where the form is.
+                            <Link href={buildingFactsHref(site.site_id)} className={`mt-3 ${linkCls}`}>
                               <Icon icon="heroicons:arrow-right-circle" className="text-[14px]" />
-                              Record the area on the BUILDING tab
-                            </button>
+                              Record the area in Setup
+                            </Link>
                           )}
                           <p className="mt-3 text-[10.5px] leading-relaxed text-nb-faint">
                             No partial score is shown, and no figure is substituted for a missing
@@ -576,8 +531,7 @@ export default function Ratings() {
                       )}
                     </>
                   )}
-                </div>
-              )}
+              </div>
             </div>
           )}
         </ConsolePanel>

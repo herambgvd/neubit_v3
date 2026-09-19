@@ -61,6 +61,7 @@ import { useAuth } from "@/lib/auth";
 
 import { bi } from "../api";
 import { MODULE, PERM_READ, categoryMeta } from "../constants";
+import { taskHref } from "../setup/routes";
 
 /** The gap kinds, at label density. The server's own `summary`/`remedy` stay
  *  reachable on hover; this is what the eye lands on. An unknown kind prints its
@@ -82,9 +83,12 @@ export const kindLabel = (kind: string) => KIND_LABEL[kind] || kind;
 /** `where` is a console named in words. It becomes a link only where this app
  *  has the route; everything else prints as the room's name. */
 const WHERE_HREF: Record<string, string> = {
-  "Building Intelligence → Units": "/bi/ratings",
-  "Building Intelligence → Roles": "/bi/metrics",
-  "Configurations → Sites": "/sites",
+  "Building Intelligence → Units": taskHref("units"),
+  "Building Intelligence → Roles": taskHref("roles"),
+  // The server still names the room its site facts USED to be typed in. They
+  // are recorded in BI → Setup → Building facts now, so the words stay the
+  // server's and the link goes where the fact can actually be recorded.
+  "Configurations → Sites": taskHref("facts"),
 };
 
 /** The tri-state, in the one vocabulary this console uses for it. `null` is a

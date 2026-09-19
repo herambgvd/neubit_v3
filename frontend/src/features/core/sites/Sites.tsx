@@ -49,19 +49,17 @@ export default function SitesConfigPage() {
   const items = useMemo(() => sitesQ.data?.items ?? [], [sitesQ.data]);
   const total = sitesQ.data?.total ?? items.length;
 
-  // `?site=&tab=equipment&equipment=` — the deep link other consoles use
-  // (see ./links.ts). Read once, as the starting selection; after that the
-  // operator's own clicks drive the pane.
+  // `?site=` opens that site. Read once, as the starting selection; after that
+  // the operator's own clicks drive the pane. (`tab=equipment` is gone: the
+  // equipment designer is Building Intelligence → Setup → Equipment.)
   const params = useSearchParams();
   const linkedSite = params?.get("site") ?? null;
-  const linkedTab = params?.get("tab") === "equipment" ? "equipment" : null;
-  const linkedEquipment = params?.get("equipment") ?? null;
 
   const [q, setQ] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(linkedSite);
   const [mode, setMode] = useState<PageMode>("view");
   const [closed, setClosed] = useState(false);
-  const [tab, setTab] = useState<SiteDetailTab>(linkedSite && linkedTab ? linkedTab : "info");
+  const [tab, setTab] = useState<SiteDetailTab>("info");
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
   const filtered = useMemo(() => {
@@ -87,8 +85,7 @@ export default function SitesConfigPage() {
     }
   }, [filtered, selected, mode, closed]);
 
-  // A different site opens on its info tab — but the site a deep link opened
-  // with keeps the tab the link named.
+  // A different site opens on its info tab.
   const shownSite = useRef(selectedId);
   useEffect(() => {
     if (shownSite.current === selectedId) return;
@@ -218,7 +215,6 @@ export default function SitesConfigPage() {
                 })
               }
               onChangeThreat={(level) => setThreatLevel.mutate({ id: selected.site_id, level })}
-              equipmentId={selected.site_id === linkedSite ? linkedEquipment : null}
             />
           )}
         </ConsolePanel>

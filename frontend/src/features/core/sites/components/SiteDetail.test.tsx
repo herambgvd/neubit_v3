@@ -9,9 +9,10 @@
  * console showed the same numbers read-only with a link back here. Two surfaces
  * for one fact.
  *
- * So the form moved to Building Intelligence → Ratings → BUILDING, and this
- * guards the half of that move that lives here: Sites offers the tab no more,
- * and a remembered `?tab=building` renders Site info rather than a blank pane.
+ * So the form moved to Building Intelligence → Setup → Building facts, and the
+ * equipment designer followed it to Setup → Equipment. This guards the half of
+ * those moves that lives here: Sites offers neither tab, and a remembered tab
+ * renders Site info rather than a blank pane.
  */
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -24,7 +25,6 @@ import SiteDetail from "./SiteDetail";
 vi.mock("./SiteInfoPanel", () => ({ default: () => <div>site info body</div> }));
 vi.mock("./FloorsPanel", () => ({ default: () => <div>floors body</div> }));
 vi.mock("./ZonesPanel", () => ({ default: () => <div>zones body</div> }));
-vi.mock("./infrastructure/InfraDesigner", () => ({ default: () => <div>equipment body</div> }));
 
 const SITE = {
   site_id: "s1",
@@ -72,20 +72,20 @@ describe("a deactivated site", () => {
 });
 
 describe("the tabs a site has", () => {
-  it("are the site's own: info, floors, zones, equipment", () => {
+  it("are the site's own: info, floors, zones — and nothing else", () => {
     renderDetail();
 
-    expect(screen.getByRole("tab", { name: "Site info" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Floors" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Zones" })).toBeInTheDocument();
-    // The building's plant is part of the building: systems, equipment and
-    // the point behind each slot are recorded beside its floors.
-    expect(screen.getByRole("tab", { name: "Equipment" })).toBeInTheDocument();
+    expect(screen.getAllByRole("tab").map((t) => t.textContent?.trim())).toEqual([
+      "Site info",
+      "Floors",
+      "Zones",
+    ]);
   });
 
-  it("render the equipment designer on the Equipment tab", () => {
-    renderDetail("equipment");
-    expect(screen.getByText("equipment body")).toBeInTheDocument();
+  it("no longer include Equipment — the plant designer is BI → Setup", () => {
+    // A VMS-only customer configuring a site must never meet a chiller.
+    renderDetail();
+    expect(screen.queryByRole("tab", { name: "Equipment" })).not.toBeInTheDocument();
   });
 
   it("no longer include Building — those facts are recorded in Building Intelligence", () => {
@@ -94,9 +94,14 @@ describe("the tabs a site has", () => {
   });
 
   it("fall back to Site info when a remembered tab no longer exists", () => {
-    // A bookmark or a restored view can still say "building". Rendering nothing
-    // would read as a site whose detail failed to load.
+    // A bookmark or a restored view can still say "building" or "equipment".
+    // Rendering nothing would read as a site whose detail failed to load.
     renderDetail("building");
+    expect(screen.getByText("site info body")).toBeInTheDocument();
+  });
+
+  it("fall back to Site info for a remembered Equipment tab too", () => {
+    renderDetail("equipment");
     expect(screen.getByText("site info body")).toBeInTheDocument();
   });
 });

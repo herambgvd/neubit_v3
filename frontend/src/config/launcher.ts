@@ -181,7 +181,7 @@ export const LAUNCHER_MODES: LauncherMode[] = [
     // was not to give up but to build the PATH by which an operator supplies
     // what the wire cannot. That path now exists end to end —
     //
-    //   • UNIT      /bi/ratings → UNITS lets an operator confirm what a point
+    //   • UNIT      /bi/setup/units lets an operator confirm what a point
     //               measures, suggested from the tag (`_kwh`, `_Hz`, `_V`) with
     //               the pattern shown, and bulk-applied over rows they can see.
     //               `points.unit_source = 'operator'` records who said it, and
@@ -189,9 +189,7 @@ export const LAUNCHER_MODES: LauncherMode[] = [
     //               COALESCE alone only stopped a message that says NOTHING.
     //               Deriving a unit from a tag silently is still forbidden.
     //   • AREA      `sites.gross_floor_area_sqm` (+ tariff, occupancy), typed in
-    //               Configurations → Sites → Building, beside the address —
-    //               where this platform already keeps site facts, per the same
-    //               reasoning that moved device placement onto the floor plan.
+    //               BI → Setup → Building facts and stored on the site.
     //               Mirrored into `neubit_reporting.site_facts` over the sites
     //               event spine so BI never reads core's database.
     //   • BENCHMARK STILL ABSENT, and stated as such on the screen. BEE and
@@ -307,20 +305,15 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           // BUILT 2026-08-31 — see the RATINGS note above for what it needed
           // and which of those inputs is still missing (the benchmark band, and
           // the screen says so rather than inventing one). `bi.read` +
-          // `analytics` to read; recording a unit needs `bi.manage`, recording
-          // an area needs `sites.update` on the Sites console.
+          // `analytics` to read. Ratings only DISPLAYS its inputs now; units
+          // and building facts are recorded in Setup (the tile below).
           { icon: "heroicons:star", label: "Ratings", href: "/bi/ratings", tone: "att", perm: "bi.read", module: "analytics" },
           // BUILT 2026-08-31. Same gating as every Sense tile — `bi.read` +
           // `analytics` — so a caller without either sees SOON, not a 403.
           { icon: "heroicons:chart-pie", label: "Insights & Correlation", href: "/bi/insights", tone: "att", perm: "bi.read", module: "analytics" },
-          // BUILT 2026-08-31. Where an operator binds a point to a metric ROLE
-          // (inlet_water_temp, energy_register, …) the way the Ratings UNITS
-          // tab binds a unit: suggestions from tag conventions, labelled as
-          // suggestions; nothing stored without confirmation. The metric
-          // registry (contract §20) evaluates only over confirmed roles, so
-          // this screen is where a new sensor domain becomes configuration.
-          // Writes need `bi.manage`; the tile gates like every Sense tile.
-          { icon: "heroicons:adjustments-horizontal", label: "Metric Roles", href: "/bi/metrics", tone: "att", perm: "bi.read", module: "analytics" },
+          // NO METRIC ROLES TILE. Binding a point to a role is configuration,
+          // and every piece of BI configuration now lives behind ONE door —
+          // Setup, below. `/bi/metrics` redirects to Setup → Metric roles.
           // BUILT 2026-09-01, re-pointed at DashForge 2026-09-03. The door to the
           // dashboards this platform SHOWS: a strip of registered names, click,
           // open. There is no longer a second door for AUTHORING one — NeuBit's
@@ -340,6 +333,23 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           // on a deployment that has no DashForge — the registry is core's own, so the
           // only thing that ever said so was the 503 the operator got after clicking.
           { icon: "heroicons:squares-2x2", label: "Dashboards", href: "/bi/dashboards", tone: "att", perm: "dashforge.read", module: "analytics", integration: "dashforge" },
+        ],
+      },
+      {
+        // SETUP — every piece of Building Intelligence configuration, opened by
+        // a checklist whose rows are the pipeline's gates: duplicates, units,
+        // buildings & devices, equipment (the plant designer), metric roles,
+        // building facts. None of it is in Configurations: neubit_v3 sells as a
+        // VMS first, and a VMS-only customer must never meet a chiller.
+        // Configurations → Sites stays the shared list of buildings; BI reads it.
+        //
+        // Gated like every BI tile. What a viewer may WRITE inside is each
+        // task's own business (`bi.manage`, `devices.create`, `sites.update` —
+        // whatever the endpoint behind the control enforces).
+        title: "Set up",
+        accent: "#c4b5fd",
+        tiles: [
+          { icon: "heroicons:adjustments-horizontal", label: "Setup", href: "/bi/setup", tone: "att", perm: "bi.read", module: "analytics" },
         ],
       },
     ],

@@ -31,7 +31,12 @@
 //
 // NOTHING HERE INVENTS A NUMBER. A figure the reads did not supply produces the
 // `unknown` state and a sentence saying so, never a zero. Gate 3's worklist is
-// the unplaced devices, assigned to a building by an operator on /bi/placement.
+// the unplaced devices, assigned to a building by an operator in Setup.
+//
+// GATES 1–4 OPEN IN SETUP. Each shut gate's action lands on the Setup task that
+// opens it (features/bi/setup/routes.ts) — the gates ARE Setup's checklist.
+
+import { STRANDED_HREF, taskHref } from "./setup/routes";
 
 /** Which slice of the estate a strip is answering about.
  *
@@ -273,7 +278,7 @@ function arrives(input: GateInput): GateView {
     count: groups.length || repeats,
     quiet: `${registers ?? points} points`,
     blocking: said.join(" "),
-    action: may.bi ? { href: "/bi/duplicates", label: "Settle the duplicated registers" } : null,
+    action: may.bi ? { href: taskHref("duplicates"), label: "Settle the duplicated registers" } : null,
     rows: groups.slice(0, 6).map((g: any) => ({
       key: `${g.device_tag} ${g.point_tag}`,
       title: `${g.device_tag} · ${g.point_tag}`,
@@ -322,7 +327,7 @@ function means(input: GateInput): GateView {
       `${unconfirmed} of ${totals.points} points carry no confirmed unit, so nothing above this gate can say what they measure. ` +
       `${totals.eligible} match a catalogued tag convention and can be confirmed together once a dry run has shown the rows; ` +
       `${totals.unmatched} match none and stay one-by-one work.`,
-    action: may.bi ? { href: "/bi/ratings", label: "Confirm units in Ratings" } : null,
+    action: may.bi ? { href: taskHref("units"), label: "Confirm the units" } : null,
     rows: (patterns.patterns || [])
       .filter((p: any) => p.kind === "unit" && p.eligible > 0)
       .slice(0, 6)
@@ -341,7 +346,7 @@ function means(input: GateInput): GateView {
 // on a drawn floor plan, and this estate has almost none — so most points
 // belonged nowhere with no way to say otherwise. Core now takes a site alone, or
 // a site and a floor, through `POST /device-placements/assign`, and this gate's
-// worklist is where an operator does that: /bi/placement, the devices
+// worklist is where an operator does that: Setup → Buildings & devices, the devices
 // `placement=unplaced` returns, ticked one by one and assigned by name.
 //
 // It is still ONE fact with one owner. The worklist writes the same table the
@@ -402,8 +407,8 @@ function belongs(input: GateInput): GateView {
   const devices: number | null = typeof devicesRead?.total === "number" ? devicesRead.total : null;
   const href =
     subject.kind === "domain" && subject.category
-      ? `/bi/placement?category=${encodeURIComponent(subject.category)}`
-      : "/bi/placement";
+      ? `${taskHref("placement")}?category=${encodeURIComponent(subject.category)}`
+      : taskHref("placement");
   return {
     ...base,
     state: "shut",
@@ -456,7 +461,7 @@ function binds(input: GateInput): GateView {
     blocking:
       `${rows.length} operator ${plural(rows.length, "assertion is", "assertions are")} stranded on a point that stopped reporting, so every metric above them refuses for equipment that is running. ` +
       `${withCand} have a credible successor on the same device, ranked with the evidence that ranked it; ${rows.length - withCand} do not.`,
-    action: may.bi ? { href: "/bi/succession", label: "Re-point the stranded roles" } : null,
+    action: may.bi ? { href: STRANDED_HREF, label: "Re-point the stranded roles" } : null,
     rows: rows.slice(0, 6).map((o: any) => ({
       key: `${o.role}::${o.point_id}`,
       title: `${o.role} · ${o.device_tag ?? "device row is gone"}`,

@@ -1,20 +1,17 @@
 /**
- * BUILDING INTELLIGENCE'S STRIP IS THE DRILL, NOT A MENU.
+ * BUILDING INTELLIGENCE'S STRIP IS THE DRILL, NOT A MENU — plus ONE door into
+ * Setup, where every piece of BI configuration lives.
  *
- * The console is one pipeline over three layers, and the two screens that used
- * to sit in this segment beside them — DUPLICATES and STRANDED ROLES — are not
- * layers. Each is the WORKLIST OF A SHUT GATE, reached by pressing that gate on
- * whatever layer you are standing on, already scoped to it. A segment cell for
- * one is the same mistake as a launcher tile for one: it makes the worklist a
- * destination beside the estate view, which is what made the pipeline invisible.
- *
- * So: no cell for either, a chip that names the gate when one is deep-linked,
- * and — the part that must not regress — both routes still resolve.
+ * The layer segment carries the layers and a single SETUP cell. The gate
+ * worklists (duplicates, placement, stranded roles) are not cells of it: they
+ * are Setup's tasks, and on a Setup route the strip swaps to Setup's own
+ * segment — the checklist, then the tasks in gate order — with the way back to
+ * Building.
  */
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import ConsoleStrip from "./ConsoleStrip";
+import ConsoleStrip, { hasConsoleStrip } from "./ConsoleStrip";
 
 const route = { path: "/bi/portfolio", query: "" };
 vi.mock("next/navigation", () => ({
@@ -34,16 +31,23 @@ const hrefs = () =>
     screen.getAllByRole("link").map((a) => [(a.textContent || "").trim(), a.getAttribute("href")]),
   );
 
+const lit = (root: HTMLElement = document.body) =>
+  within(root)
+    .getAllByRole("link")
+    .filter((a) => a.className.includes("bg-[rgba(96,165,250,.16)]"))
+    .map((a) => (a.textContent || "").trim());
+
 describe("the BI segment", () => {
-  it("carries the layers and nothing else", () => {
+  it("carries the layers, then one door into Setup", () => {
     at("/bi/portfolio");
     const labels = screen
       .getAllByRole("link")
       .map((a) => (a.textContent || "").trim());
-    expect(labels).toEqual(["BUILDING", "ENERGY", "HVAC", "WATER", "INSIGHTS", "RATINGS"]);
+    expect(labels).toEqual(["BUILDING", "ENERGY", "HVAC", "WATER", "INSIGHTS", "RATINGS", "SETUP"]);
+    expect(hrefs().SETUP).toBe("/bi/setup");
   });
 
-  it("does not offer either gate worklist as a cell", () => {
+  it("does not offer a gate worklist as a cell", () => {
     at("/bi/energy");
     expect(screen.queryByRole("link", { name: /DUPLICATES/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /STRANDED/ })).not.toBeInTheDocument();
@@ -51,44 +55,57 @@ describe("the BI segment", () => {
 
   it("lights the layer you are on", () => {
     at("/bi/hvac");
-    // The active cell is the only one carrying the lit background.
-    const lit = screen.getAllByRole("link").filter((a) => a.className.includes("bg-[rgba(96,165,250,.16)]"));
-    expect(lit.map((a) => (a.textContent || "").trim())).toEqual(["HVAC"]);
+    expect(lit()).toEqual(["HVAC"]);
   });
 });
 
-describe("a gate worklist, deep-linked", () => {
-  it("names the gate it belongs to instead of a segment with nothing lit", () => {
-    at("/bi/duplicates");
-    expect(screen.getByText(/Gate 1 · ARRIVES — Duplicate registers/)).toBeInTheDocument();
+describe("on a Setup route", () => {
+  it("shows Setup's own segment, in gate order, and the way back to Building", () => {
+    at("/bi/setup");
+    const setup = screen.getByLabelText("Setup");
+    expect(within(setup).getAllByRole("link").map((a) => (a.textContent || "").trim())).toEqual([
+      "CHECKLIST",
+      "DUPLICATES",
+      "UNITS",
+      "BUILDINGS",
+      "EQUIPMENT",
+      "ROLES",
+      "FACTS",
+    ]);
+    expect(lit(setup)).toEqual(["CHECKLIST"]);
+    expect(screen.getByRole("link", { name: /Building/ })).toHaveAttribute("href", "/bi/portfolio");
+    // Not the layer segment beside it.
     expect(screen.queryByRole("link", { name: /ENERGY/ })).not.toBeInTheDocument();
-    // And the way back to the layer the gate is on.
-    expect(screen.getByRole("link", { name: /Building/ })).toHaveAttribute("href", "/bi/portfolio");
   });
 
-  it("does the same for gate 3", () => {
-    at("/bi/placement");
-    expect(screen.getByText(/Gate 3 · BELONGS — Unplaced devices/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Building/ })).toHaveAttribute("href", "/bi/portfolio");
+  it("lights the task you are on", () => {
+    at("/bi/setup/equipment");
+    expect(lit(screen.getByLabelText("Setup"))).toEqual(["EQUIPMENT"]);
   });
 
-  it("does the same for gate 4", () => {
-    at("/bi/succession");
-    expect(screen.getByText(/Gate 4 · BINDS — Stranded roles/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Building/ })).toHaveAttribute("href", "/bi/portfolio");
+  it("lights ROLES on the stranded-role worklist, which belongs to it", () => {
+    at("/bi/setup/stranded");
+    expect(lit(screen.getByLabelText("Setup"))).toEqual(["ROLES"]);
   });
-});
 
-describe("the routes behind the demoted doors", () => {
-  it("both still resolve", async () => {
-    // Nothing was deleted. A bookmark, the gate strip's own action link and
-    // Building's gate 1 all name these paths.
-    const dup = await import("@/app/(app)/bi/duplicates/page");
-    const succ = await import("@/app/(app)/bi/succession/page");
-    const place = await import("@/app/(app)/bi/placement/page");
-    expect(typeof place.default).toBe("function");
-    expect(typeof dup.default).toBe("function");
-    expect(typeof succ.default).toBe("function");
+  it("names each task's gate on hover", () => {
+    at("/bi/setup/placement");
+    expect(screen.getByRole("link", { name: /BUILDINGS/ })).toHaveAttribute("title", "Gate 3 · Buildings & devices");
+  });
+
+  it("renders on every Setup route", () => {
+    for (const p of [
+      "/bi/setup",
+      "/bi/setup/duplicates",
+      "/bi/setup/units",
+      "/bi/setup/placement",
+      "/bi/setup/equipment",
+      "/bi/setup/roles",
+      "/bi/setup/stranded",
+      "/bi/setup/facts",
+    ]) {
+      expect(hasConsoleStrip(p), p).toBe(true);
+    }
   });
 });
 

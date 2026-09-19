@@ -1,13 +1,14 @@
 "use client";
 
-// INFRA DESIGNER — the Equipment tab of a site: the systems in the building,
-// the equipment in each, and the gateway point behind each of its slots.
+// INFRA DESIGNER — Building Intelligence → Setup → Equipment: the systems in a
+// building, the equipment in each, and the gateway point behind each slot.
 //
-// It lives on the SITE, beside Floors and Zones, because it is the same kind of
-// thing they are: a decomposition of the physical building, transcribed from
-// drawings by whoever commissions it, stored under the site and written under
-// `sites.update`. Building Intelligence READS it (a chiller's ΔT band, kW/TR)
-// and sends an operator here with `infraDesignerHref` when a fact is missing.
+// It is BI configuration, not site administration: nothing in Sites, Floors,
+// Zones or the VMS reads a chiller's TR or ΔT band, so it lives in BI's Setup
+// and rides BI's gate — `bi.read` + the `analytics` module to read, `bi.manage`
+// to write (backend/core/app/sites/infrastructure/router.py). The rows are
+// still stored under the site; BI sends an operator here with
+// `infraDesignerHref` when a fact is missing.
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
@@ -15,7 +16,9 @@ import { IconButton, LoadingBlock } from "@/components/console";
 import { apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { siteInfrastructure } from "@/lib/api/siteInfrastructure";
-import type { InfraVocabulary, InfrastructureTree, SitePublic } from "@/lib/types";
+import type { InfraVocabulary, InfrastructureTree } from "@/lib/types";
+
+import { MODULE, PERM_MANAGE, PERM_READ } from "../../constants";
 
 import EquipmentEditor from "./EquipmentEditor";
 import NewSystemForm from "./NewSystemForm";
@@ -25,23 +28,26 @@ import SystemTree, { type TreeSelection } from "./SystemTree";
 import { indexVocabulary } from "./vocabulary";
 
 export interface InfraDesignerProps {
-  site: SitePublic;
+  siteId: string;
   /** Open on this equipment — the deep link Building Intelligence uses. */
   initialEquipmentId?: string | null;
 }
 
-export default function InfraDesigner({ site, initialEquipmentId }: Readonly<InfraDesignerProps>) {
-  const { can } = useAuth();
-  const mayWrite = can("sites.update");
+export default function InfraDesigner({ siteId, initialEquipmentId }: Readonly<InfraDesignerProps>) {
+  const { can, hasModule } = useAuth();
+  const mayRead = can(PERM_READ) && hasModule(MODULE);
+  const mayWrite = mayRead && can(PERM_MANAGE);
 
   const vocabQ = useQuery<InfraVocabulary>({
     queryKey: ["infra-vocabulary"],
     queryFn: siteInfrastructure.vocabulary,
     staleTime: Infinity,
+    enabled: mayRead,
   });
   const treeQ = useQuery<InfrastructureTree>({
-    queryKey: ["infra-tree", site.site_id],
-    queryFn: () => siteInfrastructure.tree(site.site_id),
+    queryKey: ["infra-tree", siteId],
+    queryFn: () => siteInfrastructure.tree(siteId),
+    enabled: mayRead,
   });
 
   const [selected, setSelected] = useState<TreeSelection>(
@@ -53,6 +59,13 @@ export default function InfraDesigner({ site, initialEquipmentId }: Readonly<Inf
   const ix = useMemo(() => (vocabQ.data ? indexVocabulary(vocabQ.data) : null), [vocabQ.data]);
   const systems = useMemo(() => treeQ.data?.systems ?? [], [treeQ.data]);
 
+  if (!mayRead) {
+    return (
+      <p className="px-6 py-5 text-[11.5px] text-nb-faint">
+        Needs <span className="font-mono">bi.read</span> and the analytics module.
+      </p>
+    );
+  }
   if (vocabQ.isLoading || treeQ.isLoading) return <LoadingBlock label="Loading equipment…" />;
   const failure = vocabQ.error ?? treeQ.error;
   if (failure || !vocabQ.data || !ix) {
@@ -115,7 +128,7 @@ export default function InfraDesigner({ site, initialEquipmentId }: Readonly<Inf
             />
           ) : (
             <p className="rounded-lg border border-dashed border-nb-line px-4 py-8 text-center text-[12px] text-nb-muted">
-              No systems on this site
+              No systems in this building
             </p>
           )}
         </div>
@@ -123,7 +136,7 @@ export default function InfraDesigner({ site, initialEquipmentId }: Readonly<Inf
         <div className="min-w-0 rounded-[12px] border border-nb-line bg-[rgba(10,18,40,.45)] p-4">
           {creatingSystem && mayWrite ? (
             <NewSystemForm
-              siteId={site.site_id}
+              siteId={siteId}
               vocab={vocab}
               onCancel={() => setCreatingSystem(false)}
               onCreated={(s) => {
@@ -156,7 +169,7 @@ export default function InfraDesigner({ site, initialEquipmentId }: Readonly<Inf
         </div>
       </div>
 
-      {importing && mayWrite && <ScheduleImport siteId={site.site_id} ix={ix} onClose={() => setImporting(false)} />}
+      {importing && mayWrite && <ScheduleImport siteId={siteId} ix={ix} onClose={() => setImporting(false)} />}
     </div>
   );
 }

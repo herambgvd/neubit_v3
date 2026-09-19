@@ -71,6 +71,7 @@ import { fmtRelative } from "@/lib/format";
 
 import DeltaT, { hasDeltaT } from "./components/DeltaT";
 import GateStrip from "./components/GateStrip";
+import { taskHref } from "./setup/routes";
 import TrendChart from "./components/TrendChart";
 import Reason from "./components/Reason";
 import { bi } from "./api";
@@ -155,7 +156,7 @@ function EstateRollup({
         // The remainder opens gate 3's worklist, scoped to this domain.
         href:
           site.site_id === null
-            ? `/bi/placement?category=${encodeURIComponent(category)}`
+            ? `${taskHref("placement")}?category=${encodeURIComponent(category)}`
             : `/bi/${category}?site=${site.site_id}`,
         action: site.site_id === null ? "Assign them to a building" : "Open this building",
       });

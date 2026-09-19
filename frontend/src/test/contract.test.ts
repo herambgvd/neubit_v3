@@ -174,6 +174,8 @@ const MAPPING: Record<string, ModelEntry & { subset?: string }> = {
   "lib/types.ts:AuthUser": { src: "CORE", file: "auth/schemas.py", model: "UserOut", subset: "the session user as this console reads them: only the claims the shell renders" },
   "lib/types.ts:BiDeviceListResponse": { src: "RW", file: "schemas.py", model: "DeviceListResponse" },
   "lib/types.ts:BiDeviceRow": { src: "RW", file: "schemas.py", model: "DeviceRow" },
+  "lib/types.ts:BiSiteFactsListResponse": { src: "RW", file: "schemas.py", model: "SiteFactsListResponse" },
+  "lib/types.ts:BiSiteFactsRow": { src: "RW", file: "schemas.py", model: "SiteFactsRow" },
   "lib/types.ts:BiPointRow": { src: "RW", file: "schemas.py", model: "PointRow", subset: "the infra designer's point picker reads a point's address and reading kind; latest and the lifecycle fields are not rendered" },
   "lib/types.ts:CreateEquipmentRequest": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "CreateEquipmentRequest" },
   "lib/types.ts:CreateSystemRequest": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "CreateSystemRequest" },

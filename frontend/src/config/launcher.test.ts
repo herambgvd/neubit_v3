@@ -93,8 +93,18 @@ describe("Building Intelligence's doors", () => {
 
   it("offers no tile for a gate's worklist", () => {
     const hrefs = biTiles.map((t) => t.href);
-    expect(hrefs).not.toContain("/bi/duplicates");
-    expect(hrefs).not.toContain("/bi/succession");
+    for (const h of ["/bi/duplicates", "/bi/succession", "/bi/placement", "/bi/metrics"]) {
+      expect(hrefs).not.toContain(h);
+    }
+    expect(hrefs.filter((h) => h?.startsWith("/bi/setup/"))).toEqual([]);
+  });
+
+  it("has one door into Setup, gated like every BI tile", () => {
+    const setup = biTiles.filter((t) => t.href === "/bi/setup");
+    expect(setup).toHaveLength(1);
+    expect(setup[0]!.label).toBe("Setup");
+    expect(setup[0]!.perm).toBe("bi.read");
+    expect(setup[0]!.module).toBe("analytics");
   });
 
   it("opens each domain across the whole estate, unscoped", () => {
@@ -131,8 +141,19 @@ describe("Building Intelligence's doors", () => {
     // layer of the pipeline does. Demoting one would be hiding a surface, not
     // simplifying an information architecture.
     const hrefs = biTiles.map((t) => t.href);
-    for (const kept of ["/bi/ratings", "/bi/insights", "/bi/metrics", "/bi/dashboards"]) {
+    for (const kept of ["/bi/ratings", "/bi/insights", "/bi/setup", "/bi/dashboards"]) {
       expect(hrefs).toContain(kept);
     }
+  });
+});
+
+describe("Configurations", () => {
+  it("carries nothing BI-shaped — BI configuration is BI → Setup", () => {
+    // neubit_v3 sells as a VMS first: a VMS-only customer must never meet a
+    // chiller, a unit or a metric role on the Configurations screen.
+    const conf = LAUNCHER_MODES.find((m) => m.id === "conf")!.groups.flatMap((g) => g.tiles);
+    expect(
+      conf.filter((t) => t.href?.startsWith("/bi") || /equipment|metric|unit|building fact/i.test(t.label)),
+    ).toEqual([]);
   });
 });

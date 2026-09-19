@@ -7,7 +7,8 @@
 //   EQUIPMENT  in a system (a chiller, a pump) with nameplate DESIGN facts.
 //   SLOTS      on equipment, each bound to one gateway point by device + point tag.
 //
-// Read needs `sites.read`, every write `sites.update`.
+// Building Intelligence configuration (BI → Setup → Equipment): every route
+// needs the `analytics` module; reads need `bi.read`, every write `bi.manage`.
 //
 // Two calls here are easy to misuse, so their signatures make the safe use the
 // only one:

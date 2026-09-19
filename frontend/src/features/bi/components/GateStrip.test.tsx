@@ -216,7 +216,7 @@ describe("shut — one gate expands, and it is the earliest", () => {
 
     expect(screen.getByRole("link", { name: /Settle the duplicated registers/ })).toHaveAttribute(
       "href",
-      "/bi/duplicates",
+      "/bi/setup/duplicates",
     );
   });
 
@@ -231,7 +231,7 @@ describe("shut — one gate expands, and it is the earliest", () => {
     expect(screen.getByText("inlet_water_temp · 1F York Chiller01")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Re-point the stranded roles/ })).toHaveAttribute(
       "href",
-      "/bi/succession",
+      "/bi/setup/stranded",
     );
   });
 
@@ -286,7 +286,7 @@ describe("gate 3 · BELONGS — opens the unplaced-device worklist in context", 
     expect(screen.getByText("FCU-7")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Assign devices to a building/ })).toHaveAttribute(
       "href",
-      "/bi/placement",
+      "/bi/setup/placement",
     );
   });
 
@@ -298,7 +298,7 @@ describe("gate 3 · BELONGS — opens the unplaced-device worklist in context", 
     expect(bi.devices).toHaveBeenCalledWith({ placement: "unplaced", category: "hvac", limit: 6 });
     expect(screen.getByRole("link", { name: /Assign devices to a building/ })).toHaveAttribute(
       "href",
-      "/bi/placement?category=hvac",
+      "/bi/setup/placement?category=hvac",
     );
   });
 

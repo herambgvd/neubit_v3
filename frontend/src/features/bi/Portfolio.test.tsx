@@ -208,7 +208,7 @@ describe("the layer", () => {
     worklist();
     renderWithProviders(<Portfolio />);
     const meta = await screen.findByText("no site owns these points — assign their devices to a building");
-    expect(meta.closest("a")).toHaveAttribute("href", "/bi/placement");
+    expect(meta.closest("a")).toHaveAttribute("href", "/bi/setup/placement");
   });
 
   it("prints a blocked answer as its blockage plus the action that changes it", async () => {
@@ -219,11 +219,12 @@ describe("the layer", () => {
 
     // No site has a confirmed kWh register, so consumption cannot be measured.
     expect(
-      await screen.findByText("no kWh register confirmed — confirm units in Ratings"),
+      await screen.findByText("no kWh register confirmed — confirm units in Setup"),
     ).toBeInTheDocument();
+    // Units are confirmed in Setup now; Ratings only displays what it divides by.
     expect(screen.getByRole("link", { name: /Confirm a kWh register/ })).toHaveAttribute(
       "href",
-      "/bi/ratings",
+      "/bi/setup/units",
     );
   });
 
@@ -349,7 +350,7 @@ describe("the point count, now gate 1 of the strip", () => {
     renderWithProviders(<Portfolio />);
 
     const link = await screen.findByRole("link", { name: /Settle the duplicated registers/ });
-    expect(link).toHaveAttribute("href", "/bi/duplicates");
+    expect(link).toHaveAttribute("href", "/bi/setup/duplicates");
   });
 
   it("offers no trip to a viewer who cannot open the duplicates console", async () => {
@@ -396,7 +397,7 @@ describe("the point count, now gate 1 of the strip", () => {
     // wrong must ship with the thing that changes it.
     expect(screen.getByRole("link", { name: /Settle the duplicated registers/ })).toHaveAttribute(
       "href",
-      "/bi/duplicates",
+      "/bi/setup/duplicates",
     );
   });
 

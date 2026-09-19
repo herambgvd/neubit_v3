@@ -1,19 +1,17 @@
 /**
- * The EPI's inputs are recorded WHERE THEY ARE USED.
+ * RATINGS DISPLAYS WHAT IT DIVIDES BY; SETUP RECORDS IT.
  *
- * Gross floor area, tariff and occupancy used to be a "Building" tab on
- * Configurations → Sites: a form beside the address, in a console that reads
- * none of those numbers, while this screen — their only reader — showed them
- * read-only and linked back there. An operator who came here because a site said
- * "cannot rate" was sent two consoles away to fix it.
+ * Every piece of Building Intelligence configuration lives in BI → Setup. The
+ * area, tariff and occupancy the EPI needs used to be a BUILDING tab here, and
+ * the units a UNITS tab; both forms moved to Setup. What has to hold here:
  *
- * So the form is on this screen now, and these are the two things that have to
- * hold: the tab exists and edits the SITE RECORD (not the rating projection,
- * which does not carry the tariff slabs or the emission factors and cannot be
- * written back), and the "cannot rate" message leads to it rather than to Sites.
+ *   • the inputs are still SHOWN beside the rating — a missing one as "not
+ *     recorded", never 0 — with the door to Setup → Building facts;
+ *   • nothing on this screen edits them, and the site record the form needed
+ *     is never fetched;
+ *   • "cannot rate" leads to the Setup page that fixes it, for THAT building.
  */
-import { screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { stubApi, type ApiStub } from "@/test/apiStub";
@@ -24,20 +22,12 @@ import Ratings from "./Ratings";
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ can: () => true, hasModule: () => true }) }));
 
-// The units surface and the fact form each fetch on their own; this test is
-// about WHICH surface is reachable from here, not what they render.
-vi.mock("./components/UnitsPanel", () => ({ default: () => <div>units body</div> }));
-vi.mock("./components/building/BuildingFactsPanel", () => ({
-  default: ({ site }: { site: { site_id: string } }) => (
-    <div>building form for {site.site_id}</div>
-  ),
-}));
-
 const SITE = {
   site_id: "s1",
   site_name: "Aeon Tower",
   gross_floor_area_sqm: null,
-  energy_tariff_per_kwh: null,
+  energy_tariff_per_kwh: 8.5,
+  tariff_currency: "INR",
   occupancy: null,
   points: 12,
   kwh_points: 3,
@@ -49,8 +39,6 @@ beforeEach(() => {
   stub = stubApi({
     "GET /bi/rating/sites": { items: [SITE] },
     "GET /bi/units": { items: [] },
-    // `meters` is always present on the wire — the response carries each meter's
-    // own subtraction so the total can be checked by hand.
     "GET /bi/rating": {
       blocked: ["no gross floor area recorded"],
       meters: [],
@@ -60,42 +48,51 @@ beforeEach(() => {
   });
 });
 
-describe("recording what a rating needs", () => {
-  it("offers the BUILDING tab beside UNITS", async () => {
+describe("the inputs a rating divides by", () => {
+  it("are displayed — a recorded one as itself, a missing one as not recorded", async () => {
     renderWithProviders(<Ratings />);
 
-    expect(await screen.findByRole("button", { name: "BUILDING" })).toBeInTheDocument();
-    // "UNITS" also names a column header button in the rating body; the tab is
-    // the one in the header's Segmented.
-    expect(screen.getAllByRole("button", { name: "UNITS" })).not.toHaveLength(0);
+    expect(await screen.findByText("8.5 INR/kWh")).toBeInTheDocument();
+    const area = screen.getByText("Gross floor area").parentElement!;
+    expect(area).toHaveTextContent("not recorded");
+    expect(area).not.toHaveTextContent(/\b0\b/);
   });
 
-  it("edits the site RECORD, not the rating projection", async () => {
-    // The rating list is a read-model: no tariff slabs, no emission factors, and
-    // nothing to write back to. The form needs the row it is editing.
+  it("link to Setup → Building facts for this building", async () => {
     renderWithProviders(<Ratings />);
-    await userEvent.click(await screen.findByRole("button", { name: "BUILDING" }));
 
-    await waitFor(() => expect(stub.matching("GET /sites/s1")).toHaveLength(1));
-    expect(await screen.findByText("building form for s1")).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: /Building facts/ })).toHaveAttribute(
+      "href",
+      "/bi/setup/facts?site=s1",
+    );
   });
 
-  it("does not fetch that record until the tab is opened", async () => {
+  it("are not edited here: no form, no tab, and the site record is never read", async () => {
     renderWithProviders(<Ratings />);
-    await screen.findByRole("button", { name: "BUILDING" });
+    await screen.findByText("8.5 INR/kWh");
 
+    expect(screen.queryByRole("button", { name: "BUILDING" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "UNITS" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /save building facts/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
     expect(stub.matching("GET /sites/s1")).toHaveLength(0);
   });
+});
 
-  it("sends an unratable site to the form instead of to another console", async () => {
+describe("a site that cannot be rated", () => {
+  it("is sent to the Setup page that records the area", async () => {
     renderWithProviders(<Ratings />);
 
-    const fix = await screen.findByRole("button", { name: /record the area/i });
-    // Not a link: a link would leave Building Intelligence, which is what this
-    // change exists to stop.
-    expect(fix.tagName).toBe("BUTTON");
-    await userEvent.click(fix);
+    const fix = await screen.findByRole("link", { name: /record the area/i });
+    expect(fix).toHaveAttribute("href", "/bi/setup/facts?site=s1");
+  });
 
-    expect(await screen.findByText("building form for s1")).toBeInTheDocument();
+  it("with no confirmed kWh register is sent to Setup → Units", async () => {
+    renderWithProviders(<Ratings />);
+
+    expect(await screen.findByRole("link", { name: /confirm units in setup/i })).toHaveAttribute(
+      "href",
+      "/bi/setup/units",
+    );
   });
 });

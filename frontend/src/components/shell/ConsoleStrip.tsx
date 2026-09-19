@@ -16,6 +16,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 
 import UsersRolesStrip from "@/components/shell/UsersRolesStrip";
+import { SETUP_HREF, SETUP_TASKS, STRANDED_HREF, taskOfPath } from "@/features/bi/setup/routes";
 import { WORKFLOW_VIEWS } from "@/features/workflow/constants";
 import { useAuth } from "@/lib/auth";
 
@@ -31,10 +32,10 @@ const STRIP_ROUTES = new Set<string>([
   // already shows them as SOON, and a dead segment cell would be exactly the
   // "fabricated destination" this feature must not ship.
   //
-  // The three GATE WORKLISTS are listed so the strip still renders when one is
-  // deep-linked, but they are NOT segment cells — see GATE_WORKLISTS below.
   "/bi/portfolio", "/bi/energy", "/bi/hvac", "/bi/water", "/bi/insights", "/bi/ratings",
-  "/bi/duplicates", "/bi/placement", "/bi/succession",
+  // SETUP — the checklist and every task under it. The old worklist routes
+  // (/bi/duplicates, /bi/placement, /bi/succession, /bi/metrics) redirect here.
+  SETUP_HREF, ...SETUP_TASKS.map((t) => t.href), STRANDED_HREF,
 ]);
 
 export function hasConsoleStrip(pathname: string | null | undefined): boolean {
@@ -49,30 +50,16 @@ const seg = (on: boolean) =>
   }`;
 const segBox = "flex shrink-0 gap-0.5 rounded-[8px] border border-nb-line bg-[rgba(8,15,34,.7)] p-[3px]";
 
-/** The three GATE WORKLISTS. They are not layers of Building Intelligence and not
- *  siblings of the estate view — each one is what a SHUT GATE opens, and the way
- *  in is pressing that gate on whatever layer you are standing on. So they are
- *  absent from the launcher and absent from the segment below, and a deep link
- *  to one lands on a chip that says which gate it belongs to, with the way back
- *  to the layer it was opened from. A segment cell would have made them
- *  destinations beside the estate again. */
-const GATE_WORKLISTS: Record<string, { gate: string; label: string; icon: string }> = {
-  "/bi/duplicates": {
-    gate: "Gate 1 · ARRIVES",
-    label: "Duplicate registers",
-    icon: "heroicons-outline:document-duplicate",
-  },
-  "/bi/placement": {
-    gate: "Gate 3 · BELONGS",
-    label: "Unplaced devices",
-    icon: "heroicons-outline:map-pin",
-  },
-  "/bi/succession": {
-    gate: "Gate 4 · BINDS",
-    label: "Stranded roles",
-    icon: "heroicons-outline:link",
-  },
-};
+/** Setup's own segment: the checklist, then the tasks in pipeline order. */
+const SETUP_CELLS = [
+  { href: SETUP_HREF, label: "CHECKLIST", icon: "heroicons-outline:list-bullet", title: "How much of setup is done" },
+  ...SETUP_TASKS.map((t) => ({
+    href: t.href,
+    label: t.short,
+    icon: t.icon,
+    title: t.gate ? `Gate ${t.gate} · ${t.label}` : t.label,
+  })),
+];
 
 /** Pages that get a single chip in the strip instead of a segmented control. */
 const SOLO_PAGES: Record<string, { label: string; icon: string }> = {
@@ -105,7 +92,10 @@ export default function ConsoleStrip() {
   const isPatterns = pathname === "/config/patterns";
   const isBI = pathname.startsWith("/bi/");
   const SOLO = SOLO_PAGES[pathname] ?? null;
-  const WORKLIST = GATE_WORKLISTS[pathname] ?? null;
+  const isSetup = pathname === SETUP_HREF || pathname.startsWith(`${SETUP_HREF}/`);
+  // The Setup cell a path lights; the stranded-role worklist lights ROLES.
+  const setupTask = isSetup ? taskOfPath(pathname) : null;
+  const setupLit = setupTask ? SETUP_TASKS.find((t) => t.id === setupTask)!.href : SETUP_HREF;
 
   return (
     // Bare inline content — the global header owns the bar chrome. nav-scroll +
@@ -168,22 +158,23 @@ export default function ConsoleStrip() {
             <Icon icon="heroicons-outline:building-office-2" className="text-[14px]" />
             Building Intelligence
           </div>
-          {WORKLIST ? (
-            // A gate's worklist. No segment: this is not a layer, and lighting
-            // nothing in a segment bar reads as a broken page while adding a
-            // cell for it would put it back beside the estate view. The chip
-            // names the gate it belongs to, and the crumb goes back to L1.
+          {isSetup ? (
+            // SETUP. Not a layer: the way back is to Building, and the segment
+            // is Setup's own — the checklist, then the tasks in gate order.
             <>
               <Link
                 href="/bi/portfolio"
-                title="Back to Building — the layer this gate is on"
+                title="Back to Building"
                 className="flex shrink-0 items-center gap-1 rounded-[7px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1 text-[12px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
               >
                 <Icon icon="heroicons-mini:chevron-left" className="text-[14px]" /> Building
               </Link>
-              <div className={modtab}>
-                <Icon icon={WORKLIST.icon} className="text-[14px]" />
-                {WORKLIST.gate} — {WORKLIST.label}
+              <div className={segBox} aria-label="Setup">
+                {SETUP_CELLS.map((c) => (
+                  <Link key={c.href} href={c.href} title={c.title} className={seg(setupLit === c.href)}>
+                    <Icon icon={c.icon} className="text-[14px]" /> {c.label}
+                  </Link>
+                ))}
               </div>
             </>
           ) : (
@@ -197,6 +188,8 @@ export default function ConsoleStrip() {
                   { href: "/bi/water", label: "WATER", icon: "heroicons-outline:beaker", domain: true },
                   { href: "/bi/insights", label: "INSIGHTS", icon: "heroicons-outline:chart-pie" },
                   { href: "/bi/ratings", label: "RATINGS", icon: "heroicons-outline:star" },
+                  // Every piece of BI configuration, behind its checklist.
+                  { href: SETUP_HREF, label: "SETUP", icon: "heroicons-outline:adjustments-horizontal" },
                 ].map((s) => (
                   <Link
                     key={s.href}

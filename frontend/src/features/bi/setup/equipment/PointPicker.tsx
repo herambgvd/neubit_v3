@@ -4,10 +4,9 @@
 // what has actually REPORTED, instead of typing two tags from memory.
 //
 // The lists are Building Intelligence's (`/bi/devices`, `/bi/points`, served by
-// the reading-writer under `bi.read` and the analytics module). An operator who
-// may edit the registry but not read BI gets the two tag fields instead: the
-// binding is still theirs to state, and a picker that 403s is a control they
-// cannot use.
+// the reading-writer under `bi.read` and the analytics module). The registry now
+// rides the same pair, so anyone who may edit it may list; the two tag fields
+// remain only for a caller the lists would refuse.
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
@@ -16,7 +15,8 @@ import { Input, Select } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { BiDeviceListResponse, BiPointRow } from "@/lib/types";
-import { bi } from "@/features/bi/api";
+import { bi } from "../../api";
+import { MODULE, PERM_READ } from "../../constants";
 
 export interface PickedPoint {
   device_tag: string;
@@ -34,7 +34,7 @@ type Scope = "site" | "unplaced";
 
 export default function PointPicker({ siteId, busy, onPick, onCancel }: Readonly<PointPickerProps>) {
   const { can, hasModule } = useAuth();
-  const listable = can("bi.read") && hasModule("analytics");
+  const listable = can(PERM_READ) && hasModule(MODULE);
   const [scope, setScope] = useState<Scope>("site");
   const [device, setDevice] = useState("");
   const [point, setPoint] = useState("");

@@ -11,7 +11,6 @@ import { THREAT_PILL, THREAT_LEVELS, capitalize } from "../constants";
 import SiteInfoPanel from "./SiteInfoPanel";
 import FloorsPanel from "./FloorsPanel";
 import ZonesPanel from "./ZonesPanel";
-import InfraDesigner from "./infrastructure/InfraDesigner";
 import SelectMenu from "@/components/common/SelectMenu";
 
 const TABS: { key: SiteDetailTab; label: string; icon: string }[] = [
@@ -20,11 +19,12 @@ const TABS: { key: SiteDetailTab; label: string; icon: string }[] = [
   { key: "info", label: "Site info", icon: "heroicons:information-circle" },
   { key: "floors", label: "Floors", icon: "heroicons:square-3-stack-3d" },
   { key: "zones", label: "Zones", icon: "heroicons-outline:square-2-stack" },
-  // The building's plant — systems, equipment, the point behind each slot.
-  { key: "equipment", label: "Equipment", icon: "heroicons-outline:cpu-chip" },
+  // NO EQUIPMENT TAB. The plant designer (systems, chillers, TR, ΔT bands) is
+  // Building Intelligence configuration and lives in BI → Setup → Equipment:
+  // a VMS-only customer configuring a site must never meet a chiller.
 ];
 
-export type SiteDetailTab = "info" | "floors" | "zones" | "equipment";
+export type SiteDetailTab = "info" | "floors" | "zones";
 
 export interface SiteDetailProps {
   site: SitePublic;
@@ -36,11 +36,9 @@ export interface SiteDetailProps {
   /** Reactivate a deactivated site (with its floors and zones). */
   onRestore: () => void;
   onChangeThreat: (level: ThreatLevel) => void;
-  /** Open the Equipment tab on this equipment (a deep link from BI). */
-  equipmentId?: string | null;
 }
 
-export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, onDelete, onRestore, onChangeThreat, equipmentId }: Readonly<SiteDetailProps>) {
+export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, onDelete, onRestore, onChangeThreat }: Readonly<SiteDetailProps>) {
   /**
    * BUILDING FACTS ARE NOT HERE ANY MORE.
    *
@@ -53,13 +51,13 @@ export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, on
    * read-only with a link back here. Two surfaces, one fact, and the reader had
    * to know which was which.
    *
-   * They now live where they are used and read: Building Intelligence → Ratings
-   * → BUILDING. Recording one still needs `sites.update`, because `sites` is
-   * still where the fact is STORED — what moved is the form, not the ownership.
+   * They now live in Building Intelligence → Setup → Building facts. Recording
+   * one still needs `sites.update`, because `sites` is still where the fact is
+   * STORED — what moved is the form, not the ownership.
    */
 
-  // A remembered "building" tab from before that move would render no body at
-  // all; fall back to the first one rather than an empty pane.
+  // A remembered "building" or "equipment" tab from before those moves would
+  // render no body at all; fall back to the first one rather than an empty pane.
   const activeTab = TABS.some((t) => t.key === tab) ? tab : "info";
 
   return (
@@ -128,8 +126,6 @@ export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, on
           <SiteInfoPanel site={site} />
         ) : activeTab === "floors" ? (
           <FloorsPanel site={site} />
-        ) : activeTab === "equipment" ? (
-          <InfraDesigner key={site.site_id} site={site} initialEquipmentId={equipmentId} />
         ) : (
           <ZonesPanel site={site} />
         )}

@@ -49,7 +49,7 @@
 //   • area/city  — the mirror's facts; NULL is NOT RECORDED and renders "—".
 //   • chips      — per-category device/point counts, 24h critical alerts
 //                  (attributed through the device's placement), measured kWh
-//                  (blocked until an operator confirms units in Ratings).
+//                  (blocked until an operator confirms units in Setup).
 //   • trend      — "—": no score history exists, because no score exists.
 //
 // What is deliberately NOT here:
@@ -116,6 +116,7 @@ import ActivityChart from "./components/ActivityChart";
 import Correlations from "./components/Correlations";
 import FaultQueue, { FaultSeverity } from "./components/FaultQueue";
 import GateStrip from "./components/GateStrip";
+import { taskHref } from "./setup/routes";
 import { bi } from "./api";
 import { categoryMeta, deviceTypeLabel } from "./constants";
 
@@ -242,7 +243,7 @@ function SiteRow({ site, alertHours }: any) {
   const kwhTitle =
     site.kwh?.status === "measured"
       ? site.kwh.reason
-      : site.kwh?.reason ?? "no kWh register confirmed — confirm units in Ratings";
+      : site.kwh?.reason ?? "no kWh register confirmed — confirm units in Setup";
   return (
     <LeaderRow
       icon={unplaced ? "heroicons:map-pin" : "heroicons:building-office-2"}
@@ -290,7 +291,7 @@ function SiteRow({ site, alertHours }: any) {
       trendTitle="no score history exists yet — CCEI began evaluating today, and a trend needs a history of scores"
       // The unplaced row's count ships with the action that changes it: gate 3's
       // worklist, where its devices are assigned to a building by name.
-      href={unplaced ? "/bi/placement" : `/bi/energy?site=${site.site_id}`}
+      href={unplaced ? taskHref("placement") : `/bi/energy?site=${site.site_id}`}
     />
   );
 }
@@ -408,17 +409,17 @@ export default function Portfolio() {
                 sub={
                   measuredTotal != null
                     ? `kWh · ${measured.length} site(s), operator-confirmed registers, ${alertHours}h`
-                    : "no kWh register confirmed — confirm units in Ratings"
+                    : "no kWh register confirmed — confirm units in Setup"
                 }
                 tone="good"
                 title={
                   measuredTotal != null
                     ? undefined
-                    : "Consumption is last − first over a confirmed kWh register. Zero registers are confirmed, so there is nothing measured to show — confirming them happens in Ratings, by a human."
+                    : "Consumption is last − first over a confirmed kWh register. Zero registers are confirmed, so there is nothing measured to show — confirming them happens in Setup → Units, by a human."
                 }
                 action={
                   measuredTotal != null ? null : (
-                    <Link href="/bi/ratings" className="text-nb-blueb hover:underline">
+                    <Link href={taskHref("units")} className="text-nb-blueb hover:underline">
                       Confirm a kWh register →
                     </Link>
                   )
