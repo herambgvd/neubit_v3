@@ -12,7 +12,7 @@ import { stubApi, type ApiStub } from "@/test/apiStub";
 import { renderWithProviders } from "@/test/render";
 
 import EquipmentSetup from "./EquipmentSetup";
-import { infraDesignerHref } from "./routes";
+import { infraDesignerHref, infraImportHref } from "./routes";
 
 const nav = { params: new URLSearchParams() };
 vi.mock("next/navigation", () => ({ useSearchParams: () => nav.params }));
@@ -85,6 +85,35 @@ describe("the deep link", () => {
     expect(await screen.findByRole("heading", { name: "CH-09" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Nashik Depot" })).toBeInTheDocument();
     expect(stub.matching("GET /sites/s1/infrastructure")).toHaveLength(0);
+  });
+});
+
+describe("the import link", () => {
+  it("opens the I/O schedule import on the named building", async () => {
+    // L3 Plant's "Import I/O schedule" lands here.
+    nav.params = new URLSearchParams(infraImportHref("s2").split("?")[1]);
+    renderWithProviders(<EquipmentSetup />);
+
+    expect(await screen.findByLabelText(/Schedule file/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Nashik Depot" })).toBeInTheDocument();
+  });
+
+  it("opens nothing that writes for a caller without bi.manage", async () => {
+    perms.granted = new Set(["bi.read"]);
+    nav.params = new URLSearchParams(infraImportHref("s2").split("?")[1]);
+    renderWithProviders(<EquipmentSetup />);
+
+    expect(await screen.findByRole("button", { name: /^CH-09/ })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Schedule file/)).not.toBeInTheDocument();
+  });
+
+  it("does not open the import on a link that did not ask for it", async () => {
+    // The equipment deep link names the same building and is not an import.
+    nav.params = new URLSearchParams(infraDesignerHref("s2", "e9").split("?")[1]);
+    renderWithProviders(<EquipmentSetup />);
+
+    expect(await screen.findByRole("heading", { name: "CH-09" })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Schedule file/)).not.toBeInTheDocument();
   });
 });
 

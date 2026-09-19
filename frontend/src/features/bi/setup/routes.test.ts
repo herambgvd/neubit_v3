@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { infraDesignerHref as fromSites } from "@/features/core/sites/links";
 
-import { carryQuery, infraDesignerHref, taskOfPath } from "./routes";
+import { carryQuery, infraDesignerHref, infraImportHref, taskOfPath } from "./routes";
 
 const nav = vi.hoisted(() => ({ to: null as string | null }));
 vi.mock("next/navigation", () => ({
@@ -28,6 +28,10 @@ describe("infraDesignerHref", () => {
   it("opens BI → Setup → Equipment on the building and the equipment", () => {
     expect(infraDesignerHref("s2", "e9")).toBe("/bi/setup/equipment?site=s2&equipment=e9");
     expect(infraDesignerHref("s2")).toBe("/bi/setup/equipment?site=s2");
+  });
+
+  it("has a twin that lands in the designer's I/O schedule import", () => {
+    expect(infraImportHref("s2")).toBe("/bi/setup/equipment?site=s2&import=1");
   });
 
   it("is what a caller importing it from Sites gets", () => {

@@ -7,7 +7,8 @@
 // Configurations → Sites → a site; it is BI configuration, so it lives here and
 // rides BI's gate (`bi.read` + `analytics` to read, `bi.manage` to write).
 //
-// `?site=<uuid>&equipment=<uuid>` is the deep link `infraDesignerHref` builds.
+// `?site=<uuid>&equipment=<uuid>` is the deep link `infraDesignerHref` builds;
+// `?site=<uuid>&import=1` (`infraImportHref`) opens the I/O schedule import.
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
@@ -34,6 +35,7 @@ function EquipmentSetupInner() {
   const params = useSearchParams();
   const linkedSite = params?.get("site") ?? null;
   const linkedEquipment = params?.get("equipment") ?? null;
+  const linkedImport = params?.get("import") === "1";
 
   const [picked, setPicked] = useState<string | null>(null);
   const { items } = useBuildings(mayRead);
@@ -69,6 +71,8 @@ function EquipmentSetupInner() {
                 siteId={siteId}
                 // The linked equipment belongs to the linked building only.
                 initialEquipmentId={siteId === linkedSite ? linkedEquipment : null}
+                // So is the import — it opens only where the link pointed.
+                initialImporting={siteId === linkedSite && linkedImport}
               />
             </div>
           )}

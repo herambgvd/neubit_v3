@@ -55,6 +55,13 @@ export function infraDesignerHref(siteId: string, equipmentId?: string | null): 
   return `${taskHref("equipment")}?${q.toString()}`;
 }
 
+/** The equipment designer on one building with the I/O schedule import open —
+ *  where L3 Plant's "Import I/O schedule" lands. The import itself is still
+ *  gated on `bi.manage` inside the designer. */
+export function infraImportHref(siteId: string): string {
+  return `${taskHref("equipment")}?${new URLSearchParams({ site: siteId, import: "1" }).toString()}`;
+}
+
 /** Building facts for one building. */
 export const buildingFactsHref = (siteId: string): string =>
   `${taskHref("facts")}?${new URLSearchParams({ site: siteId }).toString()}`;

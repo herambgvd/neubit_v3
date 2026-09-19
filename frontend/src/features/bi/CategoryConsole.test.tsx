@@ -348,6 +348,12 @@ describe("the whole estate — the unscoped console", () => {
     renderWithProviders(<CategoryConsole category="hvac" />);
     expect(await screen.findByText(/93 of 176 points belong to no site/)).toBeInTheDocument();
   });
+
+  it("offers no plant: the estate has none, only its buildings do", async () => {
+    renderWithProviders(<CategoryConsole category="hvac" />);
+    await screen.findByText(/93 of 176 points belong to no site/);
+    expect(screen.queryByRole("link", { name: /^Plant$/ })).not.toBeInTheDocument();
+  });
 });
 
 describe("one building — the ?site= scoped console", () => {
@@ -371,6 +377,12 @@ describe("one building — the ?site= scoped console", () => {
     expect(screen.getByText(/ONE BUILDING — HVAC & Assets at this site only/)).toBeInTheDocument();
     // The middle crumb is the escape hatch: the same domain, unscoped.
     expect(screen.getByRole("link", { name: "HVAC & Assets" })).toHaveAttribute("href", "/bi/hvac");
+  });
+
+  it("opens this building's plant, one layer down", async () => {
+    renderWithProviders(<CategoryConsole category="hvac" />);
+
+    expect(await screen.findByRole("link", { name: /Plant/ })).toHaveAttribute("href", "/bi/plant?site=aeon-1");
   });
 
   it("asks the store for this building's devices and nobody else's", async () => {

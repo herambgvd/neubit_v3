@@ -31,9 +31,12 @@ export interface InfraDesignerProps {
   siteId: string;
   /** Open on this equipment — the deep link Building Intelligence uses. */
   initialEquipmentId?: string | null;
+  /** Open with the I/O schedule import showing — L3 Plant's "Import I/O
+   *  schedule". It still renders only for a caller who may write. */
+  initialImporting?: boolean;
 }
 
-export default function InfraDesigner({ siteId, initialEquipmentId }: Readonly<InfraDesignerProps>) {
+export default function InfraDesigner({ siteId, initialEquipmentId, initialImporting = false }: Readonly<InfraDesignerProps>) {
   const { can, hasModule } = useAuth();
   const mayRead = can(PERM_READ) && hasModule(MODULE);
   const mayWrite = mayRead && can(PERM_MANAGE);
@@ -54,7 +57,7 @@ export default function InfraDesigner({ siteId, initialEquipmentId }: Readonly<I
     initialEquipmentId ? { type: "equipment", id: initialEquipmentId } : null,
   );
   const [creatingSystem, setCreatingSystem] = useState(false);
-  const [importing, setImporting] = useState(false);
+  const [importing, setImporting] = useState(initialImporting);
 
   const ix = useMemo(() => (vocabQ.data ? indexVocabulary(vocabQ.data) : null), [vocabQ.data]);
   const systems = useMemo(() => treeQ.data?.systems ?? [], [treeQ.data]);

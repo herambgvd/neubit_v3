@@ -367,6 +367,15 @@ export const bi = {
   rating: ({ site_id, point_id, days }: any) =>
     unwrap(api.get(`${BI}/rating${qs({ site_id, point_id, days })}`)),
 
+  // ── THE PLANT ─ L3: one building's systems → equipment → slots ─────────
+  //
+  // Every slot with its DATA READINESS (reporting / silent / unbound /
+  // unresolved / ambiguous) judged over the window, and every equipment-scope
+  // metric's value or refusal. The schematic colours by readiness, never by a
+  // metric. A 404 is a building this store has no record of at all.
+  plant: (siteId: string, { hours }: { hours?: number } = {}) =>
+    unwrap(api.get(`${BI}/sites/${encodeURIComponent(siteId)}/plant${qs({ hours })}`)),
+
   // ── PLACEMENT ─ read here, written by core ──────────────────────────────
   //
   // This store only READS where a device is: `devices({ placement })` above,

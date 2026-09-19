@@ -16,6 +16,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 
 import UsersRolesStrip from "@/components/shell/UsersRolesStrip";
+import { PLANT_HREF, plantHref } from "@/features/bi/plant/routes";
 import { SETUP_HREF, SETUP_TASKS, STRANDED_HREF, taskOfPath } from "@/features/bi/setup/routes";
 import { WORKFLOW_VIEWS } from "@/features/workflow/constants";
 import { useAuth } from "@/lib/auth";
@@ -33,6 +34,8 @@ const STRIP_ROUTES = new Set<string>([
   // "fabricated destination" this feature must not ship.
   //
   "/bi/portfolio", "/bi/energy", "/bi/hvac", "/bi/water", "/bi/insights", "/bi/ratings",
+  // L3 PLANT — one building's plant. Its cell appears only in a building scope.
+  PLANT_HREF,
   // SETUP — the checklist and every task under it. The old worklist routes
   // (/bi/duplicates, /bi/placement, /bi/succession, /bi/metrics) redirect here.
   SETUP_HREF, ...SETUP_TASKS.map((t) => t.href), STRANDED_HREF,
@@ -186,6 +189,11 @@ export default function ConsoleStrip() {
                   { href: "/bi/energy", label: "ENERGY", icon: "heroicons-outline:bolt", domain: true },
                   { href: "/bi/hvac", label: "HVAC", icon: "heroicons-outline:cog-8-tooth", domain: true },
                   { href: "/bi/water", label: "WATER", icon: "heroicons-outline:beaker", domain: true },
+                  // L3 — one building's plant. Only a building scope has one, so
+                  // the cell exists only when a building is in force: estate-wide
+                  // there is no plant to open, and a cell that opened a picker
+                  // would be a second Building.
+                  ...(biSite ? [{ href: PLANT_HREF, label: "PLANT", icon: "heroicons-outline:cpu-chip", plant: true }] : []),
                   { href: "/bi/insights", label: "INSIGHTS", icon: "heroicons-outline:chart-pie" },
                   { href: "/bi/ratings", label: "RATINGS", icon: "heroicons-outline:star" },
                   // Every piece of BI configuration, behind its checklist.
@@ -200,7 +208,13 @@ export default function ConsoleStrip() {
                     // energy" to "every building's energy" while looking like a
                     // filter change. Only the domains carry it: Building,
                     // Insights and Ratings have no site scope to keep.
-                    href={s.domain && biSite ? `${s.href}?site=${encodeURIComponent(biSite)}` : s.href}
+                    href={
+                      "plant" in s && biSite
+                        ? plantHref(biSite)
+                        : "domain" in s && s.domain && biSite
+                          ? `${s.href}?site=${encodeURIComponent(biSite)}`
+                          : s.href
+                    }
                     className={seg(pathname === s.href)}
                   >
                     <Icon icon={s.icon} className="text-[14px]" /> {s.label}
@@ -212,8 +226,14 @@ export default function ConsoleStrip() {
                 // length; this is what a reader sees without scrolling, and it
                 // is the one control that leaves the building scope on purpose.
                 <Link
-                  href={pathname}
-                  title="Leave the building scope — the same domain across the whole estate"
+                  // A plant has no estate-wide form: leaving the building from
+                  // L3 goes back to every building, not to an unscoped plant.
+                  href={pathname === PLANT_HREF ? "/bi/portfolio" : pathname}
+                  title={
+                    pathname === PLANT_HREF
+                      ? "Leave the building — back to every building"
+                      : "Leave the building scope — the same domain across the whole estate"
+                  }
                   className="flex shrink-0 items-center gap-1 rounded-[7px] border border-[rgba(96,165,250,.45)] bg-[rgba(96,165,250,.12)] px-2.5 py-1 text-[11.5px] text-nb-blueb transition hover:border-nb-blue"
                 >
                   <Icon icon="heroicons-outline:map-pin" className="text-[13px]" /> ONE BUILDING

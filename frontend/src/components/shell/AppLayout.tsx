@@ -165,6 +165,9 @@ export default function AppLayout({ children }: Readonly<{ children?: ReactNode 
     pathname === "/bi/water" ||
     pathname === "/bi/insights" ||
     pathname === "/bi/ratings" ||
+    // L3 Plant: the schematic scrolls inside its panel, the equipment detail
+    // stays put beside it.
+    pathname === "/bi/plant" ||
     // BI → Setup's master/detail tasks. Duplicates: the worklist scrolls inside
     // its own panel and the group being settled stays put. Stranded roles: the
     // worklist scrolls while the assertion being settled stays put. Buildings &

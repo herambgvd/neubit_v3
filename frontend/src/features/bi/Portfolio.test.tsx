@@ -211,6 +211,22 @@ describe("the layer", () => {
     expect(meta.closest("a")).toHaveAttribute("href", "/bi/setup/placement");
   });
 
+  it("opens a building's plant (L3) from its row, and offers the unplaced row none", async () => {
+    estate({
+      sites: [
+        { site_id: "s1", site_name: "HQ", score: 61, points: 10, categories: [] },
+        { site_id: null, site_name: null, score: null, points: 75, categories: [] },
+      ],
+    });
+    worklist();
+    renderWithProviders(<Portfolio />);
+
+    const plants = await screen.findAllByRole("link", { name: /PLANT/ });
+    // One door, for the one building. No building owns the unplaced points, so
+    // there is no plant to open for them.
+    expect(plants.map((a) => a.getAttribute("href"))).toEqual(["/bi/plant?site=s1"]);
+  });
+
   it("prints a blocked answer as its blockage plus the action that changes it", async () => {
     estate();
     worklist();

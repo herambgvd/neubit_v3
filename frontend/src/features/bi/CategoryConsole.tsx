@@ -72,6 +72,7 @@ import { fmtRelative } from "@/lib/format";
 import DeltaT, { hasDeltaT } from "./components/DeltaT";
 import GateStrip from "./components/GateStrip";
 import { taskHref } from "./setup/routes";
+import { plantHref } from "./plant/routes";
 import TrendChart from "./components/TrendChart";
 import Reason from "./components/Reason";
 import { bi } from "./api";
@@ -368,7 +369,19 @@ function CategoryConsoleInner({ category }: Readonly<{ category: string }>) {
               {`ONE BUILDING — ${meta.label} at this site only.`}
             </span>
           }
-          right={<ScopeBadge site />}
+          right={
+            <>
+              {/* L3 — this building's plant, one press down. */}
+              <Link
+                href={plantHref(siteId)}
+                title="This building's plant — systems and equipment, coloured by data readiness"
+                className="inline-flex items-center gap-1 rounded-[7px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2 py-0.5 text-[11px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+              >
+                <Icon icon="heroicons-outline:cpu-chip" className="text-[13px]" /> Plant
+              </Link>
+              <ScopeBadge site />
+            </>
+          }
         />
       ) : (
         <EstateHeader

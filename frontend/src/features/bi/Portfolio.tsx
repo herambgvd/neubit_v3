@@ -15,7 +15,7 @@
 //
 //   L1 BUILDING   the six gates · the questions · the domains        (this file)
 //   L2 DOMAIN     the same gate strip, scoped, over the equipment    (CategoryConsole)
-//   L3 PLANT      schematic, fault, ticket                           (not built)
+//   L3 PLANT      one building's plant, drawn                        (Plant.tsx)
 //
 // So this page reads top to bottom as: can these numbers be trusted (the gate
 // strip), what do they say (the questions), and where do they come from (the
@@ -117,6 +117,7 @@ import Correlations from "./components/Correlations";
 import FaultQueue, { FaultSeverity } from "./components/FaultQueue";
 import GateStrip from "./components/GateStrip";
 import { taskHref } from "./setup/routes";
+import { plantHref } from "./plant/routes";
 import { bi } from "./api";
 import { categoryMeta, deviceTypeLabel } from "./constants";
 
@@ -244,7 +245,7 @@ function SiteRow({ site, alertHours }: any) {
     site.kwh?.status === "measured"
       ? site.kwh.reason
       : site.kwh?.reason ?? "no kWh register confirmed — confirm units in Setup";
-  return (
+  const row = (
     <LeaderRow
       icon={unplaced ? "heroicons:map-pin" : "heroicons:building-office-2"}
       muted={unplaced}
@@ -293,6 +294,23 @@ function SiteRow({ site, alertHours }: any) {
       // worklist, where its devices are assigned to a building by name.
       href={unplaced ? taskHref("placement") : `/bi/energy?site=${site.site_id}`}
     />
+  );
+  if (unplaced) return row;
+  // L3 — the building's plant. Beside the row, not inside it: the row is
+  // already one link (into the building's domains), and a link inside a link
+  // is not a control anyone can rely on.
+  return (
+    <div className="flex items-stretch gap-1.5">
+      <div className="min-w-0 flex-1">{row}</div>
+      <Link
+        href={plantHref(site.site_id)}
+        title={`${site.site_name || "This building"}'s plant — systems and equipment, coloured by data readiness`}
+        className="flex shrink-0 flex-col items-center justify-center gap-0.5 rounded-[11px] border border-nb-line bg-[rgba(10,18,40,.45)] px-2.5 text-[10px] tracking-[.5px] text-nb-muted transition hover:border-nb-blue/60 hover:text-nb-blueb"
+      >
+        <Icon icon="heroicons-outline:cpu-chip" className="text-[15px]" />
+        PLANT
+      </Link>
+    </div>
   );
 }
 

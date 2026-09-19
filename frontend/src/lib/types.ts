@@ -671,6 +671,115 @@ export interface BiSiteFactsListResponse {
   items: BiSiteFactsRow[];
 }
 
+/* --- the L3 plant (backend/reading-writer/app/api/plant.py) ---------------- */
+
+/** A slot's DATA READINESS — the closed set `metric_registry/slots.READINESS`,
+ *  worst first. Equipment and systems carry the least-ready state of their parts. */
+export type BiReadiness = "ambiguous" | "unresolved" | "silent" | "unbound" | "reporting";
+
+/** The point a slot resolved to (`plant._point_view`). */
+export interface BiPlantPoint {
+  point_id: string;
+  point_tag: string;
+  device_tag: string;
+  unit: string | null;
+  unit_confirmed: boolean;
+  last_seen_at: string | null;
+}
+
+/** One generation behind an ambiguous binding, or a ghost beside a reporting one
+ *  (`slots._candidate_view`). */
+export interface BiPlantCandidate {
+  point_id: string;
+  point_tag: string;
+  device_tag: string;
+  reported_in_window: boolean;
+  last_in_window: string | null;
+  last_seen_at: string | null;
+}
+
+/** One slot as the schematic draws it (`plant.slot_view`). `latest` is set only
+ *  when the slot is REPORTING — a silent point's last value is history. */
+export interface BiPlantSlot {
+  slot: string;
+  label: string;
+  dimension: string | null;
+  binding: { device_tag: string; point_tag: string } | null;
+  readiness: BiReadiness;
+  reason: string | null;
+  point: BiPlantPoint | null;
+  latest: { t: string | null; value: number | null; text: string | null } | null;
+  candidates: BiPlantCandidate[];
+  ghosts: BiPlantCandidate[];
+  /** false: a slot a metric reads that nobody created — drawn as unbound. */
+  declared: boolean;
+  required_by: string[];
+}
+
+/** An equipment-scope metric the plant evaluated (`plant._equipment_metrics`). */
+export interface BiPlantMetricDef {
+  metric: string;
+  version: number;
+  label: string | null;
+  precision: number | null;
+  equipment_class: string | null;
+  slots: string[];
+  resolution: string;
+}
+
+/** One metric's outcome on one piece of equipment — a value with its working, or
+ *  a refusal `{status, reason}`. The evaluator's item, less its `series`. */
+export interface BiPlantMetricOutcome {
+  status: string;
+  value: number | null;
+  reason?: string | null;
+  unit?: string | null;
+  dimension?: string | null;
+  inputs?: Record<string, unknown>[] | null;
+  arithmetic?: string;
+  coverage?: number;
+  candidates?: BiPlantCandidate[];
+  metric: string;
+  version: number;
+  equipment_id?: string;
+  equipment_tag?: string;
+}
+
+export interface BiPlantEquipment {
+  equipment_id: string;
+  tag: string;
+  name: string | null;
+  equipment_class: string;
+  system_id: string;
+  design: Record<string, InfraDesignValue | null>;
+  design_units: Record<string, string>;
+  readiness: BiReadiness;
+  readiness_counts: Record<string, number>;
+  slots: BiPlantSlot[];
+  metrics: Record<string, BiPlantMetricOutcome>;
+}
+
+export interface BiPlantSystem {
+  system_id: string;
+  name: string;
+  kind: string;
+  description: string | null;
+  readiness: BiReadiness;
+  equipment: BiPlantEquipment[];
+}
+
+/** `GET /bi/sites/{site_id}/plant` — one building's systems → equipment → slots. */
+export interface BiPlant {
+  site_id: string;
+  site_name: string | null;
+  window: { start: string; end: string };
+  readiness_states: BiReadiness[];
+  totals: Record<string, number>;
+  metrics: BiPlantMetricDef[];
+  systems: BiPlantSystem[];
+  unassigned_equipment: BiPlantEquipment[];
+}
+
 /* --- site infrastructure (backend/core/app/sites/infrastructure/) ---------- */
 
 /** One system kind of the closed vocabulary (`vocabulary.SYSTEM_KINDS`). */

@@ -143,9 +143,25 @@ describe("the building scope, in the chrome", () => {
     expect(out).toHaveAttribute("href", "/bi/hvac");
   });
 
+  it("offers the building's plant (L3) only inside a building scope", () => {
+    at("/bi/energy", "site=aeon-1");
+    expect(hrefs().PLANT).toBe("/bi/plant?site=aeon-1");
+  });
+
+  it("carries the building from its plant back into its domains", () => {
+    at("/bi/plant", "site=aeon-1");
+    const h = hrefs();
+    expect(lit()).toEqual(["PLANT"]);
+    expect(h.HVAC).toBe("/bi/hvac?site=aeon-1");
+    // A plant has no estate-wide form: leaving the building goes to Building.
+    expect(screen.getByRole("link", { name: /ONE BUILDING/ })).toHaveAttribute("href", "/bi/portfolio");
+    expect(hasConsoleStrip("/bi/plant")).toBe(true);
+  });
+
   it("says nothing about a scope that is not in force", () => {
     at("/bi/hvac");
     expect(screen.queryByRole("link", { name: /ONE BUILDING/ })).not.toBeInTheDocument();
     expect(hrefs().HVAC).toBe("/bi/hvac");
+    expect(hrefs().PLANT).toBeUndefined();
   });
 });
