@@ -310,6 +310,11 @@ class FakeDb:
                 rows = [r for r in self._scoped(sql, params) if r["type"] == "num"]
                 if "p.category = :category" in sql:
                     rows = [r for r in rows if r["category"] == params.get("category")]
+                # Same discipline as the tenant filter: applied only when the SQL
+                # actually carries the predicate, so a query that loses it starts
+                # returning another building's rows instead of quietly passing.
+                if "p.site_id = CAST(:site AS uuid)" in sql:
+                    rows = [r for r in rows if str(r["site_id"]) == params.get("site")]
                 return _Result(rows)
             if name == "visible":
                 want = {str(p) for p in params["pids"]}
@@ -665,3 +670,37 @@ def test_the_request_refuses_a_unit_beside_a_pattern_even_when_it_is_null():
         ConfirmUnitsRequest(pattern="active_power_kw", unit=None)
     # Omitted entirely is the normal case and must still be accepted.
     assert ConfirmUnitsRequest(pattern="active_power_kw").pattern == "active_power_kw"
+
+
+
+# ── One building's backlog ───────────────────────────────────────────────────
+#
+# The building view previews a pattern for ONE site, so the write must act on
+# that same site's points or the operator confirms a set they were never shown.
+# Both halves are selected by `_candidates`, and these tests hold both to it.
+
+SITE_A = uuid.UUID("aaaaaaaa-0000-0000-0000-00000000000a")
+SITE_B = uuid.UUID("bbbbbbbb-0000-0000-0000-00000000000b")
+
+
+def at(row, site):
+    return {**row, "site_id": site}
+
+
+def test_a_building_catalogue_counts_only_that_buildings_points(wired):
+    app, install = wired
+    install([at(point("1FYC1_IWT"), SITE_A), at(point("2FYC1_IWT"), SITE_B)])
+    r = get_patterns(app, f"?site_id={SITE_A}")
+    assert r.status_code == 200, r.text
+    by_key = {p["key"]: p for p in r.json()["patterns"]}
+    assert by_key["chilled_water_temp"]["eligible"] == 1
+
+
+def test_a_building_confirm_writes_only_what_that_building_previewed(wired):
+    app, install = wired
+    db = install([at(point("1FYC1_IWT"), SITE_A), at(point("2FYC1_IWT"), SITE_B)])
+    r = post(app, {"pattern": "chilled_water_temp", "site_id": str(SITE_A)})
+    assert r.status_code == 200, r.text
+    assert r.json()["updated"] == 1
+    written = {row["point_tag"] for row in db.rows if row["unit_source"] == "operator"}
+    assert written == {"1FYC1_IWT"}

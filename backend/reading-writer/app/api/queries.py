@@ -1249,6 +1249,7 @@ _GHOST_MEMBERS_SQL = text(
                p.point_tag,
                p.category,
                p.unit,
+               p.site_id,
                p.last_seen_at,
                p.last_seen_at >= now() - make_interval(mins => :fresh) AS fresh,
                r.point_id IS NOT NULL                                  AS has_role,
@@ -1301,6 +1302,9 @@ _GHOST_RESURRECTED_SQL = text(
        AND p.superseded_by IS NOT NULL
        AND p.retired_at IS NULL
        AND (CAST(:category AS text) IS NULL OR p.category = CAST(:category AS text))
+       -- A resurrected point is ONE point, so unlike a ghost group it has one
+       -- placement and a plain predicate is the honest site scope.
+       AND (CAST(:site AS uuid) IS NULL OR p.site_id = CAST(:site AS uuid))
      ORDER BY p.last_seen_at DESC
     """
 )
@@ -1340,6 +1344,7 @@ async def ghost_groups(
     *,
     category: str | None = None,
     mode: str | None = None,
+    site_id: uuid.UUID | None = None,
 ) -> list[dict]:
     """Every duplicated `(device_tag, point_tag)`, with its members and a verdict.
 
@@ -1357,6 +1362,17 @@ async def ghost_groups(
     Tenant-scoped like everything else here: the duplicate set is computed
     INSIDE the tenant, so two tenants that happen to use the same device tag are
     never each other's ghosts.
+
+    `site_id` does NOT filter before the grouping, and that asymmetry with
+    `category` is deliberate. Generations of one register routinely sit in
+    different places: the dead one was placed, the live one arrived after the
+    rebuild and has no site yet. Measured on this estate, 44 of the 45 remaining
+    duplicated pairs span more than one placement. Filtering members first would
+    split each of those into a single-member "group", which is no longer a
+    duplicate and silently vanishes — so a building's view would show almost none
+    of the ghosts that are inflating that building. Instead a group is KEPT when
+    any member is at the site, and it keeps ALL of its members, so its
+    classification is the same one the estate view gives.
     """
     rows = _rows(
         await db.execute(
@@ -1374,7 +1390,13 @@ async def ghost_groups(
         grouped.setdefault((row["device_tag"], row["point_tag"]), []).append(row)
 
     out: list[dict] = []
+    want_site = str(site_id) if site_id else None
     for (device_tag, point_tag), members in grouped.items():
+        if want_site is not None and not any(
+            m.get("site_id") is not None and str(m["site_id"]) == want_site
+            for m in members
+        ):
+            continue
         group_mode, survivor = _classify(members)
         if mode is not None and mode != group_mode:
             continue
@@ -1410,12 +1432,17 @@ async def resurrected_points(
     tenant: uuid.UUID | None,
     *,
     category: str | None = None,
+    site_id: uuid.UUID | None = None,
 ) -> list[dict]:
     """Points that were superseded and are reporting again — see the SQL above."""
     return _rows(
         await db.execute(
             _GHOST_RESURRECTED_SQL,
-            {"tenant": str(tenant) if tenant else None, "category": category},
+            {
+                "tenant": str(tenant) if tenant else None,
+                "category": category,
+                "site": str(site_id) if site_id else None,
+            },
         )
     )
 

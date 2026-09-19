@@ -389,6 +389,7 @@ async def ghost_points(
     scope: Caller,
     category: str | None = None,
     mode: str | None = None,
+    site_id: uuid.UUID | None = None,
 ) -> dict:
     """The duplicated `(device_tag, point_tag)` pairs, and what can be settled.
 
@@ -421,14 +422,19 @@ async def ghost_points(
     tenant = _tenant(scope)
     if mode is not None and mode not in ("auto", "manual"):
         raise ValidationError("mode must be 'auto' or 'manual'")
-    groups = await q.ghost_groups(db, tenant, category=category, mode=mode)
+    # `site_id` scopes to one building: a group is kept when ANY of its
+    # generations is placed there — see `ghost_groups` for why the placement
+    # cannot filter members before they are grouped.
+    groups = await q.ghost_groups(db, tenant, category=category, mode=mode, site_id=site_id)
     return {
         "groups": groups,
         "total": len(groups),
         "auto": sum(1 for g in groups if g["mode"] == "auto"),
         "manual": sum(1 for g in groups if g["mode"] == "manual"),
         "fresh_minutes": q.FRESH_MINUTES,
-        "resurrected": await q.resurrected_points(db, tenant, category=category),
+        "resurrected": await q.resurrected_points(
+            db, tenant, category=category, site_id=site_id
+        ),
     }
 
 
@@ -574,7 +580,9 @@ class ForgetRolesRequest(BaseModel):
     "/points/roles/orphans",
     dependencies=[Depends(require_permission(PERM_READ))],
 )
-async def orphan_roles(db: Db, scope: Caller, role: str | None = None) -> dict:
+async def orphan_roles(
+    db: Db, scope: Caller, role: str | None = None, site_id: uuid.UUID | None = None
+) -> dict:
     """Roles bound to points that have stopped reporting, and who could succeed them.
 
     A gateway rebuild that renames a tag mints a new `point_id` under the new
@@ -626,7 +634,7 @@ async def orphan_roles(db: Db, scope: Caller, role: str | None = None) -> dict:
     `role` narrows the result to one role name. It cannot change any candidate
     set — candidates are a property of the device.
     """
-    return await sx.orphan_roles(db, _tenant(scope), role=role)
+    return await sx.orphan_roles(db, _tenant(scope), role=role, site_id=site_id)
 
 
 @bi_router.post(
@@ -1225,6 +1233,7 @@ async def unit_patterns(
     db: Db,
     scope: Caller,
     category: str | None = None,
+    site_id: uuid.UUID | None = None,
 ) -> UnitPatternsResponse:
     """The catalogue of tag conventions, each with the set it is holding RIGHT NOW.
 
@@ -1252,7 +1261,9 @@ async def unit_patterns(
     set previewed and the set written are not the same set.
     """
     return UnitPatternsResponse(
-        **await un.pattern_catalogue(db, _tenant(scope), category=category)
+        **await un.pattern_catalogue(
+            db, _tenant(scope), category=category, site_id=site_id
+        )
     )
 
 
@@ -1490,7 +1501,7 @@ async def _confirm_by_pattern(db, tenant, actor: str | None, body: ConfirmUnitsR
         )
 
     _, eligible, already = await un.pattern_targets(
-        db, tenant, key=pattern.key, category=body.category
+        db, tenant, key=pattern.key, category=body.category, site_id=body.site_id
     )
     if len(eligible) > MAX_PATTERN_APPLY:
         raise ValidationError(

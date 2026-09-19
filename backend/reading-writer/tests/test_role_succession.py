@@ -1197,3 +1197,35 @@ class TestForgettingAnAssertion:
                     headers=auth(tenant_id=TENANT, permissions=[r.PERM_MANAGE]),
                     json=body,
                 )
+
+
+# ── one building's stranded roles ────────────────────────────────────────────
+
+
+SITE_A = uuid.UUID("aaaaaaaa-0000-0000-0000-00000000000a")
+SITE_B = uuid.UUID("bbbbbbbb-0000-0000-0000-00000000000b")
+
+
+class TestSiteScope:
+    def test_a_building_sees_only_the_roles_placed_there(self):
+        here, there = uuid.uuid4(), uuid.uuid4()
+        db = ScriptedDb(
+            orphans=[
+                {**orphan_row(here), "site_id": SITE_A},
+                {**orphan_row(there, device="OTHER"), "site_id": SITE_B},
+            ],
+            missing=[],
+            pool=[],
+        )
+        out = run(sx.orphan_roles(db, TENANT, site_id=SITE_A))
+        assert [o["point_id"] for o in out["orphans"]] == [here]
+
+    def test_a_role_whose_point_is_gone_belongs_to_no_building(self):
+        """No point row, no placement to test — a building cannot claim it, so it
+        is left to the estate view rather than shown in every building's."""
+        db = ScriptedDb(orphans=[], missing=[missing_row(uuid.uuid4())], pool=[])
+        assert run(sx.orphan_roles(db, TENANT, site_id=SITE_A))["orphans"] == []
+
+    def test_the_estate_still_sees_a_role_whose_point_is_gone(self):
+        db = ScriptedDb(orphans=[], missing=[missing_row(uuid.uuid4())], pool=[])
+        assert len(run(sx.orphan_roles(db, TENANT))["orphans"]) == 1

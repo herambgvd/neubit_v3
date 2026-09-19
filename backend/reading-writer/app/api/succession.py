@@ -163,6 +163,7 @@ _ORPHAN_ROLES_SQL = text(
            p.unit,
            p.type,
            p.category,
+           p.site_id,
            p.last_seen_at,
            p.retired_at IS NOT NULL                                AS retired,
            p.last_seen_at >= now() - make_interval(mins => :fresh)  AS fresh,
@@ -457,6 +458,7 @@ async def orphan_roles(
     tenant: uuid.UUID | None,
     *,
     role: str | None = None,
+    site_id: uuid.UUID | None = None,
 ) -> dict:
     """Every orphaned role, with its scored successors on the SAME device.
 
@@ -485,6 +487,18 @@ async def orphan_roles(
     if role is not None:
         orphans = [o for o in orphans if o["role"] == role]
         missing = [m for m in missing if m["role"] == role]
+    if site_id is not None:
+        # One building's stranded roles: those whose bound point is placed there.
+        # Filtered on the RESULT, like `role`, so the candidate pool — a property
+        # of the device — is untouched. A role whose point row is GONE has no
+        # placement left to test, so no building can claim it: it stays on the
+        # estate view, which is the only scope that can honestly show it.
+        want = str(site_id)
+        orphans = [
+            o for o in orphans
+            if o.get("site_id") is not None and str(o["site_id"]) == want
+        ]
+        missing = []
 
     devices = sorted({o["device_tag"] for o in orphans if o["device_tag"]})
     pool: list[dict] = []

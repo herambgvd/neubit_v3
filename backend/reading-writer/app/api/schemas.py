@@ -647,6 +647,10 @@ class ConfirmUnitsRequest(BaseModel):
     # and ignored there rather than refused, because a client sending both is
     # being redundant, not ambiguous.
     category: str | None = Field(default=None, max_length=64)
+    # Narrows a PATTERN to one building, for the same reason `category` exists:
+    # the set previewed on `GET /units/patterns?site_id=…` and the set written
+    # here are one set only if both carry the same scope.
+    site_id: uuid.UUID | None = None
     unit: str | None = Field(default=None, max_length=64)
     acknowledge_not_reporting: bool = False
     dry_run: bool = False
