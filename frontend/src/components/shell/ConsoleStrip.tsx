@@ -17,6 +17,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 
 import UsersRolesStrip from "@/components/shell/UsersRolesStrip";
 import { PLANT_HREF, plantHref } from "@/features/bi/plant/routes";
+import { WORK_HREF, workHrefFor } from "@/features/bi/work/routes";
 import { SETUP_HREF, SETUP_TASKS, STRANDED_HREF, taskOfPath } from "@/features/bi/setup/routes";
 import { WORKFLOW_VIEWS } from "@/features/workflow/constants";
 import { useAuth } from "@/lib/auth";
@@ -36,6 +37,8 @@ const STRIP_ROUTES = new Set<string>([
   "/bi/portfolio", "/bi/energy", "/bi/hvac", "/bi/water", "/bi/insights", "/bi/ratings",
   // L3 PLANT — one building's plant. Its cell appears only in a building scope.
   PLANT_HREF,
+  // GATE 6 — what the estate is saying that somebody has to act on.
+  WORK_HREF,
   // SETUP — the checklist and every task under it. The old worklist routes
   // (/bi/duplicates, /bi/placement, /bi/succession, /bi/metrics) redirect here.
   SETUP_HREF, ...SETUP_TASKS.map((t) => t.href), STRANDED_HREF,
@@ -194,6 +197,10 @@ export default function ConsoleStrip() {
                   // there is no plant to open, and a cell that opened a picker
                   // would be a second Building.
                   ...(biSite ? [{ href: PLANT_HREF, label: "PLANT", icon: "heroicons-outline:cpu-chip", plant: true }] : []),
+                  // Gate 6's worklist. Not Setup: Setup describes the building
+                  // once, this is what today's readings are asking for. It keeps
+                  // the building in scope when there is one.
+                  { href: WORK_HREF, label: "WORK", icon: "heroicons-outline:bolt", work: true },
                   { href: "/bi/insights", label: "INSIGHTS", icon: "heroicons-outline:chart-pie" },
                   { href: "/bi/ratings", label: "RATINGS", icon: "heroicons-outline:star" },
                   // Every piece of BI configuration, behind its checklist.
@@ -211,9 +218,11 @@ export default function ConsoleStrip() {
                     href={
                       "plant" in s && biSite
                         ? plantHref(biSite)
-                        : "domain" in s && s.domain && biSite
-                          ? `${s.href}?site=${encodeURIComponent(biSite)}`
-                          : s.href
+                        : "work" in s
+                          ? workHrefFor(biSite)
+                          : "domain" in s && s.domain && biSite
+                            ? `${s.href}?site=${encodeURIComponent(biSite)}`
+                            : s.href
                     }
                     className={seg(pathname === s.href)}
                   >

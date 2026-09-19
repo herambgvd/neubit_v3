@@ -392,6 +392,8 @@ const MAPPING: Record<string, ModelEntry & { subset?: string }> = {
   "features/workflow/types.ts:FormFieldSchema": { src: "WORKFLOW", file: "forms/schemas.py", model: "FormFieldSchema" },
   "features/workflow/types.ts:FormPublic": { src: "WORKFLOW", file: "forms/schemas.py", model: "FormPublic" },
   "features/workflow/types.ts:InstancePublic": { src: "WORKFLOW", file: "instances/schemas.py", model: "InstancePublic" },
+  // Gate 6 reads this to say what is ALREADY being worked on about a finding.
+  "features/workflow/types.ts:OpenWork": { src: "WORKFLOW", file: "instances/schemas.py", model: "OpenWorkRef" },
   "features/workflow/types.ts:InstanceStatsResponse": { src: "WORKFLOW", file: "instances/schemas.py", model: "InstanceStatsResponse" },
   "features/workflow/types.ts:SetThreatLevelRequest": { src: "WORKFLOW", file: "threat_levels/schemas.py", model: "SetThreatLevelRequest" },
   "features/workflow/types.ts:SimulateEventRequest": { src: "WORKFLOW", file: "triggers/schemas.py", model: "SimulateEventRequest" },

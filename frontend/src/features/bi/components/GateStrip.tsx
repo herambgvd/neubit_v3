@@ -56,7 +56,7 @@
 // refreshes the gate that sent you there. A caller without `bi.read` is not
 // charged for the worklists at all — the gate still states its blockage, it just
 // states it without a door.
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
@@ -64,6 +64,9 @@ import { Icon } from "@iconify/react";
 import { useAuth } from "@/lib/auth";
 
 import { bi } from "../api";
+import { workflow } from "@/features/workflow/api";
+import { actionable, alertFindings, keysOf, type AlertLike, type Finding } from "../findings";
+import { PERM_RAISE } from "./RaiseWork";
 import Reason from "./Reason";
 import { MODULE, PERM_READ } from "../constants";
 import {
@@ -79,6 +82,11 @@ import {
 // The alert window gate 6 reads. Portfolio asks for exactly this, under exactly
 // this key, so the two share one request and cannot disagree about it.
 const ALERT_HOURS = 24;
+// Gate 6 looks a little wider than the alert strip: the store caps this window at
+// 48 hours, and an estate whose last alert is older than that has a quiet gate 6
+// and is told the window rather than shown a zero with no span attached.
+const FINDING_HOURS = 24;
+const PERM_WORK_READ = "workflow.instance.read";
 
 /** Per-state segment dressing. `waiting` and `unknown` are deliberately the same
  *  faint grey as a passing gate: neither is a fault, and colouring them would
@@ -117,6 +125,9 @@ export default function GateStrip({ subject, className = "" }: Readonly<GateStri
   // to a worklist and is never charged for its request either, which is why the
   // gate sits on the queries rather than only on the links.
   const mayBi = can(PERM_READ) && hasModule(MODULE);
+  // Reading what is already being worked on, and raising work, are separate keys
+  // and neither is a BI key: the work lives in the workflow service.
+  const mayWork = can(PERM_WORK_READ) || can(PERM_RAISE);
   const [opened, setOpened] = useState<GateId | null>(null);
 
   // A site subject may also name a domain ("this building's HVAC").
@@ -126,10 +137,13 @@ export default function GateStrip({ subject, className = "" }: Readonly<GateStri
   const siteId = subject.kind === "site" ? subject.siteId : undefined;
   const wantsWorklists = mayBi;
 
+  // Gated like every other read here. These two were not, so a caller without
+  // `bi.read` or the module still cost the store two requests it would refuse.
   const summaryQ = useQuery<any>({
     queryKey: ["bi-summary"],
     queryFn: () => bi.summary(),
     refetchInterval: 30_000,
+    enabled: mayBi,
   });
   const ghostsQ = useQuery<any>({
     queryKey: ["bi-ghosts", category ?? "", siteId ?? ""],
@@ -159,6 +173,32 @@ export default function GateStrip({ subject, className = "" }: Readonly<GateStri
     queryKey: ["bi-alerts", ALERT_HOURS],
     queryFn: () => bi.alerts({ hours: ALERT_HOURS, limit: 50 }),
     refetchInterval: 30_000,
+    enabled: mayBi,
+  });
+
+  // ── GATE 6 ─ ACTS ─────────────────────────────────────────────────────────
+  // Equipment findings are a BUILDING's — the endpoint is per site — so only a
+  // site strip asks for them. Alerts are estate-wide and every scope reads them.
+  const findingsQ = useQuery<any>({
+    queryKey: ["bi-findings", siteId ?? ""],
+    queryFn: () => bi.findings({ site_id: siteId, hours: FINDING_HOURS }),
+    enabled: mayBi && !!siteId,
+  });
+  const found = useMemo(
+    () =>
+      actionable([
+        ...((findingsQ.data?.findings ?? []) as Finding[]),
+        ...alertFindings((alertsQ.data?.items ?? []) as AlertLike[]),
+      ]),
+    [findingsQ.data, alertsQ.data],
+  );
+  // Which of them somebody is already working on. Without `workflow.instance.read`
+  // this is never asked and gate 6 says so rather than counting everything as
+  // unattended.
+  const openWorkQ = useQuery<any>({
+    queryKey: ["bi-open-work", found.map((f) => f.source_key).join(",")],
+    queryFn: () => workflow.instances.openBySource(keysOf(found)),
+    enabled: mayWork && found.length > 0,
   });
 
   const gates = deriveGates({
@@ -169,7 +209,10 @@ export default function GateStrip({ subject, className = "" }: Readonly<GateStri
     orphans: orphansQ.data,
     unplaced: unplacedQ.data,
     alerts: alertsQ.data,
-    may: { bi: mayBi },
+    findings: found,
+    openWork: mayWork ? (found.length ? openWorkQ.data?.with_work : {}) : undefined,
+    findingHours: FINDING_HOURS,
+    may: { bi: mayBi, work: mayWork },
   });
 
   // Nothing is claimed before the estate has answered. "Six gates, all open" on

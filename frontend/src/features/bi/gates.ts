@@ -116,6 +116,10 @@ export interface GateView {
  *  would 403: a gate whose action the caller cannot open still states its
  *  blockage, it just states it without a link. */
 export interface GatePermits {
+  /** `workflow.instance.read` or `…create` — whether this caller may be told
+   *  what is already being worked on. Not a BI key: the work is the workflow
+   *  service's, and BI only asks it questions. */
+  work?: boolean;
   /** `bi.read` + the `analytics` module — every /bi worklist route, gate 3's
    *  included. Whether the caller may also WRITE there is the worklist's to say. */
   bi: boolean;
@@ -136,6 +140,14 @@ export interface GateInput {
   unplaced?: any;
   /** GET /bi/alerts — estate-wide, and gate 6 says so */
   alerts?: any;
+  /** Gate 6's worklist: the ACTIONABLE findings for this subject, already
+   *  filtered by `findings.actionable` — a healthy metric is not one. */
+  findings?: import("./findings").Finding[];
+  /** `source_key` → the open incident about it, from the workflow service.
+   *  `undefined` means nobody asked (no permission, or nothing to ask about). */
+  openWork?: Record<string, import("@/features/workflow/types").OpenWork> | undefined;
+  /** The window those findings were read over, in hours — printed, never implied. */
+  findingHours?: number;
   may: GatePermits;
 }
 
@@ -555,8 +567,14 @@ function rates(input: GateInput, upstream: GateView | null): GateView {
 // That flag is ESTATE-WIDE and the sentence says so, because the feed is not
 // per-category and a domain strip that implied otherwise would be inventing a
 // scope the API does not have.
+/** Gate 6's worklist. Operational work, NOT configuration, so it is not a Setup
+ *  page: Setup is where a building is described once, and this is what an
+ *  operator does with what the building is saying today. */
+export const workHref = (subject: GateSubject): string =>
+  subject.kind === "site" && subject.siteId ? `/bi/work?site=${subject.siteId}` : "/bi/work";
+
 function acts(input: GateInput, upstream: GateView | null): GateView {
-  const { alerts } = input;
+  const { alerts, findings, openWork, findingHours, subject, may } = input;
   const base = gate("acts");
   if (alerts?.available === false) {
     return {
@@ -581,18 +599,84 @@ function acts(input: GateInput, upstream: GateView | null): GateView {
       rows: [],
     };
   }
-  if (upstream) {
+
+  const window = findingHours ? `the last ${findingHours} hours` : "the window";
+  const open = findings ?? [];
+
+  // NOTHING TO ACT ON is a pass, and it is not the same as "all healthy". A
+  // metric that computes has no pass mark in the registry, so it is never
+  // counted here; what counts is a refusal, a bound sensor gone quiet, and an
+  // alert nobody has acknowledged.
+  if (open.length === 0) {
+    if (upstream) {
+      return {
+        ...base,
+        state: "waiting",
+        quiet: "alarms live",
+        count: null,
+        blocking: `Nothing is wrong at this gate. It cannot be judged until gate ${upstream.n} · ${upstream.verb} opens.`,
+        action: null,
+        rows: [],
+      };
+    }
     return {
       ...base,
-      state: "waiting",
+      state: "pass",
       quiet: "alarms live",
       count: null,
-      blocking: `Nothing is wrong at this gate. It cannot be judged until gate ${upstream.n} · ${upstream.verb} opens.`,
+      blocking: "",
       action: null,
       rows: [],
     };
   }
-  return { ...base, state: "pass", quiet: "alarms live", count: null, blocking: "", action: null, rows: [] };
+
+  // Somebody has to be able to say whether these are already being worked on.
+  // Counting every finding as unattended because the console was not allowed to
+  // ask would invent a backlog.
+  if (!may.work || openWork === undefined) {
+    return {
+      ...base,
+      state: "unknown",
+      quiet: "",
+      count: null,
+      blocking:
+        `${open.length} ${plural(open.length, "finding", "findings")} in ${window} could raise work, and whether any of them already has is not known here — ` +
+        "reading that needs `workflow.instance.read`, which belongs to the workflow service, not to Building Intelligence.",
+      action: null,
+      rows: [],
+    };
+  }
+
+  const without = open.filter((f) => !openWork[f.source_key]);
+  const withWork = open.length - without.length;
+  if (without.length === 0) {
+    return {
+      ...base,
+      state: "pass",
+      quiet: "alarms live",
+      count: null,
+      blocking: "",
+      action: null,
+      rows: [],
+    };
+  }
+
+  return {
+    ...base,
+    state: "shut",
+    count: without.length,
+    quiet: "alarms live",
+    blocking:
+      `${without.length} ${plural(without.length, "finding has", "findings have")} no work open about ${plural(without.length, "it", "them")}, out of ${open.length} in ${window}` +
+      (withWork ? `; ${withWork} already ${plural(withWork, "has", "have")} an incident.` : ".") +
+      " Raising one sends the evidence with it, and a second raise about the same finding returns the incident already open rather than a duplicate.",
+    action: may.bi ? { href: workHref(subject), label: "Raise work where it is needed" } : null,
+    rows: without.slice(0, 6).map((f) => ({
+      key: f.source_key,
+      title: f.equipment_tag ? `${f.equipment_tag} · ${f.title}` : f.title,
+      meta: f.kind === "alert" ? "raised by the gateway" : f.kind === "data_fault" ? "a bound sensor is not answering" : `refused · ${f.status}`,
+    })),
+  };
 }
 
 /** The six gates for one subject, in pipeline order. Pure: every figure comes

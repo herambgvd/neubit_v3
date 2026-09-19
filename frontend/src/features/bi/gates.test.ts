@@ -50,3 +50,80 @@ describe("a shut gate's action", () => {
     expect(action("binds")).toBe("/bi/setup/stranded");
   });
 });
+
+
+// ── GATE 6 · ACTS ────────────────────────────────────────────────────────────
+//
+// The gate that hands something to a person. Its two failure modes are opposite
+// and both expensive: counting a healthy chiller as work (there is no pass mark
+// in the registry, so `ok` is not a fault), and counting every finding as
+// unattended because the console was not allowed to ask who is already on it.
+
+const f = (over: Partial<Record<string, unknown>> = {}) =>
+  ({
+    source_key: "bi:equipment:e1:slot:chws",
+    kind: "data_fault",
+    status: "silent",
+    equipment_tag: "CH-1",
+    title: "CHW supply has gone quiet",
+    work: { source_key: "bi:equipment:e1:slot:chws", name: "n", description: "d", site_id: "s1", trigger_data: {} },
+    ...over,
+  }) as never;
+
+const acts = (input: Record<string, unknown>) =>
+  deriveGates({
+    subject: { kind: "site", siteId: "s1", label: "Aeon Tower" },
+    summary: { total_points: 10, sites: [{ site_id: "s1", points: 10, score: 61, categories: [] }] },
+    ghosts: { groups: [] },
+    patterns: { totals: { points: 10, already_confirmed: 10, eligible: 0, unmatched: 0 }, patterns: [] },
+    orphans: { orphans: [] },
+    alerts: { available: true },
+    may: { bi: true, work: true },
+    findingHours: 24,
+    ...input,
+  } as never).find((g) => g.id === "acts")!;
+
+describe("gate 6", () => {
+  it("passes when there is nothing to act on, and says so quietly", () => {
+    const g = acts({ findings: [], openWork: {} });
+    expect(g.state).toBe("pass");
+    expect(g.count).toBeNull();
+  });
+
+  it("shuts on findings nobody has work open about, and counts only those", () => {
+    const g = acts({
+      findings: [f(), f({ source_key: "k:2", title: "Band not recorded", kind: "equipment_metric", status: "missing_fact" })],
+      openWork: { "k:2": { instance_id: "i1", name: "INC-1", sop_name: "s", status: "open", priority: null, current_state_name: "Triage", assigned_to: null, created_at: "t" } },
+    });
+    expect(g.state).toBe("shut");
+    expect(g.count).toBe(1);
+    expect(g.blocking).toContain("1 already");
+    expect(g.rows.map((r) => r.key)).toEqual(["bi:equipment:e1:slot:chws"]);
+  });
+
+  it("opens its worklist, keeping the building in scope", () => {
+    const g = acts({ findings: [f()], openWork: {} });
+    expect(g.action?.href).toBe("/bi/work?site=s1");
+  });
+
+  it("passes once every finding has work open", () => {
+    const g = acts({
+      findings: [f()],
+      openWork: { "bi:equipment:e1:slot:chws": { instance_id: "i", name: "INC", sop_name: "s", status: "open", priority: null, current_state_name: null, assigned_to: null, created_at: "t" } },
+    });
+    expect(g.state).toBe("pass");
+  });
+
+  it("says it does not know rather than calling everything unattended", () => {
+    // Reading who is already on a finding is the workflow service's key, not a
+    // BI one. Without it the honest answer is unknown — never a backlog.
+    const g = acts({ findings: [f()], openWork: undefined, may: { bi: true, work: false } });
+    expect(g.state).toBe("unknown");
+    expect(g.count).toBeNull();
+    expect(g.blocking).toContain("workflow.instance.read");
+  });
+
+  it("names the window the findings were read over", () => {
+    expect(acts({ findings: [f()], openWork: {} }).blocking).toContain("last 24 hours");
+  });
+});

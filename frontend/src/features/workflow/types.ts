@@ -428,6 +428,20 @@ export interface InstanceEscalation {
   reason: string | null;
 }
 
+/** One OPEN incident, as `POST /workflow/instances/open-by-source` reports it.
+ *  Enough to say what is already being done about a finding and to link to it —
+ *  never enough to be mistaken for the incident itself. */
+export interface OpenWork {
+  instance_id: string;
+  name: string | null;
+  sop_name: string;
+  status: string;
+  priority: string;
+  current_state_name: string | null;
+  assigned_to: string | null;
+  created_at: string;
+}
+
 export interface InstancePublic {
   instance_id: string;
   sop_id: string;

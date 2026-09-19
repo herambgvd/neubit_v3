@@ -87,6 +87,12 @@ export const bi = {
   alerts: ({ hours = 24, severity, limit }: any = {}) =>
     unwrap(api.get(`${BI}/alerts${qs({ hours, severity, limit })}`)),
 
+  // Gate 6's own read: what this building's equipment is saying right now, each
+  // finding carrying the incident body that would raise work about it. The UI
+  // never composes that body — it posts what the store handed it.
+  findings: ({ site_id, hours }: any) =>
+    unwrap(api.get(`${BI}/sites/${site_id}/findings${qs({ hours })}`)),
+
   // `placement` is `placed | unplaced` and has NO default: omitted, the whole
   // estate comes back. `unplaced` is gate 3's worklist — devices no building owns.
   devices: ({ category, device_type, search, site_id, placement, limit, offset }: any = {}) => {

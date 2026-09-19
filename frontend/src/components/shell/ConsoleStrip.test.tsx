@@ -43,7 +43,9 @@ describe("the BI segment", () => {
     const labels = screen
       .getAllByRole("link")
       .map((a) => (a.textContent || "").trim());
-    expect(labels).toEqual(["BUILDING", "ENERGY", "HVAC", "WATER", "INSIGHTS", "RATINGS", "SETUP"]);
+    // WORK is gate 6's worklist and sits after the layers: it is what today's
+    // readings are asking for, not another view of the estate.
+    expect(labels).toEqual(["BUILDING", "ENERGY", "HVAC", "WATER", "WORK", "INSIGHTS", "RATINGS", "SETUP"]);
     expect(hrefs().SETUP).toBe("/bi/setup");
   });
 

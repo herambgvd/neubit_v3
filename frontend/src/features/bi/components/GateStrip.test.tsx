@@ -311,16 +311,22 @@ describe("gate 3 · BELONGS — opens the unplaced-device worklist in context", 
     expect(belongs.getAttribute("title")).not.toMatch(/sit on/);
   });
 
-  it("states the blockage without a door, and asks for no worklist, without bi.read", async () => {
+  it("asks the store for nothing at all without bi.read", async () => {
+    // These tests used to mock `summary` ANSWERING for a caller who cannot read
+    // it, and then assert the strip stated its figures. The store refuses that
+    // caller, so the request could only ever 403: the strip now makes none of
+    // them, and says it has not been told rather than printing a number it was
+    // never going to receive.
     auth.can = (p: string) => p !== "bi.read";
     store({ summary: unplacedSummary, devices: unplacedDevices });
     renderWithProviders(estate);
 
-    await screen.findByText(/^Gate 3 · BELONGS/);
-    expect(screen.getByText(/75 of 475 points belong to no site/)).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /Assign devices/ })).not.toBeInTheDocument();
+    await screen.findByText("BELONGS");
+    expect(bi.summary).not.toHaveBeenCalled();
     expect(bi.devices).not.toHaveBeenCalled();
-    expect(screen.getByText("Nothing you can reach from here opens this gate.")).toBeInTheDocument();
+    expect(bi.alerts).not.toHaveBeenCalled();
+    expect(screen.queryByText(/75 of 475 points belong to no site/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Assign devices/ })).not.toBeInTheDocument();
   });
 });
 
@@ -357,7 +363,7 @@ describe("scope — the same strip, one domain down", () => {
 });
 
 describe("a caller who may not open a worklist", () => {
-  it("is not sent to one and is not charged for its request", async () => {
+  it("is not sent to one and is charged for no request at all", async () => {
     auth.can = (p: string) => p !== "bi.read";
     store({
       summary: { ...healthySummary, total_registers: 472 },
@@ -365,12 +371,12 @@ describe("a caller who may not open a worklist", () => {
     });
     renderWithProviders(estate);
 
-    await screen.findByText(/^Gate 1 · ARRIVES/);
-    // The inflation is still stated — it is true whoever is reading.
-    expect(screen.getByText(/3 of the 475 rows counted here are later generations/)).toBeInTheDocument();
+    await screen.findByText("ARRIVES");
     expect(screen.queryByRole("link", { name: /Settle the duplicated registers/ })).not.toBeInTheDocument();
+    expect(bi.summary).not.toHaveBeenCalled();
     expect(bi.ghosts).not.toHaveBeenCalled();
     expect(bi.roleOrphans).not.toHaveBeenCalled();
+    expect(bi.alerts).not.toHaveBeenCalled();
   });
 
   it("offers no write control anywhere in the strip", async () => {
