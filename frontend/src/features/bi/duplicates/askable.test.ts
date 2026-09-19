@@ -135,3 +135,32 @@ describe("the queue", () => {
     expect(q.key).toContain("1FKC2_Total KW");
   });
 });
+
+describe("where each copy sits in time", () => {
+  it("draws both on ONE axis, so the rebuild is visible", () => {
+    const [a, b] = toQuestion(group([OLD, NEW])).choices;
+    // B started the axis; A started at the June rebuild, a little over half-way.
+    expect(b.span?.left).toBe(0);
+    expect(a.span!.left).toBeGreaterThan(55);
+    expect(a.span!.left).toBeLessThan(65);
+    // Both run to the same end.
+    expect(a.span!.left + a.span!.width).toBeCloseTo(100, 0);
+    expect(b.span!.left + b.span!.width).toBeCloseTo(100, 0);
+  });
+
+  it("keeps a copy that lived for hours visible on a months-long axis", () => {
+    const blip = member({ point_id: "p5", first_seen_at: "2026-09-11T08:00:00Z", last_seen_at: "2026-09-11T09:00:00Z" });
+    const [, , c] = toQuestion(group([OLD, NEW, blip])).choices;
+    expect(c.span!.width).toBeGreaterThanOrEqual(1.5);
+    expect(c.span!.left + c.span!.width).toBeLessThanOrEqual(100);
+  });
+
+  it("draws nothing for a copy whose start is not known, even beside one that has an axis", () => {
+    // The sibling's dates give the group an axis. That must not become a place
+    // to draw this copy from a guess about where it started.
+    const unknown = member({ point_id: "p6", first_seen_at: null, last_seen_at: "2026-09-12T00:00:00Z" });
+    const choices = toQuestion(group([OLD, unknown])).choices;
+    expect(choices.find((c) => c.point_id === "p6")!.span).toBeNull();
+    expect(choices.find((c) => c.point_id === "p1")!.span).not.toBeNull();
+  });
+});

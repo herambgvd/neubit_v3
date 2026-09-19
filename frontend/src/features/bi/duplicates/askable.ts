@@ -56,6 +56,12 @@ export interface Choice {
   mostHistory: boolean;
   /** True for the record that reported most recently. Also just a fact. */
   latest: boolean;
+  /** Where this record sits on the group's shared time axis, in percent —
+   *  `left` from the earliest first reading of ANY record in the group, `width`
+   *  its own span. Null when either end is unknown: a bar drawn from a guess
+   *  is a picture of nothing. Two records side by side then show at a glance
+   *  which one ran for months and which one appeared at a rebuild. */
+  span: { left: number; width: number } | null;
 }
 
 export interface Question {
@@ -104,6 +110,23 @@ export function toQuestion(g: GhostGroup): Question {
   const widest = Math.max(...spans.map((d) => d ?? -1), -1);
   const newest = Math.max(...members.map((m) => time(m.last_seen_at) ?? -1), -1);
 
+  // The shared axis: earliest start to latest stop across the whole group.
+  const starts = members.map((m) => time(m.first_seen_at)).filter((v): v is number => v != null);
+  const stops = members.map((m) => time(m.last_seen_at)).filter((v): v is number => v != null);
+  const axis0 = starts.length ? Math.min(...starts) : null;
+  const axis1 = stops.length ? Math.max(...stops) : null;
+  const barOf = (m: GhostMember): Choice["span"] => {
+    const a = time(m.first_seen_at);
+    const b = time(m.last_seen_at);
+    if (a == null || b == null || axis0 == null || axis1 == null || b < a) return null;
+    const whole = Math.max(axis1 - axis0, 1);
+    const left = ((a - axis0) / whole) * 100;
+    // A record that lived a few hours on a months-long axis must still be
+    // visible — a zero-width bar reads as "no data", which is false.
+    const width = Math.max(((b - a) / whole) * 100, 1.5);
+    return { left: Math.min(left, 100 - width), width: Math.min(width, 100) };
+  };
+
   return {
     key: questionKey(g),
     device_tag: g.device_tag,
@@ -123,6 +146,7 @@ export function toQuestion(g: GhostGroup): Question {
       // that ran the same length are two records that ran the same length.
       mostHistory: widest >= 0 && spans[i] === widest,
       latest: newest >= 0 && time(m.last_seen_at) === newest,
+      span: barOf(m),
     })),
   };
 }
