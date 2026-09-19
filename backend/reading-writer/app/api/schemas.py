@@ -815,3 +815,112 @@ class RatingResponse(BaseModel):
     baseline: BaselineState
     # Why there is no EPI, in words the screen prints instead of a number.
     blocked: list[str] = Field(default_factory=list)
+
+
+# ── Cross-domain correlations ────────────────────────────────────────────────
+#
+# `GET /bi/correlations` — the REGISTRY (migration 0025), not the coefficient.
+# `CorrelationResponse` above is the arithmetic between two measured series;
+# these shapes are about whether a cross-domain question can be asked AT ALL.
+#
+# The field this whole surface exists for is `CorrelationGap.needs_new_hardware`,
+# and it is a tri-state. `null` is UNDETERMINED, and a screen that renders it as
+# "no" has made a claim the backend refused to make. Two kinds carry it and both
+# for the same reason — the fact that would settle it is in a database this
+# service is not allowed to open, or in a gateway it cannot interrogate. See
+# `app/api/correlations.py`.
+#
+# `evidence` on a signal is not decoration either: `points_reporting_in_window`
+# and `silent_since` are what let a screen say "your IWT stopped on the 11th"
+# rather than "no data", and they are the difference between a finding and a
+# shrug.
+#
+# There is no score, no percentage-complete and no "partially live". A question
+# is asked or it has named gaps.
+
+
+class CorrelationGap(BaseModel):
+    """Why one signal is missing, in a kind and four sentences."""
+
+    kind: str
+    # True costs money. False does not. NULL is not known — never fold it into
+    # False, in a client or in an aggregate.
+    needs_new_hardware: bool | None
+    summary: str
+    remedy: str
+    # The console surface that closes it, or null where no screen can.
+    where: str | None = None
+    # What is standing in the way, in THIS estate's own terms and numbers.
+    gate: str
+
+
+class CorrelationSignal(BaseModel):
+    """One thing a correlation needs, and whether the estate supplies it."""
+
+    key: str
+    label: str
+    domain: str | None = None
+    source: str
+    # What this one signal contributes to the question.
+    unlocks: str | None = None
+    satisfied: bool
+    gap: CorrelationGap | None = None
+    # What the resolver actually found: matched points, confirmed units, rows in
+    # the window, the last event ever seen. Passed through so an operator can
+    # disagree with the probe rather than having to trust it.
+    evidence: dict = Field(default_factory=dict)
+
+
+class BlockingGap(CorrelationGap):
+    """The blocking gap, which is a gap plus the signal it belongs to."""
+
+    signal: str
+
+
+class CorrelationDefState(BaseModel):
+    key: str
+    version: int
+    name: str
+    question: str
+    unlocks: str
+    domains: list[str]
+    # "platform" (seeded, visible to every tenant) or "tenant" (their own row).
+    scope: str
+    effective_from: dt.datetime
+    # "live" | "blocked". There is no third value.
+    state: str
+    signals: list[CorrelationSignal]
+    blocking_gap: BlockingGap | None = None
+
+
+class CorrelationTotals(BaseModel):
+    """Arithmetic the backend owns so no screen has to re-derive it.
+
+    Two populations, because two sentences want them: `blocking_*` is one gap per
+    blocked correlation (what the headline counts), `signal_*` is every
+    unsatisfied signal (the real backlog). THREE hardware buckets, never two.
+    """
+
+    correlations: int
+    live: int
+    blocked: int
+    blocking_gaps: int
+    blocking_gaps_by_kind: dict[str, int] = Field(default_factory=dict)
+    needs_new_hardware: int
+    no_new_hardware_needed: int
+    hardware_undetermined: int
+    signal_gaps: int
+    signal_gaps_by_kind: dict[str, int] = Field(default_factory=dict)
+    signal_gaps_needing_new_hardware: int
+    signal_gaps_needing_no_new_hardware: int
+    signal_gaps_hardware_undetermined: int
+
+
+class CorrelationRegistryResponse(BaseModel):
+    # The window every windowed signal was resolved over. Echoed because "no
+    # access events" is a statement about a window and is meaningless without it.
+    start: dt.datetime
+    end: dt.datetime
+    hours: int
+    totals: CorrelationTotals
+    correlations: list[CorrelationDefState]

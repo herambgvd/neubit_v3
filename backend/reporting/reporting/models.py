@@ -738,3 +738,64 @@ class PointRole(Base):
     __table_args__ = (
         Index("ix_point_roles_tenant_role", "tenant_id", "role"),
     )
+
+
+class CorrelationDef(Base):
+    """A cross-domain question, and the signals it needs in order to be asked.
+
+    This is the metric registry's argument applied one layer up. A metric is a
+    formula over roles inside one domain; a CORRELATION spans two or more, and the
+    reason it is a row rather than a module is the same reason `MetricDefinition`
+    is: the next question a customer asks must be an INSERT.
+
+    The row holds NEEDS, never state. Nothing here records whether a signal is
+    satisfied, because that is a fact about the estate at a moment and this table
+    would then be a cache of one — stale the instant an operator confirms a unit.
+    `reading_writer.api.correlations` resolves the needs live.
+
+    `signals` is an ORDERED list: the reader reports the first unsatisfied signal
+    as the blocking gap, so the order in the seed decides which remedy a screen
+    leads with. NULL `tenant_id` is a platform correlation every tenant sees; a
+    change to what a correlation needs is a new `version`, never an edit.
+    """
+
+    __tablename__ = "correlation_defs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+    key: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    effective_from: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # The question in words. It is the product, not a caption: a screen that shows
+    # the gaps without the question shows a to-do list.
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    unlocks: Mapped[str] = mapped_column(Text, nullable=False)
+
+    domains: Mapped[list] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    signals: Mapped[list] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+
+    created_by: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "key", "version", name="uq_correlation_defs_key_version"),
+        Index("ix_correlation_defs_key", "key", "effective_from"),
+        # A one-domain "correlation" is a metric, and the metric registry already
+        # computes those. The claim this table makes is that its rows CROSS a
+        # boundary, so the schema is where that claim is kept true.
+        CheckConstraint("jsonb_array_length(domains) >= 2", name="ck_correlation_defs_domains"),
+        CheckConstraint("jsonb_array_length(signals) >= 2", name="ck_correlation_defs_signals"),
+    )

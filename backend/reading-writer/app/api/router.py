@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import builder
 from . import context
+from . import correlations as cx
 from . import execute as ex
 from . import intake as intake_store
 from . import permsync
@@ -48,6 +49,7 @@ from .schemas import (
     ActivityBucket,
     AlertListResponse,
     ConfirmUnitsRequest,
+    CorrelationRegistryResponse,
     CorrelationResponse,
     DeviceListResponse,
     PointListResponse,
@@ -1082,6 +1084,79 @@ async def correlation(
         samples=samples,
         samples_truncated=truncated,
     )
+
+
+# ── Cross-domain correlations (the registry, not the coefficient) ────────────
+#
+# `/correlation` above computes r between two series a caller names. THIS route
+# answers a question one step earlier and, commercially, the more important one:
+# which cross-domain questions can this estate answer at all, and for the ones it
+# cannot, what kind of thing is missing.
+#
+# It is on `bi.read` like every other read here. Nothing it touches is a write,
+# nothing it reports is auto-applied, and it never proposes to fix anything on the
+# operator's behalf — the remedies it returns name a screen a human goes to.
+
+
+@bi_router.get(
+    "/correlations",
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def correlations(
+    db: Db,
+    scope: Caller,
+    start: dt.datetime | None = None,
+    end: dt.datetime | None = None,
+    hours: Annotated[int, Query(ge=1, le=24 * 365)] = cx.DEFAULT_WINDOW_HOURS,
+) -> CorrelationRegistryResponse:
+    """Which cross-domain questions this estate can answer, and what blocks the rest.
+
+    A BMS owns one domain, so it can only ask questions inside one. The seven
+    correlations seeded in migration 0025 each need two, and each one declares the
+    signals it needs rather than hard-coding where they come from. This resolves
+    those declarations against the estate and returns, per signal, whether it is
+    satisfied and — when it is not — the KIND of gap, what is gating it in this
+    estate's own terms, and what closing it would unlock.
+
+    The kinds are the answer, not the count. `needs_new_hardware` on each gap is
+    what separates "buy a sensor" from "switch on a module you already own", and
+    it is a TRI-STATE: `null` means this service cannot determine it, which
+    happens for exactly one reason and is explained in the gap's own `gate`. The
+    totals count `null` in its own bucket, so a screen can say "N gaps · 0 need
+    new hardware · M undetermined" without the backend having quietly decided
+    that undetermined means no.
+
+    The window matters and is echoed back, and it is the basis on which EVERY
+    signal is judged — a point counts when it produced readings inside it, not
+    when it merely exists or was bound to a role once. "The access stream
+    published nothing" and "the chiller's IWT published nothing" are both
+    statements about this window, and a signal present over 90 days and absent
+    over 7 is a different answer to a different question.
+
+    That is why `signal_silent` exists as a kind of its own. A role bound to a
+    sensor that stopped is the most misleading state an estate can be in: every
+    configuration screen says it is correct, because it IS correct, and the
+    measurement is gone anyway. It is reported as undetermined for hardware, not
+    free — this service cannot tell a failed transducer from a dropped gateway
+    link from a tag a rebuild renamed.
+    """
+    tenant = _tenant(scope)
+    start_at, end_at = _window(start, end, hours)
+    try:
+        resolved = await cx.resolve_all(db, tenant, start=start_at, end=end_at)
+    except cx.SpecError as exc:
+        # A seeded correlation this build cannot resolve. Loud, not silent: a
+        # signal nothing can satisfy renders exactly like a real gap, and an
+        # operator would go looking for a door that was never the problem.
+        raise ValidationError(str(exc)) from exc
+    return CorrelationRegistryResponse(
+        start=start_at,
+        end=end_at,
+        hours=int((end_at - start_at).total_seconds() // 3600),
+        totals=cx.totals(resolved),
+        correlations=resolved,
+    )
+
 
 
 # ── Units ────────────────────────────────────────────────────────────────────
