@@ -27,6 +27,8 @@ import type { SopPublic } from "@/features/workflow/types";
 import type { Finding } from "../findings";
 
 export const PERM_RAISE = "workflow.instance.create";
+/** Installing playbooks is creating SOPs, and is gated as such. */
+export const PERM_INSTALL = "workflow.sop.create";
 
 /** A SOP that names this kind of finding in its triggers is the one meant for
  *  it, so it is offered first. Nothing is auto-selected beyond that ordering —
@@ -62,6 +64,19 @@ export default function RaiseWork({
     enabled: open && mayRaise,
   });
   const sops: SopPublic[] = rankSops(sopsQ.data?.items ?? [], eventTypeOf(finding));
+
+  // The dead end, answered. Raising work REQUIRES a procedure, so a deployment
+  // with none opens an empty select and stops. The building set only: a tenant
+  // that never bought the recorder has no use for camera tamper.
+  const install = useMutation({
+    mutationFn: () => workflow.sops.installStarters("bi"),
+    onSuccess: () => {
+      setErr(null);
+      qc.invalidateQueries({ queryKey: ["workflow-sops"] });
+    },
+    onError: (e) => setErr(apiError(e, "Could not install the building playbooks")),
+  });
+  const noProcedures = !sopsQ.isLoading && !sopsQ.isError && sops.length === 0;
 
   const raise = useMutation({
     mutationFn: () => workflow.instances.raise({ ...(finding.work as any), sop_id: sopId }),
@@ -134,6 +149,22 @@ export default function RaiseWork({
           onChange={(e) => setSopId(e.target.value)}
           options={sops.map((s) => ({ value: s.sop_id, label: s.name }))}
         />
+        {noProcedures && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-[12px] text-amber-200/90">
+            <p className="font-medium text-amber-200">No procedures yet</p>
+            <p className="mt-1">
+              Work runs a procedure — which states it moves through, how long it may
+              take. There are none on this system yet.
+            </p>
+            {can(PERM_INSTALL) ? (
+              <QuietButton className="mt-2" onClick={() => install.mutate()} disabled={install.isPending}>
+                {install.isPending ? "Installing…" : "Install the building playbooks"}
+              </QuietButton>
+            ) : (
+              <p className="mt-1">Needs {PERM_INSTALL}.</p>
+            )}
+          </div>
+        )}
         {/* What travels, in the store's own words. Read before pressing, not after. */}
         <div className="rounded-lg border border-nb-line bg-nb-sunk p-3">
           <div className="text-[11px] font-mono uppercase tracking-wider text-nb-muted">

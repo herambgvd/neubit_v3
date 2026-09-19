@@ -201,3 +201,49 @@ describe("raising work", () => {
     expect(screen.getByText(/Nothing was raised a second time/)).toBeInTheDocument();
   });
 });
+
+describe("a deployment with no procedures", () => {
+  /** Raising REQUIRES one, so an empty select is a dead end, not a slow load. */
+  async function openWithNoSops() {
+    wire({ findings: [FINDING] });
+    vi.spyOn(workflow.sops, "list").mockResolvedValue({ items: [], total: 0 } as never);
+    renderWithProviders(<Work />);
+    await userEvent.click(await screen.findByRole("button", { name: "Raise work" }));
+  }
+
+  it("offers the BUILDING set, never the recorder's", async () => {
+    const install = vi
+      .spyOn(workflow.sops, "installStarters")
+      .mockResolvedValue({ items: [], created: 3, skipped: [] } as never);
+    await openWithNoSops();
+
+    expect(await screen.findByText("No procedures yet")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Install the building playbooks/ }));
+    // A tenant that never bought the recorder has no use for camera tamper.
+    expect(install).toHaveBeenCalledWith("bi");
+  });
+
+  it("says who can fix it rather than offering a press that 403s", async () => {
+    perms.can = (p) => p !== "workflow.sop.create";
+    const install = vi.spyOn(workflow.sops, "installStarters").mockResolvedValue({} as never);
+    await openWithNoSops();
+
+    expect(await screen.findByText(/Needs workflow.sop.create/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Install the building playbooks/ }),
+    ).not.toBeInTheDocument();
+    expect(install).not.toHaveBeenCalled();
+  });
+
+  it("says nothing of the sort while the list is still loading", async () => {
+    wire({ findings: [FINDING] });
+    let settle: (v: unknown) => void = () => {};
+    vi.spyOn(workflow.sops, "list").mockReturnValue(new Promise((r) => { settle = r; }) as never);
+    renderWithProviders(<Work />);
+    await userEvent.click(await screen.findByRole("button", { name: "Raise work" }));
+
+    expect(screen.queryByText("No procedures yet")).not.toBeInTheDocument();
+    settle({ items: [], total: 0 });
+    expect(await screen.findByText("No procedures yet")).toBeInTheDocument();
+  });
+});

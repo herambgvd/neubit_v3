@@ -100,7 +100,11 @@ export const workflow = {
     ...resource<SopPublic, CreateSopRequest>("sops"),
     // POST /workflow/sops/starters — install the starter playbooks this tenant is
     // missing. Idempotent, so it is safe behind a button somebody presses twice.
-    installStarters: () => unwrap(api.post<InstallStartersResponse>(`${WF}/sops/starters`, {})),
+    // `family` names one console's set — "vms" or "bi". The modules are sold
+    // separately, so a caller always says which; omitting it installs both.
+    installStarters: (family?: "vms" | "bi") =>
+      unwrap(api.post<InstallStartersResponse>(
+        `${WF}/sops/starters${family ? `?family=${family}` : ""}`, {})),
   },
   states: nested<StatePublic, CreateStateRequest>("states"),
   transitions: nested<TransitionPublic, CreateTransitionRequest>("transitions"),

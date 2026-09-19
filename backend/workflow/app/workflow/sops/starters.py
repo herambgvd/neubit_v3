@@ -38,6 +38,14 @@ from ..core.enums import InstancePriority
 #: The tag every starter carries, so they can be found as a family.
 STARTER_TAG = "starter"
 
+#: The two consoles that ask for starters. They are separate because the modules
+#: are sold separately: installing every playbook everywhere would put building
+#: procedures in a recorder-only tenant's picker, which is the confusion the BI
+#: module was moved out of Configurations to avoid.
+VMS = "vms"
+BI = "bi"
+FAMILIES = (VMS, BI)
+
 #: Per-starter marker: ``starter:camera-tamper``. The idempotency key.
 def slug_tag(slug: str) -> str:
     return f"{STARTER_TAG}:{slug}"
@@ -72,6 +80,10 @@ class StarterSop:
     #: whose list contains the event's type to the top, so the common case is one
     #: click. Triggers still own automatic matching.
     event_types: list[str] = field(default_factory=list)
+    #: Which console asks for it. A deployment that never bought Building
+    #: Intelligence must not find three building procedures in its alarm picker,
+    #: and a BI operator must not have to read past camera tamper to find theirs.
+    family: str = VMS
 
 
 # The four nodes, shared by every starter. Positions are laid out for the graph
@@ -171,7 +183,63 @@ STARTERS: tuple[StarterSop, ...] = (
         sla_hours=4,
         event_types=[],
     ),
+    # ── Building Intelligence ────────────────────────────────────────────────
+    # One per KIND of finding gate 6 can raise, because the three are different
+    # jobs: a sensor that stopped is a field visit, a refused metric is a fact
+    # somebody has to record in BI → Setup, and a gateway alert is the plant
+    # itself complaining. `event_types` carries the envelope's own
+    # `bi.finding.<kind>`, which is what ranks the right one to the top of the
+    # raise-work picker.
+    StarterSop(
+        slug="bi-sensor-fault",
+        name="Building sensor fault",
+        description=(
+            "A sensor bound to a piece of plant stopped reporting, or two live "
+            "points answer to the same tag. The binding is right and the data is "
+            "not — check the gateway and the field device before touching the "
+            "binding, because re-binding a healthy sensor hides the fault."
+        ),
+        priority=InstancePriority.HIGH,
+        sla_hours=8,
+        event_types=["bi.finding.data_fault"],
+        family=BI,
+    ),
+    StarterSop(
+        slug="bi-missing-fact",
+        name="Building data gap",
+        description=(
+            "A metric could not be produced: a slot with no point, a design band "
+            "nobody recorded, a unit nobody confirmed. The finding names the "
+            "missing fact and the Setup page that holds it. Record the fact, then "
+            "check the number appears on the next window."
+        ),
+        priority=InstancePriority.MEDIUM,
+        sla_hours=72,
+        event_types=["bi.finding.equipment_metric"],
+        family=BI,
+    ),
+    StarterSop(
+        slug="bi-plant-alarm",
+        name="Building plant alarm",
+        description=(
+            "The gateway itself raised an alarm on a building device. Read the "
+            "point's own trend for the window before dispatching anybody — an "
+            "alarm that clears on its own every night is a threshold problem, "
+            "not a plant problem."
+        ),
+        priority=InstancePriority.HIGH,
+        sla_hours=4,
+        event_types=["bi.finding.alert"],
+        family=BI,
+    ),
 )
+
+
+def starters_for(family: str | None) -> tuple[StarterSop, ...]:
+    """The starters one console asks for; ``None`` means every family."""
+    if family is None:
+        return STARTERS
+    return tuple(s for s in STARTERS if s.family == family)
 
 
 def starter_states() -> tuple[StarterState, ...]:

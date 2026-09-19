@@ -295,7 +295,9 @@ export default function EscalateDialog({
   });
 
   const install = useMutation({
-    mutationFn: () => wfApi.sops.installStarters(),
+    // The recorder's set only: a VMS deployment must not end up with
+    // building procedures in this picker.
+    mutationFn: () => wfApi.sops.installStarters("vms"),
     onSuccess: (res) => {
       toast.success(
         res.created > 0
