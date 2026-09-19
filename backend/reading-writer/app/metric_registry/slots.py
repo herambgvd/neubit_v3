@@ -178,7 +178,7 @@ EQUIPMENT_FACT_DEFS: dict[str, dict] = {
 
 #: Where an operator fixes any of this. Printed in every refusal that sends
 #: someone to the registry.
-RECORDED_AT = "Configurations → Sites → Infrastructure"
+RECORDED_AT = "Building Intelligence → Setup → Equipment"
 
 
 def fact_value(design: dict, fact: str) -> float | None:

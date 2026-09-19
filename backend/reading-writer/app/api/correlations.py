@@ -235,7 +235,7 @@ GAP_KINDS: dict[str, GapKind] = {
             "estimated here — a default would be a number nobody asserted "
             "wearing the authority of a measurement."
         ),
-        where="Configurations → Sites",
+        where="Building Intelligence → Setup → Building facts",
     ),
     "site_fact_uncited": GapKind(
         key="site_fact_uncited",
@@ -245,7 +245,7 @@ GAP_KINDS: dict[str, GapKind] = {
             "Add the citation. A figure that ends up in a disclosure has to name "
             "where it came from, or it is a number somebody remembered."
         ),
-        where="Configurations → Sites",
+        where="Building Intelligence → Setup → Building facts",
     ),
 }
 

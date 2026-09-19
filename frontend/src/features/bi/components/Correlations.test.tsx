@@ -257,6 +257,35 @@ describe("a card", () => {
     expect(gapped.some((el) => el.textContent === "Ambient temperature")).toBe(true);
   });
 
+  it("sends a missing site fact to Setup, where site facts are recorded now", async () => {
+    const factGap = {
+      kind: "site_fact_unrecorded",
+      needs_new_hardware: false,
+      summary: "A fact about the site that nobody has typed in.",
+      remedy: "Record it on the site.",
+      where: "Building Intelligence → Setup → Building facts",
+      gate: "No grid emission factor is recorded for this site.",
+    };
+    registry({
+      correlations: [
+        {
+          ...blockedByUnit,
+          key: "dg_scope1",
+          name: "DG runtime ↔ Scope-1 carbon",
+          blocking_gap: { signal: "grid_emission_factor", ...factGap },
+          signals: [{ ...blockedByUnit.signals[0], satisfied: false, gap: factGap }],
+        },
+      ],
+    });
+
+    renderWithProviders(<Correlations />);
+
+    const card = await screen.findByRole("article", { name: "DG runtime ↔ Scope-1 carbon" });
+    expect(
+      within(card).getByRole("link", { name: /Building Intelligence → Setup → Building facts/ }),
+    ).toHaveAttribute("href", "/bi/setup/facts");
+  });
+
   it("names the room but offers no door this app cannot open", async () => {
     registry();
 

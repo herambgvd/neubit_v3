@@ -85,10 +85,7 @@ export const kindLabel = (kind: string) => KIND_LABEL[kind] || kind;
 const WHERE_HREF: Record<string, string> = {
   "Building Intelligence → Units": taskHref("units"),
   "Building Intelligence → Roles": taskHref("roles"),
-  // The server still names the room its site facts USED to be typed in. They
-  // are recorded in BI → Setup → Building facts now, so the words stay the
-  // server's and the link goes where the fact can actually be recorded.
-  "Configurations → Sites": taskHref("facts"),
+  "Building Intelligence → Setup → Building facts": taskHref("facts"),
 };
 
 /** The tri-state, in the one vocabulary this console uses for it. `null` is a

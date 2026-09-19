@@ -325,7 +325,7 @@ async def benchmark_state(
                 (
                     f"Record `{missing}` "
                     + (
-                        "in Configurations → Sites."
+                        "in Building Intelligence → Setup → Building facts."
                         if missing == "gross_floor_area_sqm"
                         else "on the benchmark config "
                              "(PUT /bi/rating/benchmark-config)."

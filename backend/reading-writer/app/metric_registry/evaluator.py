@@ -1187,7 +1187,7 @@ async def _linear_by_ac_share_bands(
                 f"built-up area not recorded for this site — {std['title']} "
                 f"({std['version']}) sizes its equations by BUA (Large > "
                 f"30,000 m²; Medium 10,000–30,000 m²; Small < 10,000 m²); "
-                f"record `gross_floor_area_sqm` in Configurations → Sites"
+                f"record `gross_floor_area_sqm` in Building Intelligence → Setup → Building facts"
             ),
         }
     size = size_category_for(float(area))

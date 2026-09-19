@@ -58,12 +58,12 @@ FACT_DEFS: dict[str, dict] = {
     "gross_floor_area_sqm": {
         "unit": "m2",
         "label": "Gross floor area",
-        "recorded_at": "Configurations → Sites → Building",
+        "recorded_at": "Building Intelligence → Setup → Building facts",
     },
     "occupancy": {
         "unit": "",
         "label": "Occupancy",
-        "recorded_at": "Configurations → Sites → Building",
+        "recorded_at": "Building Intelligence → Setup → Building facts",
     },
 }
 
