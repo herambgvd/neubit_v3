@@ -46,6 +46,23 @@ interface Write {
   batches: { point_ids: string[]; unit: string | null }[];
   said: string;
   acknowledge_not_reporting?: boolean;
+  /** Filled by the dry run: the points that have stopped reporting. */
+  quiet?: { device_tag?: string | null; point_tag?: string | null }[];
+}
+
+/** Thrown BEFORE anything is written, when the dry run finds quiet points. */
+class QuietPoints extends Error {
+  constructor(readonly points: NonNullable<Write["quiet"]>) {
+    super("some points have stopped reporting");
+  }
+}
+
+/** Thrown when a later batch fails after earlier ones were saved: the saved
+ *  part is carried so the screen can say so and offer to take it back. */
+class PartlySaved extends Error {
+  constructor(readonly saved: Write["batches"], readonly cause: unknown) {
+    super("partly saved");
+  }
 }
 
 export default function UnitsWizard({
@@ -74,12 +91,32 @@ export default function UnitsWizard({
 
   const write = useMutation({
     mutationFn: async (w: Write) => {
+      // ASK ONCE, BEFORE WRITING ANYTHING. Each batch used to be written in turn,
+      // so "accept all" could save its first kind and then stop on the second
+      // with a "stopped reporting" question — leaving the first saved whether
+      // the operator answered yes or cancel. The dry run writes nothing.
+      if (!w.acknowledge_not_reporting && w.batches.some((b) => b.unit !== null)) {
+        const quiet: NonNullable<Write["quiet"]> = [];
+        for (const b of w.batches) {
+          if (b.unit === null) continue;
+          const r: any = await bi.confirmUnits({ point_ids: b.point_ids, unit: b.unit, dry_run: true });
+          quiet.push(...((r?.confirmed_not_reporting as NonNullable<Write["quiet"]>) ?? []));
+        }
+        if (quiet.length) throw new QuietPoints(quiet);
+      }
+      const saved: Write["batches"] = [];
       for (const b of w.batches) {
-        await bi.confirmUnits({
-          point_ids: b.point_ids,
-          unit: b.unit,
-          acknowledge_not_reporting: w.acknowledge_not_reporting,
-        });
+        try {
+          await bi.confirmUnits({
+            point_ids: b.point_ids,
+            unit: b.unit,
+            acknowledge_not_reporting: w.acknowledge_not_reporting,
+          });
+        } catch (e) {
+          if (saved.length) throw new PartlySaved(saved, e);
+          throw e;
+        }
+        saved.push(b);
       }
     },
     onSuccess: (_res, w) => {
@@ -91,9 +128,23 @@ export default function UnitsWizard({
       qc.invalidateQueries({ queryKey: ["bi-summary"] });
     },
     onError: (e, w) => {
+      if (e instanceof QuietPoints) {
+        setErr(null);
+        setQuiet({ ...w, quiet: e.points });
+        return;
+      }
+      // The server's own refusal, should the dry run have raced a point going
+      // quiet: same question, nothing was written.
       if (codeOf(e) === NOT_REPORTING && !w.acknowledge_not_reporting) {
         setErr(null);
         setQuiet(w);
+        return;
+      }
+      if (e instanceof PartlySaved) {
+        const n = e.saved.reduce((k, b) => k + b.point_ids.length, 0);
+        setLast({ batches: e.saved, said: `${n} of them, before the rest failed` });
+        setErr(apiError(e.cause, "The rest was not saved"));
+        qc.invalidateQueries({ queryKey: ["bi-unit-patterns"] });
         return;
       }
       setErr(apiError(e, "Nothing was saved"));
@@ -259,17 +310,32 @@ export default function UnitsWizard({
 
           {quiet && (
             <div className="rounded-[12px] border border-nb-warn/35 bg-nb-warn/[.05] px-5 py-4">
-              <p className="text-[13px] text-nb-ink">Some of these have stopped reporting.</p>
+              <p className="text-[13px] text-nb-ink">
+                {quiet.quiet?.length
+                  ? `${quiet.quiet.length} of these ${quiet.batches.reduce((k, b) => k + b.point_ids.length, 0)} have stopped reporting.`
+                  : "Some of these have stopped reporting."}{" "}
+                <span className="text-nb-muted">Nothing has been saved yet.</span>
+              </p>
+              {quiet.quiet?.length ? (
+                <p className="mt-1 truncate font-mono text-[11.5px] text-nb-faint">
+                  {quiet.quiet
+                    .slice(0, 4)
+                    .map((p) => p.point_tag)
+                    .join(" · ")}
+                  {quiet.quiet.length > 4 ? ` · +${quiet.quiet.length - 4} more` : ""}
+                </p>
+              ) : null}
               <p className="mt-1 text-[12.5px] text-nb-muted">
-                A unit on a quiet point is still your statement about it. Save it anyway?
+                A unit on a quiet point is still your statement about it. Save all of them anyway?
               </p>
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"
+                  disabled={write.isPending}
                   onClick={() => write.mutate({ ...quiet, acknowledge_not_reporting: true })}
-                  className="h-9 rounded-[8px] border border-nb-blue/45 px-4 text-[12.5px] text-nb-blueb transition hover:bg-nb-blue hover:text-white"
+                  className="h-9 rounded-[8px] border border-nb-blue/45 px-4 text-[12.5px] text-nb-blueb transition hover:bg-nb-blue hover:text-white disabled:opacity-50"
                 >
-                  Save anyway
+                  {write.isPending ? "Saving…" : "Save anyway"}
                 </button>
                 <button
                   type="button"

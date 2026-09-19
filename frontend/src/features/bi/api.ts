@@ -201,12 +201,16 @@ export const bi = {
   // on a point carrying no readings, because kWh on an address that has produced
   // no number is a fact no rating can use and the silent success is what hides
   // it. Passing it unconditionally from here would delete the guard.
-  confirmUnits: ({ point_ids, unit, acknowledge_not_reporting }: any) =>
+  // `dry_run` writes nothing and reports, under `confirmed_not_reporting`, the
+  // points the real call would refuse for having stopped reporting — so a
+  // multi-part save can ask ONCE, before any part of it is written.
+  confirmUnits: ({ point_ids, unit, acknowledge_not_reporting, dry_run }: any) =>
     unwrap(
       api.post(`${BI}/units/confirm`, {
         point_ids,
         unit,
         ...(acknowledge_not_reporting ? { acknowledge_not_reporting: true } : {}),
+        ...(dry_run ? { dry_run: true } : {}),
       }),
     ),
 

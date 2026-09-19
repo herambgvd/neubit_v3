@@ -6,7 +6,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { httpError, stubApi, type ApiStub } from "@/test/apiStub";
+import { stubApi, type ApiStub } from "@/test/apiStub";
 import { renderWithProviders } from "@/test/render";
 
 import UnitsSetup from "./UnitsSetup";
@@ -46,9 +46,13 @@ function catalogue(patterns: unknown[], unmatched: unknown[] = []) {
       unmatched_sample: [],
       unmatched_points: unmatched,
     },
-    "POST /bi/units/confirm": { confirmed: 1 },
+    "POST /bi/units/confirm": { confirmed: 1, confirmed_not_reporting: [] },
   });
 }
+
+/** The real writes — every save is preceded by a dry run that writes nothing. */
+const writes = () => stub.matching("POST /bi/units/confirm").filter((c) => !c.body?.dry_run);
+const dryRuns = () => stub.matching("POST /bi/units/confirm").filter((c) => c.body?.dry_run);
 
 const render = () => {
   renderWithProviders(<UnitsSetup />);
@@ -67,8 +71,8 @@ describe("what the platform checked for you", () => {
     expect(await screen.findByText("3 numbers already read exactly like their unit")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Accept all 2" }));
 
-    await waitFor(() => expect(stub.matching("POST /bi/units/confirm")).toHaveLength(2));
-    const bodies = stub.matching("POST /bi/units/confirm").map((c) => c.body);
+    await waitFor(() => expect(writes()).toHaveLength(2));
+    const bodies = writes().map((c) => c.body);
     expect(bodies).toContainEqual({ point_ids: ["v1", "v2"], unit: "V" });
     expect(bodies).toContainEqual({ point_ids: ["h1"], unit: "Hz" });
     // The kind with a reading out of range was NOT in the sweep.
@@ -85,9 +89,7 @@ describe("what the platform checked for you", () => {
     expect(screen.getByText("88,000")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Save the 1 that read like amps" }));
-    await waitFor(() =>
-      expect(stub.body("POST /bi/units/confirm")).toEqual({ point_ids: ["a1"], unit: "A" }),
-    );
+    await waitFor(() => expect(writes()[0]?.body).toEqual({ point_ids: ["a1"], unit: "A" }));
   });
 
   it("lets a person overrule the check, explicitly", async () => {
@@ -95,9 +97,7 @@ describe("what the platform checked for you", () => {
     const user = render();
 
     await user.click(await screen.findByRole("button", { name: "All 2 are amps anyway" }));
-    await waitFor(() =>
-      expect(stub.body("POST /bi/units/confirm")).toEqual({ point_ids: ["a1", "a2"], unit: "A" }),
-    );
+    await waitFor(() => expect(writes()[0]?.body).toEqual({ point_ids: ["a1", "a2"], unit: "A" }));
   });
 });
 
@@ -110,9 +110,7 @@ describe("a name that contradicts itself", () => {
     expect(screen.getByText("12.4")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /It is current — amps/ }));
 
-    await waitFor(() =>
-      expect(stub.body("POST /bi/units/confirm")).toEqual({ point_ids: ["c1"], unit: "A" }),
-    );
+    await waitFor(() => expect(writes()[0]?.body).toEqual({ point_ids: ["c1"], unit: "A" }));
   });
 });
 
@@ -124,32 +122,75 @@ describe("taking it back", () => {
     await user.click(await screen.findByRole("button", { name: "Save the 1 that read like amps" }));
     await user.click(await screen.findByRole("button", { name: "Undo" }));
 
-    await waitFor(() => expect(stub.matching("POST /bi/units/confirm")).toHaveLength(2));
-    expect(stub.matching("POST /bi/units/confirm")[1].body).toEqual({ point_ids: ["a1"], unit: null });
+    await waitFor(() => expect(writes()).toHaveLength(2));
+    expect(writes()[1].body).toEqual({ point_ids: ["a1"], unit: null });
   });
 });
 
 describe("a point that has stopped reporting", () => {
-  it("is saved only when the person says so", async () => {
-    catalogue([odd]);
-    let calls = 0;
+  /** The dry run reports `a1` as quiet; real calls succeed. */
+  function quietA1() {
     stub.set({
-      "POST /bi/units/confirm": () => {
-        calls += 1;
-        if (calls === 1) httpError(422, "not reporting", "POINT_NOT_REPORTING");
-        return { confirmed: 1 };
-      },
+      "POST /bi/units/confirm": (req: { body?: { dry_run?: boolean; point_ids?: string[] } }) =>
+        req.body?.dry_run
+          ? {
+              confirmed_not_reporting: (req.body.point_ids ?? []).includes("a1")
+                ? [{ point_tag: "CurrL1_A", device_tag: "B1-Incomer", state: "silent" }]
+                : [],
+            }
+          : { confirmed: 1, confirmed_not_reporting: [] },
+    });
+  }
+
+  it("is asked about BEFORE anything is written, and saved only when the person says so", async () => {
+    catalogue([odd]);
+    quietA1();
+    const user = render();
+
+    await user.click(await screen.findByRole("button", { name: "Save the 1 that read like amps" }));
+    expect(await screen.findByText(/1 of these 1 have stopped reporting/)).toBeInTheDocument();
+    expect(screen.getByText(/Nothing has been saved yet/)).toBeInTheDocument();
+    expect(screen.getByText("CurrL1_A")).toBeInTheDocument();
+    // The dry run wrote nothing; no real write has happened.
+    expect(writes()).toHaveLength(0);
+
+    await user.click(screen.getByRole("button", { name: "Save anyway" }));
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    expect(writes()[0].body).toEqual({ point_ids: ["a1"], unit: "A", acknowledge_not_reporting: true });
+  });
+
+  it("writes NOTHING of a multi-kind save when one kind has a quiet point", async () => {
+    // The bug this replaced: "accept all" saved its first kind, then stopped on
+    // the second with this question — so Cancel still left the first saved.
+    const quietVolts = { ...volts, points: [P("a1", "VoltL1_V", 231.4), P("v2", "VoltL2_V", 229.8)] };
+    catalogue([hertz, quietVolts]);
+    quietA1();
+    const user = render();
+
+    await user.click(await screen.findByRole("button", { name: "Accept all 2" }));
+    expect(await screen.findByText(/Nothing has been saved yet/)).toBeInTheDocument();
+    expect(dryRuns().length).toBeGreaterThan(0);
+    expect(writes()).toHaveLength(0);
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(writes()).toHaveLength(0);
+  });
+
+  it("shows that it is working while it saves", async () => {
+    catalogue([odd]);
+    let release: () => void = () => {};
+    stub.set({
+      "POST /bi/units/confirm": (req: { body?: { dry_run?: boolean } }) =>
+        req.body?.dry_run
+          ? { confirmed_not_reporting: [{ point_tag: "CurrL1_A" }] }
+          : new Promise((r) => { release = () => r({ confirmed: 1 }); }),
     });
     const user = render();
 
     await user.click(await screen.findByRole("button", { name: "Save the 1 that read like amps" }));
-    expect(await screen.findByText("Some of these have stopped reporting.")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Save anyway" }));
-
-    await waitFor(() => expect(calls).toBe(2));
-    expect(stub.matching("POST /bi/units/confirm")[1].body).toEqual({
-      point_ids: ["a1"], unit: "A", acknowledge_not_reporting: true,
-    });
+    await user.click(await screen.findByRole("button", { name: "Save anyway" }));
+    expect(await screen.findByRole("button", { name: "Saving…" })).toBeDisabled();
+    release();
   });
 });
 
