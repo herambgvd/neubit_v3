@@ -627,6 +627,8 @@ export interface BiDeviceRow {
    *  the list `GET /bi/devices?placement=unplaced` returns, and gate 3's work. */
   site_id?: string | null;
   site_name?: string | null;
+  /** The gateway that carries it — evidence for which building it is in. */
+  gateway_id?: string | null;
 }
 
 export interface BiDeviceListResponse {

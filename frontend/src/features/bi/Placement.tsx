@@ -1,56 +1,47 @@
 "use client";
 
-// Building Intelligence → Setup → BUILDINGS & DEVICES. Gate 3: the point
-// BELONGS to a place.
+// Building Intelligence → Setup → BUILDINGS & DEVICES (gate 3).
 //
-// Most of this estate's points belong to no building, and until the backend
-// could say "this device is in Aeon Tower" without an {x, y}, the only way to
-// place one was to pin it on a drawn floor plan — and there are almost no
-// floor plans. This is the device-first half of that one fact: tick devices,
-// name the building, optionally a floor, confirm. The write is core's
-// `POST /device-placements/assign`, into the same table the floor plan writes.
+// ONE TABLE. Every device without a building is a row, with a building
+// PRE-FILLED where the store holds evidence for one and the reason printed
+// beside it (`setup/placement/suggest.ts`): a same-named device already in that
+// building, or a gateway whose other devices are all in it. The operator reads
+// the reasons, changes any row they disagree with, and saves. Nothing is placed
+// until they press — and no row is pre-filled from the mere fact that the
+// estate has one building.
 //
-// NOTHING IS ASSIGNED FOR ANYONE. No row is pre-ticked, there is no "tick every
-// unplaced device" and no default building — with exactly one site on this
-// deployment, "put them all there" is precisely the guess a device's building
-// must never be. The confirmation lists every device being asserted before the
-// button that sends it.
+// Devices already in a building are a second, folded section of the same
+// table, so moving one is the same gesture as placing one.
 //
-// TWO LISTS, BECAUSE A MOVE IS THE SAME WRITE. "No building" is gate 3's work
-// (`placement=unplaced`). "In a building" is where a device already placed is
-// moved — and a move is the only way a pin gets dropped, which is why the
-// outcome says so per device.
+// `?category=energy` from a domain strip narrows both lists, as before.
 import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
+import { Icon } from "@iconify/react";
 
-import {
-  ActionButton,
-  ConsolePage,
-  ConsolePanel,
-  PanelFooter,
-  PanelHeader,
-  PanelList,
-  PanelSearch,
-  QuietButton,
-  Segmented,
-} from "@/components/console";
-import { checkboxClass } from "@/components/ui/kit";
+import { ConsolePage } from "@/components/console";
 import { apiError } from "@/lib/api";
 import { fmtRelative } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import type { BiDeviceListResponse, BiDeviceRow } from "@/lib/types";
 
-import AssignDevices from "./components/AssignDevices";
 import { bi } from "./api";
-import SetupHeader from "./setup/SetupHeader";
-import { assignable } from "./assign";
-import { categoryMeta, MODULE, PERM_ASSIGN, PERM_READ, PERM_SITES_READ } from "./constants";
+import { assignable, assignBody } from "./assign";
+import { MODULE, PERM_ASSIGN, PERM_READ, PERM_SITES_READ } from "./constants";
+import { changesOf, fmtDay, suggest, type Row } from "./setup/placement/suggest";
+import { useBuildings } from "./setup/useBuildings";
+import { useAssignDevices } from "./useAssignDevices";
 
-type View = "unplaced" | "placed";
-
-/** The server's cap on one `/bi/devices` page. A list that stops here says so. */
+/** The server's cap on one `/bi/devices` page. */
 const PAGE = 500;
+
+const TONE: Record<Row["tone"], string> = {
+  evidence: "text-nb-blueb",
+  gateway: "text-nb-soft",
+  warn: "text-nb-warn",
+  none: "text-nb-faint",
+};
 
 export default function Placement() {
   return (
@@ -63,18 +54,10 @@ export default function Placement() {
 function PlacementInner() {
   const { can, hasModule } = useAuth();
   const mayRead = can(PERM_READ) && hasModule(MODULE);
-  // The write is core's, under core's key; choosing a building needs the list
-  // of them. Without both there is no control here at all, only the list.
+  // The write is core's, under core's key; choosing a building needs the list.
   const mayAssign = mayRead && can(PERM_ASSIGN) && can(PERM_SITES_READ);
-  // A domain strip sends its own scope: `?category=energy`.
   const category = useSearchParams().get("category") || undefined;
-
-  const [view, setView] = useState<View>("unplaced");
-  const [search, setSearch] = useState("");
-  // Ticked devices, by id, holding the ROW so the confirmation can name each
-  // one even after a search has hidden it. Empty until a person ticks.
-  const [picked, setPicked] = useState<Record<string, BiDeviceRow>>({});
-  const [confirming, setConfirming] = useState(false);
+  const still = !!useReducedMotion();
 
   const unplacedQ = useQuery<BiDeviceListResponse>({
     queryKey: ["bi-devices", "placement", "unplaced", category ?? ""],
@@ -86,154 +69,271 @@ function PlacementInner() {
     queryFn: () => bi.devices({ placement: "placed", category, limit: PAGE }),
     enabled: mayRead,
   });
-  const q = view === "unplaced" ? unplacedQ : placedQ;
-  const rows = useMemo(() => q.data?.items ?? [], [q.data]);
+  const { items: buildings } = useBuildings(mayRead);
 
-  const shown = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    if (!needle) return rows;
-    return rows.filter((d) =>
-      `${d.device_tag ?? ""} ${d.category ?? ""} ${d.device_type ?? ""} ${d.site_name ?? ""}`
-        .toLowerCase()
-        .includes(needle),
-    );
-  }, [rows, search]);
+  const unplaced = useMemo(() => unplacedQ.data?.items ?? [], [unplacedQ.data]);
+  const placed = useMemo(() => placedQ.data?.items ?? [], [placedQ.data]);
+  // Suggestions read the PLACED list too — without it there is no evidence, so
+  // the table waits for both rather than showing rows with no reasons.
+  const rows = useMemo(
+    () => (placedQ.data ? suggest(unplaced, placed) : []),
+    [unplaced, placed, placedQ.data],
+  );
 
-  const pickedRows = Object.values(picked);
+  // What a person changed. A row they did not touch shows its suggestion.
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const [showPlaced, setShowPlaced] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const assign = useAssignDevices();
+  const [saving, setSaving] = useState(false);
 
-  function toggle(d: BiDeviceRow) {
-    if (!d.device_id) return;
-    const id = d.device_id;
-    setPicked((prev) => {
-      const next = { ...prev };
-      if (next[id]) delete next[id];
-      else next[id] = d;
-      return next;
-    });
+  const current = useMemo(() => {
+    const c: Record<string, string | null> = {};
+    for (const d of [...unplaced, ...placed]) if (d.device_id) c[d.device_id] = d.site_id ?? null;
+    return c;
+  }, [unplaced, placed]);
+
+  const choiceOf = (d: BiDeviceRow, s: string | null | undefined) =>
+    d.device_id ? edits[d.device_id] ?? s ?? "" : "";
+
+  const choices = useMemo(() => {
+    const c: Record<string, string> = {};
+    for (const r of rows) if (r.device.device_id) c[r.device.device_id] = choiceOf(r.device, r.suggestion?.siteId);
+    for (const d of placed) if (d.device_id) c[d.device_id] = choiceOf(d, d.site_id);
+    return c;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, placed, edits]);
+
+  const changes = useMemo(() => changesOf(choices, current), [choices, current]);
+  const changeCount = [...changes.values()].reduce((n, ids) => n + ids.length, 0);
+  const untouchedSuggestions =
+    Object.keys(edits).length === 0 && changeCount === rows.filter((r) => r.suggestion).length;
+  const suggested = rows.filter((r) => r.suggestion).length;
+
+  async function save() {
+    setSaving(true);
+    setErr(null);
+    let placedN = 0;
+    let moved = 0;
+    let pins = 0;
+    try {
+      for (const [siteId, ids] of changes) {
+        const body = assignBody(ids.map((device_id) => ({ device_id })), siteId);
+        if (!body) continue;
+        const res = await assign.mutateAsync(body);
+        for (const a of res.items ?? []) {
+          placedN += 1;
+          if (!a.created) moved += 1;
+          if (a.pin_cleared) pins += 1;
+        }
+      }
+      setEdits({});
+      setDone(
+        `Placed ${placedN}` +
+          (moved ? ` · ${moved} moved from another building` : "") +
+          (pins ? ` · ${pins} lost their floor-plan pin` : ""),
+      );
+    } catch (e) {
+      setErr(
+        (placedN ? `Placed ${placedN}, then: ` : "") + apiError(e, "Nothing more was placed"),
+      );
+    } finally {
+      setSaving(false);
+    }
   }
-
-  // A count that has not answered is a dash, never a zero.
-  const count = (x: typeof unplacedQ) => (x.data ? x.data.total : "—");
-  const scope = category ? categoryMeta(category).label : null;
 
   if (!mayRead) {
     return (
       <ConsolePage>
-        <SetupHeader task="placement" />
-        <p className="text-[11.5px] text-nb-faint">
-          Reading this list needs <span className="font-mono">bi.read</span> and the analytics module.
+        <p className="pt-6 text-[12.5px] text-nb-faint">
+          Needs <span className="font-mono">bi.read</span> and the analytics module.
         </p>
       </ConsolePage>
     );
   }
 
+  const loading = unplacedQ.isLoading || placedQ.isLoading;
+  const loadErr = unplacedQ.error || placedQ.error;
+
   return (
     <ConsolePage>
-      <SetupHeader
-        task="placement"
-        desc={
-          <span title="A device belongs to a building because an operator said so. Tick the devices, name the building, optionally a floor. No pin is needed — pin later on the floor plan if you want one. Nothing is assigned automatically and there is no default building.">
-            {scope ? `${scope} · ` : ""}tick, name the building, confirm · no pin needed
-          </span>
-        }
-      />
-
-      <ConsolePanel className="flex-1">
-        <PanelHeader icon="heroicons:map-pin" title="Devices" count={count(q)} />
-        {/* The counts ARE the filter. */}
-        <div className="px-3 pb-2">
-          <Segmented<View>
-            value={view}
-            onChange={setView}
-            options={[
-              { value: "unplaced", label: `NO BUILDING ${count(unplacedQ)}` },
-              { value: "placed", label: `IN A BUILDING ${count(placedQ)}` },
-            ]}
-          />
-        </div>
-        <PanelSearch value={search} onChange={setSearch} placeholder="Search device, category or building…" />
-        <PanelList
-          loading={q.isLoading}
-          error={q.error ? apiError(q.error, "Could not load the devices") : null}
-          empty={!shown.length}
-          emptyText={
-            rows.length
-              ? "No device matches this search."
-              : view === "unplaced"
-                ? "Every device that has reported belongs to a building."
-                : "No device is in a building yet."
-          }
-        >
-          {shown.map((d) => {
-            const ok = assignable(d);
-            const on = !!(d.device_id && picked[d.device_id]);
-            return (
-              <label
-                key={d.device_id ?? `tag:${d.device_tag}`}
-                title={ok ? undefined : "This device has no id in the reading store, so it cannot be placed."}
-                className={`flex items-center gap-3 rounded-[10px] border px-3 py-2 text-[12px] transition ${
-                  on
-                    ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]"
-                    : "border-nb-line bg-[rgba(6,11,26,.45)] hover:bg-white/5"
-                } ${ok ? "cursor-pointer" : "opacity-60"}`}
-              >
-                {mayAssign && (
-                  <input
-                    type="checkbox"
-                    className={checkboxClass}
-                    checked={on}
-                    disabled={!ok}
-                    onChange={() => toggle(d)}
-                    aria-label={d.device_tag ?? d.device_id ?? "device"}
-                  />
-                )}
-                <span className="min-w-0 flex-1 truncate font-mono text-nb-ink">{d.device_tag ?? "—"}</span>
-                <span className="w-28 truncate text-[11px] text-nb-faint">{d.category ?? "unclassified"}</span>
-                <span className="w-20 text-right font-mono text-[11px] tabular-nums text-nb-soft">
-                  {d.points} pts
-                </span>
-                {view === "placed" && (
-                  <span className="w-40 truncate text-[11px] text-nb-soft">{d.site_name || "—"}</span>
-                )}
-                <span className="w-24 text-right text-[11px] text-nb-faint">
-                  {d.last_seen_at ? fmtRelative(d.last_seen_at) : "never"}
-                </span>
-              </label>
-            );
-          })}
-          {q.data && q.data.total > rows.length && (
-            <p className="px-1 text-[10.5px] text-nb-faint">
-              First {rows.length} of {q.data.total} — search to narrow.
-            </p>
-          )}
-        </PanelList>
-        <PanelFooter>
+      {/* FULL WIDTH, AND THE PAGE NEVER SCROLLS: the header line stays put and
+          only the table's body scrolls, so "Accept" is always in reach. */}
+      <div className="flex min-h-0 w-full flex-1 flex-col gap-4 pt-4">
+        {/* one line: the size of the job, and the one press */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <p className="text-[14px] text-nb-soft">
+            <span className="text-[19px] font-semibold tabular-nums text-nb-ink">
+              {unplacedQ.data ? unplacedQ.data.total : "—"}
+            </span>{" "}
+            devices without a building
+            {rows.length > 0 && (
+              <span className="text-nb-muted"> · a building is suggested for {suggested}</span>
+            )}
+          </p>
+          <span className="flex-1" />
           {mayAssign ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <ActionButton onClick={() => setConfirming(true)} disabled={!pickedRows.length}>
-                {pickedRows.length ? `Assign ${pickedRows.length} to a building…` : "Tick devices to assign"}
-              </ActionButton>
-              {pickedRows.length > 0 && <QuietButton onClick={() => setPicked({})}>Clear</QuietButton>}
-            </div>
-          ) : (
-            <p
-              className="text-[10.5px] text-nb-faint"
-              title="Assigning a device to a building is core's write, gated on devices.create; choosing the building needs sites.read."
+            <button
+              type="button"
+              onClick={save}
+              disabled={!changeCount || saving}
+              className="h-9 rounded-[8px] bg-nb-blue px-4 text-[13px] font-medium text-white transition hover:bg-nb-blueb disabled:opacity-40"
             >
-              Read only — assigning needs <span className="font-mono">devices.create</span>.
-            </p>
+              {saving
+                ? "Saving…"
+                : !changeCount
+                  ? "Nothing to save"
+                  : untouchedSuggestions
+                    ? `Accept ${changeCount} suggestion${changeCount === 1 ? "" : "s"}`
+                    : `Save ${changeCount} change${changeCount === 1 ? "" : "s"}`}
+            </button>
+          ) : (
+            <span className="text-[12px] text-nb-faint">
+              Placing needs <span className="font-mono">{PERM_ASSIGN}</span>
+            </span>
           )}
-        </PanelFooter>
-      </ConsolePanel>
+        </div>
 
-      {mayAssign && (
-        <AssignDevices
-          open={confirming}
-          devices={pickedRows}
-          onClose={() => setConfirming(false)}
-          onDone={() => setPicked({})}
-        />
-      )}
+        <AnimatePresence>
+          {(done || err) && (
+            <motion.p
+              key={done || err}
+              initial={still ? false : { opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className={`text-[12.5px] ${err ? "text-nb-crit" : "text-nb-good"}`}
+            >
+              {err || done}
+            </motion.p>
+          )}
+        </AnimatePresence>
+
+        {loadErr && (
+          <p className="rounded-[10px] border border-[rgba(248,113,113,.35)] bg-[rgba(248,113,113,.06)] px-4 py-2.5 text-[12.5px] text-nb-crit">
+            {apiError(loadErr, "Could not read the devices")}
+          </p>
+        )}
+
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] border border-white/[.08]">
+          <Header />
+          <div data-testid="placement-rows" className="min-h-0 flex-1 overflow-y-auto">
+          {loading && <p className="px-5 py-10 text-center text-[13px] text-nb-faint">Reading the devices…</p>}
+          {!loading && rows.length === 0 && !loadErr && (
+            <p className="px-5 py-8 text-center text-[13px] text-nb-muted">Every device is in a building.</p>
+          )}
+          {rows.map((r, i) => (
+            <DeviceLine
+              key={r.device.device_id ?? `${r.device.device_tag}-${i}`}
+              device={r.device}
+              value={choices[r.device.device_id ?? ""] ?? ""}
+              buildings={buildings}
+              reason={r.reason}
+              tone={r.tone}
+              quiet={!!r.quietSince}
+              mayAssign={mayAssign}
+              onChange={(siteId) => r.device.device_id && setEdits((e) => ({ ...e, [r.device.device_id!]: siteId }))}
+            />
+          ))}
+
+          {placed.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowPlaced((s) => !s)}
+              className="flex w-full items-center gap-2 border-t border-white/[.06] px-5 py-3 text-left text-[12.5px] text-nb-muted transition hover:text-nb-ink"
+            >
+              <Icon
+                icon="heroicons-outline:chevron-right"
+                className={`text-[13px] transition-transform ${showPlaced ? "rotate-90" : ""}`}
+              />
+              {placedQ.data?.total ?? placed.length} already in a building
+            </button>
+          )}
+          {showPlaced &&
+            placed.map((d, i) => (
+              <DeviceLine
+                key={d.device_id ?? `p-${d.device_tag}-${i}`}
+                device={d}
+                value={choices[d.device_id ?? ""] ?? ""}
+                buildings={buildings}
+                reason={d.site_name ? `in ${d.site_name}` : ""}
+                tone="none"
+                quiet={false}
+                mayAssign={mayAssign}
+                onChange={(siteId) => d.device_id && setEdits((e) => ({ ...e, [d.device_id!]: siteId }))}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
     </ConsolePage>
+  );
+}
+
+const COLS = "grid grid-cols-[minmax(0,1.2fr)_220px_minmax(0,1fr)_110px] items-center gap-x-5";
+
+function Header() {
+  return (
+    <div className={`${COLS} bg-white/[.02] px-5 py-2.5 text-[10.5px] tracking-[.6px] text-nb-faint`}>
+      <span>DEVICE</span>
+      <span>BUILDING</span>
+      <span>WHY</span>
+      <span className="text-right">LAST SEEN</span>
+    </div>
+  );
+}
+
+function DeviceLine({
+  device,
+  value,
+  buildings,
+  reason,
+  tone,
+  quiet,
+  mayAssign,
+  onChange,
+}: Readonly<{
+  device: BiDeviceRow;
+  value: string;
+  buildings: { site_id: string; site_name: string | null }[];
+  reason: string;
+  tone: Row["tone"];
+  quiet: boolean;
+  mayAssign: boolean;
+  onChange: (siteId: string) => void;
+}>) {
+  const can = mayAssign && assignable(device);
+  const label = device.device_tag ?? "unnamed device";
+  return (
+    <div className={`${COLS} border-t border-white/[.05] px-5 py-2.5 ${quiet ? "bg-white/[.012]" : ""}`}>
+      <div className="min-w-0">
+        <div className={`truncate text-[13px] ${quiet ? "text-nb-muted" : "text-nb-ink"}`}>{label}</div>
+        <div className="text-[11px] text-nb-faint">
+          {device.category ?? "no category"} · {device.points} pts
+        </div>
+      </div>
+      <select
+        aria-label={`Building for ${label}`}
+        value={value}
+        disabled={!can}
+        onChange={(e) => onChange(e.target.value)}
+        className={`h-8 rounded-[7px] border bg-transparent px-2 text-[12.5px] outline-none transition disabled:opacity-50 ${
+          value ? "border-nb-blue/40 text-nb-blueb" : "border-white/[.14] text-nb-muted"
+        }`}
+      >
+        <option value="">choose…</option>
+        {buildings.map((b) => (
+          <option key={b.site_id} value={b.site_id}>
+            {b.site_name ?? b.site_id}
+          </option>
+        ))}
+      </select>
+      <span className={`truncate text-[12px] ${TONE[tone]}`} title={reason}>
+        {assignable(device) ? reason : "has no device id — cannot be placed"}
+      </span>
+      <span className="text-right text-[12px] text-nb-muted" title={device.last_seen_at ?? ""}>
+        {quiet ? fmtDay(device.last_seen_at) : device.last_seen_at ? fmtRelative(device.last_seen_at) : "—"}
+      </span>
+    </div>
   );
 }

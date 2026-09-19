@@ -792,7 +792,14 @@ _DEVICES_SQL = """
            -- (`placement_source = 'point'`); `max` then reports one of the two,
            -- and the point console is where that distinction is visible.
            max(p.site_id::text)                            AS site_id,
-           max(p.site_name)                                AS site_name
+           max(p.site_name)                                AS site_name,
+           -- WHICH GATEWAY carries it. Evidence for the building screen: a
+           -- device that reports through a gateway whose other devices all sit
+           -- in one building is very probably in that building too. A fact the
+           -- console states beside a suggestion, never a placement by itself.
+           -- `max` because a device's points share their gateway; a device split
+           -- across two would be the gateway's own fault, not a thing to pick.
+           max(p.gateway_id::text)                         AS gateway_id
       FROM points p
      WHERE (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
        AND {live}

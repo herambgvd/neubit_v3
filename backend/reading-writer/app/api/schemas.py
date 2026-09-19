@@ -231,6 +231,10 @@ class DeviceRow(BaseModel):
     points_reporting: int
     first_seen_at: dt.datetime | None
     last_seen_at: dt.datetime | None
+    # The gateway that carries it — evidence for "which building", beside the
+    # suggestion and never instead of a person's choice. Declared here: a field
+    # the response model does not name is dropped on the way out.
+    gateway_id: uuid.UUID | None = None
 
 
 class DeviceListResponse(BaseModel):
