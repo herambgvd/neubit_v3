@@ -973,6 +973,211 @@ async def forget_roles(
     }
 
 
+# ── Undoing one move ─────────────────────────────────────────────────────────
+
+# Clear the chain this move wrote, and ONLY if it is still the chain this move
+# wrote. `superseded_by = :successor` in the predicate is the whole safety of the
+# undo: a predecessor that has since been superseded by some other point is a
+# different history, and blanking it would erase a fact this request never made.
+_CLEAR_SUCCESSION_SQL = text(
+    """
+    UPDATE points p
+       SET superseded_by = NULL
+     WHERE p.point_id = CAST(:predecessor AS uuid)
+       AND p.superseded_by = CAST(:successor AS uuid)
+       AND (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
+    RETURNING p.point_id
+    """
+)
+
+# Carry the role BACK, with the assertion intact. `role_source`, `confirmed_by`
+# and `confirmed_at` are copied from the row the move carried forward, never
+# restated as this request's own: the human statement is the operator's, made
+# whenever they made it, and an undo of a mistaken move must not rewrite it into
+# a statement made today by whoever pressed undo.
+#
+# Shaped as `inherit_roles`' own SQL, in reverse, for the same reason: the delete
+# is conditional on the insert having LANDED, so a predecessor that somehow
+# acquired a role in between keeps it and the successor keeps its own.
+_RETURN_ROLE_SQL = text(
+    """
+    WITH held AS (
+        SELECT r.point_id AS from_id, r.tenant_id, r.role, r.role_source,
+               r.confirmed_by, r.confirmed_at
+          FROM point_roles r
+         WHERE r.point_id = CAST(:successor AS uuid)
+           AND r.role = :role
+           AND (CAST(:tenant AS uuid) IS NULL OR r.tenant_id = CAST(:tenant AS uuid))
+    ),
+    placed AS (
+        INSERT INTO point_roles
+            (point_id, tenant_id, role, role_source, confirmed_by, confirmed_at)
+        SELECT CAST(:predecessor AS uuid), h.tenant_id, h.role, h.role_source,
+               h.confirmed_by, h.confirmed_at
+          FROM held h
+        ON CONFLICT (point_id) DO NOTHING
+        RETURNING point_id
+    )
+    DELETE FROM point_roles r
+     USING held h, placed pl
+     WHERE r.point_id = h.from_id
+     RETURNING r.point_id AS from_id, h.role
+    """
+)
+
+
+async def undo_repoint(
+    db: AsyncSession,
+    tenant: uuid.UUID | None,
+    *,
+    role: str,
+    from_point_id: uuid.UUID,
+    to_point_id: uuid.UUID,
+) -> dict:
+    """Put one repointed role back where it was. ONE TRANSACTION.
+
+    `from_point_id` and `to_point_id` are the ORIGINAL move's — the predecessor
+    the role came off and the successor it went to — so an undo is posted with
+    exactly the record the move was reported with, and nothing has to be inferred
+    about which of two points was which.
+
+    WHY THIS EXISTS. A repoint is a human deciding that `1FYC1_IWT` is the same
+    measurement `IWT` used to be, and a human can be wrong about that — the tag
+    can belong to the chiller next door. Collapsing a ghost group has had an undo
+    since it shipped (`POST /points/ghosts/restore`); a repoint had none, and the
+    only way back was to bind the role again by hand, which loses who confirmed
+    it and when.
+
+    Two statements, committed together:
+
+      1. `points.superseded_by` on the predecessor is cleared — and only where it
+         still names this successor, so an undo cannot erase a different history;
+      2. the role row moves back, WITH its `role_source`, `confirmed_by` and
+         `confirmed_at`. The assertion is the operator's, made when they made it;
+         an undo restores it, it does not restate it as today's.
+
+    REFUSALS, all before either statement, all returned rather than raised so one
+    stale row in a worklist cannot discard the rest.
+    """
+    move = {"role": role, "from_point_id": from_point_id, "to_point_id": to_point_id}
+
+    if from_point_id == to_point_id:
+        return _refusal(move, "a point cannot succeed itself")
+
+    rows = {
+        r["point_id"]: r
+        for r in _rows(
+            await db.execute(
+                _MOVE_ENDPOINTS_SQL,
+                {
+                    "pids": [str(from_point_id), str(to_point_id)],
+                    "tenant": str(tenant) if tenant else None,
+                },
+            )
+        )
+    }
+    src, dst = rows.get(from_point_id), rows.get(to_point_id)
+    if src is None:
+        return _refusal(move, "the point the role came from is not in this tenant")
+    if dst is None:
+        return _refusal(move, "the point the role was moved to is not in this tenant")
+
+    # THE MOVE MUST STILL BE THE ONE ON RECORD. Anything else means the estate has
+    # moved on — the role was repointed again, a collapse migrated it, somebody
+    # undid it already — and putting a role back on the strength of a stale
+    # worklist would be a bind nobody asked for.
+    if src["superseded_by"] != to_point_id:
+        return _refusal(
+            move,
+            "this move is not the one on record — the point is "
+            + (f"now superseded by `{src['superseded_by']}`"
+               if src["superseded_by"] else "not superseded by anything"),
+            superseded_by=src["superseded_by"],
+        )
+    if dst["current_role"] != role:
+        return _refusal(
+            move,
+            f"the successor no longer carries `{role}`"
+            + (f" — it now carries `{dst['current_role']}`"
+               if dst["current_role"] else " — it carries no role"),
+            current_role=dst["current_role"],
+        )
+    if src["current_role"] is not None:
+        return _refusal(
+            move,
+            f"the point the role came from already carries `{src['current_role']}` "
+            "— clear it deliberately before putting the old role back",
+            conflicting_role=src["current_role"],
+        )
+    # Forward, a retired successor is refused; backwards, a retired predecessor is,
+    # and for the same reason. A role on a retired point is a measurement the
+    # estate says is not there.
+    if src["retired"]:
+        return _refusal(move, "the point the role came from is retired")
+
+    try:
+        params = {
+            "predecessor": str(from_point_id),
+            "successor": str(to_point_id),
+            "tenant": str(tenant) if tenant else None,
+        }
+        cleared = _rows(await db.execute(_CLEAR_SUCCESSION_SQL, params))
+        returned = _rows(await db.execute(_RETURN_ROLE_SQL, {**params, "role": role}))
+        if not cleared or not returned:
+            # Something changed between the checks and the write. Rolling back is
+            # the only honest answer: a chain cleared with the role still on the
+            # successor reads as a completed undo on every screen.
+            await db.rollback()
+            return _refusal(
+                move,
+                "the role did not move back — the points changed underneath the "
+                "request and nothing was written",
+            )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    return {
+        "role": role,
+        "from_point_id": from_point_id,
+        "to_point_id": to_point_id,
+        "status": "undone",
+        "from_point_tag": src["point_tag"],
+        "to_point_tag": dst["point_tag"],
+        "device_tag": src["device_tag"],
+    }
+
+
+async def undo_repoints(
+    db: AsyncSession,
+    tenant: uuid.UUID | None,
+    *,
+    moves: list[dict],
+) -> dict:
+    """Undo a list of moves, ONE TRANSACTION EACH, and report every outcome.
+
+    Per-move transactions for `repoint_roles`' reason: these are independent
+    decisions about different measurements, and one stale row must not discard
+    the rest.
+    """
+    results = [
+        await undo_repoint(
+            db, tenant,
+            role=m["role"],
+            from_point_id=m["from_point_id"],
+            to_point_id=m["to_point_id"],
+        )
+        for m in moves
+    ]
+    return {
+        "requested": len(moves),
+        "undone": sum(1 for r in results if r["status"] == "undone"),
+        "refused": sum(1 for r in results if r["status"] == "refused"),
+        "results": results,
+    }
+
+
 async def repoint_roles(
     db: AsyncSession,
     tenant: uuid.UUID | None,

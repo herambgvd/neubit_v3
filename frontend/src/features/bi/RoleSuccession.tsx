@@ -254,6 +254,46 @@ export default function RoleSuccession() {
     },
   });
 
+  // THE UNDO. A repoint is a person deciding that one tag is the same
+  // measurement another used to be, and the tag can belong to the chiller next
+  // door. It is offered on the moves just made, because that is when the mistake
+  // is noticed; the server refuses anything the estate has moved past.
+  const undo = useMutation({
+    mutationFn: (moves: any[]) => bi.undoRepoints({ moves }),
+    onSuccess: (res: any) => {
+      setErr(null);
+      setApplied((prev: any) => {
+        const back = new Set(
+          (res.results || [])
+            .filter((r: any) => r.status === "undone")
+            .map((r: any) => `${r.role}:${r.from_point_id}`),
+        );
+        // What came back is no longer a move that happened, so it leaves the
+        // list. A REFUSED undo does not change what the move did — the role is
+        // still on the successor — so the row stays a move and carries the
+        // reason the undo was refused. Restating it as a refusal would tell the
+        // operator the role is somewhere it is not.
+        const results = (prev?.results || []).map((r: any) => {
+          const hit = (res.results || []).find(
+            (u: any) => `${u.role}:${u.from_point_id}` === `${r.role}:${r.from_point_id}`,
+          );
+          return hit && hit.status === "refused"
+            ? { ...r, undo_refused: hit.reason }
+            : r;
+        });
+        return {
+          ...prev,
+          moved: (prev?.moved || 0) - back.size,
+          results: results.filter((r: any) => !back.has(`${r.role}:${r.from_point_id}`)),
+        };
+      });
+      qc.invalidateQueries({ queryKey: ["bi-role-orphans"] });
+      qc.invalidateQueries({ queryKey: ["bi-metric-roles"] });
+      qc.invalidateQueries({ queryKey: ["bi-summary"] });
+    },
+    onError: (e) => setErr(apiError(e, "Nothing was put back")),
+  });
+
   // The other write, and the only destructive one on this console. It takes ONE
   // point id, from the row that is open: there is no sweep here and there is no
   // request shape that could express one, because this deletes a human's
@@ -335,6 +375,26 @@ export default function RoleSuccession() {
                     moved on {r.device_tag} from{" "}
                     <span className="font-mono text-nb-ink">{r.from_point_tag}</span> to{" "}
                     <span className="font-mono text-nb-ink">{r.to_point_tag}</span>
+                    <button
+                      type="button"
+                      className="ml-2 text-[10.5px] text-nb-accent hover:underline disabled:opacity-50"
+                      disabled={undo.isPending}
+                      title="Put this role back on the point it came off, with the assertion as it was made. Refused if the estate has moved past this move."
+                      onClick={() =>
+                        undo.mutate([
+                          {
+                            role: r.role,
+                            from_point_id: r.from_point_id,
+                            to_point_id: r.to_point_id,
+                          },
+                        ])
+                      }
+                    >
+                      {undo.isPending ? "Putting back…" : "Undo"}
+                    </button>
+                    {r.undo_refused ? (
+                      <span className="ml-2 text-nb-crit">not undone — {r.undo_refused}</span>
+                    ) : null}
                   </span>
                 ) : (
                   <span className="text-nb-soft">refused — {r.reason}</span>

@@ -533,3 +533,106 @@ describe("an operator without bi.manage", () => {
     expect(screen.queryByRole("button", { name: /Move the/ })).not.toBeInTheDocument();
   });
 });
+
+describe("undoing a move", () => {
+  const MOVED = {
+    requested: 1,
+    moved: 1,
+    refused: 0,
+    results: [
+      {
+        role: "inlet_water_temp",
+        from_point_id: "iwt-dead",
+        to_point_id: "iwt-live",
+        status: "moved",
+        device_tag: "1F York Chiller01",
+        from_point_tag: "IWT",
+        to_point_tag: "1FYC1_IWT",
+      },
+    ],
+  };
+
+  async function applyOne() {
+    worklist([chillerOrphan]);
+    vi.spyOn(bi, "repointRoles").mockResolvedValue(MOVED);
+    const user = renderPage();
+    await user.click(await screen.findByText("inlet_water_temp"));
+    await user.click(await screen.findByText("1FYC1_IWT"));
+    await user.click(screen.getByRole("button", { name: /Move the 1 role\(s\) you have chosen/ }));
+    await screen.findByText(/moved on 1F York Chiller01 from/);
+    return user;
+  }
+
+  it("posts the move exactly as it was reported", async () => {
+    // A repoint is a person deciding one tag is the same measurement another
+    // used to be — and the tag can belong to the chiller next door.
+    const undo = vi.spyOn(bi, "undoRepoints").mockResolvedValue({
+      requested: 1, undone: 1, refused: 0,
+      results: [{ role: "inlet_water_temp", from_point_id: "iwt-dead",
+                  to_point_id: "iwt-live", status: "undone" }],
+    });
+    const user = await applyOne();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+
+    await waitFor(() =>
+      expect(undo).toHaveBeenCalledWith({
+        moves: [
+          { role: "inlet_water_temp", from_point_id: "iwt-dead", to_point_id: "iwt-live" },
+        ],
+      }),
+    );
+  });
+
+  it("stops calling it a move that happened once it has been put back", async () => {
+    vi.spyOn(bi, "undoRepoints").mockResolvedValue({
+      requested: 1, undone: 1, refused: 0,
+      results: [{ role: "inlet_water_temp", from_point_id: "iwt-dead",
+                  to_point_id: "iwt-live", status: "undone" }],
+    });
+    const user = await applyOne();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText(/moved on 1F York Chiller01 from/)).not.toBeInTheDocument(),
+    );
+    expect(screen.getByText(/1 move\(s\) requested · 0 moved/)).toBeInTheDocument();
+  });
+
+  it("says WHY when the estate has moved past the move, and keeps it listed", async () => {
+    // The server refuses anything that is not the succession on record. An undo
+    // reported as done would leave the operator believing a role is somewhere
+    // it is not.
+    vi.spyOn(bi, "undoRepoints").mockResolvedValue({
+      requested: 1, undone: 0, refused: 1,
+      results: [{ role: "inlet_water_temp", from_point_id: "iwt-dead",
+                  to_point_id: "iwt-live", status: "refused",
+                  reason: "this move is not the one on record" }],
+    });
+    const user = await applyOne();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+
+    expect(await screen.findByText(/not undone — this move is not the one on record/))
+      .toBeInTheDocument();
+    // The move still stands, so the row still reads as one and the count is
+    // unchanged. Restating it as a refusal would say the role is somewhere it
+    // is not.
+    expect(screen.getByText(/moved on 1F York Chiller01 from/)).toBeInTheDocument();
+    expect(screen.getByText(/1 move\(s\) requested · 1 moved/)).toBeInTheDocument();
+  });
+
+  it("is offered on a move, never on a refusal", async () => {
+    worklist([chillerOrphan]);
+    vi.spyOn(bi, "repointRoles").mockResolvedValue({
+      requested: 1, moved: 0, refused: 1,
+      results: [{ role: "inlet_water_temp", from_point_id: "iwt-dead",
+                  to_point_id: "iwt-live", status: "refused", reason: "nope" }],
+    });
+    const user = renderPage();
+    await user.click(await screen.findByText("inlet_water_temp"));
+    await user.click(await screen.findByText("1FYC1_IWT"));
+    await user.click(screen.getByRole("button", { name: /Move the 1 role\(s\) you have chosen/ }));
+
+    expect(await screen.findByText(/refused — nope/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+  });
+});

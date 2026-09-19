@@ -572,6 +572,18 @@ class RepointRolesRequest(BaseModel):
     moves: list[RoleMove] = PField(min_length=1, max_length=500)
 
 
+class UndoRepointRequest(BaseModel):
+    """The moves to put back, named exactly as the repoint reported them.
+
+    Same shape as `RepointRolesRequest` on purpose: `from_point_id` is the
+    predecessor the role came off and `to_point_id` the successor it went to, so
+    an undo is posted with the record of the move rather than with an inference
+    about which of two points was which.
+    """
+
+    moves: list[RoleMove] = PField(min_length=1, max_length=500)
+
+
 class ForgetRolesRequest(BaseModel):
     """The point ids whose role rows the operator chose to delete. Nothing else.
 
@@ -686,6 +698,42 @@ async def repoint_roles(db: Db, scope: Caller, body: RepointRolesRequest) -> dic
     is a statement about what the estate MEANS, not a reading of it.
     """
     return await sx.repoint_roles(
+        db, _tenant(scope), moves=[m.model_dump() for m in body.moves]
+    )
+
+
+@bi_router.post(
+    "/points/roles/repoint/undo",
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def undo_repoints(db: Db, scope: Caller, body: UndoRepointRequest) -> dict:
+    """Put each named role back on the point it was moved off. One transaction per move.
+
+    A repoint is a human deciding that one tag is the same measurement another
+    used to be, and a human can be wrong — the tag can belong to the chiller next
+    door. Collapsing a ghost group has had an undo since it shipped
+    (`/points/ghosts/restore`); this is the repoint's.
+
+    Per move: the predecessor's `superseded_by` is cleared — only where it still
+    names this successor, so an undo cannot erase a history it did not write —
+    and the role row moves back carrying its own `role_source`, `confirmed_by`
+    and `confirmed_at`. The assertion belongs to whoever made it, whenever they
+    made it; an undo restores it rather than restating it as today's.
+
+    REFUSALS, all before anything is written, all reported rather than raised:
+
+      * the move is NOT THE ONE ON RECORD — the predecessor is superseded by
+        something else now, or by nothing. The estate moved on and a stale
+        worklist must not bind a role nobody asked for;
+      * the successor no longer carries the named role;
+      * the predecessor already carries a role — both are an operator's
+        assertion and this route chooses between neither;
+      * the predecessor is retired, which forward is what a retired successor is:
+        a role on it would be a measurement the estate says is not there.
+
+    Gated by `bi.manage`, like the repoint it reverses.
+    """
+    return await sx.undo_repoints(
         db, _tenant(scope), moves=[m.model_dump() for m in body.moves]
     )
 

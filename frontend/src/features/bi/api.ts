@@ -316,6 +316,12 @@ export const bi = {
   // count would hide the four that were refused behind the six that were not.
   repointRoles: ({ moves }: any) =>
     unwrap(api.post(`${BI}/points/roles/repoint`, { moves })),
+  // Put a move back. Posted with the move AS REPORTED — `from` is the point the
+  // role came off, `to` the one it went to — and refused unless that is still
+  // the succession on record. The assertion returns as it was made: whoever
+  // presses undo is not the person who said what the number means.
+  undoRepoints: ({ moves }: any) =>
+    unwrap(api.post(`${BI}/points/roles/repoint/undo`, { moves })),
 
   // The other half of the worklist, and the only thing that can be done to a
   // stranded role whose POINT ROW IS GONE: a repoint needs a successor on the
