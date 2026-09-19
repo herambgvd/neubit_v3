@@ -45,7 +45,7 @@ import { useDeviceInventory } from "@/components/floor-builder/useDeviceInventor
 import { ZoneManagementSidebar } from "@/components/floor-builder/ZoneManagementSidebar";
 import { apiError } from "@/lib/api";
 import { sites } from "@/lib/api/sites";
-import type { DevicePlacementPublic, FloorPublic, ZonePublic } from "@/lib/types";
+import type { DevicePlacementPublic, FloorPosition, FloorPublic, ZonePublic } from "@/lib/types";
 
 // The editor's domain types live in ./types; the two older names stay exported.
 export type { FloorPoint, EditorZone as FloorZone } from "@/components/floor-builder/types";
@@ -67,14 +67,28 @@ function buildZonePayload(zone: EditorZone) {
   };
 }
 
+type PinnedPlacement = DevicePlacementPublic & { floor_position: FloorPosition };
+
+// A placement can name this floor and carry NO position (core migration 0031):
+// "this meter is on Level 4", said without a drawing in hand. It must not be drawn.
+// Defaulting its missing position to (0, 0) — which this function used to do —
+// would put a pin in the plan's corner that nobody placed, a coordinate the
+// platform invented. Leaving it out of the canvas set also leaves it in the
+// palette as available, so dropping it on the plan is exactly how it gets pinned.
+// Deletions are tracked explicitly (`deletedDeviceIds`), never inferred from a row
+// being absent here, so filtering cannot turn into an unintended delete on save.
+export function isPinned(p: DevicePlacementPublic): p is PinnedPlacement {
+  return p.floor_position != null;
+}
+
 // Flatten nested floor_position into top-level x/y/rotation so the canvas can read
 // them directly (the canvas draws from `device.x/y/rotation`).
-function normalizePlacement(p: DevicePlacementPublic): EditorPlacement {
+export function normalizePlacement(p: PinnedPlacement): EditorPlacement {
   return {
     ...p,
-    x: p.floor_position?.x ?? 0,
-    y: p.floor_position?.y ?? 0,
-    rotation: p.floor_position?.rotation ?? 0,
+    x: p.floor_position.x,
+    y: p.floor_position.y,
+    rotation: p.floor_position.rotation ?? 0,
   };
 }
 
@@ -177,10 +191,13 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }: Reado
       try {
         const [zoneRes, placementRes] = await Promise.all([
           sites.zones.list({ floor_id: floor.floor_id, limit: 100 }),
-          sites.devicePlacements.listByFloor(floor.floor_id).catch(() => ({ items: [] })),
+          sites.devicePlacements
+            .listByFloor(floor.floor_id)
+            .catch((): { items: DevicePlacementPublic[] } => ({ items: [] })),
         ]);
         if (!cancelled) {
           const nextPlacements = (placementRes?.items ?? [])
+            .filter(isPinned)
             .map(normalizePlacement)
             .map((p) => ({ ...p, is_draft: false }));
           setZones(zoneRes?.items ?? []);
@@ -383,6 +400,7 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }: Reado
       // Refetch persisted placements as the new baseline.
       const refreshed = await sites.devicePlacements.listByFloor(floor.floor_id);
       const syncedPlacements = (refreshed?.items ?? [])
+        .filter(isPinned)
         .map(normalizePlacement)
         .map((p) => ({ ...p, is_draft: false }));
 

@@ -111,6 +111,7 @@ async def evaluate_metric(
     metric: str,
     device_id: uuid.UUID | None = None,
     site_id: uuid.UUID | None = None,
+    equipment_id: uuid.UUID | None = None,
     start: dt.datetime | None = None,
     end: dt.datetime | None = None,
     hours: Annotated[int | None, Query(ge=1, le=24 * 90)] = None,
@@ -125,7 +126,9 @@ async def evaluate_metric(
 
     Scope decides the item shape: a device-scope metric answers per device
     (`device_id` pins one; `site_id` narrows the fan-out to one site's
-    devices); a site-scope metric answers per site (`site_id` pins one).
+    devices); a site-scope metric answers per site (`site_id` pins one); an
+    equipment-scope metric answers per piece of registered equipment of its
+    class (`equipment_id` pins one; `site_id` narrows to one site's).
     """
     now = dt.datetime.now(dt.timezone.utc)
     if start is None and end is None:
@@ -139,7 +142,7 @@ async def evaluate_metric(
     try:
         return await evaluator.evaluate(
             db, _tenant(scope), metric,
-            device_id=device_id, site_id=site_id,
+            device_id=device_id, site_id=site_id, equipment_id=equipment_id,
             start=start, end=end, resolution=resolution,
         )
     except evaluator.EvaluationError as exc:

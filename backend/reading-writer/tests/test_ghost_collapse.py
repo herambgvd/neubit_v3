@@ -798,3 +798,59 @@ class TestTheRegisterCount:
         assert "total_registers" in SummaryResponse.model_fields
         db = _SummaryDb(points=766, registers=475)
         assert SummaryResponse(**run(q.summary(db, TENANT))).total_registers == 475
+
+
+# ── one building's ghosts ────────────────────────────────────────────────────
+#
+# A building's view asks "which ghosts inflate THIS building". The trap is that
+# generations of one register sit in different places — the dead one was placed,
+# the live one arrived after the rebuild with no site yet. On this estate 44 of
+# the 45 remaining duplicated pairs span more than one placement, so filtering
+# members BEFORE grouping would split nearly every group into a lone member that
+# is no longer a duplicate, and the building's view would show almost nothing.
+
+SITE_A = uuid.UUID("aaaaaaaa-0000-0000-0000-00000000000a")
+SITE_B = uuid.UUID("bbbbbbbb-0000-0000-0000-00000000000b")
+
+
+def placed(row: dict, site) -> dict:
+    return {**row, "site_id": site}
+
+
+class TestSiteScope:
+    def test_a_group_spanning_buildings_is_kept_whole_in_the_building_view(self):
+        dead, live = uuid.uuid4(), uuid.uuid4()
+        db = ScriptedDb(members=[
+            placed(member(live, last_seen=JUST_NOW, fresh=True), None),
+            placed(member(dead, last_seen=LAST_MONTH), SITE_A),
+        ])
+        groups = run(q.ghost_groups(db, TENANT, site_id=SITE_A))
+        assert len(groups) == 1
+        # BOTH generations, so the verdict is the estate's verdict: one fresh
+        # member, auto, and the unplaced live one is the survivor.
+        assert {m["point_id"] for m in groups[0]["members"]} == {dead, live}
+        assert groups[0]["mode"] == "auto"
+        assert groups[0]["survivor_point_id"] == live
+
+    def test_a_group_placed_only_in_another_building_is_not_this_ones(self):
+        db = ScriptedDb(members=[
+            placed(member(uuid.uuid4(), last_seen=JUST_NOW, fresh=True), SITE_B),
+            placed(member(uuid.uuid4()), SITE_B),
+        ])
+        assert run(q.ghost_groups(db, TENANT, site_id=SITE_A)) == []
+
+    def test_without_a_building_every_group_is_the_estates(self):
+        db = ScriptedDb(members=[
+            placed(member(uuid.uuid4(), last_seen=JUST_NOW, fresh=True), SITE_B),
+            placed(member(uuid.uuid4()), SITE_B),
+        ])
+        assert len(run(q.ghost_groups(db, TENANT))) == 1
+
+    def test_a_resurrected_point_is_scoped_by_its_own_placement(self):
+        """One point, one placement — a plain predicate, unlike a group."""
+        db = ScriptedDb(resurrected=[])
+        run(q.resurrected_points(db, TENANT, site_id=SITE_A))
+        name, params = db.params[0]
+        assert name == "resurrected"
+        assert params["site"] == str(SITE_A)
+        assert "p.site_id = CAST(:site AS uuid)" in str(q._GHOST_RESURRECTED_SQL)

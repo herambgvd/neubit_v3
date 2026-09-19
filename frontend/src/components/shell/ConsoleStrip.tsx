@@ -16,6 +16,9 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 
 import UsersRolesStrip from "@/components/shell/UsersRolesStrip";
+import { PLANT_HREF, plantHref } from "@/features/bi/plant/routes";
+import { WORK_HREF, workHrefFor } from "@/features/bi/work/routes";
+import { SETUP_HREF, SETUP_TASKS, STRANDED_HREF, taskOfPath } from "@/features/bi/setup/routes";
 import { WORKFLOW_VIEWS } from "@/features/workflow/constants";
 import { useAuth } from "@/lib/auth";
 
@@ -26,12 +29,19 @@ const STRIP_ROUTES = new Set<string>([
   "/ingest", "/config/security", "/platform", "/config/video-wall",
   "/config/linkage", "/federation", "/storage",
   "/config/patterns",
-  // Building Intelligence — one modtab plus a segment across the BUILT consoles.
+  // Building Intelligence — one modtab plus a segment across the LAYERS.
   // The unbuilt Sense/Think surfaces are deliberately absent here: the launcher
   // already shows them as SOON, and a dead segment cell would be exactly the
   // "fabricated destination" this feature must not ship.
+  //
   "/bi/portfolio", "/bi/energy", "/bi/hvac", "/bi/water", "/bi/insights", "/bi/ratings",
-  "/bi/duplicates", "/bi/succession",
+  // L3 PLANT — one building's plant. Its cell appears only in a building scope.
+  PLANT_HREF,
+  // GATE 6 — what the estate is saying that somebody has to act on.
+  WORK_HREF,
+  // SETUP — the checklist and every task under it. The old worklist routes
+  // (/bi/duplicates, /bi/placement, /bi/succession, /bi/metrics) redirect here.
+  SETUP_HREF, ...SETUP_TASKS.map((t) => t.href), STRANDED_HREF,
 ]);
 
 export function hasConsoleStrip(pathname: string | null | undefined): boolean {
@@ -46,9 +56,18 @@ const seg = (on: boolean) =>
   }`;
 const segBox = "flex shrink-0 gap-0.5 rounded-[8px] border border-nb-line bg-[rgba(8,15,34,.7)] p-[3px]";
 
-/** Pages that get a single chip in the strip instead of a segmented control.
- *  A route not listed here has no solo chip — which is why this is a map and not
- *  a chain: adding the next one is a line of data, not another arm. */
+/** Setup's own segment: the checklist, then the tasks in pipeline order. */
+const SETUP_CELLS = [
+  { href: SETUP_HREF, label: "CHECKLIST", icon: "heroicons-outline:list-bullet", title: "How much of setup is done" },
+  ...SETUP_TASKS.map((t) => ({
+    href: t.href,
+    label: t.short,
+    icon: t.icon,
+    title: t.gate ? `Gate ${t.gate} · ${t.label}` : t.label,
+  })),
+];
+
+/** Pages that get a single chip in the strip instead of a segmented control. */
 const SOLO_PAGES: Record<string, { label: string; icon: string }> = {
   "/config/linkage": { label: "Linkage", icon: "heroicons-outline:bolt" },
   "/federation": { label: "Federation", icon: "heroicons-outline:share" },
@@ -58,7 +77,12 @@ const SOLO_PAGES: Record<string, { label: string; icon: string }> = {
 export default function ConsoleStrip() {
   const pathname = usePathname();
   const { can } = useAuth();
-  const view = useSearchParams().get("view");
+  const params = useSearchParams();
+  const view = params.get("view");
+  // Building Intelligence's second axis. A domain console is ESTATE-WIDE
+  // without it and ONE BUILDING with it, and both are real destinations — see
+  // the segment below, which carries it rather than silently dropping it.
+  const biSite = params.get("site");
 
   if (!hasConsoleStrip(pathname)) return null;
 
@@ -74,6 +98,10 @@ export default function ConsoleStrip() {
   const isPatterns = pathname === "/config/patterns";
   const isBI = pathname.startsWith("/bi/");
   const SOLO = SOLO_PAGES[pathname] ?? null;
+  const isSetup = pathname === SETUP_HREF || pathname.startsWith(`${SETUP_HREF}/`);
+  // The Setup cell a path lights; the stranded-role worklist lights ROLES.
+  const setupTask = isSetup ? taskOfPath(pathname) : null;
+  const setupLit = setupTask ? SETUP_TASKS.find((t) => t.id === setupTask)!.href : SETUP_HREF;
 
   return (
     // Bare inline content — the global header owns the bar chrome. nav-scroll +
@@ -136,26 +164,93 @@ export default function ConsoleStrip() {
             <Icon icon="heroicons-outline:building-office-2" className="text-[14px]" />
             Building Intelligence
           </div>
-          <div className={segBox}>
-            {[
-              { href: "/bi/portfolio", label: "PORTFOLIO", icon: "heroicons-outline:building-office-2" },
-              { href: "/bi/energy", label: "ENERGY", icon: "heroicons-outline:bolt" },
-              { href: "/bi/hvac", label: "HVAC", icon: "heroicons-outline:cog-8-tooth" },
-              { href: "/bi/water", label: "WATER", icon: "heroicons-outline:beaker" },
-              { href: "/bi/insights", label: "INSIGHTS", icon: "heroicons-outline:chart-pie" },
-              { href: "/bi/ratings", label: "RATINGS", icon: "heroicons-outline:star" },
-              // The estate's own hygiene, beside the screens whose counts it
-              // corrects: a duplicated register inflates every one of them.
-              { href: "/bi/duplicates", label: "DUPLICATES", icon: "heroicons-outline:document-duplicate" },
-              // Gate 4, beside gate 1: a duplicated register inflates the counts,
-              // a stranded role stops the metrics above it computing at all.
-              { href: "/bi/succession", label: "STRANDED ROLES", icon: "heroicons-outline:link" },
-            ].map((s) => (
-              <Link key={s.href} href={s.href} className={seg(pathname === s.href)}>
-                <Icon icon={s.icon} className="text-[14px]" /> {s.label}
+          {isSetup ? (
+            // SETUP. Not a layer: the way back is to Building, and the segment
+            // is Setup's own — the checklist, then the tasks in gate order.
+            <>
+              <Link
+                href="/bi/portfolio"
+                title="Back to Building"
+                className="flex shrink-0 items-center gap-1 rounded-[7px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1 text-[12px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+              >
+                <Icon icon="heroicons-mini:chevron-left" className="text-[14px]" /> Building
               </Link>
-            ))}
-          </div>
+              <div className={segBox} aria-label="Setup">
+                {SETUP_CELLS.map((c) => (
+                  <Link key={c.href} href={c.href} title={c.title} className={seg(setupLit === c.href)}>
+                    <Icon icon={c.icon} className="text-[14px]" /> {c.label}
+                  </Link>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className={segBox}>
+                {[
+                  // L1, then its domains. The order is the drill, not a menu.
+                  { href: "/bi/portfolio", label: "BUILDING", icon: "heroicons-outline:building-office-2" },
+                  { href: "/bi/energy", label: "ENERGY", icon: "heroicons-outline:bolt", domain: true },
+                  { href: "/bi/hvac", label: "HVAC", icon: "heroicons-outline:cog-8-tooth", domain: true },
+                  { href: "/bi/water", label: "WATER", icon: "heroicons-outline:beaker", domain: true },
+                  // L3 — one building's plant. Only a building scope has one, so
+                  // the cell exists only when a building is in force: estate-wide
+                  // there is no plant to open, and a cell that opened a picker
+                  // would be a second Building.
+                  ...(biSite ? [{ href: PLANT_HREF, label: "PLANT", icon: "heroicons-outline:cpu-chip", plant: true }] : []),
+                  // Gate 6's worklist. Not Setup: Setup describes the building
+                  // once, this is what today's readings are asking for. It keeps
+                  // the building in scope when there is one.
+                  { href: WORK_HREF, label: "WORK", icon: "heroicons-outline:bolt", work: true },
+                  { href: "/bi/insights", label: "INSIGHTS", icon: "heroicons-outline:chart-pie" },
+                  { href: "/bi/ratings", label: "RATINGS", icon: "heroicons-outline:star" },
+                  // Every piece of BI configuration, behind its checklist.
+                  { href: SETUP_HREF, label: "SETUP", icon: "heroicons-outline:adjustments-horizontal" },
+                ].map((s) => (
+                  <Link
+                    key={s.href}
+                    // THE SCOPE TRAVELS WITH THE CELL. A domain console is two
+                    // screens under one route — the whole estate without
+                    // `?site=`, one building with it — so a cell that dropped
+                    // the param would move an operator from "Aeon Tower's
+                    // energy" to "every building's energy" while looking like a
+                    // filter change. Only the domains carry it: Building,
+                    // Insights and Ratings have no site scope to keep.
+                    href={
+                      "plant" in s && biSite
+                        ? plantHref(biSite)
+                        : "work" in s
+                          ? workHrefFor(biSite)
+                          : "domain" in s && s.domain && biSite
+                            ? `${s.href}?site=${encodeURIComponent(biSite)}`
+                            : s.href
+                    }
+                    className={seg(pathname === s.href)}
+                  >
+                    <Icon icon={s.icon} className="text-[14px]" /> {s.label}
+                  </Link>
+                ))}
+              </div>
+              {biSite && (
+                // WHICH SCOPE, said in the chrome. The console below says it at
+                // length; this is what a reader sees without scrolling, and it
+                // is the one control that leaves the building scope on purpose.
+                <Link
+                  // A plant has no estate-wide form: leaving the building from
+                  // L3 goes back to every building, not to an unscoped plant.
+                  href={pathname === PLANT_HREF ? "/bi/portfolio" : pathname}
+                  title={
+                    pathname === PLANT_HREF
+                      ? "Leave the building — back to every building"
+                      : "Leave the building scope — the same domain across the whole estate"
+                  }
+                  className="flex shrink-0 items-center gap-1 rounded-[7px] border border-[rgba(96,165,250,.45)] bg-[rgba(96,165,250,.12)] px-2.5 py-1 text-[11.5px] text-nb-blueb transition hover:border-nb-blue"
+                >
+                  <Icon icon="heroicons-outline:map-pin" className="text-[13px]" /> ONE BUILDING
+                  <Icon icon="heroicons-mini:x-mark" className="text-[13px]" />
+                </Link>
+              )}
+            </>
+          )}
         </div>
       )}
 

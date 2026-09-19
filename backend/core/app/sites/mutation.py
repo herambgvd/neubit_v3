@@ -11,6 +11,10 @@ every model. Structural parents (`site_id`, `floor_id`) are refused because
 re-parenting is a move, and a move needs an endpoint that vets the destination's
 tenancy — a blind field write cannot.
 
+`SiteEquipment.system_id` is here for the same reason: moving equipment to another
+system is a move, and InfrastructureService re-permits it only after checking the
+destination is on the same site and of a kind the equipment's class is allowed in.
+
 `Site.parent_id` is deliberately not here: re-parenting a site is supported and
 goes through `_require_assignable_parent` before this helper runs.
 """
@@ -29,6 +33,7 @@ IMMUTABLE: frozenset[str] = frozenset(
         "floor_id",
         "zone_id",
         "placement_id",
+        "system_id",
         "created_by",
         "created_at",
     }

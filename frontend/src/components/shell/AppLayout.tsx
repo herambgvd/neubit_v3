@@ -165,12 +165,22 @@ export default function AppLayout({ children }: Readonly<{ children?: ReactNode 
     pathname === "/bi/water" ||
     pathname === "/bi/insights" ||
     pathname === "/bi/ratings" ||
-    // Duplicate points is the same master/detail shape: the worklist scrolls
-    // inside its own panel and the group being settled stays put.
-    pathname === "/bi/duplicates" ||
-    // Stranded roles is master/detail too: the worklist scrolls in its own
-    // panel while the assertion being settled and its evidence stay put.
-    pathname === "/bi/succession" ||
+    // L3 Plant: the schematic scrolls inside its panel, the equipment detail
+    // stays put beside it.
+    pathname === "/bi/plant" ||
+    // Gate 6's worklist: the findings scroll inside their panel.
+    pathname === "/bi/work" ||
+    // BI → Setup's master/detail tasks. Duplicates: the worklist scrolls inside
+    // its own panel and the group being settled stays put. Stranded roles: the
+    // worklist scrolls while the assertion being settled stays put. Buildings &
+    // devices: the list scrolls, the assign control stays in the panel footer.
+    // Equipment and Building facts: a building list beside the building. (The
+    // checklist, Units and Metric roles are documents and scroll the page.)
+    pathname === "/bi/setup/duplicates" ||
+    pathname === "/bi/setup/stranded" ||
+    pathname === "/bi/setup/placement" ||
+    pathname === "/bi/setup/equipment" ||
+    pathname === "/bi/setup/facts" ||
     // Sites map is a full-bleed map surface — fills the bounded pane (no page scroll).
     pathname === "/map";
 

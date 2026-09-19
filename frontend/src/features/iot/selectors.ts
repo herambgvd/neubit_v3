@@ -247,3 +247,28 @@ export function inCategory(rows: DeviceRow[], key: string): DeviceRow[] {
   if (key === "all") return rows;
   return rows.filter((d) => (d.category || "unclassified") === key);
 }
+
+/** What a gateway device IS in the reading store, for placing it.
+ *
+ *  This side knows a device by its TAG and its point ids; a placement is keyed
+ *  by the store's `device_id`. A tag is not unique — two gateways can each carry
+ *  an `AHU-1` — so a tag match alone is only trusted when it is the only one.
+ *  Otherwise the device is the one whose points ARE this gateway's points. Any
+ *  other outcome is reported as unresolved, never picked. */
+export type BiDeviceMatch<T> =
+  | { device: T; reason: null }
+  | { device: null; reason: "missing" | "ambiguous" | "no-id" };
+
+export function matchBiDevice<T extends { device_id: string | null; device_tag: string | null }>(
+  tag: string,
+  devices: readonly T[],
+  owners?: ReadonlySet<string> | null,
+): BiDeviceMatch<T> {
+  const same = devices.filter((d) => d.device_tag === tag);
+  if (!same.length) return { device: null, reason: "missing" };
+  const withId = same.filter((d) => !!d.device_id);
+  if (!withId.length) return { device: null, reason: "no-id" };
+  const pool = withId.length > 1 && owners ? withId.filter((d) => owners.has(d.device_id as string)) : withId;
+  if (pool.length !== 1) return { device: null, reason: "ambiguous" };
+  return { device: pool[0], reason: null };
+}

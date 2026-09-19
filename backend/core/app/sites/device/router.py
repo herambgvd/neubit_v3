@@ -3,13 +3,18 @@
 Mounted under the api_prefix → ``{prefix}/device-placements``. Paths match the
 neubit_v2 frontend contract exactly:
 
-  * ``POST   /device-placements/register``
+  * ``POST   /device-placements/register``  (the floor-plan editor's write)
   * ``GET    /device-placements/{device_id}``
   * ``PATCH  /device-placements/{device_id}``
   * ``DELETE /device-placements/{device_id}``
   * ``GET    /device-placements/by-floor/{floor_id}``
   * ``GET    /device-placements/by-zone/{zone_id}``
   * ``GET    /device-placements/index``  (estate-wide, for the map)
+
+One route is NOT from v2, because v2 could not express what it writes:
+
+  * ``POST   /device-placements/assign``  — start from the DEVICES and name the
+    site they are in, for an explicit list of them, with or without a pin.
 """
 
 from __future__ import annotations
@@ -24,6 +29,8 @@ from ...auth.models import User
 from ...db.base import get_db
 from ...tenancy.scope import get_scope
 from .schemas import (
+    AssignDevicesRequest,
+    AssignDevicesResponse,
     DeviceListResponse,
     DevicePlacementPublic,
     RegisterDeviceRequest,
@@ -51,6 +58,28 @@ async def register_device(
     actor: Annotated[User, Depends(require_permission("devices.create"))],
 ) -> DevicePlacementPublic:
     return await svc.register(body, actor=actor)
+
+
+@router.post(
+    "/assign",
+    status_code=status.HTTP_200_OK,
+)
+async def assign_devices(
+    body: AssignDevicesRequest,
+    svc: Annotated[DevicePlacementService, Depends(_service)],
+    actor: Annotated[User, Depends(require_permission("devices.create"))],
+) -> AssignDevicesResponse:
+    """Assign a NAMED LIST of devices to a site — the reverse of the floor plan.
+
+    `devices.create`, not a permission of its own: this creates placements, which
+    is what that permission has always meant here, and `POST /register` upserts
+    under exactly the same gate. A second permission for the same write would be
+    a permission an existing role does not have and cannot be told it needs.
+
+    200 rather than 201 because a call can create some placements and move
+    others; the per-device answer is in `items[].created`.
+    """
+    return await svc.assign(body, actor=actor)
 
 
 @router.get(

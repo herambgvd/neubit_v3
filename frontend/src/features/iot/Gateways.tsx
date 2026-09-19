@@ -36,6 +36,7 @@ import StatusBadge, { StatusDot } from "@/features/vms/components/StatusBadge";
 // differently depending on which screen an operator opened.
 import { fmtReading, qualityTone } from "@/features/bi/constants";
 import { iot } from "./api";
+import DeviceBuilding from "./DeviceBuilding";
 import {
   ackView,
   ageSec,
@@ -654,6 +655,7 @@ function DeviceItem({
       </div>
       {open && (
         <div className="border-t border-nb-line px-3 py-2">
+          <DeviceBuilding gatewayId={gatewayId} tag={dev.tag} pointIds={mine.map((p) => p.point_id)} />
           {allRetired && (
             <p className="mb-2 text-[11px] text-nb-faint">
               Retired — not counted here. It is still configured on the gateway, and it comes back

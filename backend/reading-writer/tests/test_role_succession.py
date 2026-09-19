@@ -96,6 +96,10 @@ _FRAGMENTS = {
     "missing": "AND p.point_id IS NULL",
     "endpoints": "p.point_id = ANY(CAST(:pids AS uuid[]))",
     "record": "SET superseded_by = CAST(:successor AS uuid)",
+    # The undo's two: clearing the chain this move wrote, and carrying the role
+    # back with the assertion intact.
+    "clear": "SET superseded_by = NULL",
+    "return_role": "WITH held AS (",
     "inherit": "WITH donor AS (",
     "forgettable": "p.point_id IS NOT NULL AS point_exists",
     "forget": "NOT EXISTS (SELECT 1 FROM points p",
@@ -1197,3 +1201,208 @@ class TestForgettingAnAssertion:
                     headers=auth(tenant_id=TENANT, permissions=[r.PERM_MANAGE]),
                     json=body,
                 )
+
+
+# ── one building's stranded roles ────────────────────────────────────────────
+
+
+SITE_A = uuid.UUID("aaaaaaaa-0000-0000-0000-00000000000a")
+SITE_B = uuid.UUID("bbbbbbbb-0000-0000-0000-00000000000b")
+
+
+class TestSiteScope:
+    def test_a_building_sees_only_the_roles_placed_there(self):
+        here, there = uuid.uuid4(), uuid.uuid4()
+        db = ScriptedDb(
+            orphans=[
+                {**orphan_row(here), "site_id": SITE_A},
+                {**orphan_row(there, device="OTHER"), "site_id": SITE_B},
+            ],
+            missing=[],
+            pool=[],
+        )
+        out = run(sx.orphan_roles(db, TENANT, site_id=SITE_A))
+        assert [o["point_id"] for o in out["orphans"]] == [here]
+
+    def test_a_role_whose_point_is_gone_belongs_to_no_building(self):
+        """No point row, no placement to test — a building cannot claim it, so it
+        is left to the estate view rather than shown in every building's."""
+        db = ScriptedDb(orphans=[], missing=[missing_row(uuid.uuid4())], pool=[])
+        assert run(sx.orphan_roles(db, TENANT, site_id=SITE_A))["orphans"] == []
+
+    def test_the_estate_still_sees_a_role_whose_point_is_gone(self):
+        db = ScriptedDb(orphans=[], missing=[missing_row(uuid.uuid4())], pool=[])
+        assert len(run(sx.orphan_roles(db, TENANT))["orphans"]) == 1
+
+
+# ── undoing a move ───────────────────────────────────────────────────────────
+
+
+def _undo_endpoints(src, dst, *, superseded_by=..., src_role=None,
+                    dst_role="inlet_water_temp", src_retired=False) -> list[dict]:
+    """The two endpoints AFTER a move: the role sits on `dst`, and `src` names it."""
+    return [
+        {"point_id": src, "device_tag": DEVICE, "point_tag": "IWT",
+         "last_seen_at": STALE, "retired": src_retired,
+         "superseded_by": dst if superseded_by is ... else superseded_by,
+         "current_role": src_role},
+        {"point_id": dst, "device_tag": DEVICE, "point_tag": "1FYC1_IWT",
+         "last_seen_at": LEADING, "retired": False, "superseded_by": None,
+         "current_role": dst_role},
+    ]
+
+
+def _undo(db, src, dst, role="inlet_water_temp"):
+    return run(sx.undo_repoints(db, TENANT, moves=[
+        {"role": role, "from_point_id": src, "to_point_id": dst},
+    ]))
+
+
+class TestUndoingTheMove:
+    def test_the_chain_is_cleared_and_the_role_comes_back_in_one_transaction(self):
+        """A repoint is a human deciding one tag is the same measurement another
+        used to be, and the tag can belong to the chiller next door. A collapse
+        has had an undo since it shipped; this is the repoint's."""
+        src, dst = uuid.uuid4(), uuid.uuid4()
+        db = ScriptedDb(
+            endpoints=_undo_endpoints(src, dst),
+            clear=[{"point_id": src}],
+            return_role=[{"from_id": dst, "role": "inlet_water_temp"}],
+        )
+        out = _undo(db, src, dst)
+
+        assert out["undone"] == 1 and out["refused"] == 0
+        assert out["results"][0]["status"] == "undone"
+        assert db.asked == ["endpoints", "clear", "return_role"]
+        assert db.commits == 1 and db.rollbacks == 0
+        # The chain is cleared only where it still names THIS successor; the
+        # predicate lives in the SQL and the ids are the bind.
+        assert dict(db.params)["clear"] == {
+            "predecessor": str(src), "successor": str(dst), "tenant": str(TENANT),
+        }
+
+    def test_the_chain_is_only_cleared_where_it_still_names_this_successor(self):
+        """Blanking `superseded_by` unconditionally would erase a history this
+        request never wrote."""
+        assert "p.superseded_by = CAST(:successor AS uuid)" in str(sx._CLEAR_SUCCESSION_SQL)
+
+    def test_the_assertion_comes_back_as_it_was_made_not_as_todays(self):
+        """`role_source`, `confirmed_by` and `confirmed_at` are copied from the row
+        the move carried forward. Whoever presses undo is not the person who said
+        what the number means."""
+        sql = " ".join(str(sx._RETURN_ROLE_SQL).split())
+        assert "h.role_source, h.confirmed_by, h.confirmed_at" in sql
+        assert "now()" not in sql.lower()
+        # The delete is conditional on the insert having LANDED, exactly as
+        # `inherit_roles` does it, so a predecessor that acquired a role in
+        # between keeps it and the successor keeps its own.
+        assert "ON CONFLICT (point_id) DO NOTHING" in sql
+        assert "USING held h, placed pl" in sql
+
+    def test_a_move_that_is_not_the_one_on_record_is_refused(self):
+        """The estate moved on — repointed again, collapsed, already undone. A
+        stale worklist must not bind a role nobody asked for."""
+        src, dst, other = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        db = ScriptedDb(endpoints=_undo_endpoints(src, dst, superseded_by=other))
+        out = _undo(db, src, dst)
+
+        assert out["refused"] == 1
+        assert "not the one on record" in out["results"][0]["reason"]
+        assert db.wrote() == []
+
+    def test_an_already_undone_move_is_refused_rather_than_done_twice(self):
+        src, dst = uuid.uuid4(), uuid.uuid4()
+        db = ScriptedDb(endpoints=_undo_endpoints(src, dst, superseded_by=None))
+        out = _undo(db, src, dst)
+        assert "not superseded by anything" in out["results"][0]["reason"]
+        assert db.wrote() == []
+
+    def test_a_successor_that_no_longer_carries_the_role_is_refused(self):
+        src, dst = uuid.uuid4(), uuid.uuid4()
+        db = ScriptedDb(endpoints=_undo_endpoints(src, dst, dst_role="active_power"))
+        out = _undo(db, src, dst)
+        assert "no longer carries" in out["results"][0]["reason"]
+        assert out["results"][0]["current_role"] == "active_power"
+        assert db.wrote() == []
+
+    def test_a_predecessor_that_has_since_been_given_a_role_is_refused(self):
+        """Both are an operator's assertion and this route chooses between
+        neither — the same rule the forward move applies to the successor."""
+        src, dst = uuid.uuid4(), uuid.uuid4()
+        db = ScriptedDb(endpoints=_undo_endpoints(src, dst, src_role="active_power"))
+        out = _undo(db, src, dst)
+        assert "already carries" in out["results"][0]["reason"]
+        assert out["results"][0]["conflicting_role"] == "active_power"
+        assert db.wrote() == []
+
+    def test_a_retired_predecessor_is_refused(self):
+        """Forward, a retired successor is refused; backwards this is the same
+        point — a role on a retired point is a measurement the estate says is not
+        there."""
+        src, dst = uuid.uuid4(), uuid.uuid4()
+        db = ScriptedDb(endpoints=_undo_endpoints(src, dst, src_retired=True))
+        out = _undo(db, src, dst)
+        assert "retired" in out["results"][0]["reason"]
+        assert db.wrote() == []
+
+    def test_a_point_that_is_its_own_successor_is_refused(self):
+        same = uuid.uuid4()
+        db = ScriptedDb(endpoints=[])
+        out = _undo(db, same, same)
+        assert "cannot succeed itself" in out["results"][0]["reason"]
+        assert db.wrote() == []
+
+    def test_another_tenants_point_is_refused_the_same_way_a_missing_one_is(self):
+        """"I could not find it" and "it is not yours" must be one refusal, or the
+        route is a probe for other tenants' point ids."""
+        src, dst = uuid.uuid4(), uuid.uuid4()
+        db = ScriptedDb(endpoints=[_undo_endpoints(src, dst)[0]])
+        out = _undo(db, src, dst)
+        assert "not in this tenant" in out["results"][0]["reason"]
+        assert db.wrote() == []
+
+    def test_a_write_that_lands_nothing_is_rolled_back_rather_than_reported_done(self):
+        """A chain cleared with the role still on the successor reads as a
+        completed undo on every screen."""
+        src, dst = uuid.uuid4(), uuid.uuid4()
+        db = ScriptedDb(
+            endpoints=_undo_endpoints(src, dst),
+            clear=[{"point_id": src}],
+            return_role=[],
+        )
+        out = _undo(db, src, dst)
+        assert out["undone"] == 0 and out["refused"] == 1
+        assert "nothing was written" in out["results"][0]["reason"]
+        assert db.commits == 0 and db.rollbacks == 1
+
+    def test_one_stale_undo_does_not_discard_the_rest_of_the_worklist(self):
+        a1, a2, b1, b2 = (uuid.uuid4() for _ in range(4))
+        db = ScriptedDb(
+            endpoints=_undo_endpoints(a1, a2) + _undo_endpoints(b1, b2, superseded_by=None),
+            clear=[{"point_id": a1}],
+            return_role=[{"from_id": a2, "role": "inlet_water_temp"}],
+        )
+        out = run(sx.undo_repoints(db, TENANT, moves=[
+            {"role": "inlet_water_temp", "from_point_id": a1, "to_point_id": a2},
+            {"role": "inlet_water_temp", "from_point_id": b1, "to_point_id": b2},
+        ]))
+        assert out["requested"] == 2 and out["undone"] == 1 and out["refused"] == 1
+
+    def test_the_undo_is_gated_like_the_repoint_it_reverses(self):
+        route = next(r_ for r_ in r.bi_router.routes
+                     if getattr(r_, "path", "").endswith("/points/roles/repoint/undo"))
+        assert "POST" in route.methods
+        # The permission is closed over by `require_permission`, so it is read
+        # from the closure rather than from the repr — and it must be the SAME
+        # key the forward move is gated on.
+        def keys(path):
+            hit = next(x for x in r.bi_router.routes
+                       if getattr(x, "path", "").endswith(path))
+            # `require_permission(*permissions)` closes over the TUPLE it was
+            # called with.
+            return {p for d in hit.dependencies
+                    for c in (d.dependency.__closure__ or ())
+                    if isinstance(c.cell_contents, tuple)
+                    for p in c.cell_contents if isinstance(p, str)}
+        assert keys("/points/roles/repoint/undo") == keys("/points/roles/repoint")
+        assert r.PERM_MANAGE in keys("/points/roles/repoint/undo")

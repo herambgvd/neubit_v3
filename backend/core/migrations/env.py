@@ -29,6 +29,7 @@ import app.sites.site.models  # noqa: F401
 import app.sites.floor.models  # noqa: F401
 import app.sites.zone.models  # noqa: F401
 import app.sites.device.models  # noqa: F401
+import app.sites.infrastructure.models  # noqa: F401
 import app.tags.models  # noqa: F401
 import app.billing.models  # noqa: F401
 import app.alerts.models  # noqa: F401

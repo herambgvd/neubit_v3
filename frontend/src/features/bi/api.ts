@@ -10,10 +10,11 @@
 // Backend contract:
 //   GET /bi/summary                    category rollup + totals + reading extent
 //   GET /bi/activity  ?hours           hourly SAMPLE volume per category (readings_1h)
-//   GET /bi/devices   ?category&device_type&search&limit&offset
+//   GET /bi/devices   ?category&device_type&search&site_id&placement&limit&offset
 //   GET /bi/points    ?device_id|device_tag&category&type&search&with_latest
 //   GET /bi/series    ?point_id(xN)&start&end&hours&resolution=auto|1m|1h|raw
 //   GET /bi/correlation ?point_id(x2..12)&hours&resolution=auto|1m|1h
+//   GET /bi/correlations ?hours&start&end            the cross-domain REGISTRY
 //   GET /bi/units     ?category&search&confirmed=all|confirmed|unconfirmed
 //   POST /bi/units/confirm  {point_ids, unit}      (bi.manage)
 //   GET /bi/rating/sites                            site facts + rating inputs
@@ -86,9 +87,17 @@ export const bi = {
   alerts: ({ hours = 24, severity, limit }: any = {}) =>
     unwrap(api.get(`${BI}/alerts${qs({ hours, severity, limit })}`)),
 
-  devices: ({ category, device_type, search, site_id, limit, offset }: any = {}) => {
+  // Gate 6's own read: what this building's equipment is saying right now, each
+  // finding carrying the incident body that would raise work about it. The UI
+  // never composes that body — it posts what the store handed it.
+  findings: ({ site_id, hours }: any) =>
+    unwrap(api.get(`${BI}/sites/${site_id}/findings${qs({ hours })}`)),
+
+  // `placement` is `placed | unplaced` and has NO default: omitted, the whole
+  // estate comes back. `unplaced` is gate 3's worklist — devices no building owns.
+  devices: ({ category, device_type, search, site_id, placement, limit, offset }: any = {}) => {
     const cat = categoryParam(category);
-    const suffix = qs({ device_type, search, site_id, limit, offset });
+    const suffix = qs({ device_type, search, site_id, placement, limit, offset });
     // `category=` (empty) has to survive, so it is appended by hand.
     const sep = suffix ? "&" : "?";
     return unwrap(
@@ -136,6 +145,35 @@ export const bi = {
   correlation: ({ point_id, hours, start, end, resolution }: any) =>
     unwrap(api.get(`${BI}/correlation${qs({ point_id, hours, start, end, resolution })}`)),
 
+  // ── CROSS-DOMAIN CORRELATIONS ─ the registry, not the coefficient ──────
+  //
+  // `correlation()` above computes r between two series a caller names. THIS one
+  // answers the question a step earlier and the one a buyer is actually asking:
+  // which cross-domain questions can this estate answer at all, and for the ones
+  // it cannot, WHAT KIND of thing is missing.
+  //
+  // A BMS owns one domain, so it can only ask questions inside one. Every
+  // correlation here declares the signals it needs — a role, a confirmed unit, a
+  // module's events, a typed site fact — and the server resolves those
+  // declarations against this estate over the SAME window the coefficient would
+  // be computed over. A signal counts as present because it produced readings
+  // inside that window, never because a row exists or a role was bound once.
+  //
+  // THE FIELD THIS ENDPOINT EXISTS FOR is `gap.needs_new_hardware`, and it is a
+  // TRI-STATE: true costs money, false does not, and `null` is UNDETERMINED —
+  // the fact that would settle it lives in a database the reading-writer is not
+  // allowed to open. `totals` carries three buckets for exactly that reason, and
+  // a client that folds `hardware_undetermined` into `no_new_hardware_needed`
+  // has made a claim the backend deliberately refused to make. So the totals are
+  // read, never re-derived here: the headline is a `totals` lookup and not
+  // arithmetic over `correlations`.
+  //
+  // `blocking_gaps_*` is ONE gap per blocked correlation — what the headline
+  // counts. `signal_gaps_*` is every unsatisfied signal, which is the real
+  // backlog and a bigger number. They are two populations and must not be mixed.
+  correlations: ({ hours, start, end }: any = {}) =>
+    unwrap(api.get(`${BI}/correlations${qs({ hours, start, end })}`)),
+
   // ── UNITS ─ the one thing that turns a number into a quantity ──────────
   //
   // `points.unit` is null for every point because the wire carries none
@@ -182,8 +220,10 @@ export const bi = {
   // `ambiguous` (`KWL1_A` — a power tag ending in the amps suffix) names one
   // quantity while carrying another's suffix. The last two propose nothing, and
   // that refusal is the feature.
-  unitPatterns: ({ category }: any = {}) =>
-    unwrap(api.get(`${BI}/units/patterns${qs({ category })}`)),
+  // `site_id` narrows to one building. The confirm must carry the SAME scope
+  // (`confirmUnitPattern`) or the set previewed and the set written differ.
+  unitPatterns: ({ category, site_id }: any = {}) =>
+    unwrap(api.get(`${BI}/units/patterns${qs({ category, site_id })}`)),
 
   // The bulk path, and the ONE rule that makes it sound: a pattern is confirmed
   // only after a DRY RUN has shown the operator the rows. `units.py` used to
@@ -195,11 +235,12 @@ export const bi = {
   // `unit` is NEVER sent beside `pattern`: the server applies the unit the
   // catalogue proposed and the operator was shown, and rejects a request that
   // names both by whether the key was SENT. So the key is absent here, not null.
-  confirmUnitPattern: ({ pattern, category, dry_run, acknowledge_not_reporting }: any) =>
+  confirmUnitPattern: ({ pattern, category, site_id, dry_run, acknowledge_not_reporting }: any) =>
     unwrap(
       api.post(`${BI}/units/confirm`, {
         pattern,
         ...(category ? { category } : {}),
+        ...(site_id ? { site_id } : {}),
         dry_run: !!dry_run,
         ...(acknowledge_not_reporting ? { acknowledge_not_reporting: true } : {}),
       }),
@@ -222,8 +263,10 @@ export const bi = {
   // `resurrected` is the other half: points the collapse superseded that have
   // started reporting again. Two generations of one register are both talking,
   // which is a real signal and must not be papered over.
-  ghosts: ({ category, mode }: any = {}) =>
-    unwrap(api.get(`${BI}/points/ghosts${qs({ category, mode })}`)),
+  // `site_id` keeps a duplicated pair when ANY of its generations is at that
+  // building, with every generation still in it — see `ghost_groups`.
+  ghosts: ({ category, mode, site_id }: any = {}) =>
+    unwrap(api.get(`${BI}/points/ghosts${qs({ category, mode, site_id })}`)),
 
   // Either "collapse every group the classifier called AUTO", or an explicit
   // list of groups whose survivor the operator named. Never both, and there is
@@ -259,8 +302,8 @@ export const bi = {
   // a worklist that empties and fills with ingest timing is not a worklist.
   // `fresh` still comes back per point so the screen can say the estate is
   // between runs; it decides nothing.
-  roleOrphans: ({ role }: any = {}) =>
-    unwrap(api.get(`${BI}/points/roles/orphans${qs({ role })}`)),
+  roleOrphans: ({ role, site_id }: any = {}) =>
+    unwrap(api.get(`${BI}/points/roles/orphans${qs({ role, site_id })}`)),
 
   // The write, and it carries exactly the ids a human named. There is no mode, no
   // threshold and no "apply everything above a score" — a role is a statement
@@ -273,6 +316,12 @@ export const bi = {
   // count would hide the four that were refused behind the six that were not.
   repointRoles: ({ moves }: any) =>
     unwrap(api.post(`${BI}/points/roles/repoint`, { moves })),
+  // Put a move back. Posted with the move AS REPORTED — `from` is the point the
+  // role came off, `to` the one it went to — and refused unless that is still
+  // the succession on record. The assertion returns as it was made: whoever
+  // presses undo is not the person who said what the number means.
+  undoRepoints: ({ moves }: any) =>
+    unwrap(api.post(`${BI}/points/roles/repoint/undo`, { moves })),
 
   // The other half of the worklist, and the only thing that can be done to a
   // stranded role whose POINT ROW IS GONE: a repoint needs a successor on the
@@ -315,8 +364,9 @@ export const bi = {
   //
   // `ratingSites()` reads `site_facts` — this store's read-model of core's
   // `sites`, fed by the site-facts event mirror. A null area is NOT RECORDED and
-  // the screen renders it as "cannot rate", pointing at its own BUILDING tab
-  // (where the area is typed), never as a default.
+  // the screen renders it as "cannot rate", pointing at Setup → Building facts
+  // (where the area is typed), never as a default. Setup's building pickers
+  // read this list too: it is BI's own copy of Configurations → Sites.
   //
   // `rating()` takes the METERS as an argument. There is no stored fact saying
   // which register measures a site's whole supply; picking one by tag would be
@@ -329,21 +379,23 @@ export const bi = {
   rating: ({ site_id, point_id, days }: any) =>
     unwrap(api.get(`${BI}/rating${qs({ site_id, point_id, days })}`)),
 
-  // ── PLACEMENT ─ NOT HERE ────────────────────────────────────────────────
+  // ── THE PLANT ─ L3: one building's systems → equipment → slots ─────────
   //
-  // This client used to carry a `placement` block: a worklist read and four
-  // writes into `device_locations`. It is gone with the screen that used it.
+  // Every slot with its DATA READINESS (reporting / silent / unbound /
+  // unresolved / ambiguous) judged over the window, and every equipment-scope
+  // metric's value or refusal. The schematic colours by readiness, never by a
+  // metric. A 404 is a building this store has no record of at all.
+  plant: (siteId: string, { hours }: { hours?: number } = {}) =>
+    unwrap(api.get(`${BI}/sites/${encodeURIComponent(siteId)}/plant${qs({ hours })}`)),
+
+  // ── PLACEMENT ─ read here, written by core ──────────────────────────────
   //
-  // A device is placed in ONE place — Configurations → Sites → floor plan, which
-  // has pinned cameras and doors at `{x, y, rotation}` since it was ported and
-  // now offers IoT devices in the same palette. Core writes
-  // `neubit_control.device_placements` and emits a domain event; the
-  // reading-writer mirrors the site / floor / zone into
-  // `neubit_reporting.device_locations`, and every point of that device inherits
-  // it. Two screens for one fact is two answers waiting to disagree.
-  //
-  // `summary()` above still reports placed / unplaced counts. Those read `points`
-  // and stay true no matter which surface made the placement.
+  // This store only READS where a device is: `devices({ placement })` above,
+  // and every row's `site_id` / `site_name`. The WRITE is core's
+  // `POST /device-placements/assign` (lib/api/sites.ts → devicePlacements.assign),
+  // the same table the Sites floor plan writes, so there is still one fact and
+  // one owner. Core emits the event; the reading-writer mirrors it into
+  // `device_locations` and every point of the device inherits it.
 };
 
 export default bi;

@@ -20,6 +20,11 @@ import SitesConfigPage from "./Sites";
  * the list and the form, so the tenant here has everything; the gate itself is
  * covered in SiteDetail.test.tsx.
  */
+// The page reads its starting selection from the URL (`?site=`). Empty unless
+// a test sets it.
+const nav = { params: new URLSearchParams() };
+vi.mock("next/navigation", () => ({ useSearchParams: () => nav.params }));
+
 vi.mock("@/lib/auth", () => ({
   useAuth: () => ({ user: { id: "me" }, can: () => true, hasModule: () => true }),
 }));
@@ -58,6 +63,7 @@ const DEPOT = site({ site_id: "s2", name: "Nashik Depot", location_code: "NSK-01
 let stub: ApiStub;
 
 beforeEach(() => {
+  nav.params = new URLSearchParams();
   stub = stubApi({
     "GET /sites": paged([HQ, DEPOT]),
     "GET /floors": paged([]),
@@ -98,6 +104,21 @@ describe("which row is open", () => {
 
     // The fallback must be "nothing chosen yet", not "always show something".
     expect(await screen.findByText(/no site selected/i)).toBeInTheDocument();
+  });
+});
+
+describe("an old deep link into the equipment designer", () => {
+  it("opens the named site on Site info — the designer is not in Sites any more", async () => {
+    // `?site=&tab=equipment&equipment=` is what BI used to build. The designer
+    // moved to BI → Setup → Equipment, so the tab must not come back from a
+    // stale link, and the site must still open rather than the first one.
+    nav.params = new URLSearchParams("site=s2&tab=equipment&equipment=e9");
+
+    renderWithProviders(<SitesConfigPage />);
+
+    expect(await screen.findByRole("heading", { name: "Nashik Depot" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Equipment" })).not.toBeInTheDocument();
+    expect(stub.matching("GET /sites/s2/infrastructure")).toHaveLength(0);
   });
 });
 

@@ -73,6 +73,16 @@ ROLE_DEFS: dict[str, dict] = {
         "label": "Active power",
         "description": "Instantaneous active power (total or per phase).",
     },
+    "water_volume": {
+        "dimension": "volume",
+        "label": "Cumulative water volume",
+        "description": (
+            "A cumulative water volume register (the kind a consumption is a "
+            "last−first over). A FLOW RATE is not this: m³/h is a rate, and "
+            "binding one here would make every water consumption a rate summed "
+            "as if it were a volume. Bind the totaliser, not the rate."
+        ),
+    },
 }
 
 # ── Suggestions ──────────────────────────────────────────────────────────────
@@ -90,6 +100,11 @@ _RULES: list[tuple[re.Pattern[str], str, str]] = [
     (re.compile(r"^(today|yest|this_|last_).*kwh$", re.I), "energy_period_total", "the tag names a period-scoped kWh total (today/yesterday/month/year) — not a lifetime register"),
     (re.compile(r"^(.+_)?kwh$", re.I), "energy_register", "the tag names a kWh register"),
     (re.compile(r"^(tot ?kw|kw_l[123])$", re.I), "active_power", "the tag names active power"),
+    # Cumulative flow ONLY. `Flow Rate`, `For_Flow` and `Rev_Flow` on the same
+    # meter are rates and instantaneous directions, and none of them is a volume;
+    # offering the volume role for those would be the fabrication this file's
+    # header refuses, done to a different dimension.
+    (re.compile(r"^(.+_)?cum_?flow$", re.I), "water_volume", "the tag names a cumulative flow totaliser"),
 ]
 
 

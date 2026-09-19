@@ -21,12 +21,12 @@ from ..core.primitives import utcnow
 from ..runtime.events import emit
 from .models import SOP, State, Transition
 from .starters import (
-    STARTERS,
     STARTER_TAG,
     position_of,
     slug_tag,
     starter_states,
     starter_transitions,
+    starters_for,
 )
 
 
@@ -73,8 +73,11 @@ class SopService:
         await emit(row.tenant_id, "sop", "created", {"sop_id": row.sop_id, "name": row.name})
         return row
 
-    async def install_starters(self, *, actor) -> tuple[list[SOP], list[str]]:
+    async def install_starters(self, *, actor, family: str | None = None) -> tuple[list[SOP], list[str]]:
         """Install the starter playbooks this tenant does not have yet.
+
+        ``family`` narrows it to one console's set — ``None`` installs every
+        family, which is what a tenant running both modules wants.
 
         Returns ``(created, skipped_slugs)``. Idempotent by the ``starter:<slug>``
         tag rather than by name, so a tenant who RENAMED a starter still has it and
@@ -89,7 +92,7 @@ class SopService:
         created: list[SOP] = []
         skipped: list[str] = []
 
-        for spec in STARTERS:
+        for spec in starters_for(family):
             if spec.slug in have:
                 skipped.append(spec.slug)
                 continue

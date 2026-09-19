@@ -1,29 +1,29 @@
 "use client";
 
-// "Building" tab — the physical and commercial facts about a site.
+// Building Intelligence → Setup → BUILDING FACTS — the physical and commercial
+// facts about one building: gross floor area, tariff (+ time-of-use slabs),
+// occupancy and grid emission factors.
 //
-// WHY THIS FORM EXISTS AND WHY IT IS HERE.
-// Building Intelligence → Ratings computes an EPI: kWh per square metre per
-// year. The kWh is measured; the square metre is not, and nothing on this
-// platform could state it. Not `sites`, not `floors`, not the reading store, not
-// the gateway. So a rating had no denominator, and the only ways to produce one
-// anyway — infer it, default it, borrow a national average — are the fabrication
-// the platform's contracts forbid.
+// WHY THIS FORM EXISTS. Ratings computes an EPI: kWh per square metre per year.
+// The kWh is measured; the square metre is not, and nothing on this platform
+// could state it. So a rating had no denominator, and the only ways to produce
+// one anyway — infer it, default it, borrow a national average — are the
+// fabrication the platform's contracts forbid.
 //
-// It lives HERE, beside the address, for the same reason device placement lives
-// on the floor plan (pipeline contract §18): the platform already has ONE place
-// where facts about a site are recorded, and a second surface owning half of
-// "what this building is" is two answers waiting to disagree. A BI screen asking
-// for an area would have been that second surface.
+// WHY IT IS IN SETUP. Nothing in Sites, Floors, Zones or the VMS reads one of
+// these numbers; they are BI inputs, so the FORM is BI's. The facts are still
+// STORED on the site (`sites.update` writes them, `sites.read` reads the
+// record), which is why this panel gates on those keys rather than on
+// `bi.manage`: a control is offered exactly when the endpoint behind it would
+// accept it. Ratings DISPLAYS what it divides by and links here.
 //
 // THREE RULES THIS FORM KEEPS:
 //   • BLANK IS A VALUE. Clearing a field records "not recorded" — the state
-//     Ratings renders as "cannot rate", with a link back here. It is not a
-//     validation error and it is not zero. All four fields are sent on every
-//     save (PUT, not PATCH) precisely so a blank can be transmitted.
-//   • NOTHING IS SUGGESTED. There is no "typical area for a building this size",
-//     no default tariff and no inferred occupancy. Every number here is typed by
-//     a person, and the panel records who and when.
+//     Ratings renders as "cannot rate". It is not a validation error and it is
+//     not zero. All four fields are sent on every save (PUT, not PATCH)
+//     precisely so a blank can be transmitted.
+//   • NOTHING IS SUGGESTED. No typical area, no default tariff, no inferred
+//     occupancy. Every number is typed by a person; the panel records when.
 //   • A TARIFF NEEDS A CURRENCY. The server refuses the pair otherwise rather
 //     than assuming rupees; a bare 8.5 is not a price.
 import { useEffect, useState, type ReactNode } from "react";
@@ -36,6 +36,8 @@ import { apiError } from "@/lib/api";
 import sitesApi from "@/lib/api/sites";
 import type { SitePublic } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
+
+import Reason from "../Reason";
 
 import EmissionFactorsEditor from "./EmissionFactorsEditor";
 import TariffSlabsEditor from "./TariffSlabsEditor";
@@ -95,6 +97,9 @@ export default function BuildingFactsPanel({ site }: Readonly<{ site: SitePublic
       setErr(null);
       setSaved(true);
       qc.invalidateQueries({ queryKey: ["sites"] });
+      qc.invalidateQueries({ queryKey: ["site", site.site_id] });
+      // BI's own copy (the Setup checklist, Ratings) follows over the mirror.
+      qc.invalidateQueries({ queryKey: ["bi-rating-sites"] });
     },
     onError: (e) => {
       setSaved(false);
@@ -165,23 +170,11 @@ export default function BuildingFactsPanel({ site }: Readonly<{ site: SitePublic
           </div>
         ) : (
           <p className="text-[11.5px] text-nb-faint">
-            You do not hold <span className="font-mono">sites.update</span>, so these values are
-            read-only here.
+            read-only · recording needs <span className="font-mono">sites.update</span>
           </p>
         )}
 
-        <div className="flex gap-2.5 rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.45)] px-3 py-2.5">
-          <Icon
-            icon="heroicons:information-circle"
-            className="mt-[1px] shrink-0 text-[15px] text-nb-blueb"
-          />
-          <p className="text-[11px] leading-relaxed text-nb-soft">
-            These are <strong className="text-nb-ink">your assertions</strong>, not measurements.
-            Nothing on this platform derives them and nothing fills them in. A blank field means
-            NOT RECORDED, and Building Intelligence → Ratings will refuse to produce a score rather
-            than default, estimate or borrow a figure for it.
-          </p>
-        </div>
+        <Reason text="These are your assertions, not measurements. Nothing on this platform derives them and nothing fills them in; a blank field means NOT RECORDED, and Ratings refuses to score rather than default, estimate or borrow a figure." />
       </div>
 
       <div className="lg:col-span-2">
@@ -203,7 +196,10 @@ export default function BuildingFactsPanel({ site }: Readonly<{ site: SitePublic
             label="Occupancy on record"
             value={numOrNull(occupancy) === null ? "not recorded" : String(numOrNull(occupancy))}
           />
-          <div className="rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2">
+          <div
+            className="rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2"
+            title="Tracked separately from the site's own “updated” timestamp, which moves whenever anyone edits a phone number."
+          >
             <p className="text-[10px] font-semibold uppercase tracking-[1.4px] text-nb-faint">
               Last asserted
             </p>
@@ -211,10 +207,6 @@ export default function BuildingFactsPanel({ site }: Readonly<{ site: SitePublic
               {site.building_facts_updated_at
                 ? new Date(site.building_facts_updated_at).toLocaleString()
                 : "never"}
-            </p>
-            <p className="mt-1 text-[10.5px] leading-relaxed text-nb-faint">
-              Tracked separately from the site&apos;s own “updated” timestamp, which moves whenever
-              anyone edits a phone number. A figure a rating divides by deserves its own provenance.
             </p>
           </div>
         </div>

@@ -24,6 +24,7 @@ import type { AxiosResponse } from "axios";
 import { api } from "@/lib/api";
 import type { Paged, QueryParams } from "@/lib/types";
 import type {
+  OpenWork,
   AlertFormatPublic,
   ChannelPublic,
   CreateAlertFormatRequest,
@@ -99,7 +100,11 @@ export const workflow = {
     ...resource<SopPublic, CreateSopRequest>("sops"),
     // POST /workflow/sops/starters — install the starter playbooks this tenant is
     // missing. Idempotent, so it is safe behind a button somebody presses twice.
-    installStarters: () => unwrap(api.post<InstallStartersResponse>(`${WF}/sops/starters`, {})),
+    // `family` names one console's set — "vms" or "bi". The modules are sold
+    // separately, so a caller always says which; omitting it installs both.
+    installStarters: (family?: "vms" | "bi") =>
+      unwrap(api.post<InstallStartersResponse>(
+        `${WF}/sops/starters${family ? `?family=${family}` : ""}`, {})),
   },
   states: nested<StatePublic, CreateStateRequest>("states"),
   transitions: nested<TransitionPublic, CreateTransitionRequest>("transitions"),
@@ -148,6 +153,24 @@ export const workflow = {
     // a different door.
     create: (body: CreateInstanceRequest) =>
       unwrap(api.post<InstancePublic>(`${WF}/instances`, body)),
+    // RAISING WORK ABOUT A FINDING. Same route, and the status code is the
+    // answer: 201 created one, 200 means an OPEN incident already existed for
+    // this `source_key` and is being handed back unchanged. `unwrap` throws that
+    // away, and the difference is the whole of "no duplicate work", so this call
+    // keeps it.
+    raise: (body: CreateInstanceRequest): Promise<{ created: boolean; instance: InstancePublic }> =>
+      api
+        .post<InstancePublic>(`${WF}/instances`, body)
+        .then((r) => ({ created: r.status === 201, instance: r.data })),
+    // Which of these findings already have open work. A POST because a site's
+    // worth of keys does not fit in a URL; it writes nothing.
+    openBySource: (source_keys: string[]) =>
+      unwrap(
+        api.post<{
+          with_work: Record<string, OpenWork>;
+          without_work: string[];
+        }>(`${WF}/instances/open-by-source`, { source_keys }),
+      ),
     get: (id: string) => unwrap(api.get<InstancePublic>(`${WF}/instances/${id}`)),
     stats: (params: QueryParams = {}) =>
       unwrap(api.get<InstanceStatsResponse>(`${WF}/instances/stats${qs(params)}`)),

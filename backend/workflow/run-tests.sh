@@ -10,6 +10,8 @@
 #
 # The kernel comes from the WORKING TREE, not the image's build-time snapshot at
 # /opt/kernel — otherwise the suite tests code that is not the code being changed.
+# The same goes for migrations/: a test that reads a revision file must read the
+# one being changed, not the one the image was built with.
 #
 # ── --pg ────────────────────────────────────────────────────────────────────
 # Four tests SKIP without a real Postgres, and they are the ones that need it
@@ -86,6 +88,7 @@ run_suite() {
   ${COV_MOUNT[@]+"${COV_MOUNT[@]}"} \
   -v "$REPO/backend/workflow/app:/app/app:ro" \
   -v "$REPO/backend/workflow/tests:/app/tests:ro" \
+  -v "$REPO/backend/workflow/migrations:/app/migrations:ro" \
   -v "$REPO/backend/kernel/kernel:/opt/kernel/kernel:ro" \
   -w /app \
   -e PYTHONDONTWRITEBYTECODE=1 \

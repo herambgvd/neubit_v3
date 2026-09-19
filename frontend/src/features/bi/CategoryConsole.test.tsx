@@ -19,7 +19,38 @@ import { renderWithProviders } from "@/test/render";
 import CategoryConsole from "./CategoryConsole";
 import { bi } from "./api";
 
-vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams() }));
+// The `?site=` scope is this console's second axis, so the search params are a
+// fixture rather than a constant: every test below is either the ESTATE (no
+// param) or ONE BUILDING (the param), and they are different screens.
+const query = { site: "" };
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(query.site ? { site: query.site } : {}),
+}));
+
+// The L2 gate strip rides above this console (see CategoryConsole.tsx). It reads
+// the caller's permissions and four endpoints of its own; none of them is what
+// this file is about, so they are answered as a clean, quiet estate and the strip
+// collapses to its one line. Its own behaviour is covered by GateStrip.test.tsx.
+vi.mock("@/lib/auth", () => ({ useAuth: () => ({ can: () => true, hasModule: () => true }) }));
+
+beforeEach(() => {
+  query.site = "";
+  vi.spyOn(bi, "summary").mockResolvedValue({
+    total_points: 4,
+    total_registers: 4,
+    total_points_reporting: 4,
+    fresh_minutes: 15,
+    sites: [{ site_id: "s1", score: 60, points: 4, categories: [] }],
+    categories: [{ category: "hvac", devices: 2, points: 4, points_reporting: 4 }],
+  });
+  vi.spyOn(bi, "ghosts").mockResolvedValue({ groups: [], resurrected: [], fresh_minutes: 15 });
+  vi.spyOn(bi, "unitPatterns").mockResolvedValue({
+    patterns: [],
+    totals: { points: 4, matched: 4, unmatched: 0, eligible: 0, already_confirmed: 4 },
+  });
+  vi.spyOn(bi, "roleOrphans").mockResolvedValue({ orphans: [], total: 0 });
+  vi.spyOn(bi, "alerts").mockResolvedValue({ available: true, items: [] });
+});
 
 interface Device {
   device_id: string;
@@ -196,5 +227,185 @@ describe("what the console will not invent", () => {
     render();
 
     expect(await screen.findByText(/current value read raw, last 60 min/i)).toBeInTheDocument();
+  });
+});
+
+/**
+ * L2 is the SAME pipeline, one scope down. The console gained the shared gate
+ * strip, and the only thing that can go wrong with it here is scope: a strip
+ * that read the estate's worklists under a domain heading would be answering a
+ * question about the building with counts about everything.
+ */
+describe("the L2 gate strip", () => {
+  it("reads the worklists scoped to its own category", async () => {
+    devicesReturn([CH1]);
+    vi.spyOn(bi, "points").mockResolvedValue({ items: [] });
+
+    renderWithProviders(<CategoryConsole category="hvac" />);
+
+    await waitFor(() => expect(bi.ghosts).toHaveBeenCalledWith({ category: "hvac" }));
+    expect(bi.unitPatterns).toHaveBeenCalledWith({ category: "hvac" });
+  });
+
+  it("recedes to one line when this domain's gates are all open", async () => {
+    devicesReturn([CH1]);
+    vi.spyOn(bi, "points").mockResolvedValue({ items: [] });
+
+    renderWithProviders(<CategoryConsole category="hvac" />);
+
+    expect(await screen.findByText(/six gates, all open/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Gate \d/)).toBeNull();
+  });
+});
+
+/**
+ * ONE ROUTE, TWO SCOPES — the whole reason this file grew a search-param fixture.
+ *
+ *   /bi/hvac              the WHOLE ESTATE: every building's HVAC, plus the
+ *                         points no building owns
+ *   /bi/hvac?site=<uuid>  ONE BUILDING's HVAC
+ *
+ * The three domain tiles were once removed on the argument that Building's
+ * Domains lane already reached "the same room". It does not, and 93 of this
+ * fixture's 176 HVAC points prove it: they belong to no building, so the
+ * unscoped console is the only place they exist. These cover the two failures
+ * that would bring that confusion back — an estate view that does not announce
+ * itself as one, and a building view that shows the estate's figures.
+ */
+const twoScopeSummary = {
+  total_points: 176,
+  total_registers: 176,
+  total_points_reporting: 176,
+  fresh_minutes: 15,
+  categories: [{ category: "hvac", devices: 12, points: 176, points_reporting: 176 }],
+  sites: [
+    {
+      site_id: "aeon-1",
+      site_name: "Aeon Tower",
+      score: 61,
+      points: 83,
+      categories: [{ category: "hvac", devices: 7, points: 83 }],
+    },
+    // The unplaced pseudo-row. It is a real state, it is the biggest fact on the
+    // estate screen, and it is reachable from nowhere else.
+    { site_id: null, site_name: null, score: null, points: 93, categories: [{ category: "hvac", devices: 5, points: 93 }] },
+  ],
+};
+
+describe("the whole estate — the unscoped console", () => {
+  beforeEach(() => {
+    vi.spyOn(bi, "summary").mockResolvedValue(twoScopeSummary);
+    devicesReturn([CH1]);
+    pointsReturn([]);
+  });
+
+  it("announces that it is the estate, not one building", async () => {
+    renderWithProviders(<CategoryConsole category="hvac" />);
+    expect(await screen.findByText(/THE WHOLE ESTATE/)).toBeInTheDocument();
+    expect(screen.getByTitle(/every building combined, plus the points no building owns/)).toBeInTheDocument();
+  });
+
+  it("rolls up where the domain lives, building by building", async () => {
+    renderWithProviders(<CategoryConsole category="hvac" />);
+
+    const aeon = await screen.findByRole("link", { name: /Aeon Tower/ });
+    // Every row is a door into the OTHER scope.
+    expect(aeon).toHaveAttribute("href", "/bi/hvac?site=aeon-1");
+    expect(aeon).toHaveTextContent("83");
+    expect(aeon).toHaveTextContent("7");
+  });
+
+  it("states the unplaced remainder as its own row, with the console that settles it", async () => {
+    renderWithProviders(<CategoryConsole category="hvac" />);
+
+    const remainder = await screen.findByRole("link", { name: /No building/ });
+    expect(remainder).toHaveTextContent("93");
+    // Every count ships with the action that changes it, and placement is owned
+    // by Sites — this console has no placement worklist and must not grow one.
+    expect(remainder).toHaveTextContent("Assign them to a building");
+    expect(remainder).toHaveAttribute("href", "/bi/setup/placement?category=hvac");
+  });
+
+  it("does not imply a portfolio that is not there", async () => {
+    renderWithProviders(<CategoryConsole category="hvac" />);
+    // ONE building and a large remainder, counted from the API — never "the
+    // estate" in the plural on a deployment with one site.
+    expect(
+      await screen.findByText(/1 building has HVAC & Assets pinned to it, and 93 points belong to no building at all/),
+    ).toBeInTheDocument();
+  });
+
+  it("shows no figure at all when the summary has not answered", async () => {
+    vi.spyOn(bi, "summary").mockRejectedValue(new Error("nope"));
+    renderWithProviders(<CategoryConsole category="hvac" />);
+    expect(
+      await screen.findByText(/estate summary has not answered, so this rollup cannot say where the domain lives/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /No building/ })).not.toBeInTheDocument();
+  });
+
+  it("carries the estate's unplaced remainder on gate 3", async () => {
+    renderWithProviders(<CategoryConsole category="hvac" />);
+    expect(await screen.findByText(/93 of 176 points belong to no site/)).toBeInTheDocument();
+  });
+
+  it("offers no plant: the estate has none, only its buildings do", async () => {
+    renderWithProviders(<CategoryConsole category="hvac" />);
+    await screen.findByText(/93 of 176 points belong to no site/);
+    expect(screen.queryByRole("link", { name: /^Plant$/ })).not.toBeInTheDocument();
+  });
+});
+
+describe("one building — the ?site= scoped console", () => {
+  beforeEach(() => {
+    query.site = "aeon-1";
+    // The breadcrumb resolves the building's NAME from the `site_facts` mirror
+    // — the same read Ratings makes — so the crumb says "Aeon Tower" and not a
+    // uuid nobody can recognise.
+    vi.spyOn(bi, "ratingSites").mockResolvedValue({
+      items: [{ site_id: "aeon-1", site_name: "Aeon Tower" }],
+    });
+    vi.spyOn(bi, "summary").mockResolvedValue(twoScopeSummary);
+    devicesReturn([CH1]);
+    pointsReturn([]);
+  });
+
+  it("announces the building it is scoped to, and offers the way back out", async () => {
+    renderWithProviders(<CategoryConsole category="hvac" />);
+
+    expect(await screen.findByText("Aeon Tower")).toBeInTheDocument();
+    expect(screen.getByText(/ONE BUILDING — HVAC & Assets at this site only/)).toBeInTheDocument();
+    // The middle crumb is the escape hatch: the same domain, unscoped.
+    expect(screen.getByRole("link", { name: "HVAC & Assets" })).toHaveAttribute("href", "/bi/hvac");
+  });
+
+  it("opens this building's plant, one layer down", async () => {
+    renderWithProviders(<CategoryConsole category="hvac" />);
+
+    expect(await screen.findByRole("link", { name: /Plant/ })).toHaveAttribute("href", "/bi/plant?site=aeon-1");
+  });
+
+  it("asks the store for this building's devices and nobody else's", async () => {
+    renderWithProviders(<CategoryConsole category="hvac" />);
+    await waitFor(() =>
+      expect(bi.devices).toHaveBeenCalledWith(expect.objectContaining({ site_id: "aeon-1" })),
+    );
+  });
+
+  it("does not roll up the estate inside one building", async () => {
+    renderWithProviders(<CategoryConsole category="hvac" />);
+    await screen.findByText("Aeon Tower");
+    // A per-building breakdown inside one building is a list of one, and it
+    // would put the OTHER buildings' rows on a screen that excludes them.
+    expect(screen.queryByText(/across the estate/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /No building/ })).not.toBeInTheDocument();
+  });
+
+  it("does not let the estate's gate counts follow it in", async () => {
+    renderWithProviders(<CategoryConsole category="hvac" />);
+    // The building's worklists are clean, so its strip recedes — and the 93
+    // unplaced points, the estate's fact, appear nowhere on it.
+    expect(await screen.findByText("· six gates, all open")).toBeInTheDocument();
+    expect(screen.queryByText(/belong to no site/)).not.toBeInTheDocument();
   });
 });

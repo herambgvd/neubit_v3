@@ -11,6 +11,9 @@ import { THREAT_PILL, THREAT_LEVELS, capitalize } from "../constants";
 import SiteInfoPanel from "./SiteInfoPanel";
 import FloorsPanel from "./FloorsPanel";
 import ZonesPanel from "./ZonesPanel";
+import { useAuth } from "@/lib/auth";
+
+import { sitePermits } from "../permits";
 import SelectMenu from "@/components/common/SelectMenu";
 
 const TABS: { key: SiteDetailTab; label: string; icon: string }[] = [
@@ -19,6 +22,9 @@ const TABS: { key: SiteDetailTab; label: string; icon: string }[] = [
   { key: "info", label: "Site info", icon: "heroicons:information-circle" },
   { key: "floors", label: "Floors", icon: "heroicons:square-3-stack-3d" },
   { key: "zones", label: "Zones", icon: "heroicons-outline:square-2-stack" },
+  // NO EQUIPMENT TAB. The plant designer (systems, chillers, TR, ΔT bands) is
+  // Building Intelligence configuration and lives in BI → Setup → Equipment:
+  // a VMS-only customer configuring a site must never meet a chiller.
 ];
 
 export type SiteDetailTab = "info" | "floors" | "zones";
@@ -36,6 +42,9 @@ export interface SiteDetailProps {
 }
 
 export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, onDelete, onRestore, onChangeThreat }: Readonly<SiteDetailProps>) {
+  // Core gates each of these on its own key, so a caller without it is refused
+  // whatever this header shows. What it should not do is offer the press.
+  const may = sitePermits(useAuth().can);
   /**
    * BUILDING FACTS ARE NOT HERE ANY MORE.
    *
@@ -48,13 +57,13 @@ export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, on
    * read-only with a link back here. Two surfaces, one fact, and the reader had
    * to know which was which.
    *
-   * They now live where they are used and read: Building Intelligence → Ratings
-   * → BUILDING. Recording one still needs `sites.update`, because `sites` is
-   * still where the fact is STORED — what moved is the form, not the ownership.
+   * They now live in Building Intelligence → Setup → Building facts. Recording
+   * one still needs `sites.update`, because `sites` is still where the fact is
+   * STORED — what moved is the form, not the ownership.
    */
 
-  // A remembered "building" tab from before that move would render no body at
-  // all; fall back to the first one rather than an empty pane.
+  // A remembered "building" or "equipment" tab from before those moves would
+  // render no body at all; fall back to the first one rather than an empty pane.
   const activeTab = TABS.some((t) => t.key === tab) ? tab : "info";
 
   return (
@@ -87,6 +96,7 @@ export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, on
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {may.editSite ? (
           <span className="w-32" title="Set threat level">
             <SelectMenu
               value={site.threat_level || "normal"}
@@ -96,23 +106,30 @@ export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, on
               className="!mt-0 !h-8 !text-xs"
             />
           </span>
+          ) : (
+            <span className="text-[11px] text-nb-muted" title="Changing a building's threat level needs sites.update.">
+              {capitalize(site.threat_level || "normal")}
+            </span>
+          )}
           {/* Same header actions as UserDetail / RoleDetail. The × stays because
               here an empty selection is a real state (the list keeps a `closed`
               flag), unlike the other two consoles which re-select immediately. */}
           <IconButton icon="heroicons-outline:x-mark" title="Close" onClick={onClose} className="h-8 w-8" />
-          <PaneAction icon="heroicons-outline:pencil-square" onClick={onEdit}>
-            Edit
-          </PaneAction>
+          {may.editSite && (
+            <PaneAction icon="heroicons-outline:pencil-square" onClick={onEdit}>
+              Edit
+            </PaneAction>
+          )}
           {/* A deactivated site is not deleted — the row, its floor plan and the
               devices placed on it are all still there. Offering Delete again on
               one would say otherwise; Restore is the act that is available. */}
-          {site.is_active === false ? (
-            <PaneAction icon="heroicons-outline:arrow-uturn-left" onClick={onRestore}>
-              Restore
-            </PaneAction>
-          ) : (
-            <PaneDeleteAction title="Deactivate site" onClick={onDelete} />
-          )}
+          {site.is_active === false
+            ? may.editSite && (
+                <PaneAction icon="heroicons-outline:arrow-uturn-left" onClick={onRestore}>
+                  Restore
+                </PaneAction>
+              )
+            : may.deleteSite && <PaneDeleteAction title="Deactivate site" onClick={onDelete} />}
         </div>
       </header>
 

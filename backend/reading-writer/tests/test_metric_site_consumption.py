@@ -232,7 +232,7 @@ def test_an_unrecorded_site_fact_names_the_fact_and_where_it_is_recorded():
     )
     assert out["status"] == "missing_fact"
     assert "Gross floor area" in out["reason"]
-    assert "Configurations → Sites → Building" in out["reason"]
+    assert "Building Intelligence → Setup → Building facts" in out["reason"]
     assert "nothing is defaulted or estimated" in out["reason"]
 
 

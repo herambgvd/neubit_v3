@@ -346,7 +346,11 @@ export interface FloorPosition {
   rotation: number;
 }
 
-/** `DevicePlacementPublic` — a device pinned onto a floor. Id-only: the device's
+/** `DevicePlacementPublic` — a device placed in a building, and OPTIONALLY pinned
+ *  onto a floor of it. `floor_id` and `floor_position` travel together or not at
+ *  all (core migration 0031 enforces that pairing in the database): both null is
+ *  "assigned to the site, not pinned", which is a complete placement and must not
+ *  render as an error or as a missing value. Id-only: the device's
  *  name lives in the owning service (see useDeviceInventory). */
 export interface DevicePlacementPublic {
   placement_id: string;
@@ -354,9 +358,9 @@ export interface DevicePlacementPublic {
   device_type: DeviceType;
   service: ServiceType;
   site_id: string;
-  floor_id: string;
+  floor_id: string | null;
   zone_id: string | null;
-  floor_position: FloorPosition;
+  floor_position: FloorPosition | null;
   metadata: Record<string, unknown> | null;
   status: string;
   status_updated_at: string | null;
@@ -370,9 +374,11 @@ export interface RegisterDeviceRequest {
   device_type: DeviceType;
   service: ServiceType;
   site_id: string;
-  floor_id: string;
+  // Send both or neither: the floor-plan editor states the whole pin, an
+  // operator assigning a device to a building states neither.
+  floor_id?: string | null;
   zone_id?: string | null;
-  floor_position: FloorPosition;
+  floor_position?: FloorPosition | null;
   metadata?: Record<string, unknown> | null;
 }
 
@@ -380,6 +386,47 @@ export interface UpdateDeviceRequest {
   floor_position?: FloorPosition | null;
   zone_id?: string | null;
   metadata?: Record<string, unknown> | null;
+}
+
+/** One device in `POST /device-placements/assign`. Three whole shapes: the
+ *  device alone (site only), with a floor (on that storey, not pinned), or with a
+ *  floor and a position. A position never travels without its floor. */
+export interface AssignDeviceItem {
+  device_id: string;
+  device_type?: DeviceType;
+  service?: ServiceType;
+  floor_id?: string;
+  zone_id?: string;
+  floor_position?: FloorPosition;
+}
+
+/** `AssignDevicesRequest` — an EXPLICIT list of devices put in one named site.
+ *  1..500 items, no device named twice. `device_type` / `service` are batch
+ *  defaults and are REQUIRED for a device with no placement yet (409 without). */
+export interface AssignDevicesRequest {
+  site_id: string;
+  device_type?: DeviceType;
+  service?: ServiceType;
+  devices: AssignDeviceItem[];
+}
+
+/** What happened to one device. `pin_cleared` is the only signal that moving a
+ *  device to another building dropped its floor-plan pin. */
+export interface AssignedDevice {
+  device_id: string;
+  placement_id: string;
+  site_id: string;
+  floor_id: string | null;
+  /** True when the device had no placement before ("assigned" vs "moved"). */
+  created: boolean;
+  pin_cleared: boolean;
+}
+
+export interface AssignDevicesResponse {
+  site_id: string;
+  site_name: string | null;
+  assigned: number;
+  items: AssignedDevice[];
 }
 
 /** `DeviceListResponse` — note `count`, not `total`. */
@@ -576,11 +623,358 @@ export interface BiDeviceRow {
   points_reporting: number;
   first_seen_at: string | null;
   last_seen_at: string | null;
+  /** The building the device's points are placed at. Null = in no building —
+   *  the list `GET /bi/devices?placement=unplaced` returns, and gate 3's work. */
+  site_id?: string | null;
+  site_name?: string | null;
 }
 
 export interface BiDeviceListResponse {
   total: number;
   items: BiDeviceRow[];
+}
+
+/** `PointRow` — one gateway point. The infra designer's point picker reads
+ *  only the address and the reading kind; `latest` and the lifecycle fields
+ *  ride along unmodelled (a declared subset in contract.test.ts). */
+export interface BiPointRow {
+  point_id: string;
+  point_tag: string | null;
+  device_id: string | null;
+  device_tag: string | null;
+  category: string | null;
+  device_type: string | null;
+  /** The reading KIND, `num` or `text` — not the device type. */
+  type: string | null;
+  unit: string | null;
+}
+
+/** `SiteFactsRow` — a site as the reporting store mirrors it, with its rating
+ *  inputs (`GET /bi/rating/sites`). Building Intelligence's own list of
+ *  buildings: BI → Setup picks a building from this, under `bi.read`, rather
+ *  than from core's `/sites`. Every fact is nullable and null is NOT RECORDED. */
+export interface BiSiteFactsRow {
+  site_id: string;
+  site_name: string | null;
+  is_active: boolean;
+  gross_floor_area_sqm: number | null;
+  energy_tariff_per_kwh: number | null;
+  tariff_currency: string | null;
+  occupancy: number | null;
+  facts_updated_at: string | null;
+  mirrored_at: string | null;
+  points: number;
+  kwh_points: number;
+}
+
+export interface BiSiteFactsListResponse {
+  items: BiSiteFactsRow[];
+}
+
+/* --- the L3 plant (backend/reading-writer/app/api/plant.py) ---------------- */
+
+/** A slot's DATA READINESS — the closed set `metric_registry/slots.READINESS`,
+ *  worst first. Equipment and systems carry the least-ready state of their parts. */
+export type BiReadiness = "ambiguous" | "unresolved" | "silent" | "unbound" | "reporting";
+
+/** The point a slot resolved to (`plant._point_view`). */
+export interface BiPlantPoint {
+  point_id: string;
+  point_tag: string;
+  device_tag: string;
+  unit: string | null;
+  unit_confirmed: boolean;
+  last_seen_at: string | null;
+}
+
+/** One generation behind an ambiguous binding, or a ghost beside a reporting one
+ *  (`slots._candidate_view`). */
+export interface BiPlantCandidate {
+  point_id: string;
+  point_tag: string;
+  device_tag: string;
+  reported_in_window: boolean;
+  last_in_window: string | null;
+  last_seen_at: string | null;
+}
+
+/** One slot as the schematic draws it (`plant.slot_view`). `latest` is set only
+ *  when the slot is REPORTING — a silent point's last value is history. */
+export interface BiPlantSlot {
+  slot: string;
+  label: string;
+  dimension: string | null;
+  binding: { device_tag: string; point_tag: string } | null;
+  readiness: BiReadiness;
+  reason: string | null;
+  point: BiPlantPoint | null;
+  latest: { t: string | null; value: number | null; text: string | null } | null;
+  candidates: BiPlantCandidate[];
+  ghosts: BiPlantCandidate[];
+  /** false: a slot a metric reads that nobody created — drawn as unbound. */
+  declared: boolean;
+  required_by: string[];
+}
+
+/** An equipment-scope metric the plant evaluated (`plant._equipment_metrics`). */
+export interface BiPlantMetricDef {
+  metric: string;
+  version: number;
+  label: string | null;
+  precision: number | null;
+  equipment_class: string | null;
+  slots: string[];
+  resolution: string;
+}
+
+/** One metric's outcome on one piece of equipment — a value with its working, or
+ *  a refusal `{status, reason}`. The evaluator's item, less its `series`. */
+export interface BiPlantMetricOutcome {
+  status: string;
+  value: number | null;
+  reason?: string | null;
+  unit?: string | null;
+  dimension?: string | null;
+  inputs?: Record<string, unknown>[] | null;
+  arithmetic?: string;
+  coverage?: number;
+  candidates?: BiPlantCandidate[];
+  metric: string;
+  version: number;
+  equipment_id?: string;
+  equipment_tag?: string;
+}
+
+export interface BiPlantEquipment {
+  equipment_id: string;
+  tag: string;
+  name: string | null;
+  equipment_class: string;
+  system_id: string;
+  design: Record<string, InfraDesignValue | null>;
+  design_units: Record<string, string>;
+  readiness: BiReadiness;
+  readiness_counts: Record<string, number>;
+  slots: BiPlantSlot[];
+  metrics: Record<string, BiPlantMetricOutcome>;
+}
+
+export interface BiPlantSystem {
+  system_id: string;
+  name: string;
+  kind: string;
+  description: string | null;
+  readiness: BiReadiness;
+  equipment: BiPlantEquipment[];
+}
+
+/** `GET /bi/sites/{site_id}/plant` — one building's systems → equipment → slots. */
+export interface BiPlant {
+  site_id: string;
+  site_name: string | null;
+  window: { start: string; end: string };
+  readiness_states: BiReadiness[];
+  totals: Record<string, number>;
+  metrics: BiPlantMetricDef[];
+  systems: BiPlantSystem[];
+  unassigned_equipment: BiPlantEquipment[];
+}
+
+/* --- site infrastructure (backend/core/app/sites/infrastructure/) ---------- */
+
+/** One system kind of the closed vocabulary (`vocabulary.SYSTEM_KINDS`). */
+export interface InfraSystemKind {
+  key: string;
+  label: string;
+  description: string;
+}
+
+/** One equipment class: the system kinds it may sit in, and the ONLY slots and
+ *  design facts it may carry. */
+export interface InfraEquipmentClass {
+  key: string;
+  label: string;
+  system_kinds: string[];
+  slots: string[];
+  facts: string[];
+}
+
+/** A point slot. It has a dimension, never a unit — the unit is the point's. */
+export interface InfraSlotDef {
+  key: string;
+  dimension: string;
+  label: string;
+  /** The reading-writer ROLE_DEFS entry this slot corresponds to, if any. */
+  role: string | null;
+}
+
+/** A design fact. `unit` is the unit the stored number IS in (TR, kW, kVA, K). */
+export interface InfraDesignFactDef {
+  key: string;
+  type: "number" | "text";
+  unit: string | null;
+  label: string;
+}
+
+/** `GET /site-infrastructure/vocabulary` — `vocabulary.as_document()`. */
+export interface InfraVocabulary {
+  system_kinds: InfraSystemKind[];
+  equipment_classes: InfraEquipmentClass[];
+  slots: InfraSlotDef[];
+  design_facts: InfraDesignFactDef[];
+}
+
+/** A design-fact value: a number for numeric facts, text for make/model. */
+export type InfraDesignValue = number | string;
+
+/** `PointBinding` — both tags, or neither (null + null = declared, unbound). */
+export interface PointBinding {
+  device_tag?: string | null;
+  point_tag?: string | null;
+}
+
+/** `SlotInput` — a slot declared at create time. */
+export interface SlotInput extends PointBinding {
+  slot: string;
+}
+
+/** `SlotPublic`. */
+export interface SlotPublic {
+  slot: string;
+  device_tag: string | null;
+  point_tag: string | null;
+  bound: boolean;
+}
+
+/** `EquipmentPublic`. `design` holds only the facts that were RECORDED; a fact
+ *  absent from it is "not recorded", never zero. */
+export interface EquipmentPublic {
+  equipment_id: string;
+  site_id: string;
+  system_id: string;
+  tag: string;
+  name: string | null;
+  equipment_class: string;
+  design: Record<string, InfraDesignValue>;
+  design_units: Record<string, string>;
+  slots: SlotPublic[];
+  created_at: string;
+  updated_at: string;
+}
+
+/** `SystemPublic`. `kind` is fixed at create time. */
+export interface SiteSystemPublic {
+  system_id: string;
+  site_id: string;
+  name: string;
+  kind: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** `SystemWithEquipment`. */
+export interface SiteSystemWithEquipment extends SiteSystemPublic {
+  equipment: EquipmentPublic[];
+}
+
+/** `InfrastructureTree` — `GET /sites/{id}/infrastructure`. */
+export interface InfrastructureTree {
+  site_id: string;
+  systems: SiteSystemWithEquipment[];
+}
+
+/** `CreateSystemRequest`. */
+export interface CreateSystemRequest {
+  name: string;
+  kind: string;
+  description?: string | null;
+}
+
+/** `UpdateSystemRequest` — name and description only; kind cannot change. */
+export interface UpdateSystemRequest {
+  name?: string | null;
+  description?: string | null;
+}
+
+/** `CreateEquipmentRequest`. */
+export interface CreateEquipmentRequest {
+  system_id: string;
+  tag: string;
+  equipment_class: string;
+  name?: string | null;
+  design?: Record<string, InfraDesignValue | null>;
+  slots?: SlotInput[];
+}
+
+/** `UpdateEquipmentRequest` — class is absent on purpose (a 422 if sent). */
+export interface UpdateEquipmentRequest {
+  tag?: string | null;
+  name?: string | null;
+  system_id?: string | null;
+}
+
+/** `DesignUpdate` — the WHOLE set, replaced. A key left out is cleared. */
+export interface DesignUpdate {
+  design: Record<string, InfraDesignValue | null>;
+}
+
+/** One slot of a planned equipment in an import report. */
+export interface InfraImportSlot {
+  slot: string;
+  device_tag: string | null;
+  point_tag: string | null;
+}
+
+/** One system an import would create, or reuse by name + kind. */
+export interface InfraImportSystem {
+  name: string;
+  kind: string;
+  reused: boolean;
+  system_id: string | null;
+}
+
+/** One piece of equipment an import would create. */
+export interface InfraImportEquipment {
+  tag: string;
+  system: string;
+  equipment_class: string;
+  name: string | null;
+  design: Record<string, InfraDesignValue>;
+  design_units: Record<string, string>;
+  slots: InfraImportSlot[];
+  /** The sheet rows it was read from. */
+  rows: number[];
+  /** Null on a dry run; filled in once written. */
+  equipment_id: string | null;
+}
+
+/** A row the import refused, and why. `row` is the SHEET row number. */
+export interface InfraImportSkip {
+  row: number;
+  equipment_tag: string | null;
+  slot: string | null;
+  reason: "invalid" | "ambiguous" | "exists" | "conflict" | "duplicate";
+  message: string;
+}
+
+export interface InfraImportCounts {
+  systems_created: number;
+  equipment_created: number;
+  slots_created: number;
+  rows_skipped: number;
+}
+
+/** `POST /sites/{id}/infrastructure/import` — the plan, or the plan applied. */
+export interface InfraImportReport {
+  dry_run: boolean;
+  sheet: string;
+  rows_read: number;
+  ignored_columns: string[];
+  systems: InfraImportSystem[];
+  equipment: InfraImportEquipment[];
+  skipped: InfraImportSkip[];
+  counts: InfraImportCounts;
 }
 
 /* --- messaging (backend/core/app/messaging/router.py) ---------------------- */

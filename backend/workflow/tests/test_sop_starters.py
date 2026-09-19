@@ -18,7 +18,7 @@ from kernel.auth import Scope
 
 from app.workflow.sops.models import SOP, State, Transition
 from app.workflow.sops.service import SopService
-from app.workflow.sops.starters import STARTERS
+from app.workflow.sops.starters import BI, STARTERS, VMS, starters_for
 from conftest import PREFIX, auth, client, make_sqlite_session, run_async
 
 TENANT = uuid.uuid4()
@@ -214,3 +214,76 @@ async def test_the_literal_path_is_not_swallowed_by_the_by_id_route(app):
             headers=auth(tenant_id=uuid.uuid4(), permissions=["workflow.sop.create"]),
         )
         assert r.status_code == 201, r.text
+
+
+# ── families ─────────────────────────────────────────────────────────────────
+
+
+def test_a_recorder_only_tenant_gets_no_building_procedures():
+    """The modules are sold separately. A VMS deployment pressing "install the
+    starters" in the escalate dialog must not find three building procedures in
+    its alarm picker afterwards — that is the confusion the BI module was moved
+    out of Configurations to avoid."""
+    async def go():
+        engine, sm = await make_sqlite_session(SOP.__table__, State.__table__, Transition.__table__)
+        try:
+            sm, scope = _service(sm)
+            async with sm() as db:
+                created, _ = await SopService(db, scope).install_starters(
+                    actor=_Actor(), family=VMS)
+            assert {s.name for s in created} == {s.name for s in starters_for(VMS)}
+            assert not any(s.name.startswith("Building ") for s in created)
+        finally:
+            await engine.dispose()
+
+    run_async(go())
+
+
+def test_every_kind_of_finding_gate_six_can_raise_has_a_procedure():
+    """The raise-work picker ranks a SOP whose `trigger_event_types` contains the
+    finding's own `bi.finding.<kind>` to the top. A kind with no procedure named
+    after it lands the operator on an alphabetical list, which is the empty-picker
+    problem in a smaller form."""
+    named = {t for s in starters_for(BI) for t in s.event_types}
+    assert named == {
+        "bi.finding.data_fault",
+        "bi.finding.equipment_metric",
+        "bi.finding.alert",
+    }
+
+
+def test_installing_one_family_leaves_the_other_installable():
+    """Idempotency is per slug, not per call, so a tenant who bought BI later gets
+    exactly the three it is missing — and neither install skips the other's."""
+    async def go():
+        engine, sm = await make_sqlite_session(SOP.__table__, State.__table__, Transition.__table__)
+        try:
+            sm, scope = _service(sm)
+            async with sm() as db:
+                await SopService(db, scope).install_starters(actor=_Actor(), family=VMS)
+            async with sm() as db:
+                later, skipped = await SopService(db, scope).install_starters(
+                    actor=_Actor(), family=BI)
+            assert len(later) == len(starters_for(BI))
+            assert skipped == [], "the VMS slugs are not in this family's set at all"
+            async with sm() as db:
+                rows = (await db.scalars(select(SOP))).all()
+            assert len(rows) == len(STARTERS)
+        finally:
+            await engine.dispose()
+
+    run_async(go())
+
+
+@pytest.mark.asyncio
+async def test_the_route_narrows_to_a_family_and_refuses_one_it_does_not_know(app):
+    hdr = auth(tenant_id=uuid.uuid4(), permissions=["workflow.sop.create"])
+    async with client(app) as c:
+        bi = await c.post(f"{PREFIX}/workflow/sops/starters?family=bi", headers=hdr)
+        # A typo must not quietly install everything — that is how a recorder-only
+        # tenant would end up with the building set.
+        wrong = await c.post(f"{PREFIX}/workflow/sops/starters?family=hvac", headers=hdr)
+    assert bi.status_code == 201, bi.text
+    assert bi.json()["created"] == len(starters_for(BI))
+    assert all(s["name"].startswith("Building ") for s in bi.json()["items"])
+    assert wrong.status_code == 422, wrong.text

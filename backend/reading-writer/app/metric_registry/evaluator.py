@@ -34,6 +34,12 @@ never a null that renders as 0, never infinity. The statuses:
                         computes it yet. Where the composite documents the
                         component, the refusal is that documentation: what the
                         metric is, what measures it, what is in the way
+    slot_unbound        an equipment-scope input's slot is not bound to a point
+    slot_unresolved     the slot's tag pair names no point in this store
+    slot_ambiguous      the slot's tag pair names more than one live generation
+                        and the window cannot say which one IS the meter
+    missing_equipment   a site composite's equipment-scope component has no
+                        equipment of its class at the site to evaluate
     blocked             arithmetic refused (division by zero) or a composite
                         component refused — a composite of a refusal is a
                         refusal, and the item carries EVERY component's own
@@ -52,6 +58,18 @@ definition `/bi/rating` uses, so the two paths cannot disagree. A composite at
 site scope fans device-scope components out over the site's devices and takes
 the arithmetic mean of the ok values; ANY device refusal refuses the
 component, naming each device's own status.
+
+EQUIPMENT SCOPE. `applies_to.scope: "equipment"` evaluates per piece of
+equipment in the registry mirror (`site_equipment`). A measured input names a
+SLOT and is resolved to one point by `slots.resolve` over the SAME window — the
+plant endpoint calls the same resolver, so a schematic and a metric cannot
+disagree about which point CH-01's supply temperature is. A fact input
+(`source: "equipment_fact"`) is the equipment's own design fact, injected into
+the formula exactly as a site fact is at site scope; its published unit must be
+the unit the vocabulary reads it in, and an absent one is `missing_fact`, never
+a default. From binding on, the device path's guards, aggregates, frozen check
+and per-bucket series are reused unchanged: an equipment metric refuses for the
+same reasons any formula over the same points refuses.
 
 READS ROLLUPS ONLY. `resolution=auto` picks 1m/1h exactly as the charts do and
 the choice travels back with its reason; `raw` is refused by name, not
@@ -72,7 +90,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..api.queries import LIVE_POINT, RETIRE_AFTER_DAYS, _rows
 from . import expr, registry
-from .units import UNIT_DIMENSION
+from . import slots as slot_store
+from .units import UNIT_DIMENSION, DimensionError, Qty, compatible, qty_of_unit
 
 # Mirrors the read API: 1m up to this many hours, 1h beyond.
 _FINE_MAX_HOURS = 3
@@ -249,6 +268,197 @@ async def _items_over_devices(
     return items
 
 
+# ── EQUIPMENT SCOPE ──────────────────────────────────────────────────────────
+
+# A slot that does not name exactly one REPORTING point refuses with the status
+# that says which of the four ways it failed; the sentence is the resolver's, so
+# the metric and the plant schematic say the same thing about the same slot.
+_SLOT_REFUSAL = {
+    slot_store.UNBOUND: "slot_unbound",
+    slot_store.UNRESOLVED: "slot_unresolved",
+    slot_store.AMBIGUOUS: "slot_ambiguous",
+    # Resolved, and silent: the binding is right and the signal stopped. That is
+    # `no_data` everywhere else in this module, and it stays `no_data` here.
+    slot_store.SILENT: "no_data",
+}
+
+
+def _bind_slots(equipment: dict, inputs: dict, resolutions: dict) -> dict:
+    """The one reporting point behind each slot input, or why there is none."""
+    bound: dict[str, dict] = {}
+    for name, spec in inputs.items():
+        slot = spec["slot"]
+        r = resolutions.get((str(equipment["equipment_id"]), slot))
+        if r is None:
+            # The equipment has no such slot at all — the same statement, for a
+            # metric, as a slot with no binding.
+            r = slot_store.resolve({"slot": slot}, None)
+        if r["readiness"] != slot_store.REPORTING:
+            out = _refusal(
+                _SLOT_REFUSAL[r["readiness"]],
+                f"input `{name}` on {equipment['tag']}: {r['reason']}",
+            )
+            if r.get("candidates"):
+                out["candidates"] = r["candidates"]
+            return out
+        bound[name] = r["point"]
+    return {"status": "ok", "bound": bound}
+
+
+def _equipment_facts(equipment: dict, inputs: dict) -> dict:
+    """Each design-fact input as a number, stated in the unit it is read in.
+
+    NOT RECORDED is a refusal naming the fact, and there is no fallback: a
+    chiller with no design ΔT band is not graded against a typical one, because
+    then a graded chiller and a guessed one would render identically.
+    """
+    env: dict[str, float] = {}
+    report: list[dict] = []
+    for name, spec in inputs.items():
+        fact = spec["fact"]
+        fact_def = slot_store.EQUIPMENT_FACT_DEFS[fact]
+        want = fact_def["qty"].unit
+        value = slot_store.fact_value(equipment["design"], fact)
+        if value is None:
+            return _refusal(
+                "missing_fact",
+                f"input `{name}`: {equipment['tag']} has no `{fact}` "
+                f"({fact_def['label']}) recorded — record it on the equipment in "
+                f"{slot_store.RECORDED_AT}; nothing is defaulted, and no typical "
+                f"value stands in for it",
+            )
+        unit = (equipment.get("design_units") or {}).get(fact)
+        if unit != want:
+            return _refusal(
+                "unit_mismatch",
+                f"input `{name}`: {equipment['tag']}'s `{fact}` is stated in "
+                f"`{unit or 'no unit'}` and this metric reads it in `{want}` — "
+                f"conversion is not modelled, so it refuses rather than reading the "
+                f"number as `{want}`",
+            )
+        env[name] = value
+        report.append({"input": name, "source": "equipment_fact", "fact": fact,
+                       "value": value, "unit": unit})
+    return {"status": "ok", "env": env, "inputs": report}
+
+
+def _declared_output(defn: dict) -> Qty:
+    out = defn.get("output") or {}
+    if out.get("unit") is not None:
+        return qty_of_unit(out["unit"])
+    return Qty(out.get("dimension") or "dimensionless", None)
+
+
+def _concrete_units_refusal(
+    defn: dict, point_inputs: dict, bound: dict, fact_inputs: dict
+) -> dict | None:
+    """The formula type-checked AGAIN, on the units actually confirmed.
+
+    Registration checks a definition declared by dimension; it cannot know that
+    this chiller's temperatures are confirmed in °F, which makes its ΔT a °F
+    delta that a band stated in K does not bound. Re-running the same inference
+    with the confirmed units catches that — and a watt meter under a `kW/TR`
+    output — with the algebra's own sentence, instead of a number off by a
+    factor nobody printed.
+    """
+    qenv: dict[str, Qty] = {}
+    for name in point_inputs:
+        unit = bound[name]["unit"]
+        if unit is None:
+            return None  # an unguarded, unit-open definition: nothing to check
+        try:
+            qenv[name] = qty_of_unit(unit)
+        except DimensionError as exc:
+            return _refusal("unit_mismatch", f"input `{name}`: {exc}")
+    for name, spec in fact_inputs.items():
+        qenv[name] = slot_store.EQUIPMENT_FACT_DEFS[spec["fact"]]["qty"]
+    try:
+        inferred = expr.infer(expr.parse(defn["formula"]), qenv)
+    except DimensionError as exc:
+        return _refusal(
+            "unit_mismatch",
+            f"with the units confirmed on these points the formula does not "
+            f"type-check: {exc}",
+        )
+    declared = _declared_output(defn)
+    if not compatible(declared, inferred):
+        return _refusal(
+            "unit_mismatch",
+            f"with the units confirmed on these points the formula produces "
+            f"`{inferred.unit or inferred.dimension}`, not the declared "
+            f"`{declared.unit or declared.dimension}`",
+        )
+    return None
+
+
+async def _evaluate_equipment(
+    db: AsyncSession, tenant, defn: dict, equipment: dict, resolutions: dict,
+    start, end, table: str,
+) -> dict:
+    """One piece of equipment: its slots bound, its facts read, then the device
+    path's own machinery from the unit guards onward."""
+    inputs: dict = defn["inputs"]
+    point_inputs = {n: s for n, s in inputs.items() if s.get("source") == "slot"}
+    fact_inputs = {n: s for n, s in inputs.items() if s.get("source") == "equipment_fact"}
+
+    binding = _bind_slots(equipment, point_inputs, resolutions)
+    if binding["status"] != "ok":
+        return binding
+    bound = binding["bound"]
+
+    facts = _equipment_facts(equipment, fact_inputs)
+    if facts["status"] != "ok":
+        return facts
+
+    refused = _unit_guards_refusal(defn.get("guards") or [], point_inputs, bound)
+    if refused is None:
+        refused = _concrete_units_refusal(defn, point_inputs, bound, fact_inputs)
+    if refused is not None:
+        return refused
+
+    base = await _evaluate_bound(
+        db, tenant, defn, point_inputs, bound, start, end, table,
+        constants=facts["env"], constant_report=facts["inputs"],
+    )
+    if defn["kind"] == "occupancy":
+        return await _occupancy_from(db, tenant, defn, base, start, end, table)
+    return base
+
+
+async def _items_over_equipment(
+    db: AsyncSession, tenant, defn: dict, equipment_id, site_id, start, end, table
+) -> list[dict]:
+    """One item per piece of equipment of the metric's class, each its own outcome."""
+    applies = defn.get("applies_to") or {}
+    equipment = await slot_store.load_equipment(
+        db, tenant, site_id=site_id, equipment_id=equipment_id,
+        equipment_class=applies.get("equipment_class"), limit=_MAX_DEVICES,
+    )
+    if equipment_id is not None and not equipment:
+        raise EvaluationError(
+            f"no {applies.get('equipment_class') or 'equipment'} with that id in "
+            f"this tenant's equipment registry"
+        )
+    slot_names = {
+        spec["slot"] for spec in defn["inputs"].values() if spec.get("source") == "slot"
+    }
+    resolutions = await slot_store.resolve_equipment(
+        db, equipment, start=start, end=end, slot_names=slot_names
+    )
+    items = []
+    for e in equipment:
+        item = await _evaluate_equipment(db, tenant, defn, e, resolutions, start, end, table)
+        item.update(
+            equipment_id=str(e["equipment_id"]),
+            equipment_tag=e["tag"],
+            equipment_class=e["equipment_class"],
+            system_id=str(e["system_id"]),
+            site_id=str(e["site_id"]),
+        )
+        items.append(item)
+    return items
+
+
 async def evaluate(
     db: AsyncSession,
     tenant: uuid.UUID | None,
@@ -256,6 +466,7 @@ async def evaluate(
     *,
     device_id: uuid.UUID | None = None,
     site_id: uuid.UUID | None = None,
+    equipment_id: uuid.UUID | None = None,
     start: dt.datetime,
     end: dt.datetime,
     resolution: str = "auto",
@@ -274,6 +485,17 @@ async def evaluate(
     if scope == "site":
         items = await _items_over_sites(
             db, tenant, defn, site_id, start, end, res, table, _depth
+        )
+    elif scope == "equipment":
+        if device_id is not None:
+            # A device is not a piece of equipment: one chiller's slots may sit on
+            # several gateway devices and one device may feed several chillers.
+            raise EvaluationError(
+                f"`{key}` is evaluated per piece of equipment; pass equipment_id "
+                f"or site_id, not device_id"
+            )
+        items = await _items_over_equipment(
+            db, tenant, defn, equipment_id, site_id, start, end, table
         )
     else:
         items = await _items_over_devices(
@@ -467,10 +689,12 @@ def _device_input_values(inputs: dict, bound: dict, aggs: dict) -> dict:
                 f"input `{name}` (`{p['point_tag']}`) has no numeric samples in the window",
             )
         env[name] = float(v)
+        row = {"input": name, "role": spec.get("role")}
+        if spec.get("slot"):
+            row["slot"] = spec["slot"]
         report.append(
             {
-                "input": name,
-                "role": spec["role"],
+                **row,
                 "point_id": str(p["point_id"]),
                 "point_tag": p["point_tag"],
                 "unit": p["unit"],
@@ -494,12 +718,37 @@ async def _evaluate_formula(
     table: str,
 ) -> dict:
     inputs: dict = defn["inputs"]
-    guards: list = defn.get("guards") or []
-
     binding = await _bind_roles_on_device(db, tenant, device_id, inputs)
     if binding["status"] != "ok":
         return binding
-    bound: dict[str, dict] = binding["bound"]
+    return await _evaluate_bound(
+        db, tenant, defn, inputs, binding["bound"], start, end, table
+    )
+
+
+async def _evaluate_bound(
+    db: AsyncSession,
+    tenant,
+    defn: dict,
+    inputs: dict,
+    bound: dict[str, dict],
+    start,
+    end,
+    table: str,
+    *,
+    constants: dict[str, float] | None = None,
+    constant_report: list[dict] | None = None,
+) -> dict:
+    """Everything after binding, shared by the device and equipment paths.
+
+    `inputs` are the MEASURED inputs only, each bound to one point in `bound`.
+    `constants` are inputs that are already a number — an equipment's design
+    facts — and enter the arithmetic, and every bucket of the series, as they
+    are. They are reported beside the measured inputs so the working shows where
+    each number came from.
+    """
+    guards: list = defn.get("guards") or []
+    constants = dict(constants or {})
 
     refused = _unit_guards_refusal(guards, inputs, bound)
     if refused is not None:
@@ -517,7 +766,8 @@ async def _evaluate_formula(
     values = _device_input_values(inputs, bound, aggs)
     if values["status"] != "ok":
         return values
-    env, input_report = values["env"], values["inputs"]
+    env = {**values["env"], **constants}
+    input_report = values["inputs"] + list(constant_report or [])
 
     # ── arithmetic, shown ────────────────────────────────────────────────────
     tree = expr.parse(defn["formula"])
@@ -530,7 +780,9 @@ async def _evaluate_formula(
         return out
 
     # per-bucket series: inner alignment; a bucket missing a side is absent.
-    series = await _series(db, tenant, defn, bound, start, end, table, window_days)
+    series = await _series(
+        db, tenant, defn, bound, start, end, table, window_days, constants=constants
+    )
 
     return {
         "status": "ok",
@@ -587,11 +839,24 @@ async def _evaluate_occupancy(
     in the same number.
     """
     base = await _evaluate_formula(db, tenant, defn, device_id, start, end, table)
+    return await _occupancy_from(db, tenant, defn, base, start, end, table)
+
+
+async def _occupancy_from(
+    db: AsyncSession, tenant, defn: dict, base: dict, start, end, table: str
+) -> dict:
+    """The occupancy of an already-evaluated formula — see `_evaluate_occupancy`.
+
+    Split out so the equipment path, which binds its points differently, scores
+    band occupancy with exactly this arithmetic and this coverage gate.
+    """
     if base["status"] != "ok":
         return base
 
     series = base.get("series") or []
-    pids = [i["point_id"] for i in base.get("inputs") or []]
+    # Measured inputs only: a design fact has no point id and no buckets, and
+    # counting it would make every bucket look covered.
+    pids = [i["point_id"] for i in base.get("inputs") or [] if i.get("point_id")]
     union_rows = _rows(
         await db.execute(
             text(_UNION_BUCKETS_SQL.format(table=table)),
@@ -642,10 +907,13 @@ async def _evaluate_occupancy(
     }
 
 
-async def _series(db, tenant, defn, bound, start, end, table, window_days) -> list[dict]:
+async def _series(
+    db, tenant, defn, bound, start, end, table, window_days, *, constants=None
+) -> list[dict]:
     cols = {
         name: _BUCKET_COL[spec.get("aggregation", "avg")]
         for name, spec in defn["inputs"].items()
+        if name in bound
     }
     rows = _rows(
         await db.execute(
@@ -668,7 +936,7 @@ async def _series(db, tenant, defn, bound, start, end, table, window_days) -> li
     ]
     common = set.intersection(*buckets_per_input) if buckets_per_input else set()
     for b in sorted(common):
-        env = {}
+        env = dict(constants or {})
         ok = True
         for name, p in bound.items():
             v = per_point[str(p["point_id"])][b][cols[name]]
@@ -919,7 +1187,7 @@ async def _linear_by_ac_share_bands(
                 f"built-up area not recorded for this site — {std['title']} "
                 f"({std['version']}) sizes its equations by BUA (Large > "
                 f"30,000 m²; Medium 10,000–30,000 m²; Small < 10,000 m²); "
-                f"record `gross_floor_area_sqm` in Configurations → Sites"
+                f"record `gross_floor_area_sqm` in Building Intelligence → Setup → Building facts"
             ),
         }
     size = size_category_for(float(area))
@@ -1605,25 +1873,27 @@ def _undefined_reason(parent: dict, metric: str, end: dt.datetime) -> str:
     return out
 
 
-def _component_over_devices(metric: str, devices: list[dict]) -> dict:
-    """A device-scope component combined across a site's devices.
+def _component_over_devices(
+    metric: str, devices: list[dict], *, noun: str = "device", empty: dict | None = None
+) -> dict:
+    """A device- or equipment-scope component combined across a site.
 
     The arithmetic mean of the ok values — or the refusal that replaces it,
-    because ANY device refusal refuses the component.
+    because ANY device (or piece of equipment) refusal refuses the component.
     """
     if not devices:
-        return {"status": "missing_role", "value": None,
-                "reason": f"no applicable device at this site for `{metric}`"}
+        return empty or {"status": "missing_role", "value": None,
+                         "reason": f"no applicable device at this site for `{metric}`"}
     refused = [d for d in devices if d["status"] != "ok"]
     if refused:
         named = "; ".join(
-            f"{d.get('device_tag') or d['device_id']} "
+            f"{d.get('device_tag') or d.get('equipment_tag') or d.get('device_id')} "
             f"({d['status']}: {d['reason']})" for d in refused
         )
         return {
             "status": "blocked", "value": None,
             "reason": (
-                f"{len(refused)} of {len(devices)} device(s) refused "
+                f"{len(refused)} of {len(devices)} {noun}(s) refused "
                 f"— a composite of a refusal is a refusal. {named}"
             ),
         }
@@ -1633,7 +1903,7 @@ def _component_over_devices(metric: str, devices: list[dict]) -> dict:
         "status": "ok", "value": mean,
         "arithmetic": (
             "mean(" + ", ".join(f"{v:g}" for v in vals) + f") = {mean:g} "
-            f"over {len(vals)} device(s)"
+            f"over {len(vals)} {noun}(s)"
         ),
     }
 
@@ -1669,6 +1939,26 @@ async def _site_composite_part(
             part["inputs"] = item["inputs"]
         if item.get("benchmark"):
             part["benchmark"] = item["benchmark"]
+    elif sub_scope == "equipment":
+        # Equipment-scope components fan out over the site's registered
+        # equipment of their class, with the device rule: the mean of the ok
+        # values, and any refusal refuses. A site with none of that class has
+        # nothing to score — which is not the same sentence as "no device
+        # carries the role", and sends an operator somewhere else.
+        cls = (sub_defn.get("applies_to") or {}).get("equipment_class") or "equipment"
+        units = [
+            {"equipment_id": i.get("equipment_id"), "equipment_tag": i.get("equipment_tag"),
+             "status": i["status"], "value": i.get("value"), "reason": i.get("reason")}
+            for i in sub["items"]
+        ]
+        part["equipment"] = units
+        part.update(**_component_over_devices(
+            c["metric"], units, noun="equipment",
+            empty={"status": "missing_equipment", "value": None,
+                   "reason": (f"no {cls} is registered at this site, so `{c['metric']}` "
+                              f"has nothing to evaluate — register it in "
+                              f"{slot_store.RECORDED_AT}")},
+        ))
     else:
         devices = [
             {"device_id": i.get("device_id"), "device_tag": i.get("device_tag"),

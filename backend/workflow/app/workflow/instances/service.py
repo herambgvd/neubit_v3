@@ -11,6 +11,7 @@ import logging
 from datetime import timedelta
 
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kernel.auth import Scope, assert_owned, scoped
@@ -75,6 +76,29 @@ class InstanceService:
         return (await self.db.execute(stmt)).scalars().first()
 
     async def create(self, body, *, actor) -> WorkflowInstance:
+        row, _created = await self.create_or_existing(body, actor=actor)
+        return row
+
+    async def create_or_existing(self, body, *, actor) -> tuple[WorkflowInstance, bool]:
+        """Start an incident — or, for a keyed one, hand back the open one.
+
+        Returns ``(row, created)``. With no ``source_key`` this always creates.
+        With one, an OPEN incident this tenant already has for that key is
+        returned untouched and ``created`` is False: a finding raises work once,
+        and pressing the button twice is not a second fault.
+
+        The check-then-insert below is the common path, and it is not what makes
+        the guarantee. Two raises racing past the check both reach the INSERT; the
+        partial unique index ``uq_workflow_instances_open_source_key`` refuses the
+        second, and the loser re-reads and returns the winner's row. Without the
+        index this would be a best-effort dedup that fails exactly when it is
+        pressed twice quickly.
+        """
+        if body.source_key:
+            existing = await self._open_for_source(body.source_key)
+            if existing is not None:
+                return existing, False
+
         sop = await self.db.get(SOP, body.sop_id)
         # No `allow_shared=False` here, and that is the point: starting an
         # instance from a PLATFORM SOP is using a shared procedure, which is what
@@ -98,16 +122,65 @@ class InstanceService:
             trigger_data=body.trigger_data, event_id=body.event_id, event_type=body.event_type,
             sla_hours=sop.sla_hours, sla_deadline=sla_deadline, state_entered_at=now,
             tags=list(body.tags), timeline=[], extra=body.metadata,
+            source_key=body.source_key,
             created_by=_actor_id(actor), updated_by=_actor_id(actor),
         )
         self.db.add(row)
-        await self.db.commit()
+        try:
+            await self.db.commit()
+        except IntegrityError:
+            await self.db.rollback()
+            # Lost the race to a concurrent raise of the same finding — see the
+            # docstring. Anything else is not ours to swallow.
+            winner = await self._open_for_source(body.source_key) if body.source_key else None
+            if winner is None:
+                raise
+            return winner, False
         await self.db.refresh(row)
         await emit(row.tenant_id, "incident", "created", {
             "instance_id": row.instance_id, "sop_id": sop.sop_id,
             "priority": row.priority, "state": row.current_state_name,
         })
-        return row
+        return row, True
+
+    def _same_tenant(self):
+        """This caller's tenant EXACTLY — not ``scoped()``.
+
+        ``scoped()`` gives a super-admin every tenant's rows, which is right for a
+        listing and wrong here: the question is "would a raise by THIS caller
+        collide", and the unique index answers it per tenant_id, NULL included.
+        The dedup and the lookup ask it the same way so they cannot disagree.
+        """
+        tid = self.scope.tenant_id
+        return WorkflowInstance.tenant_id.is_(None) if tid is None else (
+            WorkflowInstance.tenant_id == tid
+        )
+
+    def _open_for_sources_stmt(self, keys):
+        closed = [s.value for s in CLOSED_STATUSES]
+        return select(WorkflowInstance).where(
+            self._same_tenant(),
+            WorkflowInstance.source_key.in_(list(keys)),
+            WorkflowInstance.status.not_in(closed),
+        )
+
+    async def _open_for_source(self, key: str) -> WorkflowInstance | None:
+        stmt = self._open_for_sources_stmt([key]).limit(1)
+        return (await self.db.execute(stmt)).scalars().first()
+
+    async def open_by_source(self, keys: list[str]) -> dict:
+        """For each asked key, the open incident it has — or that it has none.
+
+        ``{"with_work": {key: row}, "without_work": [key, ...]}``, every distinct
+        asked key in exactly one of the two, in the order asked.
+        """
+        wanted = list(dict.fromkeys(keys))
+        rows = (await self.db.execute(self._open_for_sources_stmt(wanted))).scalars().all()
+        found = {r.source_key: r for r in rows}
+        return {
+            "with_work": {k: found[k] for k in wanted if k in found},
+            "without_work": [k for k in wanted if k not in found],
+        }
 
     async def list_(self, *, skip=0, limit=50, status=None, priority=None, site_id=None,
                     sop_id=None, assigned_to=None, q=None, event_id=None, source=None):

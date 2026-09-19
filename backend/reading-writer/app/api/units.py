@@ -455,8 +455,18 @@ def is_confirmed(row: dict) -> bool:
 
 
 async def _candidates(
-    db: AsyncSession, tenant: uuid.UUID | None, category: str | None
+    db: AsyncSession,
+    tenant: uuid.UUID | None,
+    category: str | None,
+    site_id: uuid.UUID | None = None,
 ) -> list[dict]:
+    """The rows every pattern is matched against.
+
+    The ONLY place the catalogue's set and the confirm's set are selected, so a
+    filter added here narrows both or neither — the preview and the write cannot
+    disagree about which points they mean. `site_id` is a plain predicate: a unit
+    is confirmed per point and a point has one placement.
+    """
     where = ""
     params: dict = {"tenant": str(tenant) if tenant else None, "retire_days": RETIRE_AFTER_DAYS}
     if category is not None:
@@ -465,6 +475,9 @@ async def _candidates(
         else:
             where = " AND p.category = :category"
             params["category"] = category
+    if site_id is not None:
+        where += " AND p.site_id = CAST(:site AS uuid)"
+        params["site"] = str(site_id)
     return _rows(
         await db.execute(
             text(_CANDIDATES_SQL.format(live=LIVE_POINT, filters=where)), params
@@ -519,14 +532,18 @@ def _pattern_summary(pattern: UnitPattern, rows: list[dict]) -> dict:
 
 
 async def pattern_catalogue(
-    db: AsyncSession, tenant: uuid.UUID | None, *, category: str | None = None
+    db: AsyncSession,
+    tenant: uuid.UUID | None,
+    *,
+    category: str | None = None,
+    site_id: uuid.UUID | None = None,
 ) -> dict:
     """Every pattern, what it proposes, and how much of this estate it is holding.
 
     Nothing here writes. This is the screen an operator reads BEFORE they confirm
     anything, and the numbers on it are the numbers the write will act on.
     """
-    rows = await _candidates(db, tenant, category)
+    rows = await _candidates(db, tenant, category, site_id)
     by_key = _classify(rows)
     items = [_pattern_summary(p, by_key[p.key]) for p in PATTERNS]
     unmatched = [r for r in rows if match_pattern(r.get("point_tag"), r.get("type")) is None]
@@ -554,6 +571,7 @@ async def pattern_targets(
     *,
     key: str,
     category: str | None = None,
+    site_id: uuid.UUID | None = None,
 ) -> tuple[UnitPattern, list[dict], list[dict]]:
     """The rows one pattern would write to, and the rows it must not.
 
@@ -563,7 +581,7 @@ async def pattern_targets(
     "applied 300" when 40 of them were skipped is a lie about what happened.
     """
     pattern = PATTERNS_BY_KEY[key]
-    rows = _classify(await _candidates(db, tenant, category))[key]
+    rows = _classify(await _candidates(db, tenant, category, site_id))[key]
     return pattern, [r for r in rows if not is_confirmed(r)], [r for r in rows if is_confirmed(r)]
 
 

@@ -115,6 +115,12 @@ FRAGMENTS = {
     "standard": "FROM benchmark_standards",
     "bench_config": "FROM benchmark_site_config",
     "definitions": "FROM metric_definitions",
+    # The equipment path (`metric_registry.slots`): the mirror's equipment and
+    # slot rows, and the one statement that resolves every binding in scope.
+    "equipment": "FROM site_equipment e",
+    "equipment_slots": "FROM equipment_point_slots s",
+    "candidates": "WITH wanted(tenant_id, device_tag, point_tag)",
+    "systems": "FROM site_systems sy",
 }
 
 
@@ -127,6 +133,9 @@ class FakeDb:
             raise AssertionError(f"no such scripted query: {sorted(unknown)}")
         self.script = script
         self.asked: list[str] = []
+        # What each statement was bound with — how a test asserts that the
+        # tenant a query ran under came from the right place.
+        self.params: dict[str, list] = {}
 
     async def execute(self, clause, params=None):
         sql = str(clause)
@@ -138,6 +147,7 @@ class FakeDb:
                         f"did not script — it should not have got that far"
                     )
                 self.asked.append(name)
+                self.params.setdefault(name, []).append(params)
                 rows = self.script[name]
                 if name == "aggs":
                     want = set(params["pids"])

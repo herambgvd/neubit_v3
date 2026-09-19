@@ -20,6 +20,7 @@ import {
   inCategory,
   gatewayTotals,
   isQuiet,
+  matchBiDevice,
   missingPoints,
 } from "./selectors";
 import type { DeviceRow } from "./selectors";
@@ -463,5 +464,29 @@ describe("inCategory", () => {
 
   it("matches uncategorised devices under unclassified", () => {
     expect(inCategory([dev("a", null)], "unclassified").map((d) => d.tag)).toEqual(["a"]);
+  });
+});
+
+describe("matchBiDevice", () => {
+  const d = (device_id: string | null, device_tag: string) => ({ device_id, device_tag });
+
+  it("takes a tag match when it is the only one", () => {
+    expect(matchBiDevice("AHU-1", [d("x", "AHU-1"), d("y", "AHU-10")])).toEqual({ device: d("x", "AHU-1"), reason: null });
+  });
+
+  it("settles a shared tag by which device owns this gateway's points", () => {
+    const rows = [d("x", "AHU-1"), d("y", "AHU-1")];
+    expect(matchBiDevice("AHU-1", rows, new Set(["y"])).device).toEqual(d("y", "AHU-1"));
+  });
+
+  it("refuses to pick when the points do not settle it", () => {
+    const rows = [d("x", "AHU-1"), d("y", "AHU-1")];
+    expect(matchBiDevice("AHU-1", rows, new Set()).reason).toBe("ambiguous");
+    expect(matchBiDevice("AHU-1", rows).reason).toBe("ambiguous");
+  });
+
+  it("says missing and no-id apart", () => {
+    expect(matchBiDevice("AHU-1", [d("x", "AHU-10")]).reason).toBe("missing");
+    expect(matchBiDevice("AHU-1", [d(null, "AHU-1")]).reason).toBe("no-id");
   });
 });

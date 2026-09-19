@@ -23,20 +23,21 @@ every other satellite, and it is SELECT-only — this service is still the only
 thing that WRITES the schema. ``app.projections`` adds no route to it and must
 not: one query path over this store, contract §8 rule 2.
 
-SIX CONSUMERS, ONE PROCESS, AND THE ONE THAT MUST NEVER WAIT
+SEVEN CONSUMERS, ONE PROCESS, AND THE ONE THAT MUST NEVER WAIT
 --------------------------------------------------------------
-This process runs six independent JetStream consumers::
+This process runs seven independent JetStream consumers::
 
     pipeline        IOT_READINGS  tenant.*.iot.reading.>   → readings / points
     projections     EVENTS + IOT_READINGS, one durable per
                     row of `reporting_projections`         → the projected relations
     placement_sync  EVENTS      tenant.*.sites.device_placement.>
     site_facts_sync EVENTS      tenant.*.sites.site.>
+    equipment_sync  EVENTS      tenant.*.sites.site_system.> + .equipment.>
     dlq_watch       EVENTS_DLQ  dlq.>                      (observes; writes nothing)
     offboard        EVENTS      tenant.*.tenant.offboarded → deletes, everywhere
 
 `pipeline` is the hot path: every device reading in the estate goes through it
-and it is the only writer of the readings hypertable. The other five handle
+and it is the only writer of the readings hypertable. The other six handle
 domain events at a completely different rate and shape. The rule is one-way — a
 projection backlog, a slow projection, or a projection wedged outright must not
 delay a reading being written — and it is held by four things, none of which is
@@ -44,7 +45,7 @@ delay a reading being written — and it is held by four things, none of which i
 
 1. **A separate NATS connection each.** Every one of them calls `nats.connect`
    itself, so a pull request that hangs consumes its own client's inflight
-   budget and nothing else's. Visible as six rows in `nats server report
+   budget and nothing else's. Visible as seven rows in `nats server report
    connections`, named apart on purpose.
 2. **Separate durables.** `reading-writer` on IOT_READINGS versus one durable per
    projection; the ack/redelivery state of one is not the other's. Unchanged by
@@ -139,6 +140,7 @@ from .pipeline import Pipeline
 from .placement_sync import PlacementStats, PlacementSync
 from .projections import DlqWatch, DlqWatchStats, Projector, ProjectorConfig, ProjectorMetrics
 from .site_facts_sync import SiteFactsStats, SiteFactsSync
+from .equipment_sync import EquipmentStats, EquipmentSync
 from .config import FleetConfig
 from .fleet_sync import FleetClient, FleetStats, FleetSync
 from .api.iot import iot_router, configure as configure_iot
@@ -161,6 +163,11 @@ placement_sync = PlacementSync(placement_stats)
 # from device placements, and one wedging must not stop the other.
 site_facts_stats = SiteFactsStats()
 site_facts_sync = SiteFactsSync(site_facts_stats)
+# A THIRD durable on EVENTS: the equipment registry (systems, equipment, point
+# slots). Its own durable for the same reason — a wedged registry mirror must
+# not stop area and tariff reaching the rating, or placements reaching BI.
+equipment_stats = EquipmentStats()
+equipment_sync = EquipmentSync(equipment_stats)
 # The projection consumers (app/projections) — the only writer of the relations
 # declared in `reporting_projections`, and never a writer of the readings schema.
 # Its OWN metrics object, config, NATS connection and connection pool; see the
@@ -214,6 +221,7 @@ async def lifespan(app: FastAPI):
     try:
         await placement_sync.start(getattr(settings, "nats_url", "") or "")
         await site_facts_sync.start(getattr(settings, "nats_url", "") or "")
+        await equipment_sync.start(getattr(settings, "nats_url", "") or "")
     except Exception as exc:  # noqa: BLE001
         # Same rule as the pipeline: a placement mirror that cannot start must
         # not take the readings path down with it.
@@ -284,6 +292,7 @@ async def lifespan(app: FastAPI):
     await projector.stop()
     await placement_sync.stop()
     await site_facts_sync.stop()
+    await equipment_sync.stop()
     await pipeline.stop()
 
 
@@ -444,6 +453,7 @@ async def stats() -> dict:
         **metrics.snapshot(),
         **placement_stats.snapshot(),
         **site_facts_stats.snapshot(),
+        **equipment_stats.snapshot(),
         # Nested, not merged: the two halves have counters of the same NAME
         # (rows_inserted, batches_nakd, db_healthy) measuring different things,
         # and flattening them would silently overwrite one with the other.

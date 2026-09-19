@@ -200,7 +200,15 @@ _TOTALS_SQL = text(
                WHERE p.last_seen_at >= now() - make_interval(mins => :fresh)
            )                                               AS points_reporting,
            min(p.first_seen_at)                            AS first_seen_at,
-           max(p.last_seen_at)                             AS last_seen_at
+           max(p.last_seen_at)                             AS last_seen_at,
+           -- WHERE this device is, so a device-first screen can show what it is
+           -- about to change and which devices have no building at all. Placement
+           -- is a device-level statement, so these agree across a device's points
+           -- except where an operator has overridden ONE point
+           -- (`placement_source = 'point'`); `max` then reports one of the two,
+           -- and the point console is where that distinction is visible.
+           max(p.site_id::text)                            AS site_id,
+           max(p.site_name)                                AS site_name
       FROM points p
      WHERE (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
        AND """ + LIVE_POINT + """
@@ -776,7 +784,15 @@ _DEVICES_SQL = """
                WHERE p.last_seen_at >= now() - make_interval(mins => :fresh)
            )                                               AS points_reporting,
            min(p.first_seen_at)                            AS first_seen_at,
-           max(p.last_seen_at)                             AS last_seen_at
+           max(p.last_seen_at)                             AS last_seen_at,
+           -- WHERE this device is, so a device-first screen can show what it is
+           -- about to change and which devices have no building at all. Placement
+           -- is a device-level statement, so these agree across a device's points
+           -- except where an operator has overridden ONE point
+           -- (`placement_source = 'point'`); `max` then reports one of the two,
+           -- and the point console is where that distinction is visible.
+           max(p.site_id::text)                            AS site_id,
+           max(p.site_name)                                AS site_name
       FROM points p
      WHERE (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
        AND {live}
@@ -786,7 +802,24 @@ _DEVICES_SQL = """
 """
 
 
-def _device_filters(category: str | None, device_type: str | None, search: str | None):
+#: `placement=` on `/bi/devices`. Two answers, and NEITHER of them is a default:
+#: a screen asks for one explicitly or gets the whole estate. "unplaced" is the
+#: list an operator works from when assigning devices to a building, and it is a
+#: filter over what is ALREADY TRUE — it never becomes a selection that something
+#: then acts on by itself.
+PLACEMENT_FILTERS = {
+    # Not one point of this device belongs to any site.
+    "unplaced": "count(*) FILTER (WHERE p.site_id IS NOT NULL) = 0",
+    "placed": "count(*) FILTER (WHERE p.site_id IS NOT NULL) > 0",
+}
+
+
+def _device_filters(
+    category: str | None,
+    device_type: str | None,
+    search: str | None,
+    placement: str | None = None,
+):
     """Category/type are DEVICE facts, so they filter AFTER the grouping.
 
     A device can own a point the gateway never classified (this deployment has
@@ -809,6 +842,17 @@ def _device_filters(category: str | None, device_type: str | None, search: str |
     if device_type:
         having.append("max(p.device_type) = :device_type")
         params["device_type"] = device_type
+    if placement:
+        # Placement is a device fact for the same reason category is, so it
+        # filters after the grouping too: a device with one placed point and one
+        # unplaced one is not two devices.
+        if placement not in PLACEMENT_FILTERS:
+            from kernel.errors import ValidationError  # lazy, as below
+
+            raise ValidationError(
+                f"placement must be one of: {sorted(PLACEMENT_FILTERS)}"
+            )
+        having.append(PLACEMENT_FILTERS[placement])
     search_sql = ""
     if search:
         search_sql = "AND p.device_tag ILIKE :search"
@@ -831,8 +875,11 @@ async def devices(
     offset: int,
     include_retired: bool = False,
     site_id: uuid.UUID | None = None,
+    placement: str | None = None,
 ) -> tuple[int, list[dict]]:
-    having, search_sql, extra = _device_filters(category, device_type, search)
+    having, search_sql, extra = _device_filters(
+        category, device_type, search, placement
+    )
     # Site scope (Portfolio drill-down). Placement is a DEVICE-level statement
     # (every point of a device carries its pin), so a plain WHERE on the point
     # rows cannot split a device the way a category filter would.
@@ -1202,6 +1249,7 @@ _GHOST_MEMBERS_SQL = text(
                p.point_tag,
                p.category,
                p.unit,
+               p.site_id,
                p.last_seen_at,
                p.last_seen_at >= now() - make_interval(mins => :fresh) AS fresh,
                r.point_id IS NOT NULL                                  AS has_role,
@@ -1254,6 +1302,9 @@ _GHOST_RESURRECTED_SQL = text(
        AND p.superseded_by IS NOT NULL
        AND p.retired_at IS NULL
        AND (CAST(:category AS text) IS NULL OR p.category = CAST(:category AS text))
+       -- A resurrected point is ONE point, so unlike a ghost group it has one
+       -- placement and a plain predicate is the honest site scope.
+       AND (CAST(:site AS uuid) IS NULL OR p.site_id = CAST(:site AS uuid))
      ORDER BY p.last_seen_at DESC
     """
 )
@@ -1293,6 +1344,7 @@ async def ghost_groups(
     *,
     category: str | None = None,
     mode: str | None = None,
+    site_id: uuid.UUID | None = None,
 ) -> list[dict]:
     """Every duplicated `(device_tag, point_tag)`, with its members and a verdict.
 
@@ -1310,6 +1362,17 @@ async def ghost_groups(
     Tenant-scoped like everything else here: the duplicate set is computed
     INSIDE the tenant, so two tenants that happen to use the same device tag are
     never each other's ghosts.
+
+    `site_id` does NOT filter before the grouping, and that asymmetry with
+    `category` is deliberate. Generations of one register routinely sit in
+    different places: the dead one was placed, the live one arrived after the
+    rebuild and has no site yet. Measured on this estate, 44 of the 45 remaining
+    duplicated pairs span more than one placement. Filtering members first would
+    split each of those into a single-member "group", which is no longer a
+    duplicate and silently vanishes — so a building's view would show almost none
+    of the ghosts that are inflating that building. Instead a group is KEPT when
+    any member is at the site, and it keeps ALL of its members, so its
+    classification is the same one the estate view gives.
     """
     rows = _rows(
         await db.execute(
@@ -1327,7 +1390,13 @@ async def ghost_groups(
         grouped.setdefault((row["device_tag"], row["point_tag"]), []).append(row)
 
     out: list[dict] = []
+    want_site = str(site_id) if site_id else None
     for (device_tag, point_tag), members in grouped.items():
+        if want_site is not None and not any(
+            m.get("site_id") is not None and str(m["site_id"]) == want_site
+            for m in members
+        ):
+            continue
         group_mode, survivor = _classify(members)
         if mode is not None and mode != group_mode:
             continue
@@ -1363,12 +1432,17 @@ async def resurrected_points(
     tenant: uuid.UUID | None,
     *,
     category: str | None = None,
+    site_id: uuid.UUID | None = None,
 ) -> list[dict]:
     """Points that were superseded and are reporting again — see the SQL above."""
     return _rows(
         await db.execute(
             _GHOST_RESURRECTED_SQL,
-            {"tenant": str(tenant) if tenant else None, "category": category},
+            {
+                "tenant": str(tenant) if tenant else None,
+                "category": category,
+                "site": str(site_id) if site_id else None,
+            },
         )
     )
 

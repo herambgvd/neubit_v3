@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
-from typing import Annotated, get_args
+from typing import Annotated, Literal, get_args
 
 from fastapi import APIRouter, Depends, Query
 from kernel.auth import Principal, Scope, get_principal, get_scope, require_permission
@@ -34,9 +34,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import builder
 from . import context
+from . import correlations as cx
 from . import execute as ex
+from . import findings as fx
 from . import intake as intake_store
 from . import permsync
+from . import plant as plant_view
 from . import queries as q
 from . import rating as rt
 from . import units as un
@@ -48,6 +51,7 @@ from .schemas import (
     ActivityBucket,
     AlertListResponse,
     ConfirmUnitsRequest,
+    CorrelationRegistryResponse,
     CorrelationResponse,
     DeviceListResponse,
     PointListResponse,
@@ -59,6 +63,11 @@ from .schemas import (
     UnitPatternsResponse,
 )
 from .spec import TableResult as QueryResult
+
+#: Where an operator records a building's facts. Printed in every refusal that
+#: sends someone to go and record one, so the sentence and the screen cannot
+#: drift apart: BI configuration lives in BI, never in Configurations → Sites.
+FACTS_AT = "Building Intelligence → Setup → Building facts"
 
 # The permission key this API gates on. Registered in core's catalog
 # (`app/auth/permissions.py`, group "Building Intelligence") so a tenant admin can
@@ -186,12 +195,14 @@ async def alerts(
     no category is a real fault and is counted as `category: null`, never folded
     into a neighbouring one.
     """
-    return AlertListResponse(
-        **await q.alerts(
-            db, _tenant(scope), hours=hours, severity=severity,
-            category=category, limit=limit,
-        )
+    body = await q.alerts(
+        db, _tenant(scope), hours=hours, severity=severity,
+        category=category, limit=limit,
     )
+    # Gate 6: each alert is a finding an operator may raise work on, and says so
+    # with its own source key and the work body — see `findings.py`.
+    body["items"] = [{**row, **fx.alert_finding(row)} for row in body["items"]]
+    return AlertListResponse(**body)
 
 
 # ── Devices ──────────────────────────────────────────────────────────────────
@@ -208,6 +219,7 @@ async def devices(
     device_type: str | None = None,
     search: str | None = None,
     site_id: uuid.UUID | None = None,
+    placement: Literal["placed", "unplaced"] | None = None,
     include_retired: bool = False,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -215,8 +227,14 @@ async def devices(
     """Devices that have REPORTED, grouped from `points`.
 
     `category=` (empty string) selects the devices nothing has classified — a
-    real question, and the honest way to show the 8 unclassified points instead
-    of quietly dropping them.
+    real question, and the honest way to show the unclassified points instead of
+    quietly dropping them.
+
+    `placement=unplaced` is the same kind of question about space: the devices no
+    site owns, which is the list an operator works from when assigning devices to
+    a building through core's `POST /device-placements/assign`. It is a filter
+    over what is already true and it selects nothing on anybody's behalf — the
+    assignment names its devices one by one.
     """
     total, rows = await q.devices(
         db,
@@ -231,6 +249,7 @@ async def devices(
         # no "unplaced" sentinel here — the unplaced row links to the floor
         # plan, because its fix is placement, not a filtered console.
         site_id=site_id,
+        placement=placement,
     )
     return DeviceListResponse(total=total, items=rows)
 
@@ -379,6 +398,7 @@ async def ghost_points(
     scope: Caller,
     category: str | None = None,
     mode: str | None = None,
+    site_id: uuid.UUID | None = None,
 ) -> dict:
     """The duplicated `(device_tag, point_tag)` pairs, and what can be settled.
 
@@ -411,14 +431,19 @@ async def ghost_points(
     tenant = _tenant(scope)
     if mode is not None and mode not in ("auto", "manual"):
         raise ValidationError("mode must be 'auto' or 'manual'")
-    groups = await q.ghost_groups(db, tenant, category=category, mode=mode)
+    # `site_id` scopes to one building: a group is kept when ANY of its
+    # generations is placed there — see `ghost_groups` for why the placement
+    # cannot filter members before they are grouped.
+    groups = await q.ghost_groups(db, tenant, category=category, mode=mode, site_id=site_id)
     return {
         "groups": groups,
         "total": len(groups),
         "auto": sum(1 for g in groups if g["mode"] == "auto"),
         "manual": sum(1 for g in groups if g["mode"] == "manual"),
         "fresh_minutes": q.FRESH_MINUTES,
-        "resurrected": await q.resurrected_points(db, tenant, category=category),
+        "resurrected": await q.resurrected_points(
+            db, tenant, category=category, site_id=site_id
+        ),
     }
 
 
@@ -547,6 +572,18 @@ class RepointRolesRequest(BaseModel):
     moves: list[RoleMove] = PField(min_length=1, max_length=500)
 
 
+class UndoRepointRequest(BaseModel):
+    """The moves to put back, named exactly as the repoint reported them.
+
+    Same shape as `RepointRolesRequest` on purpose: `from_point_id` is the
+    predecessor the role came off and `to_point_id` the successor it went to, so
+    an undo is posted with the record of the move rather than with an inference
+    about which of two points was which.
+    """
+
+    moves: list[RoleMove] = PField(min_length=1, max_length=500)
+
+
 class ForgetRolesRequest(BaseModel):
     """The point ids whose role rows the operator chose to delete. Nothing else.
 
@@ -564,7 +601,9 @@ class ForgetRolesRequest(BaseModel):
     "/points/roles/orphans",
     dependencies=[Depends(require_permission(PERM_READ))],
 )
-async def orphan_roles(db: Db, scope: Caller, role: str | None = None) -> dict:
+async def orphan_roles(
+    db: Db, scope: Caller, role: str | None = None, site_id: uuid.UUID | None = None
+) -> dict:
     """Roles bound to points that have stopped reporting, and who could succeed them.
 
     A gateway rebuild that renames a tag mints a new `point_id` under the new
@@ -616,7 +655,7 @@ async def orphan_roles(db: Db, scope: Caller, role: str | None = None) -> dict:
     `role` narrows the result to one role name. It cannot change any candidate
     set — candidates are a property of the device.
     """
-    return await sx.orphan_roles(db, _tenant(scope), role=role)
+    return await sx.orphan_roles(db, _tenant(scope), role=role, site_id=site_id)
 
 
 @bi_router.post(
@@ -659,6 +698,42 @@ async def repoint_roles(db: Db, scope: Caller, body: RepointRolesRequest) -> dic
     is a statement about what the estate MEANS, not a reading of it.
     """
     return await sx.repoint_roles(
+        db, _tenant(scope), moves=[m.model_dump() for m in body.moves]
+    )
+
+
+@bi_router.post(
+    "/points/roles/repoint/undo",
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def undo_repoints(db: Db, scope: Caller, body: UndoRepointRequest) -> dict:
+    """Put each named role back on the point it was moved off. One transaction per move.
+
+    A repoint is a human deciding that one tag is the same measurement another
+    used to be, and a human can be wrong — the tag can belong to the chiller next
+    door. Collapsing a ghost group has had an undo since it shipped
+    (`/points/ghosts/restore`); this is the repoint's.
+
+    Per move: the predecessor's `superseded_by` is cleared — only where it still
+    names this successor, so an undo cannot erase a history it did not write —
+    and the role row moves back carrying its own `role_source`, `confirmed_by`
+    and `confirmed_at`. The assertion belongs to whoever made it, whenever they
+    made it; an undo restores it rather than restating it as today's.
+
+    REFUSALS, all before anything is written, all reported rather than raised:
+
+      * the move is NOT THE ONE ON RECORD — the predecessor is superseded by
+        something else now, or by nothing. The estate moved on and a stale
+        worklist must not bind a role nobody asked for;
+      * the successor no longer carries the named role;
+      * the predecessor already carries a role — both are an operator's
+        assertion and this route chooses between neither;
+      * the predecessor is retired, which forward is what a retired successor is:
+        a role on it would be a measurement the estate says is not there.
+
+    Gated by `bi.manage`, like the repoint it reverses.
+    """
+    return await sx.undo_repoints(
         db, _tenant(scope), moves=[m.model_dump() for m in body.moves]
     )
 
@@ -727,10 +802,14 @@ async def forget_roles(db: Db, scope: Caller, body: ForgetRolesRequest) -> dict:
 #
 # WHAT IS GONE WITH THEM, STATED RATHER THAN HIDDEN:
 #
-# * **Site-without-floor placement.** `device_placements.floor_id` is NOT NULL, so
-#   a rooftop meter that belongs to the building and to no storey can no longer be
-#   expressed. `device_locations` still MODELS it (floor is nullable) and the
-#   reconcile still handles it; nothing can write it.
+# * ~~**Site-without-floor placement.**~~ RESTORED, at the source of truth rather
+#   than by a second writer here. Core's migration 0031 made
+#   `device_placements.floor_id` and `floor_position` nullable TOGETHER (a floor
+#   with no coordinates is a pin at no coordinates, and that is refused by a CHECK
+#   constraint), and added `POST /device-placements/assign` — the device-first
+#   surface that names a site for an explicit list of devices. A rooftop meter
+#   that belongs to the building and to no storey is expressible again, it travels
+#   the same event path, and `device_locations` has always modelled it.
 # * **The point-level override.** `/placement/points` was the only way to say
 #   "this sub-meter is not where its panel is". `reconcile_placement` still
 #   refuses to touch a row marked `placement_source = 'point'`, and
@@ -1084,6 +1163,146 @@ async def correlation(
     )
 
 
+# ── Cross-domain correlations (the registry, not the coefficient) ────────────
+#
+# `/correlation` above computes r between two series a caller names. THIS route
+# answers a question one step earlier and, commercially, the more important one:
+# which cross-domain questions can this estate answer at all, and for the ones it
+# cannot, what kind of thing is missing.
+#
+# It is on `bi.read` like every other read here. Nothing it touches is a write,
+# nothing it reports is auto-applied, and it never proposes to fix anything on the
+# operator's behalf — the remedies it returns name a screen a human goes to.
+
+
+@bi_router.get(
+    "/correlations",
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def correlations(
+    db: Db,
+    scope: Caller,
+    start: dt.datetime | None = None,
+    end: dt.datetime | None = None,
+    hours: Annotated[int, Query(ge=1, le=24 * 365)] = cx.DEFAULT_WINDOW_HOURS,
+) -> CorrelationRegistryResponse:
+    """Which cross-domain questions this estate can answer, and what blocks the rest.
+
+    A BMS owns one domain, so it can only ask questions inside one. The seven
+    correlations seeded in migration 0025 each need two, and each one declares the
+    signals it needs rather than hard-coding where they come from. This resolves
+    those declarations against the estate and returns, per signal, whether it is
+    satisfied and — when it is not — the KIND of gap, what is gating it in this
+    estate's own terms, and what closing it would unlock.
+
+    The kinds are the answer, not the count. `needs_new_hardware` on each gap is
+    what separates "buy a sensor" from "switch on a module you already own", and
+    it is a TRI-STATE: `null` means this service cannot determine it, which
+    happens for exactly one reason and is explained in the gap's own `gate`. The
+    totals count `null` in its own bucket, so a screen can say "N gaps · 0 need
+    new hardware · M undetermined" without the backend having quietly decided
+    that undetermined means no.
+
+    The window matters and is echoed back, and it is the basis on which EVERY
+    signal is judged — a point counts when it produced readings inside it, not
+    when it merely exists or was bound to a role once. "The access stream
+    published nothing" and "the chiller's IWT published nothing" are both
+    statements about this window, and a signal present over 90 days and absent
+    over 7 is a different answer to a different question.
+
+    That is why `signal_silent` exists as a kind of its own. A role bound to a
+    sensor that stopped is the most misleading state an estate can be in: every
+    configuration screen says it is correct, because it IS correct, and the
+    measurement is gone anyway. It is reported as undetermined for hardware, not
+    free — this service cannot tell a failed transducer from a dropped gateway
+    link from a tag a rebuild renamed.
+    """
+    tenant = _tenant(scope)
+    start_at, end_at = _window(start, end, hours)
+    try:
+        resolved = await cx.resolve_all(db, tenant, start=start_at, end=end_at)
+    except cx.SpecError as exc:
+        # A seeded correlation this build cannot resolve. Loud, not silent: a
+        # signal nothing can satisfy renders exactly like a real gap, and an
+        # operator would go looking for a door that was never the problem.
+        raise ValidationError(str(exc)) from exc
+    return CorrelationRegistryResponse(
+        start=start_at,
+        end=end_at,
+        hours=int((end_at - start_at).total_seconds() // 3600),
+        totals=cx.totals(resolved),
+        correlations=resolved,
+    )
+
+
+
+# ── Plant (L3) ───────────────────────────────────────────────────────────────
+
+
+@bi_router.get(
+    "/sites/{site_id}/plant",
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def site_plant(
+    db: Db,
+    scope: Caller,
+    site_id: uuid.UUID,
+    start: dt.datetime | None = None,
+    end: dt.datetime | None = None,
+    hours: Annotated[int, Query(ge=1, le=24 * 7)] = 1,
+) -> dict:
+    """A site's systems → equipment → slots, for the L3 plant schematic.
+
+    Each slot carries its DATA READINESS — one of `reporting`, `silent`,
+    `ambiguous`, `unresolved`, `unbound` (worst-first in `readiness_states`) —
+    with the point it resolved to, that point's latest value in the window, and
+    the reason whenever it did not resolve to one reporting point. Each piece of
+    equipment and each system carries the least-ready state of its parts, and
+    each piece of equipment carries every effective equipment-scope metric's
+    outcome (ΔT, band occupancy against its own design band, kW/TR) — a value
+    with its working, or a refusal naming what is missing.
+
+    The window is what "reporting" is judged over: a slot reports when its point
+    produced a reading inside it, not when the point merely exists. It defaults
+    to the last hour, a dozen polls at this estate's five-minute cadence.
+    """
+    tenant = _tenant(scope)
+    start_at, end_at = _window(start, end, hours)
+    return await plant_view.plant(db, tenant, site_id, start=start_at, end=end_at)
+
+
+@bi_router.get(
+    "/sites/{site_id}/findings",
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def site_findings(
+    db: Db,
+    scope: Caller,
+    site_id: uuid.UUID,
+    start: dt.datetime | None = None,
+    end: dt.datetime | None = None,
+    hours: Annotated[int, Query(ge=1, le=24 * 7)] = 1,
+) -> dict:
+    """Gate 6 at one site: every finding its plant can raise work on.
+
+    One per equipment metric outcome (value or refusal) and one per `silent` or
+    `ambiguous` slot, each with its `source_key`, a title and summary a person
+    can read, the evidence exactly as `/plant` returned it, and `work` — the body
+    to POST to `/workflow/instances` once an operator has picked a procedure.
+    Read-only: listing a finding raises nothing. Same window as `/plant`, because
+    it IS `/plant`, read once and restated.
+    """
+    tenant = _tenant(scope)
+    start_at, end_at = _window(start, end, hours)
+    plant = await plant_view.plant(db, tenant, site_id, start=start_at, end=end_at)
+    return {
+        "site_id": plant["site_id"],
+        "site_name": plant["site_name"],
+        "window": plant["window"],
+        "findings": fx.plant_findings(plant),
+    }
+
+
 # ── Units ────────────────────────────────────────────────────────────────────
 #
 # The unit is the input that separates a number from a quantity, and it is the
@@ -1138,6 +1357,7 @@ async def unit_patterns(
     db: Db,
     scope: Caller,
     category: str | None = None,
+    site_id: uuid.UUID | None = None,
 ) -> UnitPatternsResponse:
     """The catalogue of tag conventions, each with the set it is holding RIGHT NOW.
 
@@ -1165,7 +1385,9 @@ async def unit_patterns(
     set previewed and the set written are not the same set.
     """
     return UnitPatternsResponse(
-        **await un.pattern_catalogue(db, _tenant(scope), category=category)
+        **await un.pattern_catalogue(
+            db, _tenant(scope), category=category, site_id=site_id
+        )
     )
 
 
@@ -1403,7 +1625,7 @@ async def _confirm_by_pattern(db, tenant, actor: str | None, body: ConfirmUnitsR
         )
 
     _, eligible, already = await un.pattern_targets(
-        db, tenant, key=pattern.key, category=body.category
+        db, tenant, key=pattern.key, category=body.category, site_id=body.site_id
     )
     if len(eligible) > MAX_PATTERN_APPLY:
         raise ValidationError(
@@ -1674,7 +1896,8 @@ async def rating(
       are kilowatt-hour registers (`unit_source = 'operator'`). A unit the wire
       happened to send is not somebody standing behind it.
     * **Area** — `site_facts.gross_floor_area_sqm`, mirrored from core, typed by
-      an operator in Configurations → Sites. NULL blocks the rating outright.
+      an operator in Building Intelligence → Setup → Building facts. NULL blocks
+      the rating outright.
     * **Which meters** — the CALLER's, passed as `point_id`. There is no stored
       fact saying which register measures the whole supply, and picking one by
       tag would be a fabrication; summing everything would double-count an
@@ -1736,7 +1959,7 @@ async def rating(
         blocked.append(
             "Cannot rate — no built-up area recorded for this site. An EPI is "
             "kWh per square metre per year; record the gross floor area in "
-            "Configurations → Sites and this becomes computable. Nothing is "
+            f"{FACTS_AT} and this becomes computable. Nothing is "
             "defaulted or estimated in the meantime."
         )
 

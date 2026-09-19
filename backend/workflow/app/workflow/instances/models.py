@@ -5,19 +5,32 @@ owner, its SLA clock, and its audit trail. ``timeline`` is a JSON list rather th
 a child table because the trail is only ever read whole, with the row.
 
     workflow_instances — a running incident (the state machine in motion)
+
+``source_key`` is what makes a finding raise work ONCE. A producer that can say
+what an incident is ABOUT — Building Intelligence's ``bi:equipment:<id>:metric:
+chw_delta_t_in_band`` — names it here, and the partial unique index below holds
+at most one OPEN incident per (tenant, key). Closing the incident frees the key,
+so the same finding recurring next month raises new work rather than reopening
+old work. NULL for everything else: an event-driven incident is keyed by its
+trigger's dedup slots (``correlation_dedup``), not by this.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, text
+from sqlalchemy import JSON, Boolean, DateTime, Float, Index, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
 from ..core.enums import InstancePriority, InstanceStatus
 from ..core.mixins import _TenantTimestamped
 from ..core.primitives import uuid_str
+
+#: The partial-index predicate: a keyed incident that is not closed.
+OPEN_SOURCE_KEY_PREDICATE = (
+    "source_key IS NOT NULL AND status NOT IN ('resolved', 'cancelled')"
+)
 
 # ── Workflow Instance ──────────────────────────────────────────────────
 
@@ -70,5 +83,25 @@ class WorkflowInstance(Base, _TenantTimestamped):
 
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     outcome: Mapped[str | None] = mapped_column(String(512))
+
+    # The finding this incident is about — see the module docstring.
+    source_key: Mapped[str | None] = mapped_column(String(255))
+
+    # At most one OPEN incident per finding. "Open" is spelled as the complement of
+    # ``core.enums.CLOSED_STATUSES`` because a partial index predicate must be a
+    # literal; ``tests/test_instances_source_key.py`` pins that the two agree.
+    #
+    # NULLS NOT DISTINCT on tenant_id for the reason 0007 gives: a NULL tenant is a
+    # real (platform) caller here, and under the default rule its keys would be the
+    # only ones the constraint missed. The index also serves the "which of these
+    # keys have open work" read — it is exactly that lookup.
+    __table_args__ = (
+        Index(
+            "uq_workflow_instances_open_source_key", "tenant_id", "source_key", unique=True,
+            postgresql_where=text(OPEN_SOURCE_KEY_PREDICATE),
+            sqlite_where=text(OPEN_SOURCE_KEY_PREDICATE),
+            postgresql_nulls_not_distinct=True,
+        ),
+    )
 
 

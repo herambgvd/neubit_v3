@@ -94,6 +94,7 @@ def _import_all_models() -> None:
     import app.settings.models  # noqa: F401
     import app.sites.device.models  # noqa: F401
     import app.sites.floor.models  # noqa: F401
+    import app.sites.infrastructure.models  # noqa: F401
     import app.sites.site.models  # noqa: F401
     import app.sites.zone.models  # noqa: F401
     import app.tags.models  # noqa: F401

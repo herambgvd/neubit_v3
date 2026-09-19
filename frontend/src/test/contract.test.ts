@@ -174,9 +174,28 @@ const MAPPING: Record<string, ModelEntry & { subset?: string }> = {
   "lib/types.ts:AuthUser": { src: "CORE", file: "auth/schemas.py", model: "UserOut", subset: "the session user as this console reads them: only the claims the shell renders" },
   "lib/types.ts:BiDeviceListResponse": { src: "RW", file: "schemas.py", model: "DeviceListResponse" },
   "lib/types.ts:BiDeviceRow": { src: "RW", file: "schemas.py", model: "DeviceRow" },
+  "lib/types.ts:BiSiteFactsListResponse": { src: "RW", file: "schemas.py", model: "SiteFactsListResponse" },
+  "lib/types.ts:BiSiteFactsRow": { src: "RW", file: "schemas.py", model: "SiteFactsRow" },
+  "lib/types.ts:BiPointRow": { src: "RW", file: "schemas.py", model: "PointRow", subset: "the infra designer's point picker reads a point's address and reading kind; latest and the lifecycle fields are not rendered" },
+  "lib/types.ts:CreateEquipmentRequest": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "CreateEquipmentRequest" },
+  "lib/types.ts:CreateSystemRequest": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "CreateSystemRequest" },
+  "lib/types.ts:DesignUpdate": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "DesignUpdate" },
+  "lib/types.ts:EquipmentPublic": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "EquipmentPublic" },
+  "lib/types.ts:InfrastructureTree": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "InfrastructureTree" },
+  "lib/types.ts:PointBinding": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "PointBinding" },
+  "lib/types.ts:SiteSystemPublic": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "SystemPublic" },
+  "lib/types.ts:SiteSystemWithEquipment": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "SystemWithEquipment" },
+  "lib/types.ts:SlotInput": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "SlotInput" },
+  "lib/types.ts:SlotPublic": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "SlotPublic" },
+  "lib/types.ts:UpdateEquipmentRequest": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "UpdateEquipmentRequest" },
+  "lib/types.ts:UpdateSystemRequest": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "UpdateSystemRequest" },
   "lib/types.ts:BrandingOut": { src: "CORE", file: "branding/schemas.py", model: "BrandingOut" },
   "lib/types.ts:BuildingFactsUpdate": { src: "CORE", file: "sites/site/schemas.py", model: "BuildingFactsUpdate" },
   "lib/types.ts:CameraPublic": { src: "VISION", file: "cameras/schemas.py", model: "CameraPublic" },
+  "lib/types.ts:AssignDeviceItem": { src: "CORE", file: "sites/device/schemas.py", model: "AssignDeviceItem" },
+  "lib/types.ts:AssignDevicesRequest": { src: "CORE", file: "sites/device/schemas.py", model: "AssignDevicesRequest" },
+  "lib/types.ts:AssignDevicesResponse": { src: "CORE", file: "sites/device/schemas.py", model: "AssignDevicesResponse" },
+  "lib/types.ts:AssignedDevice": { src: "CORE", file: "sites/device/schemas.py", model: "AssignedDevice" },
   "lib/types.ts:Coordinates": { src: "CORE", file: "sites/site/schemas.py", model: "Coordinates" },
   "lib/types.ts:CreateFloorRequest": { src: "CORE", file: "sites/floor/schemas.py", model: "CreateFloorRequest" },
   "lib/types.ts:CreateSiteRequest": { src: "CORE", file: "sites/site/schemas.py", model: "CreateSiteRequest" },
@@ -373,6 +392,8 @@ const MAPPING: Record<string, ModelEntry & { subset?: string }> = {
   "features/workflow/types.ts:FormFieldSchema": { src: "WORKFLOW", file: "forms/schemas.py", model: "FormFieldSchema" },
   "features/workflow/types.ts:FormPublic": { src: "WORKFLOW", file: "forms/schemas.py", model: "FormPublic" },
   "features/workflow/types.ts:InstancePublic": { src: "WORKFLOW", file: "instances/schemas.py", model: "InstancePublic" },
+  // Gate 6 reads this to say what is ALREADY being worked on about a finding.
+  "features/workflow/types.ts:OpenWork": { src: "WORKFLOW", file: "instances/schemas.py", model: "OpenWorkRef" },
   "features/workflow/types.ts:InstanceStatsResponse": { src: "WORKFLOW", file: "instances/schemas.py", model: "InstanceStatsResponse" },
   "features/workflow/types.ts:SetThreatLevelRequest": { src: "WORKFLOW", file: "threat_levels/schemas.py", model: "SetThreatLevelRequest" },
   "features/workflow/types.ts:SimulateEventRequest": { src: "WORKFLOW", file: "triggers/schemas.py", model: "SimulateEventRequest" },
@@ -395,7 +416,7 @@ const MAPPING: Record<string, ModelEntry & { subset?: string }> = {
 const EXPECTED_COUNTS = {
   CameraPublic: 26,
   SitePublic: 23,
-  InstancePublic: 30,
+  InstancePublic: 31,
   WebhookPublic: 17,
 };
 
@@ -512,6 +533,94 @@ const DICTS: Record<string, DictEntry> = {
     marker: "async def list_nodes(",
     open: '"items": [',
   },
+  // ── the infra designer's closed vocabulary ─────────────────────────────────
+  // `as_document()` spreads each entry as `{"key": k, **v}`, so an item's keys
+  // are read off the first ENTRY of its table plus the `key` the spread adds.
+  "lib/types.ts:InfraVocabulary": {
+    file: "backend/core/app/sites/infrastructure/vocabulary.py",
+    marker: "def as_document(",
+    open: "return {",
+  },
+  "lib/types.ts:InfraEquipmentClass": {
+    file: "backend/core/app/sites/infrastructure/vocabulary.py",
+    marker: '"equipment_classes": [',
+  },
+  "lib/types.ts:InfraSystemKind": {
+    file: "backend/core/app/sites/infrastructure/vocabulary.py",
+    marker: '"chw_plant": {',
+    extra: ["key"],
+  },
+  "lib/types.ts:InfraSlotDef": {
+    file: "backend/core/app/sites/infrastructure/vocabulary.py",
+    marker: '"chws": {',
+    extra: ["key"],
+  },
+  "lib/types.ts:InfraDesignFactDef": {
+    file: "backend/core/app/sites/infrastructure/vocabulary.py",
+    marker: '"make": {"type"',
+    extra: ["key"],
+  },
+  // ── the I/O schedule import report ──────────────────────────────────────────
+  "lib/types.ts:InfraImportReport": {
+    file: "backend/core/app/sites/infrastructure/schedule_import.py",
+    marker: "async def plan(",
+    open: "return {",
+    extra: ["dry_run"], // the router adds it around the plan
+  },
+  "lib/types.ts:InfraImportSystem": {
+    file: "backend/core/app/sites/infrastructure/schedule_import.py",
+    marker: '"systems": [',
+  },
+  "lib/types.ts:InfraImportEquipment": {
+    file: "backend/core/app/sites/infrastructure/schedule_import.py",
+    marker: '"equipment": [',
+  },
+  "lib/types.ts:InfraImportSlot": {
+    file: "backend/core/app/sites/infrastructure/schedule_import.py",
+    marker: "planned[r.tag].slots.append(",
+  },
+  "lib/types.ts:InfraImportSkip": {
+    file: "backend/core/app/sites/infrastructure/schedule_import.py",
+    marker: "def as_dict(self) -> dict:",
+    open: "return {",
+  },
+  "lib/types.ts:InfraImportCounts": {
+    file: "backend/core/app/sites/infrastructure/schedule_import.py",
+    marker: '"counts": {',
+  },
+  // ── the L3 plant (reading-writer, a dict built per request) ─────────────────
+  "lib/types.ts:BiPlant": {
+    file: "backend/reading-writer/app/api/plant.py",
+    marker: "async def plant(",
+    open: "return {",
+  },
+  "lib/types.ts:BiPlantSystem": {
+    file: "backend/reading-writer/app/api/plant.py",
+    marker: "system_views.append({",
+  },
+  "lib/types.ts:BiPlantEquipment": {
+    file: "backend/reading-writer/app/api/plant.py",
+    marker: 'views_by_system.setdefault(str(e["system_id"]), []).append({',
+  },
+  "lib/types.ts:BiPlantSlot": {
+    file: "backend/reading-writer/app/api/plant.py",
+    marker: "def slot_view(",
+    open: "return {",
+  },
+  "lib/types.ts:BiPlantPoint": {
+    file: "backend/reading-writer/app/api/plant.py",
+    marker: "def _point_view(",
+    open: "return {",
+  },
+  "lib/types.ts:BiPlantMetricDef": {
+    file: "backend/reading-writer/app/api/plant.py",
+    marker: "metrics.append({",
+  },
+  "lib/types.ts:BiPlantCandidate": {
+    file: "backend/reading-writer/app/metric_registry/slots.py",
+    marker: "def _candidate_view(",
+    open: "return {",
+  },
 };
 
 /** Ours, not the backend's. Each reason says which kind of local shape it is. */
@@ -590,6 +699,7 @@ const PASSTHROUGH: Record<string, string> = {
 
   "lib/types.ts:FederatedCamera": "the remote recorder's own camera dict, tagged and forwarded verbatim",
   "features/access/types.ts:AccessCard": "the controller's card DTO with seven keys renamed; the rest pass through",
+  "lib/types.ts:BiPlantMetricOutcome": "one evaluator item less its series — ok and each refusal status carry different keys (arithmetic, coverage, candidates), so there is no single literal to compare",
   "features/core/types.ts:SettingCatalogItem": "one CATALOG entry in settings/catalog.py — entries carry different optional keys per setting, so there is no single literal to compare",
   "features/core/types.ts:PermissionCatalog": "an envelope around PermissionRegistry.grouped(); the entry shape is checked as PermissionEntry",
   "features/ingest/types.ts:ConditionResult": "a row inside RuleTestResponse.conditions, typed list[dict] on the backend",

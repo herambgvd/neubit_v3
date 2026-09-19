@@ -500,6 +500,121 @@ class SiteEmissionFactor(Base):
     )
 
 
+class MirroredSystem(Base):
+    """Read-model of core's `site_systems` — one chilled-water loop, one AHU fleet.
+
+    Core owns the equipment registry (`app/sites/infrastructure`, core migration
+    0032) and is its only writer. `reading-writer`'s `app/equipment_sync.py`
+    mirrors it here off `tenant.*.sites.site_system.>` and
+    `tenant.*.sites.equipment.>`, for the same reason `SiteFact` exists: Building
+    Intelligence has to read a chiller's design ΔT band beside the readings it
+    grades, and it may not open core's database to do it (contract §1).
+
+    The table names match core's on purpose — a reader moving between the two
+    databases should not have to translate — but the keys do not: every row here
+    is keyed on `(tenant_id, …)` because a read-model that could hold one tenant's
+    row under another's id would be a cross-tenant leak waiting for a bad event.
+
+    NOTHING HERE IS INFERRED. `name` and `kind` arrived on an event; `kind` is
+    core's closed vocabulary and is stored as stated.
+    """
+
+    __tablename__ = "site_systems"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    system_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    mirrored_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (Index("ix_site_systems_site", "tenant_id", "site_id"),)
+
+
+class MirroredEquipment(Base):
+    """Read-model of core's `site_equipment` — CH-01, with its nameplate facts.
+
+    `design` is core's validated design-fact object AS STATED (`tr`, `kw_rated`,
+    `design_dt_min`, `design_dt_max`, make, model), and `design_units` is the unit
+    each numeric fact was stated in, published beside it by core so that no
+    consumer has to assume one. A fact absent from `design` is NOT RECORDED, and
+    every metric that needs it refuses naming it — a chiller with no recorded
+    ΔT band is not graded against a typical one.
+
+    `system_id` carries no foreign key to `site_systems`: the two arrive on
+    different subjects, and a mirror that refused an equipment row because its
+    system event had not landed yet would lose the equipment, not the system.
+    """
+
+    __tablename__ = "site_equipment"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    equipment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    system_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    tag: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    equipment_class: Mapped[str] = mapped_column(String(32), nullable=False)
+    design: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    design_units: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    # Which surface core says the last write came through (designer / schedule
+    # import). Provenance, stated by core, never set here.
+    source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    mirrored_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_site_equipment_site", "tenant_id", "site_id"),
+        Index("ix_site_equipment_system", "tenant_id", "system_id"),
+    )
+
+
+class MirroredSlot(Base):
+    """Read-model of core's `equipment_point_slots` — a named slot on a piece of
+    equipment, bound to a point by the gateway's TAGS, or not bound at all.
+
+    What is mirrored is the BINDING, never a resolution of it. A slot names
+    `device_tag` + `point_tag`, and which `points` row that means is decided at
+    READ time (`app/metric_registry/slots.py`), over a window of actual readings,
+    because the answer changes every time the gateway rebuilds a connection and
+    mints a new generation of point ids. Storing a point id here would freeze a
+    guess made on the day the slot was bound.
+
+    Replaced WHOLESALE per equipment on every equipment event: core states every
+    slot the equipment has, so the last message is the whole list.
+    """
+
+    __tablename__ = "equipment_point_slots"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    equipment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    slot: Mapped[str] = mapped_column(String(32), primary_key=True)
+    site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    device_tag: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    point_tag: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    mirrored_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_equipment_point_slots_binding", "tenant_id", "device_tag", "point_tag"),
+        # Half a binding names no point — core's own check, restated so a
+        # damaged event cannot make one exist here either.
+        CheckConstraint(
+            "(device_tag IS NULL) = (point_tag IS NULL)",
+            name="ck_equipment_point_slots_binding_whole",
+        ),
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Registry and catalog tables.
 #
@@ -737,4 +852,65 @@ class PointRole(Base):
 
     __table_args__ = (
         Index("ix_point_roles_tenant_role", "tenant_id", "role"),
+    )
+
+
+class CorrelationDef(Base):
+    """A cross-domain question, and the signals it needs in order to be asked.
+
+    This is the metric registry's argument applied one layer up. A metric is a
+    formula over roles inside one domain; a CORRELATION spans two or more, and the
+    reason it is a row rather than a module is the same reason `MetricDefinition`
+    is: the next question a customer asks must be an INSERT.
+
+    The row holds NEEDS, never state. Nothing here records whether a signal is
+    satisfied, because that is a fact about the estate at a moment and this table
+    would then be a cache of one — stale the instant an operator confirms a unit.
+    `reading_writer.api.correlations` resolves the needs live.
+
+    `signals` is an ORDERED list: the reader reports the first unsatisfied signal
+    as the blocking gap, so the order in the seed decides which remedy a screen
+    leads with. NULL `tenant_id` is a platform correlation every tenant sees; a
+    change to what a correlation needs is a new `version`, never an edit.
+    """
+
+    __tablename__ = "correlation_defs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+    key: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    effective_from: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # The question in words. It is the product, not a caption: a screen that shows
+    # the gaps without the question shows a to-do list.
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    unlocks: Mapped[str] = mapped_column(Text, nullable=False)
+
+    domains: Mapped[list] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    signals: Mapped[list] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+
+    created_by: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "key", "version", name="uq_correlation_defs_key_version"),
+        Index("ix_correlation_defs_key", "key", "effective_from"),
+        # A one-domain "correlation" is a metric, and the metric registry already
+        # computes those. The claim this table makes is that its rows CROSS a
+        # boundary, so the schema is where that claim is kept true.
+        CheckConstraint("jsonb_array_length(domains) >= 2", name="ck_correlation_defs_domains"),
+        CheckConstraint("jsonb_array_length(signals) >= 2", name="ck_correlation_defs_signals"),
     )

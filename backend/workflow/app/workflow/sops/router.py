@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kernel.auth import Principal, Scope, get_scope, require_permission
@@ -18,6 +18,7 @@ from app.db import get_db
 from app.workflow import perms
 from . import schemas as S
 from .service import SopService, StateService, TransitionService
+from .starters import FAMILIES
 
 
 async def _sop_svc(db: Annotated[AsyncSession, Depends(get_db)], scope: Annotated[Scope, Depends(get_scope)]):
@@ -56,15 +57,26 @@ async def create_sop(body: S.CreateSopRequest, svc: Annotated[SopService, Depend
 @sop_router.post("/starters", response_model=S.InstallStartersResponse,
                  status_code=status.HTTP_201_CREATED)
 async def install_starter_sops(svc: Annotated[SopService, Depends(_sop_svc)],
-                               actor: Annotated[Principal, Depends(require_permission(perms.SOP_CREATE))]):
+                               actor: Annotated[Principal, Depends(require_permission(perms.SOP_CREATE))],
+                               family: Annotated[Optional[str], Query(
+                                   description="One console's set: `vms` or `bi`. "
+                                               "Omitted installs every family.")] = None):
     """Install the starter playbooks this tenant is missing.
 
     Idempotent: re-running installs only what is absent, so it is safe to offer as
     a button an operator can press twice. Declared above the by-id routes to keep
     the literal path ahead of the parameterised ones — nothing POSTs to
     ``/{sop_id}`` today, so this is convention rather than a live collision.
+
+    ``family`` exists because the modules are sold separately: a recorder-only
+    deployment pressing this from the escalate dialog must not end up with three
+    building procedures in its picker.
     """
-    created, skipped = await svc.install_starters(actor=actor)
+    if family is not None and family not in FAMILIES:
+        raise HTTPException(422,
+                            f"unknown starter family {family!r}; expected one of "
+                            + ", ".join(FAMILIES))
+    created, skipped = await svc.install_starters(actor=actor, family=family)
     return S.InstallStartersResponse(
         items=[S.SopPublic.from_row(r) for r in created],
         created=len(created),
