@@ -2188,3 +2188,98 @@ operator JWT expires and nothing renews it on a server-to-server call.
 It authenticates as `service` with the **superadmin** role, which is far wider
 than the read this performs. conflux has no read-only machine credential today.
 Issuing one, and narrowing this to it, is the right follow-up and is not done.
+
+---
+
+## 25. Gate 6 closes both ways, and what is NOT signed (2026-09-19)
+
+Gate 6 (ACTS) turns a Building Intelligence finding into work in the workflow
+service. §24 and the gate-6 work before this left four things open; three are
+now closed and the fourth is a deliberate refusal.
+
+### Work can be put down, not only picked up
+
+A finding stops being actionable when the reading changes — a silent sensor
+reports again, a missing unit is confirmed, an alert is acknowledged on the
+gateway. The worklist then stops listing it, and the incident raised about it is
+in nobody's inbox. `/bi/work` now asks the workflow service about the **settled**
+findings as well as the actionable ones (one lookup, actionable keys first so the
+500-key cap drops the cleared ones) and lists what came back as *cleared, but the
+work is still open*, with a Close press.
+
+**Closing is a press, never an automation.** The reading changed; that is not the
+claim "the job is done" — a sensor may have been unplugged and replugged, an
+alarm may clear every night at the same hour. A person states it, the note is
+required (the rule the starter playbooks put on every closing transition), and
+the incident carries what they wrote.
+
+**Closing work does not acknowledge the alert, deliberately.** The gateway owns
+the acknowledgement (`POST /iot/alerts/{id}/ack` is a command TO it, and the
+projection updates when the gateway says it did). A second ack door in BI would
+need `iot.manage` and a reachable gateway to mean anything, and an ack this
+platform faked would be a state nobody's plant is in.
+
+### Procedures a BI deployment starts with
+
+Raising work REQUIRES a SOP with an initial state, and the four starters were the
+recorder's. Three building playbooks now exist, one per KIND of finding gate 6
+can raise, each naming its own `bi.finding.<kind>` in `trigger_event_types` —
+which is what ranks the right one to the top of the raise-work picker.
+
+They are a **family**: `POST /workflow/sops/starters?family=vms|bi` installs one
+console's set, an unknown family is a 422, and idempotency stays per slug. The
+modules are sold separately, so a recorder-only tenant pressing *Install* in the
+escalate dialog does not find three building procedures in its alarm picker.
+
+### A mirror can be repaired (contract §18, third application)
+
+Every registry write is published once, and a consumer down longer than the
+stream's retention never sees those messages again — no later write repairs the
+entities nobody has edited since, so the mirror is *silently* stale.
+
+`POST /sites/{id}/infrastructure/republish` restates a building's whole
+registry: `equipment.resynced` / `site_system.resynced` carrying the same
+whole-entity snapshot every write carries, then ONE `site_system.reconciled`
+naming every id the site really has. The restatements heal what went missing; the
+reconcile removes what the mirror kept and core deleted while the event aged out
+— **the one damage a restatement cannot repair.** One subject family, one
+durable, so the reconcile cannot overtake what it bounds.
+
+Two rules on the consumer side: a malformed reconcile removes **nothing** (both
+id lists must be present and be lists — reading a damaged body as "this site has
+no plant" would empty a building's registry on one bad message), and empty lists
+ARE a real answer, scoped to one tenant and one site.
+
+`source` on a restatement is `resync`. Core stores provenance of the MESSAGE, not
+of the row, so a restatement says what it truthfully is rather than guessing at
+the surface the original write came through.
+
+### A repoint can be put back
+
+`POST /bi/points/roles/repoint/undo` clears `points.superseded_by` — only where
+it still names this successor — and carries the role back with its own
+`role_source`, `confirmed_by` and `confirmed_at`. The assertion belongs to
+whoever made it, whenever they made it; an undo restores it, it does not restate
+it as today's. Refused when the move is not the one on record, when the successor
+no longer carries the role, when the predecessor has since been given one, or
+when the predecessor is retired.
+
+### The evidence is NOT signed, and will not be here
+
+A raised incident carries `trigger_data`: the outcome, the arithmetic, the window
+and the source key, composed by the reading store and copied verbatim by the
+console. It is **not signed**, and nothing here verifies it later.
+
+That is a decision, not an omission. A signature is only worth what its key
+management is worth, and this platform has deliberately no secret manager. A
+signing key sitting in an env var beside `VE_JWT_SECRET` would produce a
+signature every operator would read as proof and that anyone with read access to
+the deployment could forge — worse than no signature, because it invites trust
+the arrangement cannot carry.
+
+What the evidence HAS, and what it is honest to claim for it: the incident's
+`created_by` and timestamps, an append-only audit line, and a `source_key` that
+pins the finding it came from so a second raise returns the first incident rather
+than a second story. If evidence integrity ever becomes a contractual
+requirement, it starts with key custody — an HSM or a managed KMS — and not with
+adding a `signature` column.
