@@ -1,12 +1,39 @@
 "use client";
 
-// Building Intelligence → PORTFOLIO. The estate overview across every category
-// the gateway actually reports — on the estate SKELETON (components/console/
-// estate.tsx): 5-slot KPI strip, two-column main with the site leaderboard on
-// the left and the charts + fault queue on the right. The shape is the
-// neubit-vms-bi mockup's; every number in it is measured, and the mockup's
-// invented figures (a CCEI, a savings figure, a carbon tonnage) are NOT
-// reproduced — a slot whose input does not exist renders "—" with the reason.
+// Building Intelligence → L1 BUILDING. The home of the console, and the top of
+// ONE pipeline rather than the first of ten sibling tiles.
+//
+// WHAT CHANGED AND WHY. This screen was PORTFOLIO: a KPI strip over a site
+// leaderboard. It answered "which site scores best" on a deployment with one
+// site, while the questions the building actually has to answer — what is it
+// consuming, how efficiently, what is failing, what has gone quiet — were
+// scattered across nine other tiles a user had to know to visit. Worse, two of
+// those tiles were WORKLISTS for shut gates, sitting as peers of the estate view,
+// so the pipeline the console is modelled on was invisible in the product.
+//
+// The layer stack is now what the console is:
+//
+//   L1 BUILDING   the six gates · the questions · the domains        (this file)
+//   L2 DOMAIN     the same gate strip, scoped, over the equipment    (CategoryConsole)
+//   L3 PLANT      schematic, fault, ticket                           (not built)
+//
+// So this page reads top to bottom as: can these numbers be trusted (the gate
+// strip), what do they say (the questions), and where do they come from (the
+// domains). The estate detail that used to BE the page — the leaderboard, the
+// ingest chart, the fault queue — is still here, below, where a reader goes
+// after the answer rather than instead of it.
+//
+// THE ROUTE IS STILL /bi/portfolio. The URL is what Portfolio's own links, the
+// console strip and anyone's bookmark already name, and renaming it would break
+// them to gain a word. The SCREEN is Building; the path is history.
+//
+// THE GATE FACTS LEFT THIS FILE. The point count used to carry its own
+// duplicate-generation annotation here, in this file's markup, while the units
+// panel counted its own backlog and the succession console counted its own
+// orphans — three screens each stating a gate's facts in their own wording. All
+// of it is now `features/bi/gates.ts` and rendered by `<GateStrip>`, which says
+// WHICH gate is shut and what is upstream of it. The properties that annotation
+// had to hold did not change and are still tested; they are tested on the strip.
 //
 // Everything on this page is measured, not modelled. The counts come from the
 // `points` dimension (one row per series, written by the reading-writer from a
@@ -34,43 +61,16 @@
 //   • No IAQ / environment panel. There are ZERO environment points, so that tile
 //     stays SOON in the launcher rather than being filled with something else.
 //
-// THE PAGE NO LONGER EXPLAINS ITSELF ON SCREEN, and that is a deliberate trade.
-// It used to carry a standfirst, a "What is not here" panel and a paragraph
-// under Floor-wise — together more prose than data, which buried the numbers
-// they were meant to qualify. Those reasons did not stop being true, so they
-// live HERE, where the next person to change this file reads them, instead of
-// in front of an operator who reads the same four paragraphs every morning.
+// THE PAGE DOES NOT EXPLAIN ITSELF ON SCREEN, and that is a deliberate trade. It
+// used to carry a standfirst, a "What is not here" panel and a paragraph under
+// Floor-wise — together more prose than data, which buried the numbers they were
+// meant to qualify. Those reasons did not stop being true, so they live HERE,
+// where the next person to change this file reads them, instead of in front of an
+// operator who reads the same four paragraphs every morning.
 //
 // The rule that survives ON screen is the one that cannot be moved: a slot with
 // no honest input renders "—" and carries its reason in the row or the tooltip
-// beside it, never a zero and never a guess. A short label is fine; a silent
-// fabrication is not.
-//
-// Floor-wise was removed with its panel. The placement facts it showed are not
-// lost — the leaderboard's UNPLACED pseudo-row is the same statement, on the
-// surface where a site is already being read, and pinning still happens in
-// Configurations → Sites.
-//
-// THE POINT COUNT IS NOT THE NUMBER OF POINTS, and the strip now says so. The
-// `points` dimension holds one row per point_id, and a conflux connection that is
-// deleted and re-created mints a NEW id for every point behind it — so one
-// physical register accumulates a generation per rebuild, all unretired, all
-// counted. On this deployment that is 766 rows for 475 real registers: the
-// headline figure was inflated by 61% and nothing on the screen admitted it.
-// The Points slot therefore carries the distinct-register figure, the number of
-// rows that are later generations, and a link to /bi/duplicates, which is the
-// only screen that can change any of them. Same rule as the dash: a number that
-// is wrong prints WHAT is wrong with it, beside the thing that fixes it.
-//
-// THE TWO HALVES OF THAT ANNOTATION COME FROM DIFFERENT PLACES, and they are
-// rendered apart for it. The register figures are `total_points` and
-// `total_registers` out of the SAME summary statement under the same retirement
-// horizon, so they are honest on their own and render whenever the estate has
-// repeats. The PAIR COUNT and its link belong to the duplicate worklist, which
-// is a second request: while it is loading, when it fails, and when the estate
-// has no duplicated pair, nothing is linked and nothing is invented. A permanent
-// "0 duplicates" line would be a control with no consumer, and a link carrying a
-// count this page guessed would be worse.
+// beside it, never a zero and never a guess.
 //
 // The "no console yet" caption is NOT dead code. `fire` still has none and must
 // keep none: its single point has never produced a reading, so the category does
@@ -82,23 +82,25 @@ import { Icon } from "@iconify/react";
 
 import {
   ConsolePage,
+  ConsoleScroll,
   SectionCard,
   SectionHead,
   LoadingBlock,
   KpiStrip,
   Kpi,
+  EstateHeader,
   Leaderboard,
   LeaderRow,
   LeaderChip,
 } from "@/components/console";
 import { apiError } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
 import { fmtRelative } from "@/lib/format";
 
 import ActivityChart from "./components/ActivityChart";
 import FaultQueue, { FaultSeverity } from "./components/FaultQueue";
+import GateStrip from "./components/GateStrip";
 import { bi } from "./api";
-import { MODULE, PERM_READ, categoryMeta, deviceTypeLabel } from "./constants";
+import { categoryMeta, deviceTypeLabel } from "./constants";
 
 // The fault window. 24 hours matches the ingest chart beside it; the server caps
 // this endpoint at 48 because it reads the raw alert table.
@@ -275,13 +277,6 @@ function SiteRow({ site, alertHours }: any) {
 }
 
 export default function Portfolio() {
-  // /bi/duplicates is gated on `bi.read` + the `analytics` module, exactly like
-  // its launcher tile (config/launcher.ts). A viewer who cannot open it is not
-  // sent there — and is not asked to pay for the request either, which is why
-  // the gate sits on the query rather than only on the link.
-  const { can, hasModule } = useAuth();
-  const mayOpenDuplicates = can(PERM_READ) && hasModule(MODULE);
-
   const summaryQ = useQuery<any>({
     queryKey: ["bi-summary"],
     queryFn: () => bi.summary(),
@@ -293,21 +288,13 @@ export default function Portfolio() {
     refetchInterval: 60_000,
   });
   // The fault queue. Same 24-hour window as the ingest chart, so the two panels
-  // answer about the same stretch of time rather than quietly disagreeing.
+  // answer about the same stretch of time rather than quietly disagreeing — and
+  // the same key and window gate 6 reads, so the strip and the queue share one
+  // request rather than making two that can disagree.
   const alertsQ = useQuery<any>({
     queryKey: ["bi-alerts", ALERT_HOURS],
     queryFn: () => bi.alerts({ hours: ALERT_HOURS, limit: 50 }),
     refetchInterval: 30_000,
-  });
-
-  // The duplicate worklist, under the SAME query key the duplicates console uses
-  // for its unfiltered view — so the two cannot disagree, and a collapse over
-  // there refreshes this annotation with the summary it already invalidates.
-  // No refetchInterval: this is an annotation on a number, not a live figure.
-  const ghostsQ = useQuery<any>({
-    queryKey: ["bi-ghosts", ""],
-    queryFn: () => bi.ghosts(),
-    enabled: mayOpenDuplicates,
   });
 
   const s = summaryQ.data;
@@ -332,196 +319,178 @@ export default function Portfolio() {
   const measuredTotal = measured.length
     ? measured.reduce((n: number, x: any) => n + (x.kwh.consumption_kwh || 0), 0)
     : null;
-
-  // How much of the point count is the same register counted twice. BOTH HALVES
-  // COME FROM THE SUMMARY: `total_registers` counts the same rows as
-  // `total_points`, in the same SELECT and under the same retirement horizon, so
-  // the difference between them is a subtraction the server already vouched for.
-  // This used to be `total_points` minus the duplicate worklist's excess, which
-  // compared two row sets that never agreed to be compared — the worklist
-  // deliberately ignores the horizon a ghost is usually past — and was clamped at
-  // zero for it. The clamp is gone with the divergence that needed it.
-  //
-  // Absent rather than zero when the field is missing: a store that does not
-  // report it has not said the estate is clean, and an annotation nobody can
-  // check is worse than none.
-  const registers: number | null =
-    typeof s?.total_registers === "number" ? s.total_registers : null;
-  const repeats: number | null = registers == null ? null : s.total_points - registers;
-
-  // The DUPLICATED PAIRS are a different question and still a different request.
-  // The register line above says what the estate really has; this says how many
-  // groups an operator would have to settle, which only the worklist knows — and
-  // a viewer who may not open that console is never charged for it.
-  const dupGroups: any[] = ghostsQ.data?.groups ?? [];
+  const quietPoints = s ? s.total_points - s.total_points_reporting : null;
 
   return (
     <ConsolePage>
-      {/* No page title and no standfirst. The nav already says Portfolio, and the
-          paragraph that used to sit here restated what the KPI strip shows one
-          line lower.
-
-          This strip carries the two ages nothing else on the page states, and they
-          answer DIFFERENT questions: `last reading` is how fresh the ESTATE is (the
-          newest reading in the store), `updated` is how fresh this PAGE is. A stale
-          estate behind a freshly-fetched page is exactly the failure worth seeing,
-          so both stay, side by side. */}
-      <div className="mb-3 flex shrink-0 items-center justify-end gap-2 text-[11px] text-nb-faint">
-        {summaryQ.isFetching && (
-          <Icon icon="svg-spinners:180-ring" className="text-sm text-nb-blueb" />
-        )}
-        {s && (
+      {/* The page says what layer it is, because there are three and the other
+          two are reached from it. The two ages in the right-hand slot answer
+          DIFFERENT questions: `last reading` is how fresh the ESTATE is (the
+          newest reading in the store), `updated` is how fresh this PAGE is. A
+          stale estate behind a freshly-fetched page is exactly the failure worth
+          seeing, so both stay, side by side. */}
+      <EstateHeader
+        crumbs={[{ label: "Building" }]}
+        desc="One building, one pipeline. The gates say whether these numbers can be trusted; the questions are what the building has to answer; the domains are where the numbers come from."
+        right={
           <>
-            <span>
-              last reading <span className="text-nb-soft">{fmtRelative(s.last_reading_at)}</span>
-            </span>
-            <span className="text-nb-line">·</span>
-            <span>updated {fmtRelative(s.generated_at)}</span>
+            {summaryQ.isFetching && (
+              <Icon icon="svg-spinners:180-ring" className="text-sm text-nb-blueb" />
+            )}
+            {s && (
+              <>
+                <span>
+                  last reading <span className="text-nb-soft">{fmtRelative(s.last_reading_at)}</span>
+                </span>
+                <span className="text-nb-line">·</span>
+                <span>updated {fmtRelative(s.generated_at)}</span>
+              </>
+            )}
           </>
-        )}
-      </div>
+        }
+      />
 
       {err ? (
         <SectionCard className="text-center text-xs text-nb-crit">{err}</SectionCard>
       ) : summaryQ.isLoading ? (
         <LoadingBlock label="Reading the store…" />
       ) : (
-        // THE PAGE ITSELF DOES NOT SCROLL. The KPI strip is pinned and the two
-        // columns scroll independently inside what is left of the viewport, so the
-        // numbers a glance is for never leave the screen.
-        //
-        // Only from `xl` up. Below that the columns stack into one narrow lane that
-        // cannot fit a leaderboard AND a chart at any height, and pinning there
-        // would trap content in a few unusable pixels — narrow gets an ordinary
-        // page scroll, which is the honest behaviour for it.
-        <div className="flex min-h-0 flex-1 flex-col gap-3 px-1">
-          <KpiStrip className="shrink-0">
-            <Kpi
-              icon="heroicons:star"
-              label="Portfolio score"
-              value={scoredSites.length ? Math.round(scoredMean!) : null}
-              sub={
-                scoredSites.length
-                  ? `mean CCEI over ${scoredSites.length} scored site(s)`
-                  : "CCEI blocked on every site — the rows name which components are missing"
-              }
-              title="CCEI v2 = 0.35 × EEI + 0.25 × OPI + 0.20 × CPI + 0.20 × CCI — the NEUBIT CCEI Methodology Specification v1.0, evaluated by the metric registry per site over four sub-indices and fourteen component metrics. A composite of a refusal is a refusal: the dash names every component the estate cannot yet measure, at its spec weight, and what is in the way — never an invented number."
-            />
-            <Kpi
-              icon="heroicons:cpu-chip"
-              label="Devices"
-              value={s.total_devices}
-              sub="reporting into the store"
-            />
-            <Kpi
-              icon="heroicons:signal"
-              label="Points"
-              value={s.total_points}
-              sub={`${s.total_points_reporting} reporting in last ${s.fresh_minutes} min`}
-              tone={s.total_points_reporting === s.total_points ? "good" : "warn"}
-              // The headline stays the ROW count, because that is what every
-              // other figure on this page was computed over and a silently
-              // corrected total would disagree with all of them. What changes is
-              // that it no longer prints alone: underneath it sit the number of
-              // registers those rows really describe, the rows that are repeats
-              // of them, and the screen where they are settled.
-              title={
-                !repeats
-                  ? undefined
-                  : `One row per point id. A rebuilt gateway connection re-creates its points under new ids, so ${repeats} of these rows are later generations of registers already counted here — ${registers} distinct registers. Both figures are counted over the same rows in the same statement.${
-                      dupGroups.length
-                        ? ` ${dupGroups.length} duplicated pairs are waiting to be settled; collapsing them deletes no reading and can be undone.`
-                        : ""
-                    }`
-              }
-              action={
-                // Two statements, from two different requests, and they are no
-                // longer one block. The register line is arithmetic on the
-                // summary this page already has, so it renders whenever the
-                // estate has repeats — a failed or pending worklist cannot take
-                // it away. The LINK still belongs to the worklist: the pair
-                // count is the worklist's own, and a link offered with an
-                // invented count is exactly the decorative control this console
-                // does not ship.
-                !repeats && !dupGroups.length ? null : (
-                  <>
-                    {!!repeats && (
-                      <p className="text-nb-warn">
-                        <span className="font-mono">{registers}</span> registers ·{" "}
-                        <span className="font-mono">{repeats}</span> rows are repeats of them
-                      </p>
-                    )}
-                    {dupGroups.length > 0 && (
-                      <Link
-                        href="/bi/duplicates"
-                        className="mt-0.5 inline-flex items-center gap-1 text-nb-blueb hover:underline"
-                      >
-                        Settle {dupGroups.length} duplicated pairs
-                        <Icon icon="heroicons:arrow-up-right" className="text-[11px]" />
-                      </Link>
-                    )}
-                  </>
-                )
-              }
-            />
-            <Kpi
-              icon="heroicons:bolt"
-              label="Measured kWh"
-              value={measuredTotal != null ? measuredTotal.toLocaleString() : null}
-              sub={
-                measuredTotal != null
-                  ? `${measured.length} site(s), operator-confirmed registers, ${alertHours}h`
-                  : "no kWh register confirmed — confirm units in Ratings"
-              }
-              tone="good"
-              title={
-                measuredTotal != null
-                  ? undefined
-                  : "Consumption is last − first over a confirmed kWh register. Zero registers are confirmed, so there is nothing measured to show — confirming them happens in Ratings, by a human."
-              }
-            />
-            <Kpi
-              icon="heroicons:bell-alert"
-              label={`Critical · ${alertHours}h`}
-              value={critTotal}
-              sub="raised by the gateway, nothing inferred"
-              tone={critTotal ? "crit" : "good"}
-            />
-          </KpiStrip>
+        // ORDINARY PAGE SCROLL. The old layout pinned a KPI strip and scrolled two
+        // columns inside the viewport, which works for a page that IS a
+        // leaderboard. This one is a stack — gates, questions, domains, detail —
+        // and pinning part of a stack traps the rest in a few pixels.
+        <ConsoleScroll className="space-y-3">
+          {/* ── THE GATES ─ can these numbers be trusted ──────────────────────
+              One component, every layer, rescoped to its subject. Healthy, it is
+              a single faint line; shut, the blocked gate expands with its own
+              worklist in context. See components/GateStrip.tsx. */}
+          <GateStrip subject={{ kind: "estate", label: "the estate" }} />
 
-          <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto xl:grid-cols-[1.52fr_1fr] xl:overflow-hidden">
-            {/* The leaderboard owns the column's whole height and scrolls its
-                ROWS, not itself: the heading stays put while the sites move
-                under it. This is the list that grows — a second site, a tenth,
-                a portfolio — so it is the one given the height that is left
-                over rather than a height of its own. */}
-            <div className="flex min-w-0 flex-col xl:min-h-0">
-              <SectionCard className="flex min-h-0 flex-1 flex-col">
-                <SectionHead
-                  icon="heroicons:trophy"
-                  title="Site leaderboard"
-                  desc="Sites the store has been told about, plus the points no site owns. A dash is a blocked score — its reasons sit on the row."
-                />
-                <Leaderboard className="min-h-0 flex-1 overflow-y-auto pr-1">
-                  {sites.map((site: any) => (
-                    <SiteRow key={site.site_id ?? "_unplaced"} site={site} alertHours={alertHours} />
-                  ))}
-                </Leaderboard>
-              </SectionCard>
+          {/* ── THE QUESTIONS ─ what this building has to answer ──────────────
+              Not a KPI strip of whatever the store happens to expose: five
+              questions, each with the number that answers it or the sentence
+              that says what is blocking it and where it is unblocked. A blocked
+              slot prints "—" plus its reason — never a zero, never a guess. */}
+          <section>
+            <SectionHead
+              icon="heroicons:question-mark-circle"
+              title="What this building has to answer"
+              desc="Five questions. Each one carries either a measured number or what is in the way of it."
+            />
+            <KpiStrip className="mt-2">
+              <Kpi
+                icon="heroicons:bolt"
+                label="What is it consuming?"
+                value={measuredTotal != null ? measuredTotal.toLocaleString() : null}
+                sub={
+                  measuredTotal != null
+                    ? `kWh · ${measured.length} site(s), operator-confirmed registers, ${alertHours}h`
+                    : "no kWh register confirmed — confirm units in Ratings"
+                }
+                tone="good"
+                title={
+                  measuredTotal != null
+                    ? undefined
+                    : "Consumption is last − first over a confirmed kWh register. Zero registers are confirmed, so there is nothing measured to show — confirming them happens in Ratings, by a human."
+                }
+                action={
+                  measuredTotal != null ? null : (
+                    <Link href="/bi/ratings" className="text-nb-blueb hover:underline">
+                      Confirm a kWh register →
+                    </Link>
+                  )
+                }
+              />
+              <Kpi
+                icon="heroicons:star"
+                label="How efficiently?"
+                value={scoredSites.length ? Math.round(scoredMean!) : null}
+                sub={
+                  scoredSites.length
+                    ? `CCEI 0-100 · mean over ${scoredSites.length} scored site(s)`
+                    : "CCEI blocked on every site — the rows name which components are missing"
+                }
+                title="CCEI v2 = 0.35 × EEI + 0.25 × OPI + 0.20 × CPI + 0.20 × CCI — the NEUBIT CCEI Methodology Specification v1.0, evaluated by the metric registry per site over four sub-indices and fourteen component metrics. A composite of a refusal is a refusal: the dash names every component the estate cannot yet measure, at its spec weight, and what is in the way — never an invented number."
+              />
+              <Kpi
+                icon="heroicons:bell-alert"
+                label="What is failing now?"
+                value={critTotal}
+                sub={`critical alerts · ${alertHours}h, raised by the gateway, nothing inferred`}
+                tone={critTotal ? "crit" : "good"}
+              />
+              <Kpi
+                icon="heroicons:signal-slash"
+                label="What has gone quiet?"
+                value={quietPoints}
+                sub={`points silent longer than ${s.fresh_minutes} min, of ${s.total_points}`}
+                tone={quietPoints ? "warn" : "good"}
+              />
+              <Kpi
+                icon="heroicons:cpu-chip"
+                label="What is it made of?"
+                value={s.total_devices}
+                sub={`devices · ${s.total_points} points across ${s.categories.length} domains`}
+              />
+            </KpiStrip>
+          </section>
+
+          {/* ── CORRELATIONS LANE GOES HERE ───────────────────────────────────
+              RESERVED SLOT, RENDERING NOTHING. `GET /api/v1/bi/correlations` is
+              being built right now; the lane that reads it belongs at exactly
+              this point in the stack — ABOVE the domains — because a cross-domain
+              answer ("the chiller's draw tracks the outside air, the pump's does
+              not") is the product, and a per-domain count is table stakes.
+
+              It is a slot in the SOURCE and not a placeholder on the SCREEN, and
+              that is deliberate: a card reading "correlations, coming soon" is a
+              control with no consumer and a destination this console cannot yet
+              honour, which is the one thing every screen here refuses to ship.
+              Drop the lane in here, between the questions and the domains. */}
+
+          {/* ── THE DOMAINS ─ where the numbers come from ─────────────────────
+              These are DOMAINS OF ONE ESTATE, not three products, which is why
+              they are a lane here rather than three tiles on the launcher. Each
+              card opens L2 — the same gate strip, scoped, over that domain's
+              equipment.
+
+              The lane scrolls sideways rather than wrapping: a wrap would make
+              it two rows tall on some viewports and one on others, and
+              everything below it would move for no reason a reader could see. */}
+          <section>
+            <SectionHead
+              icon="heroicons:squares-2x2"
+              title="Domains"
+              desc="Every category the gateway has classified and reported. A domain is a scope of this estate — open one for the same gates over its own equipment."
+            />
+            <div className="mt-2 flex gap-3 overflow-x-auto pb-0.5">
+              {s.categories.map((row: any) => (
+                <CategoryCard key={row.category ?? "_none"} row={row} />
+              ))}
             </div>
+          </section>
 
-            {/* Two cards, each answering for its own height — NOT one column
-                scrolled as a unit. Scrolling the column moved the ingest chart
-                off screen to reach the fault list, which is the one pairing on
-                this page that has to be read together: a queue that suddenly
-                fills means nothing until you can see whether ingest fell over at
-                the same hour.
+          {/* ── THE ESTATE DETAIL ─ after the answer, not instead of it ───────
+              The leaderboard, the ingest chart and the fault queue. The chart and
+              the queue stay side by side because that pairing has to be read
+              together: a queue that suddenly fills means nothing until you can
+              see whether ingest fell over at the same hour. */}
+          <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[1.52fr_1fr]">
+            <SectionCard>
+              <SectionHead
+                icon="heroicons:trophy"
+                title="Site leaderboard"
+                desc="Sites the store has been told about, plus the points no site owns. A dash is a blocked score — its reasons sit on the row."
+              />
+              <Leaderboard>
+                {sites.map((site: any) => (
+                  <SiteRow key={site.site_id ?? "_unplaced"} site={site} alertHours={alertHours} />
+                ))}
+              </Leaderboard>
+            </SectionCard>
 
-                The chart is a fixed 150px of bars, so it is fixed. The queue is
-                the list that varies, so it takes the height left over and
-                scrolls its rows inside itself. */}
-            <div className="flex min-w-0 flex-col gap-3 xl:min-h-0 xl:overflow-y-auto">
-              <SectionCard className="shrink-0">
+            <div className="flex min-w-0 flex-col gap-3">
+              <SectionCard>
                 <SectionHead
                   icon="heroicons:chart-bar"
                   title="Ingest — last 24 hours"
@@ -534,7 +503,7 @@ export default function Portfolio() {
                 )}
               </SectionCard>
 
-              <SectionCard className="shrink-0">
+              <SectionCard>
                 <SectionHead
                   icon="heroicons:bell-alert"
                   title={`Live queue · ${ALERT_HOURS} h`}
@@ -548,26 +517,7 @@ export default function Portfolio() {
               </SectionCard>
             </div>
           </div>
-
-          {/* THE CATEGORY STRIP IS ONE ROW, PINNED, AND IT IS NOT IN A COLUMN.
-              It used to sit under the leaderboard, which meant the two grew into
-              the same scroll: every site added pushed the estate's category
-              breakdown further out of reach, and the leaderboard never got the
-              height it is the whole point of. Sites are the thing that grows
-              here; categories are the thing that does not. So the set that grows
-              gets the flexible height, and the set that is fixed gets a fixed
-              row.
-
-              It scrolls sideways rather than wrapping, because a wrap would make
-              this strip two rows tall on some viewports and one on others — and
-              the leaderboard above would change height with it for no reason a
-              reader could see. */}
-          <div className="flex shrink-0 gap-3 overflow-x-auto pb-0.5">
-            {s.categories.map((row: any) => (
-              <CategoryCard key={row.category ?? "_none"} row={row} />
-            ))}
-          </div>
-        </div>
+        </ConsoleScroll>
       )}
     </ConsolePage>
   );

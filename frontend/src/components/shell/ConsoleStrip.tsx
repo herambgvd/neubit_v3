@@ -26,10 +26,13 @@ const STRIP_ROUTES = new Set<string>([
   "/ingest", "/config/security", "/platform", "/config/video-wall",
   "/config/linkage", "/federation", "/storage",
   "/config/patterns",
-  // Building Intelligence — one modtab plus a segment across the BUILT consoles.
+  // Building Intelligence — one modtab plus a segment across the LAYERS.
   // The unbuilt Sense/Think surfaces are deliberately absent here: the launcher
   // already shows them as SOON, and a dead segment cell would be exactly the
   // "fabricated destination" this feature must not ship.
+  //
+  // The two GATE WORKLISTS are listed so the strip still renders when one is
+  // deep-linked, but they are NOT segment cells — see GATE_WORKLISTS below.
   "/bi/portfolio", "/bi/energy", "/bi/hvac", "/bi/water", "/bi/insights", "/bi/ratings",
   "/bi/duplicates", "/bi/succession",
 ]);
@@ -46,9 +49,27 @@ const seg = (on: boolean) =>
   }`;
 const segBox = "flex shrink-0 gap-0.5 rounded-[8px] border border-nb-line bg-[rgba(8,15,34,.7)] p-[3px]";
 
-/** Pages that get a single chip in the strip instead of a segmented control.
- *  A route not listed here has no solo chip — which is why this is a map and not
- *  a chain: adding the next one is a line of data, not another arm. */
+/** The two GATE WORKLISTS. They are not layers of Building Intelligence and not
+ *  siblings of the estate view — each one is what a SHUT GATE opens, and the way
+ *  in is pressing that gate on whatever layer you are standing on. So they are
+ *  absent from the launcher and absent from the segment below, and a deep link
+ *  to one lands on a chip that says which gate it belongs to, with the way back
+ *  to the layer it was opened from. A segment cell would have made them
+ *  destinations beside the estate again. */
+const GATE_WORKLISTS: Record<string, { gate: string; label: string; icon: string }> = {
+  "/bi/duplicates": {
+    gate: "Gate 1 · ARRIVES",
+    label: "Duplicate registers",
+    icon: "heroicons-outline:document-duplicate",
+  },
+  "/bi/succession": {
+    gate: "Gate 4 · BINDS",
+    label: "Stranded roles",
+    icon: "heroicons-outline:link",
+  },
+};
+
+/** Pages that get a single chip in the strip instead of a segmented control. */
 const SOLO_PAGES: Record<string, { label: string; icon: string }> = {
   "/config/linkage": { label: "Linkage", icon: "heroicons-outline:bolt" },
   "/federation": { label: "Federation", icon: "heroicons-outline:share" },
@@ -58,7 +79,12 @@ const SOLO_PAGES: Record<string, { label: string; icon: string }> = {
 export default function ConsoleStrip() {
   const pathname = usePathname();
   const { can } = useAuth();
-  const view = useSearchParams().get("view");
+  const params = useSearchParams();
+  const view = params.get("view");
+  // Building Intelligence's second axis. A domain console is ESTATE-WIDE
+  // without it and ONE BUILDING with it, and both are real destinations — see
+  // the segment below, which carries it rather than silently dropping it.
+  const biSite = params.get("site");
 
   if (!hasConsoleStrip(pathname)) return null;
 
@@ -74,6 +100,7 @@ export default function ConsoleStrip() {
   const isPatterns = pathname === "/config/patterns";
   const isBI = pathname.startsWith("/bi/");
   const SOLO = SOLO_PAGES[pathname] ?? null;
+  const WORKLIST = GATE_WORKLISTS[pathname] ?? null;
 
   return (
     // Bare inline content — the global header owns the bar chrome. nav-scroll +
@@ -136,26 +163,67 @@ export default function ConsoleStrip() {
             <Icon icon="heroicons-outline:building-office-2" className="text-[14px]" />
             Building Intelligence
           </div>
-          <div className={segBox}>
-            {[
-              { href: "/bi/portfolio", label: "PORTFOLIO", icon: "heroicons-outline:building-office-2" },
-              { href: "/bi/energy", label: "ENERGY", icon: "heroicons-outline:bolt" },
-              { href: "/bi/hvac", label: "HVAC", icon: "heroicons-outline:cog-8-tooth" },
-              { href: "/bi/water", label: "WATER", icon: "heroicons-outline:beaker" },
-              { href: "/bi/insights", label: "INSIGHTS", icon: "heroicons-outline:chart-pie" },
-              { href: "/bi/ratings", label: "RATINGS", icon: "heroicons-outline:star" },
-              // The estate's own hygiene, beside the screens whose counts it
-              // corrects: a duplicated register inflates every one of them.
-              { href: "/bi/duplicates", label: "DUPLICATES", icon: "heroicons-outline:document-duplicate" },
-              // Gate 4, beside gate 1: a duplicated register inflates the counts,
-              // a stranded role stops the metrics above it computing at all.
-              { href: "/bi/succession", label: "STRANDED ROLES", icon: "heroicons-outline:link" },
-            ].map((s) => (
-              <Link key={s.href} href={s.href} className={seg(pathname === s.href)}>
-                <Icon icon={s.icon} className="text-[14px]" /> {s.label}
+          {WORKLIST ? (
+            // A gate's worklist. No segment: this is not a layer, and lighting
+            // nothing in a segment bar reads as a broken page while adding a
+            // cell for it would put it back beside the estate view. The chip
+            // names the gate it belongs to, and the crumb goes back to L1.
+            <>
+              <Link
+                href="/bi/portfolio"
+                title="Back to Building — the layer this gate is on"
+                className="flex shrink-0 items-center gap-1 rounded-[7px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1 text-[12px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+              >
+                <Icon icon="heroicons-mini:chevron-left" className="text-[14px]" /> Building
               </Link>
-            ))}
-          </div>
+              <div className={modtab}>
+                <Icon icon={WORKLIST.icon} className="text-[14px]" />
+                {WORKLIST.gate} — {WORKLIST.label}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className={segBox}>
+                {[
+                  // L1, then its domains. The order is the drill, not a menu.
+                  { href: "/bi/portfolio", label: "BUILDING", icon: "heroicons-outline:building-office-2" },
+                  { href: "/bi/energy", label: "ENERGY", icon: "heroicons-outline:bolt", domain: true },
+                  { href: "/bi/hvac", label: "HVAC", icon: "heroicons-outline:cog-8-tooth", domain: true },
+                  { href: "/bi/water", label: "WATER", icon: "heroicons-outline:beaker", domain: true },
+                  { href: "/bi/insights", label: "INSIGHTS", icon: "heroicons-outline:chart-pie" },
+                  { href: "/bi/ratings", label: "RATINGS", icon: "heroicons-outline:star" },
+                ].map((s) => (
+                  <Link
+                    key={s.href}
+                    // THE SCOPE TRAVELS WITH THE CELL. A domain console is two
+                    // screens under one route — the whole estate without
+                    // `?site=`, one building with it — so a cell that dropped
+                    // the param would move an operator from "Aeon Tower's
+                    // energy" to "every building's energy" while looking like a
+                    // filter change. Only the domains carry it: Building,
+                    // Insights and Ratings have no site scope to keep.
+                    href={s.domain && biSite ? `${s.href}?site=${encodeURIComponent(biSite)}` : s.href}
+                    className={seg(pathname === s.href)}
+                  >
+                    <Icon icon={s.icon} className="text-[14px]" /> {s.label}
+                  </Link>
+                ))}
+              </div>
+              {biSite && (
+                // WHICH SCOPE, said in the chrome. The console below says it at
+                // length; this is what a reader sees without scrolling, and it
+                // is the one control that leaves the building scope on purpose.
+                <Link
+                  href={pathname}
+                  title="Leave the building scope — the same domain across the whole estate"
+                  className="flex shrink-0 items-center gap-1 rounded-[7px] border border-[rgba(96,165,250,.45)] bg-[rgba(96,165,250,.12)] px-2.5 py-1 text-[11.5px] text-nb-blueb transition hover:border-nb-blue"
+                >
+                  <Icon icon="heroicons-outline:map-pin" className="text-[13px]" /> ONE BUILDING
+                  <Icon icon="heroicons-mini:x-mark" className="text-[13px]" />
+                </Link>
+              )}
+            </>
+          )}
         </div>
       )}
 

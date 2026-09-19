@@ -149,11 +149,25 @@ export const LAUNCHER_MODES: LauncherMode[] = [
     // The rest stay SOON, INDIVIDUALLY, and the rule that made the whole mode `soon`
     // still governs each one: never a fabricated destination or figure.
     //
+    // THE MODE IS ONE PIPELINE, NOT A SHELF OF CONSOLES. Every number in
+    // Building Intelligence passes six gates — it ARRIVES, it MEANS a unit, it
+    // BELONGS to a place, it BINDS to a metric role, it RATES, it ACTS — over
+    // three layers: L1 Building, L2 Domain, L3 Plant (unbuilt). This mode used
+    // to carry TEN flat tiles, and two of them were the WORKLISTS of shut gates
+    // sitting as peers of the estate view, which made the pipeline invisible in
+    // the product. Those two are gone. What stayed — and was briefly, wrongly,
+    // removed with them — are the three DOMAIN tiles, because a domain tile and
+    // the Domains lane on Building are not the same door: the tile opens the
+    // domain across the WHOLE ESTATE, the lane drills into ONE BUILDING.
+    //
     // Built (backed by `neubit_reporting`, served by the reading-writer's /bi API):
-    //   Portfolio          — every category that has reported, with real counts
-    //   Energy & Metering  — category=energy · 18 devices / 260 points
-    //   HVAC & Assets      — category=hvac   ·  7 devices /  36 points
-    //   Water              — category=water  ·  2 devices /  10 points
+    //   Building           — L1: the six gates, the questions, the domains
+    //     ↳ a site         — L2 scoped, `/bi/<domain>?site=<uuid>`: one building
+    //     ↳ Duplicates     — gate 1's worklist, opened from the gate
+    //     ↳ Stranded roles — gate 4's worklist, opened from the gate
+    //   Energy & Metering  — L2 unscoped, category=energy · the whole estate
+    //   HVAC & Assets      — L2 unscoped, category=hvac   · the whole estate
+    //   Water              — L2 unscoped, category=water  · the whole estate
     //   Insights & Corr.   — Pearson r between any two reporting series
     //   Ratings            — EPI where an operator has supplied unit + area
     //
@@ -238,35 +252,46 @@ export const LAUNCHER_MODES: LauncherMode[] = [
         title: "Sense",
         accent: "#67e8f9",
         tiles: [
-          { icon: "heroicons:building-office-2", label: "Portfolio", href: "/bi/portfolio", tone: "att", perm: "bi.read", module: "analytics" },
+          // THE ONE DOOR INTO THE PIPELINE. It was "Portfolio", a leaderboard,
+          // sitting as the first of ten flat tiles; it is now L1 BUILDING — the
+          // six gates, the questions the building has to answer, then the
+          // domains. The route keeps its old spelling because bookmarks, the
+          // console strip and Portfolio's own links already name it.
+          { icon: "heroicons:building-office-2", label: "Building", href: "/bi/portfolio", tone: "att", perm: "bi.read", module: "analytics" },
+          // ENERGY / HVAC / WATER ARE TILES, AND THE ARGUMENT THAT REMOVED THEM
+          // WAS WRONG. It read: "three launcher tiles for one screen with three
+          // filters is three doors into one room." They are not one room. They
+          // are two SCOPES of the same data, and the product needs both —
+          //
+          //   this tile          → the WHOLE ESTATE's energy: every building
+          //                        combined, PLUS the points no building owns.
+          //   Building → a site  → THAT BUILDING's energy (`?site=<uuid>`).
+          //
+          // Domain-first across the portfolio is the question a facilities
+          // director asks; building-first is the question a site engineer asks.
+          // `CategoryConsole` has read `?site=` all along: without it the console
+          // is the estate, with it the console is one building. Removing these
+          // tiles removed the UNSCOPED door and left only the scoped path.
+          //
+          // And it did not just hide a view: 366 energy points, 95 HVAC points
+          // and 10 water points belong to NO site at all (gate 3's backlog), so
+          // they are reachable ONLY from the estate-wide console. With the tiles
+          // gone they were unreachable in the product.
+          //
+          // The two scopes say which they are on the screen itself — see the
+          // scope banner and the per-building rollup in `CategoryConsole.tsx`.
           { icon: "heroicons:cog-8-tooth", label: "HVAC & Assets", href: "/bi/hvac", tone: "teal", perm: "bi.read", module: "analytics" },
           { icon: "heroicons:bolt", label: "Energy & Metering", href: "/bi/energy", tone: "att", perm: "bi.read", module: "analytics" },
           // Same gating as its siblings — `bi.read` + the `analytics` module —
           // so a caller without either sees SOON here rather than a 403 there.
           { icon: "heroicons:beaker", label: "Water", href: "/bi/water", tone: "teal", perm: "bi.read", module: "analytics" },
-          // NO "Placement" TILE. There was one, and it was a second way to say
-          // where a device is. The first is Configurations → Sites → floor plan,
-          // which pins a device at {x, y, rotation} on the drawing and now offers
-          // IoT devices in the same palette as cameras and doors; the pin reaches
-          // Building Intelligence over the sites event spine. Portfolio still
-          // reports placed / unplaced and links to Sites.
-          // BUILT 2026-09-19. Gate 1 of the six: what actually ARRIVED. A
-          // rebuilt gateway connection re-creates its points under new ids, so
-          // one register accumulates a generation per rebuild and every estate
-          // count above it is inflated — 766 live rows for 475 real registers.
-          // This is where those are collapsed onto a survivor, reversibly. It
-          // sits in SENSE rather than THINK because it is a statement about what
-          // the estate IS, not an analysis of it. Reading needs `bi.read` +
-          // `analytics` like every tile here; collapsing needs `bi.manage`.
-          { icon: "heroicons:rectangle-stack", label: "Duplicate Points", href: "/bi/duplicates", tone: "teal", perm: "bi.read", module: "analytics" },
-          // BUILT 2026-09-19. Gate 4 of the six: what a number BINDS to. Every
-          // role an operator asserted is stranded on a point a gateway rebuild
-          // renamed away, so the metrics above them refuse for machines that are
-          // running. This is where the assertion is moved onto the point that
-          // replaced it, one at a time, against the evidence that ranked it —
-          // never swept. `bi.read` + `analytics` to read; moving needs `bi.manage`.
-          { icon: "heroicons:variable", label: "Stranded Roles", href: "/bi/succession", tone: "teal", perm: "bi.read", module: "analytics" },
-          // No environment points exist. Stays SOON until some do.
+          // DUPLICATE POINTS and STRANDED ROLES are not tiles, for a
+          // harder reason: they are the WORKLISTS OF SHUT GATES 1 and 4, and a
+          // worklist is not a destination beside the estate view. You reach one
+          // by pressing the gate that is shut, on whatever layer you are on, and
+          // it opens already scoped to it. Both routes still resolve and still
+          // deep-link — Building's gate strip links to them by name, and so does
+          // anyone's bookmark.
           { icon: "heroicons:sparkles", label: "IAQ & Environment", soon: true },
         ],
       },

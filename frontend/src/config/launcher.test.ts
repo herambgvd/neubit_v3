@@ -58,3 +58,81 @@ describe("optional-peer gating", () => {
     expect(gated.soon).toBe(true);
   });
 });
+
+/**
+ * TWO SCOPES, NOT TEN DOORS.
+ *
+ * The mode carried TEN flat tiles. Two of them — Duplicate Points and Stranded
+ * Roles — were the WORKLISTS OF SHUT GATES 1 and 4 sitting as peers of the
+ * estate view. A worklist is what you reach by pressing the gate that is shut,
+ * so they are gone from here and nothing was deleted: both routes still resolve
+ * and the gate strip names them.
+ *
+ * THE THREE DOMAIN TILES WENT WITH THEM ONCE, AND THAT WAS WRONG. The argument
+ * was that Building's Domains lane already reaches the same console, so a tile
+ * for each was a second door into one room. They are not one room — they are two
+ * SCOPES of one data set:
+ *
+ *   /bi/energy              the whole estate's energy, every building combined
+ *                           plus the points no building owns
+ *   /bi/energy?site=<uuid>  that one building's energy
+ *
+ * 366 energy points, 95 HVAC points and 10 water points belong to no site at
+ * all, so the unscoped route is the ONLY way to reach them. Removing the tiles
+ * made them unreachable in the product. This is the guard against doing it
+ * again — in either direction.
+ */
+const biTiles = LAUNCHER_MODES.find((m) => m.id === "int")!.groups.flatMap((g) => g.tiles);
+
+describe("Building Intelligence's doors", () => {
+  it("has exactly one door into the pipeline, and it is L1", () => {
+    const layer = biTiles.filter((t) => t.href === "/bi/portfolio");
+    expect(layer).toHaveLength(1);
+    expect(layer[0]!.label).toBe("Building");
+  });
+
+  it("offers no tile for a gate's worklist", () => {
+    const hrefs = biTiles.map((t) => t.href);
+    expect(hrefs).not.toContain("/bi/duplicates");
+    expect(hrefs).not.toContain("/bi/succession");
+  });
+
+  it("opens each domain across the whole estate, unscoped", () => {
+    // UNSCOPED is the whole assertion. A tile carrying `?site=` would be the
+    // building-first path wearing the estate-first tile's label, and the points
+    // no site owns would have no door at all.
+    for (const [href, label] of [
+      ["/bi/energy", "Energy & Metering"],
+      ["/bi/hvac", "HVAC & Assets"],
+      ["/bi/water", "Water"],
+    ] as const) {
+      const tile = biTiles.find((t) => t.href === href);
+      expect(tile, `${href} is the estate-wide door into that domain`).toBeDefined();
+      expect(tile!.label).toBe(label);
+      expect(tile!.href).not.toMatch(/\?/);
+      expect(tile!.soon).toBeUndefined();
+    }
+  });
+
+  it("gates every domain tile exactly as it gates the pipeline's front door", () => {
+    // One key, one module, across both scopes: a caller who can open Building
+    // can open a domain, and a caller who cannot sees SOON on both rather than
+    // a 403 on one.
+    const front = biTiles.find((t) => t.href === "/bi/portfolio")!;
+    for (const href of ["/bi/energy", "/bi/hvac", "/bi/water"]) {
+      const tile = biTiles.find((t) => t.href === href)!;
+      expect(tile.perm, href).toBe(front.perm);
+      expect(tile.module, href).toBe(front.module);
+    }
+  });
+
+  it("keeps the surfaces that are not layers or worklists", () => {
+    // Ratings, Insights, Metric Roles and Dashboards each answer a question no
+    // layer of the pipeline does. Demoting one would be hiding a surface, not
+    // simplifying an information architecture.
+    const hrefs = biTiles.map((t) => t.href);
+    for (const kept of ["/bi/ratings", "/bi/insights", "/bi/metrics", "/bi/dashboards"]) {
+      expect(hrefs).toContain(kept);
+    }
+  });
+});
