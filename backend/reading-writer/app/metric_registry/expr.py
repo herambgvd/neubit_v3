@@ -63,6 +63,19 @@ same reason every other bound here is, and `lo` may be 0 — a ceiling band like
 CO₂ < 1000 ppm is written `in_band(co2, 0, 1000)` and is a real band, unlike
 band_score's, which needs a positive floor to have a shape.
 
+`in_band` is the one function whose bounds may ALSO be NAMES — and only names
+of FACT inputs (an equipment's `design_dt_min` / `design_dt_max`, a site fact),
+never measured points. A chiller's design ΔT band is a stated fact about THAT
+chiller, and freezing it into the formula as a literal is what made v1 of
+`chw_delta_t_in_band` grade every machine against one 5–7 K. The row still says
+exactly where the band comes from (the input declares the fact by name), which
+is the property the literal rule protects. Registration checks that each named
+bound is a declared fact input (`registry.py`) and that its quantity matches the
+argument's (`infer` below — a band in K against a ΔT in °F delta is refused);
+the ordering `0 <= lo < hi`, which a literal pair has checked at parse, is
+checked at evaluation for a named pair, and a band that fails it REFUSES rather
+than scoring every bucket out of band.
+
 `benchmark_score(x)` — the position of x against the EFFECTIVE benchmark
 standard's band edges: best-band edge → 100, worst-band edge → 0, linear
 between, clamped. The edges are DATA (`benchmark_standards` + the site's zone
@@ -139,6 +152,16 @@ def _check_bounds(node: ast.Call) -> None:
                 f"band_score(x, lo, hi) needs 0 < lo < hi; got lo={lo:g}, hi={hi:g}"
             )
     if fn == "in_band":
+        if bound_name_nodes(node):
+            # Named (fact) bounds: their ORDER is a property of a fact nobody has
+            # stated yet, so it is checked where the fact is known — at
+            # evaluation. What is checked here is that each bound is a name or a
+            # literal and nothing else: `in_band(x, lo + 1, hi)` would put
+            # arithmetic into a band.
+            for a in node.args[1:]:
+                if not isinstance(a, ast.Name):
+                    _literal_value(a, fn)
+            return
         lo, hi = _literal_pair(node)
         if not (0 <= lo < hi):
             raise ExprError(
@@ -203,27 +226,74 @@ def _check(node: ast.AST) -> None:
     raise ExprError(f"`{type(node).__name__}` is not in the language")
 
 
+def _literal_value(a: ast.AST, fn: str) -> float:
+    """One bound argument as the numeric literal it must be."""
+    # `-1` parses as USub over a Constant, not as a negative literal. Unfold
+    # it, so a negative bound fails the RANGE check with the range named
+    # rather than being reported as "not a literal" — a wrong reason costs
+    # whoever reads it a detour.
+    sign = 1.0
+    if isinstance(a, ast.UnaryOp) and isinstance(a.op, (ast.USub, ast.UAdd)):
+        sign = -1.0 if isinstance(a.op, ast.USub) else 1.0
+        a = a.operand
+    if not (isinstance(a, ast.Constant) and isinstance(a.value, (int, float))
+            and not isinstance(a.value, bool)):
+        if fn == "in_band":
+            raise ExprError(
+                "in_band(): each bound must be a numeric literal or the name of a "
+                "declared fact input"
+            )
+        raise ExprError(f"{fn}(): the two bound arguments must be numeric literals")
+    return sign * float(a.value)
+
+
 def _literal_pair(node: ast.Call) -> tuple[float, float]:
     """The two bound arguments of a three-argument normalization function
     (band_score's lo/hi, norm_up's floor/target, norm_down's target/worst).
     They must be numeric literals — spec parameters IN the row, where a
     reviewer sees them, not names resolved from anywhere."""
     fn = node.func.id  # type: ignore[union-attr]
+    return _literal_value(node.args[1], fn), _literal_value(node.args[2], fn)
+
+
+def bound_name_nodes(node: ast.Call) -> list[ast.Name]:
+    """The bounds of an `in_band` call that are NAMES rather than literals."""
+    if not (isinstance(node.func, ast.Name) and node.func.id == "in_band"):
+        return []
+    return [a for a in node.args[1:] if isinstance(a, ast.Name)]
+
+
+def bound_names(tree: ast.expression) -> set[str]:
+    """Every input name used as an `in_band` bound — the registry requires each
+    to be a FACT input, never a measured one."""
+    out: set[str] = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call):
+            out |= {b.id for b in bound_name_nodes(n)}
+    return out
+
+
+def _band(node: ast.Call, env: dict[str, float]) -> tuple[float, float]:
+    """An in_band call's (lo, hi) at evaluation — literals as written, names from
+    the resolved facts. A named band out of order refuses: scoring against it
+    would put every bucket outside a band that cannot contain anything."""
     vals = []
     for a in node.args[1:]:
-        # `-1` parses as USub over a Constant, not as a negative literal. Unfold
-        # it, so a negative bound fails the RANGE check with the range named
-        # rather than being reported as "not a literal" — a wrong reason costs
-        # whoever reads it a detour.
-        sign = 1.0
-        if isinstance(a, ast.UnaryOp) and isinstance(a.op, (ast.USub, ast.UAdd)):
-            sign = -1.0 if isinstance(a.op, ast.USub) else 1.0
-            a = a.operand
-        if not (isinstance(a, ast.Constant) and isinstance(a.value, (int, float))
-                and not isinstance(a.value, bool)):
-            raise ExprError(f"{fn}(): the two bound arguments must be numeric literals")
-        vals.append(sign * float(a.value))
-    return vals[0], vals[1]
+        if isinstance(a, ast.Name):
+            if a.id not in env:
+                raise EvalRefusal("blocked", f"band bound `{a.id}` has no value")
+            vals.append(float(env[a.id]))
+        else:
+            vals.append(_literal_value(a, "in_band"))
+    lo, hi = vals
+    if not (0 <= lo < hi):
+        named = ", ".join(f"`{a.id}`" for a in bound_name_nodes(node))
+        raise EvalRefusal(
+            "blocked",
+            f"in_band(): the band from {named} is lo={lo:g}, hi={hi:g}, which is not "
+            f"0 <= lo < hi — a band that contains nothing cannot be scored against",
+        )
+    return lo, hi
 
 
 def uses(tree: ast.expression, func: str) -> bool:
@@ -252,7 +322,31 @@ def infer(tree: ast.expression, input_qty: dict[str, Qty]) -> Qty:
     return _infer(tree.body, input_qty)
 
 
-def _infer_call(node: ast.Call, arg: Qty) -> Qty:
+def _infer_band_bounds(node: ast.Call, arg: Qty, env: dict[str, Qty]) -> None:
+    """A NAMED band bound must be the same quantity as the thing it bounds.
+
+    A literal bound is stated "in x's own unit by construction" and is not
+    checked; a named one carries its own quantity, and a ΔT band in K bounding a
+    ΔT in °F-delta is exactly the silent unit error the algebra exists to stop.
+    """
+    for b in bound_name_nodes(node):
+        if b.id not in env:
+            raise DimensionError(f"formula names `{b.id}`, which is not a declared input")
+        bq = env[b.id]
+        if bq.dimension != arg.dimension:
+            raise DimensionError(
+                f"in_band(): bound `{b.id}` is `{bq.dimension}` but the banded "
+                f"quantity is `{arg.dimension}`"
+            )
+        if bq.unit is not None and arg.unit is not None and bq.unit != arg.unit:
+            raise DimensionError(
+                f"in_band(): bound `{b.id}` is in `{bq.unit}` and the banded "
+                f"quantity is in `{arg.unit}` — conversion is not modelled, so this "
+                f"is refused rather than converted silently"
+            )
+
+
+def _infer_call(node: ast.Call, arg: Qty, env: dict[str, Qty] | None = None) -> Qty:
     """What a call produces, given what its argument is."""
     fn = node.func.id  # type: ignore[union-attr]
     if fn in ("abs", "annualize"):
@@ -263,6 +357,7 @@ def _infer_call(node: ast.Call, arg: Qty) -> Qty:
         return DIMENSIONLESS
     if fn == "in_band":
         # membership of x's own band, in x's own unit — 1 or 0, no unit
+        _infer_band_bounds(node, arg, env or {})
         return DIMENSIONLESS
     if fn in ("norm_up", "norm_down"):
         # CCEI spec §3.1/§3.2: any engineering unit onto the 0-100 scale.
@@ -297,7 +392,7 @@ def _infer(node: ast.AST, env: dict[str, Qty]) -> Qty:
             raise DimensionError(f"formula names `{node.id}`, which is not a declared input")
         return env[node.id]
     if isinstance(node, ast.Call):
-        return _infer_call(node, _infer(node.args[0], env))
+        return _infer_call(node, _infer(node.args[0], env), env)
     raise ExprError(f"`{type(node).__name__}` is not in the language")  # unreachable after _check
 
 
@@ -358,7 +453,8 @@ def _benchmark_score(v: float, benchmark: dict | None) -> float:
 
 
 def _eval_call(
-    node: ast.Call, v: float, window_days: float | None, benchmark: dict | None
+    node: ast.Call, v: float, window_days: float | None, benchmark: dict | None,
+    env: dict[str, float] | None = None,
 ) -> float:
     """A call applied to its already-evaluated argument."""
     fn = node.func.id  # type: ignore[union-attr]
@@ -369,7 +465,7 @@ def _eval_call(
             raise EvalRefusal("blocked", "annualize() needs a window with nonzero length")
         return v * (365.0 / window_days)
     if fn == "in_band":
-        lo, hi = _literal_pair(node)
+        lo, hi = _band(node, env or {})
         return 1.0 if lo <= v <= hi else 0.0
     if fn == "norm_up":
         floor, target = _literal_pair(node)
@@ -406,6 +502,7 @@ def _eval(node: ast.AST, env: dict[str, float], window_days: float | None,
             _eval(node.args[0], env, window_days, benchmark),
             window_days,
             benchmark,
+            env,
         )
     raise EvalRefusal("blocked", f"`{type(node).__name__}` is not in the language")
 

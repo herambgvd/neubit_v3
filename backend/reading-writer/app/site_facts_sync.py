@@ -64,6 +64,8 @@ from sqlalchemy import delete as sa_delete
 
 from reporting.models import SiteEmissionFactor, SiteFact, SiteTariffSlab
 
+from .shutdown import close_nats, stop_tasks
+
 log = logging.getLogger("reading-writer.site-facts-sync")
 
 EVENTS_STREAM = "EVENTS"

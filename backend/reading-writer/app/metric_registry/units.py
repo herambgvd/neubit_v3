@@ -65,6 +65,23 @@ UNIT_DIMENSION: dict[str, str] = {
     "L": "volume",
     # ratio — what `_pf` confirms as
     "": "dimensionless",
+    # A PERCENTAGE, confirmed as such: a chiller's load, a valve position. Also
+    # dimensionless, and kept a DIFFERENT unit from "" on purpose — a definition
+    # that divides by 100 declares `unit: "%"` on the input, so a point confirmed
+    # as a 0–1 fraction refuses on the unit instead of scoring a hundredfold off.
+    # (0025 kept `%` out of this table so that no correlation could demand a
+    # `percent` dimension nobody measures; mapping it onto the dimensionless that
+    # already exists invents no dimension, and the one formula that needs it —
+    # kW/TR — genuinely multiplies by it.)
+    "%": "dimensionless",
+    # COOLING RATE, in refrigeration tons. Physically a power (1 TR ≈ 3.517 kW),
+    # and deliberately NOT `power` here: kW/TR is electrical input over thermal
+    # output, two different flows the industry never cancels into a pure number.
+    # As `power`, `kW ÷ TR` would be refused as a same-dimension unit mismatch
+    # (conversion is not modelled) — which is the algebra being right about the
+    # physics and wrong about the metric. Its own dimension says what it is.
+    "TR": "refrigeration",
+    "kW/TR": "power_per_refrigeration",
 }
 
 # The delta unit produced by subtracting two absolute temperatures in a given
@@ -154,6 +171,8 @@ _DIV_TABLE: dict[tuple[str, str], str] = {
     ("energy", "area"): "energy_per_area",
     # kg CO2 ÷ m² — the carbon-intensity denominator (spec §4.3)
     ("mass", "area"): "mass_per_area",
+    # kW ÷ TR — chiller efficiency, input power per unit of cooling delivered.
+    ("power", "refrigeration"): "power_per_refrigeration",
 }
 
 # Closed PRODUCT table, same discipline as division: an unlisted product is

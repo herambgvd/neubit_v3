@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..api.queries import _rows
 from . import expr
 from .roles import ROLE_DEFS
+from .slots import EQUIPMENT_CLASSES, EQUIPMENT_FACT_DEFS, SLOT_DEFS
 from .units import DimensionError, Qty, compatible, qty_of_unit
 
 KINDS = ("formula", "composite", "occupancy")
@@ -70,7 +71,15 @@ FACT_DEFS: dict[str, dict] = {
 # evaluates per site over the `site_facts` mirror — inputs may then be
 # site facts and site-wide role bindings, and a composite fans a device-scope
 # component out over the site's devices (contract §21).
-SCOPES = ("device", "site")
+#
+# "equipment" evaluates per piece of EQUIPMENT in the registry mirror
+# (`site_equipment`, fed from core's equipment registry). Its measured inputs are
+# the equipment's own SLOTS (`source: "slot"`), resolved to a point by
+# `slots.resolve` over the evaluated window, and its facts are the equipment's
+# own design facts (`source: "equipment_fact"`) — the same shape a site fact has
+# at site scope, one level down. `applies_to.equipment_class` names which class
+# it applies to, from the same closed vocabulary core validates against.
+SCOPES = ("device", "site", "equipment")
 
 
 class RegistrationError(ValueError):
@@ -135,14 +144,17 @@ def _check_occupancy_shape(defn: dict, scope: str, declared: Qty) -> None:
             "an occupancy metric's formula must be a single `in_band(x, lo, hi)` "
             "call — the band is the metric"
         )
-    if scope != "device":
+    if scope == "site":
         # Honest limit rather than a silent wrong answer: the site-scope
         # evaluator has no per-bucket path yet, so a site-scope occupancy
         # would have to aggregate first, which is the exact mistake this
         # kind exists to avoid. A site rolls these up through a composite,
-        # which fans device-scope components over the site's devices.
+        # which fans device- and equipment-scope components over the site.
+        # (Equipment scope shares the device path's per-bucket machinery —
+        # one point per input, bucket-aligned — so it is allowed.)
         raise RegistrationError(
-            "occupancy is device-scope only today; roll it up to a site "
+            "occupancy is device-scope only today (or equipment-scope, which "
+            "shares the device path's per-bucket series); roll it up to a site "
             "through a composite"
         )
     if declared.dimension != "dimensionless":
@@ -220,6 +232,77 @@ def _emission_factor_qty(name: str, spec: dict, scope: str) -> Qty:
     return q
 
 
+def _slot_input_qty(name: str, spec: dict, scope: str) -> Qty:
+    """A measured input read through one of the equipment's own SLOTS."""
+    if scope != "equipment":
+        raise RegistrationError(
+            f"input `{name}` reads an equipment slot, which needs "
+            f"applies_to.scope = 'equipment'"
+        )
+    slot = spec.get("slot")
+    slot_def = SLOT_DEFS.get(slot or "")
+    if slot_def is None:
+        raise RegistrationError(
+            f"input `{name}` names slot `{slot}`, which is not in the slot "
+            f"vocabulary ({', '.join(sorted(SLOT_DEFS))})"
+        )
+    if slot_def["dimension"] is None:
+        raise RegistrationError(
+            f"input `{name}`: slot `{slot}` ({slot_def['label']}) is not a quantity "
+            f"the dimension algebra can compose, so no formula may read it"
+        )
+    q = _qty_from_spec(spec, f"input `{name}`")
+    if q.dimension != slot_def["dimension"]:
+        raise RegistrationError(
+            f"input `{name}`: slot `{slot}` carries `{slot_def['dimension']}`, "
+            f"but the input declares `{q.dimension}`"
+        )
+    agg = spec.get("aggregation", "avg")
+    # One point per slot, so the register-summing `consumption` has nothing to
+    # sum — and it exists only on the site path, for the reason given below.
+    if agg not in _AGGREGATIONS or agg == "consumption":
+        raise RegistrationError(
+            f"input `{name}`: aggregation `{agg}` is not available on a slot input"
+        )
+    return q
+
+
+def _equipment_fact_qty(name: str, spec: dict, scope: str) -> Qty:
+    """A design fact recorded on the equipment itself — its TR, its ΔT band.
+
+    The quantity comes from the fact vocabulary, not from the input: the input
+    must DECLARE the dimension it expects and the two must agree, so an author
+    who thinks `design_dt_min` is an absolute temperature is told otherwise here
+    rather than by a band that never contains anything.
+    """
+    if scope != "equipment":
+        raise RegistrationError(
+            f"input `{name}` reads an equipment design fact, which needs "
+            f"applies_to.scope = 'equipment'"
+        )
+    fact = spec.get("fact")
+    fact_def = EQUIPMENT_FACT_DEFS.get(fact or "")
+    if fact_def is None:
+        raise RegistrationError(
+            f"input `{name}` names design fact `{fact}`, which is not a numeric "
+            f"fact in the vocabulary ({', '.join(sorted(EQUIPMENT_FACT_DEFS))})"
+        )
+    want = fact_def["qty"]
+    declared = spec.get("dimension")
+    if declared is None:
+        raise RegistrationError(f"input `{name}`: declare the `dimension` the fact must be")
+    if declared != want.dimension:
+        raise RegistrationError(
+            f"input `{name}`: design fact `{fact}` is `{want.dimension}` "
+            f"(in `{want.unit}`), but the input declares `{declared}`"
+        )
+    if spec.get("aggregation") is not None:
+        raise RegistrationError(
+            f"input `{name}`: a design fact is one recorded value; it takes no aggregation"
+        )
+    return want
+
+
 def _role_input_qty(name: str, spec: dict, scope: str) -> Qty:
     """A measured input: the role it binds points by, and what that role carries."""
     role = spec.get("role")
@@ -274,14 +357,49 @@ def _check_inputs(inputs: dict, scope: str) -> dict[str, Qty]:
             env[name] = _site_fact_qty(name, spec, scope)
         elif source == "emission_factor":
             env[name] = _emission_factor_qty(name, spec, scope)
+        elif source == "slot":
+            env[name] = _slot_input_qty(name, spec, scope)
+        elif source == "equipment_fact":
+            env[name] = _equipment_fact_qty(name, spec, scope)
         elif source == "points":
+            if scope == "equipment":
+                # An equipment metric reads through the equipment's slots. A role
+                # on a device would be a second, disagreeing way to say which
+                # point is CH-01's supply temperature.
+                raise RegistrationError(
+                    f"input `{name}`: an equipment-scope metric reads points through "
+                    f"the equipment's slots (`source: \"slot\"`), not by role"
+                )
             env[name] = _role_input_qty(name, spec, scope)
         else:
             raise RegistrationError(
                 f"input `{name}`: source must be 'points' (default), "
-                f"'site_fact' or 'emission_factor'"
+                f"'site_fact', 'emission_factor', 'slot' or 'equipment_fact'"
             )
     return env
+
+
+_FACT_SOURCES = ("site_fact", "equipment_fact")
+
+
+def _check_band_bounds(defn: dict, inputs: dict) -> None:
+    """A NAMED `in_band` bound must be a recorded FACT, never a measured input.
+
+    A band whose edge is itself a live reading is not a band, it is a
+    comparison between two signals — and it would score a chiller "in band"
+    whenever its sensors drifted together.
+    """
+    try:
+        tree = expr.parse(defn.get("formula") or "")
+    except expr.ExprError:
+        return  # the type check that follows names the parse error itself
+    for name in sorted(expr.bound_names(tree)):
+        source = (inputs.get(name) or {}).get("source", "points")
+        if name in inputs and source not in _FACT_SOURCES:
+            raise RegistrationError(
+                f"in_band(): bound `{name}` is a `{source}` input; a band edge must "
+                f"be a literal or a recorded fact ({', '.join(_FACT_SOURCES)})"
+            )
 
 
 def _check_formula_types(defn: dict, env: dict[str, Qty], declared: Qty) -> None:
@@ -314,6 +432,14 @@ def typecheck(defn: dict) -> None:
     scope = (defn.get("applies_to") or {}).get("scope", "device")
     if scope not in SCOPES:
         raise RegistrationError(f"applies_to.scope must be one of {SCOPES}")
+    if scope == "equipment":
+        cls = (defn.get("applies_to") or {}).get("equipment_class")
+        if cls not in EQUIPMENT_CLASSES:
+            raise RegistrationError(
+                f"an equipment-scope metric names the class it applies to: "
+                f"applies_to.equipment_class must be one of "
+                f"{', '.join(EQUIPMENT_CLASSES)}"
+            )
     _check_guards(defn.get("guards") or [])
     declared = _qty_from_spec(defn.get("output") or {}, "output")
 
@@ -321,13 +447,24 @@ def typecheck(defn: dict) -> None:
         _check_occupancy_shape(defn, scope, declared)
 
     if kind == "composite":
+        if scope == "equipment":
+            # Nothing fans a composite out over one piece of equipment's parts;
+            # a site composite already fans equipment-scope components out.
+            raise RegistrationError(
+                "a composite is device- or site-scope; name equipment-scope "
+                "metrics as its components instead"
+            )
         _check_composite_components(defn)
         return
 
     inputs: dict = defn.get("inputs") or {}
     if not inputs:
         raise RegistrationError(f"a {kind} metric needs at least one input")
-    _check_formula_types(defn, _check_inputs(inputs, scope), declared)
+    typed = _check_inputs(inputs, scope)
+    # Before the type check: a measured band edge is the more fundamental
+    # mistake, and its dimension clash (if any) would only name the symptom.
+    _check_band_bounds(defn, inputs)
+    _check_formula_types(defn, typed, declared)
 
 
 # ── Reads ────────────────────────────────────────────────────────────────────

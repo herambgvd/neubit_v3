@@ -38,6 +38,7 @@ from . import correlations as cx
 from . import execute as ex
 from . import intake as intake_store
 from . import permsync
+from . import plant as plant_view
 from . import queries as q
 from . import rating as rt
 from . import units as un
@@ -1177,6 +1178,41 @@ async def correlations(
         correlations=resolved,
     )
 
+
+
+# ── Plant (L3) ───────────────────────────────────────────────────────────────
+
+
+@bi_router.get(
+    "/sites/{site_id}/plant",
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def site_plant(
+    db: Db,
+    scope: Caller,
+    site_id: uuid.UUID,
+    start: dt.datetime | None = None,
+    end: dt.datetime | None = None,
+    hours: Annotated[int, Query(ge=1, le=24 * 7)] = 1,
+) -> dict:
+    """A site's systems → equipment → slots, for the L3 plant schematic.
+
+    Each slot carries its DATA READINESS — one of `reporting`, `silent`,
+    `ambiguous`, `unresolved`, `unbound` (worst-first in `readiness_states`) —
+    with the point it resolved to, that point's latest value in the window, and
+    the reason whenever it did not resolve to one reporting point. Each piece of
+    equipment and each system carries the least-ready state of its parts, and
+    each piece of equipment carries every effective equipment-scope metric's
+    outcome (ΔT, band occupancy against its own design band, kW/TR) — a value
+    with its working, or a refusal naming what is missing.
+
+    The window is what "reporting" is judged over: a slot reports when its point
+    produced a reading inside it, not when the point merely exists. It defaults
+    to the last hour, a dozen polls at this estate's five-minute cadence.
+    """
+    tenant = _tenant(scope)
+    start_at, end_at = _window(start, end, hours)
+    return await plant_view.plant(db, tenant, site_id, start=start_at, end=end_at)
 
 
 # ── Units ────────────────────────────────────────────────────────────────────
