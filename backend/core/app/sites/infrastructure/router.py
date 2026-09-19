@@ -110,6 +110,19 @@ async def delete_system(site_id: str, system_id: str, svc: Svc, actor: Writer) -
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.post("/republish")
+async def republish_infrastructure(site_id: str, svc: Svc, actor: Writer) -> dict:
+    """Restate this site's whole registry on the event spine.
+
+    For the case a stream's retention cannot answer: a mirror that was down
+    longer than the messages were kept is silently stale, and no write since
+    then repairs the entities nobody has edited. Writes nothing, and is gated as
+    a write anyway — republishing a site's plant is a decision about other
+    services' state, not a read of this one.
+    """
+    return await svc.republish(site_id, actor=actor)
+
+
 # ── equipment ───────────────────────────────────────────────────────────────
 
 

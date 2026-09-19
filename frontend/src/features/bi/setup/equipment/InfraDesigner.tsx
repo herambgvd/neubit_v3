@@ -10,7 +10,8 @@
 // still stored under the site; BI sends an operator here with
 // `infraDesignerHref` when a fact is missing.
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import { IconButton, LoadingBlock } from "@/components/console";
 import { apiError } from "@/lib/api";
@@ -40,6 +41,15 @@ export default function InfraDesigner({ siteId, initialEquipmentId, initialImpor
   const { can, hasModule } = useAuth();
   const mayRead = can(PERM_READ) && hasModule(MODULE);
   const mayWrite = mayRead && can(PERM_MANAGE);
+
+  const republish = useMutation({
+    mutationFn: () => siteInfrastructure.republish(siteId),
+    onSuccess: (r) =>
+      toast.success("Restated to analytics", {
+        description: `${r.systems} system(s) and ${r.equipment} machine(s), and what analytics kept but this building no longer has was removed.`,
+      }),
+    onError: (e) => toast.error(apiError(e, "Could not restate this building's plant")),
+  });
 
   const vocabQ = useQuery<InfraVocabulary>({
     queryKey: ["infra-vocabulary"],
@@ -104,6 +114,19 @@ export default function InfraDesigner({ siteId, initialEquipmentId, initialImpor
               icon="heroicons-outline:arrow-up-tray"
               title="Import I/O schedule"
               onClick={() => setImporting(true)}
+            />
+            {/* The repair for a mirror that was down longer than the event
+                stream kept its messages: nothing here changes, and analytics
+                hears this building's plant stated again. */}
+            <IconButton
+              icon="heroicons-outline:arrow-path"
+              title={
+                republish.isPending
+                  ? "Restating…"
+                  : "Restate this building's plant to analytics"
+              }
+              disabled={republish.isPending}
+              onClick={() => republish.mutate()}
             />
             <IconButton
               icon="heroicons:plus"

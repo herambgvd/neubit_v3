@@ -24,6 +24,10 @@ import { renderWithProviders } from "@/test/render";
 import InfraDesigner from "./InfraDesigner";
 
 const perms = { granted: new Set(["bi.read", "bi.manage"]), modules: new Set(["analytics"]) };
+// The toaster is mounted by the app shell, not by a rendered panel, so what the
+// operator is TOLD is asserted at the call.
+const toasts = { success: vi.fn(), error: vi.fn() };
+vi.mock("sonner", () => ({ toast: { success: (...a: unknown[]) => toasts.success(...a), error: (...a: unknown[]) => toasts.error(...a) } }));
 vi.mock("@/lib/auth", () => ({
   useAuth: () => ({
     can: (p: string) => perms.granted.has(p),
@@ -124,6 +128,8 @@ let stub: ApiStub;
 beforeEach(() => {
   perms.granted = new Set(["bi.read", "bi.manage"]);
   perms.modules = new Set(["analytics"]);
+  toasts.success.mockClear();
+  toasts.error.mockClear();
   stub = stubApi({
     "GET /site-infrastructure/vocabulary": VOCAB,
     "GET /sites/s1/infrastructure": tree(),
@@ -361,6 +367,7 @@ describe("a viewer without bi.manage", () => {
     for (const name of [
       "New system",
       "Import I/O schedule",
+      "Restate this building's plant to analytics",
       "Edit equipment",
       "Delete equipment",
       "Edit design facts",
@@ -400,5 +407,44 @@ describe("the gate it rides", () => {
   it("writes under bi.manage", async () => {
     render();
     expect(await screen.findByRole("button", { name: "New system" })).toBeInTheDocument();
+  });
+});
+
+describe("restating the plant to analytics", () => {
+  /** The repair for a mirror that was down longer than the event stream kept
+   *  its messages. Nothing here changes; analytics hears it all again. */
+  it("asks core to republish THIS building and says what it restated", async () => {
+    // The prefix route declared above matches first, so the republish answer is
+    // given through it.
+    stub.set({
+      "POST /sites/s1/infrastructure/*": (req: { url: string }) =>
+        req.url.endsWith("/republish") ? { site_id: "s1", systems: 1, equipment: 2 } : {},
+    });
+    const user = render();
+    await user.click(
+      await screen.findByRole("button", { name: "Restate this building's plant to analytics" }),
+    );
+
+    await waitFor(() =>
+      expect(stub.matching("POST /sites/s1/infrastructure/republish")).toHaveLength(1),
+    );
+    await waitFor(() => expect(toasts.success).toHaveBeenCalled());
+    expect(toasts.success.mock.calls[0][1].description).toMatch(/1 system\(s\) and 2 machine\(s\)/);
+    expect(toasts.error).not.toHaveBeenCalled();
+  });
+
+  it("says it failed rather than implying analytics has been repaired", async () => {
+    stub.set({
+      "POST /sites/s1/infrastructure/*": (req: { url: string }) =>
+        req.url.endsWith("/republish") ? httpError(502, "the bus is unreachable") : {},
+    });
+    const user = render();
+    await user.click(
+      await screen.findByRole("button", { name: "Restate this building's plant to analytics" }),
+    );
+
+    await waitFor(() => expect(toasts.error).toHaveBeenCalled());
+    expect(toasts.error.mock.calls[0][0]).toMatch(/the bus is unreachable/);
+    expect(toasts.success).not.toHaveBeenCalled();
   });
 });

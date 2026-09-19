@@ -62,6 +62,10 @@ from .schemas import (
 #: a registry entry turns out wrong is "who typed this, and where".
 SOURCE_DESIGNER = "designer"
 SOURCE_SCHEDULE_IMPORT = "schedule_import"
+#: A restatement, not a write. Core does not store which door each write came
+#: through — `source` is provenance of the MESSAGE — so a republished equipment
+#: says what it truthfully is rather than guessing at the original surface.
+SOURCE_RESYNC = "resync"
 
 
 def _utcnow() -> datetime:
@@ -503,9 +507,68 @@ class InfrastructureService:
             target_id=equipment_id, meta={"site_id": site_id, "tag": tag},
         )
 
+    # ── republish ───────────────────────────────────────────────────────────
+
+    async def republish(self, site_id: str, *, actor) -> dict:
+        """Restate this site's whole registry on the spine, for a mirror to heal from.
+
+        WHY THIS EXISTS. Every write is published once, and a consumer that was
+        down longer than the stream's retention never sees those messages again.
+        The reporting mirror (`reading-writer/app/equipment_sync.py`) then holds a
+        registry that is silently stale — a chiller with no recorded ΔT band reads
+        exactly like one whose band was never entered, and the metric refuses for
+        the wrong reason.
+
+        So: `resynced` for every system and every piece of equipment, carrying the
+        same whole-entity snapshot every other event carries, then ONE
+        `site_system.reconciled` naming every id this site really has. The
+        restatements heal what went missing; the reconcile removes what the mirror
+        kept and core no longer has — a delete whose event aged out is the one
+        damage a restatement cannot repair.
+
+        The order is the publish order, on one subject family with one durable
+        behind it, so the reconcile cannot overtake the restatements it bounds.
+
+        Nothing is written here. This is core saying again what core already says.
+        """
+        await self.site(site_id)
+        systems = (
+            await self.db.execute(
+                select(SiteSystem).where(SiteSystem.site_id == site_id)
+                .order_by(SiteSystem.name.asc())
+            )
+        ).scalars().all()
+        equipment = (
+            await self.db.execute(
+                select(SiteEquipment).where(SiteEquipment.site_id == site_id)
+                .order_by(SiteEquipment.tag.asc())
+            )
+        ).scalars().all()
+        by_id = {s.system_id: s for s in systems}
+
+        for row in systems:
+            await self._emit_system(None, "resynced", row, audit=False)
+        for row in equipment:
+            snap = await self.equipment_snapshot(row, by_id.get(row.system_id))
+            await emit(row.tenant_id, "equipment", "resynced", {**snap, "source": SOURCE_RESYNC})
+
+        await emit(self.scope.tenant_id, "site_system", "reconciled", {
+            "site_id": site_id,
+            "system_ids": [s.system_id for s in systems],
+            "equipment_ids": [e.equipment_id for e in equipment],
+        })
+        # One audit line for the whole restatement: it is one operator action, and
+        # a line per machine would bury the rest of the site's history.
+        await audit_record(
+            self.db, actor=actor, action="infrastructure.republished", target_type="site",
+            target_id=site_id,
+            meta={"systems": len(systems), "equipment": len(equipment)},
+        )
+        return {"site_id": site_id, "systems": len(systems), "equipment": len(equipment)}
+
     # ── events ──────────────────────────────────────────────────────────────
 
-    async def _emit_system(self, actor, event: str, row: SiteSystem) -> None:
+    async def _emit_system(self, actor, event: str, row: SiteSystem, *, audit: bool = True) -> None:
         payload = {
             "site_id": row.site_id,
             "system_id": row.system_id,
@@ -514,6 +577,8 @@ class InfrastructureService:
             "description": row.description,
         }
         await emit(row.tenant_id, "site_system", event, payload)
+        if not audit:
+            return
         await audit_record(
             self.db, actor=actor, action=f"site_system.{event}", target_type="site_system",
             target_id=row.system_id, meta=payload,

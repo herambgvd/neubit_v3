@@ -43,6 +43,19 @@ system row is upserted from those two (never its description, which the event
 does not carry), so equipment never hangs off a system this mirror has not
 heard of because one `site_system.created` was lost.
 
+WHAT RETENTION CANNOT ANSWER
+---------------------------
+Every write is published once. A consumer down longer than the stream keeps its
+messages never sees them again, and no later write repairs the entities nobody
+has edited since — the mirror is then silently stale, which reads exactly like a
+chiller whose band was never entered. So core has a republish
+(`POST /sites/{id}/infrastructure/republish`): `resynced` for every system and
+every piece of equipment, carrying the same whole-entity snapshot, then ONE
+`site_system.reconciled` naming every id the site really has. The restatements
+heal what went missing; the reconcile removes what this mirror kept and core
+deleted while the event aged out — the one damage a restatement cannot repair.
+A malformed reconcile removes NOTHING; see `_reconcile`.
+
 THE TENANT THAT IS NOT ONE
 --------------------------
 Exactly `site_facts_sync`'s rule: the subject segment is the literal `platform`
@@ -82,7 +95,7 @@ from nats.errors import TimeoutError as NatsTimeoutError
 from nats.js.api import AckPolicy, ConsumerConfig
 from reporting.db import database
 from reporting.models import MirroredEquipment, MirroredSlot, MirroredSystem
-from sqlalchemy import delete as sa_delete
+from sqlalchemy import delete as sa_delete, true as sa_true
 from sqlalchemy.dialects.postgresql import insert
 
 from .shutdown import close_nats, stop_tasks
@@ -93,9 +106,13 @@ EVENTS_STREAM = "EVENTS"
 SUBJECTS = ("tenant.*.sites.site_system.>", "tenant.*.sites.equipment.>")
 DURABLE = "reading-writer-equipment"
 
-_SYSTEM_UPSERTS = {"created", "updated"}
-_EQUIPMENT_UPSERTS = {"created", "updated", "design_updated", "slot_set", "slot_removed"}
+_SYSTEM_UPSERTS = {"created", "updated", "resynced"}
+_EQUIPMENT_UPSERTS = {"created", "updated", "design_updated", "slot_set", "slot_removed",
+                      "resynced"}
 _DELETE = "deleted"
+#: `site_system.reconciled` — core naming every id a site really has, published
+#: last in a republish. See `_reconcile`.
+_RECONCILE = "reconciled"
 
 #: Design facts that are NUMBERS in core's vocabulary. Anything else in `design`
 #: (make, model) is text and mirrored as stated.
@@ -115,6 +132,7 @@ class EquipmentStats:
         self.skipped_no_tenant = 0
         self.skipped_malformed = 0
         self.skipped_other_event = 0
+        self.reconciles = 0
         self.design_facts_dropped = 0
         self.errors = 0
         self.last_error: str | None = None
@@ -130,6 +148,7 @@ class EquipmentStats:
             "equipment_sync_skipped_no_tenant": self.skipped_no_tenant,
             "equipment_sync_skipped_malformed": self.skipped_malformed,
             "equipment_sync_skipped_other_event": self.skipped_other_event,
+            "equipment_sync_reconciles": self.reconciles,
             "equipment_sync_design_facts_dropped": self.design_facts_dropped,
             "equipment_sync_errors": self.errors,
             "equipment_sync_last_error": self.last_error,
@@ -324,7 +343,7 @@ class EquipmentSync:
 
     async def _apply(self, entity: str, event: str, payload: dict, subject: str) -> None:
         if entity == "site_system":
-            known = event in _SYSTEM_UPSERTS or event == _DELETE
+            known = event in _SYSTEM_UPSERTS or event in (_DELETE, _RECONCILE)
         elif entity == "equipment":
             known = event in _EQUIPMENT_UPSERTS or event == _DELETE
         else:
@@ -346,6 +365,9 @@ class EquipmentSync:
             await self._apply_equipment(tenant, event, payload, subject)
 
     async def _apply_system(self, tenant, event: str, payload: dict, subject: str) -> None:
+        if event == _RECONCILE:
+            await self._reconcile(tenant, payload, subject)
+            return
         system_id = _uuid(payload.get("system_id"))
         site_id = _uuid(payload.get("site_id"))
         if system_id is None or site_id is None:
@@ -426,6 +448,38 @@ class EquipmentSync:
                  cls, tag, event, len(design),
                  "kept" if slots is None else len(slots))
 
+    async def _reconcile(self, tenant, payload: dict, subject: str) -> None:
+        """Drop what this site's mirror holds and core's republish did not name.
+
+        THE ONE DAMAGE A RESTATEMENT CANNOT REPAIR. A republish restates every
+        entity core still has, so anything missing is filled in. A DELETE whose
+        event aged out leaves no trace to restate — the mirror simply keeps a
+        machine core no longer has, and a schematic goes on drawing it. Core ends
+        a republish by naming every id the site really has, and what is not in
+        that list is removed.
+
+        A MALFORMED MESSAGE DELETES NOTHING. Both lists must be present and be
+        lists; a body missing one is counted and acked, never read as "this site
+        has no plant" — that reading would empty a whole building's registry on
+        one damaged message.
+        """
+        site_id = _uuid(payload.get("site_id"))
+        systems, equipment = payload.get("system_ids"), payload.get("equipment_ids")
+        if site_id is None or not isinstance(systems, list) or not isinstance(equipment, list):
+            self.stats.skipped_malformed += 1
+            log.warning("reconcile on %s is malformed; nothing removed", subject)
+            return
+        keep_systems = [s for s in (_uuid(x) for x in systems) if s]
+        keep_equipment = [e for e in (_uuid(x) for x in equipment) if e]
+
+        gone_equipment, gone_systems = await self._reconcile_rows(
+            tenant, site_id, keep_systems, keep_equipment)
+        self.stats.equipment_deleted += gone_equipment
+        self.stats.systems_deleted += gone_systems
+        self.stats.reconciles += 1
+        log.info("reconciled site %s: removed %d equipment, %d system(s)",
+                 site_id, gone_equipment, gone_systems)
+
     # ── writing — each one transaction, each replaceable in a test ───────────
 
     @staticmethod
@@ -475,6 +529,36 @@ class EquipmentSync:
                     session.add(MirroredSlot(tenant_id=tenant, equipment_id=equipment_id,
                                              site_id=values["site_id"], **row))
             await session.commit()
+
+    async def _reconcile_rows(self, tenant, site_id, keep_systems: list,
+                              keep_equipment: list) -> tuple[int, int]:
+        """Remove this site's mirrored rows whose ids core did not name. One
+        transaction: a site half-reconciled is a tree with a machine hanging off
+        a plant that has already gone."""
+        sessionmaker = database.get_sessionmaker()
+        async with sessionmaker() as session:
+            stale = (
+                await session.execute(
+                    MirroredEquipment.__table__.select()
+                    .with_only_columns(MirroredEquipment.equipment_id)
+                    .where(MirroredEquipment.tenant_id == tenant,
+                           MirroredEquipment.site_id == site_id,
+                           MirroredEquipment.equipment_id.notin_(keep_equipment)
+                           if keep_equipment else sa_true())
+                )
+            ).scalars().all()
+            if stale:
+                await session.execute(sa_delete(MirroredSlot).where(
+                    MirroredSlot.tenant_id == tenant, MirroredSlot.equipment_id.in_(stale)))
+                await session.execute(sa_delete(MirroredEquipment).where(
+                    MirroredEquipment.tenant_id == tenant,
+                    MirroredEquipment.equipment_id.in_(stale)))
+            dropped = await session.execute(sa_delete(MirroredSystem).where(
+                MirroredSystem.tenant_id == tenant,
+                MirroredSystem.site_id == site_id,
+                MirroredSystem.system_id.notin_(keep_systems) if keep_systems else sa_true()))
+            await session.commit()
+        return len(stale), dropped.rowcount or 0
 
     async def _delete_equipment(self, tenant, equipment_ids: list) -> None:
         if not equipment_ids:

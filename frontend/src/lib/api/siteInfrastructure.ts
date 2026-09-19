@@ -70,6 +70,13 @@ export const siteInfrastructure = {
   deleteEquipment: (siteId: string, equipmentId: string) =>
     unwrap(api.delete<void>(`${base(siteId)}/equipment/${seg(equipmentId)}`)),
 
+  /** Restate this site's whole registry on the event spine. Writes nothing here
+   *  and repairs a downstream mirror that was down longer than the stream kept
+   *  its messages — including removing plant core deleted while it was away. */
+  republish: (siteId: string) =>
+    unwrap(api.post<{ site_id: string; systems: number; equipment: number }>(
+      `${base(siteId)}/republish`, {})),
+
   /** Parse an I/O schedule. `dryRun: true` writes nothing and returns the plan;
    *  `false` writes exactly that plan in one commit. */
   importSchedule: (siteId: string, file: File | Blob, dryRun: boolean) => {

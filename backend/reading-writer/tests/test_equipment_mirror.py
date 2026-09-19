@@ -55,6 +55,7 @@ class Recorder(eqs.EquipmentSync):
         self.equipment: list[dict] = []
         self.deleted_equipment: list[tuple] = []
         self.deleted_systems: list[tuple] = []
+        self.reconciled: list[tuple] = []
 
     async def _upsert_system(self, values, *, with_description):
         self.systems.append({"values": values, "with_description": with_description})
@@ -67,6 +68,10 @@ class Recorder(eqs.EquipmentSync):
 
     async def _delete_system(self, tenant, system_id, equipment_ids):
         self.deleted_systems.append((tenant, system_id, list(equipment_ids)))
+
+    async def _reconcile_rows(self, tenant, site_id, keep_systems, keep_equipment):
+        self.reconciled.append((tenant, site_id, list(keep_systems), list(keep_equipment)))
+        return 2, 1  # what it would have removed, so the counters are exercised
 
 
 def _apply(entity: str, event: str, payload: dict, subject_tenant: str = "platform") -> Recorder:
@@ -314,3 +319,79 @@ def test_site_facts_sync_can_actually_stop():
     stops the site-facts mirror BEFORE the pipeline, so the pipeline's final
     flush never ran on the way down."""
     run(sfs.SiteFactsSync(sfs.SiteFactsStats()).stop())
+
+
+# ── republish: what retention cannot answer ──────────────────────────────────
+
+
+@pytest.mark.parametrize("entity,event", [("equipment", "resynced"), ("site_system", "resynced")])
+def test_a_restatement_is_an_upsert_like_any_other_event(entity, event):
+    """A republish carries the same whole entity every write carries, so nothing
+    about `resynced` is special except that no operator edited anything."""
+    body = _equipment() if entity == "equipment" else _system()
+    r = _apply(entity, event, body)
+    if entity == "equipment":
+        assert r.equipment[0]["values"]["tag"] == "CH-01"
+        assert len(r.equipment[0]["slots"]) == 2
+    else:
+        assert r.systems[0]["values"]["name"] == "Plant A"
+    assert r.stats.skipped_other_event == 0
+
+
+def _reconcile(**over) -> dict:
+    body = {"tenant_id": TENANT, "site_id": SITE,
+            "system_ids": [SYSTEM], "equipment_ids": [CH1]}
+    body.update(over)
+    return body
+
+
+def test_a_reconcile_keeps_what_core_named_and_removes_the_rest():
+    """The one damage a restatement cannot repair: a delete whose event aged out
+    leaves nothing to restate, so the mirror keeps a machine core does not have."""
+    r = _apply("site_system", "reconciled", _reconcile())
+
+    assert len(r.reconciled) == 1
+    tenant, site, systems, equipment = r.reconciled[0]
+    assert str(tenant) == TENANT and str(site) == SITE
+    assert [str(s) for s in systems] == [SYSTEM]
+    assert [str(e) for e in equipment] == [CH1]
+    # Whatever it removed is counted where every other removal is counted.
+    assert r.stats.equipment_deleted == 2 and r.stats.systems_deleted == 1
+    assert r.stats.reconciles == 1
+    assert r.systems == [] and r.equipment == [], "a reconcile states nothing new"
+
+
+def test_a_site_core_says_is_empty_really_is_emptied():
+    """An operator who deleted a building's whole plant while the mirror was down
+    must not be left with all of it. Empty lists are a real answer."""
+    r = _apply("site_system", "reconciled", _reconcile(system_ids=[], equipment_ids=[]))
+    assert r.reconciled[0][2] == [] and r.reconciled[0][3] == []
+
+
+@pytest.mark.parametrize("damage", [
+    {"system_ids": None},
+    {"equipment_ids": "CH-01"},
+    {"site_id": "not-a-uuid"},
+])
+def test_a_malformed_reconcile_removes_nothing(damage):
+    """The reading "this site has no plant" from a damaged body would empty a
+    whole building's registry on one bad message."""
+    r = _apply("site_system", "reconciled", _reconcile(**damage))
+    assert r.reconciled == []
+    assert r.stats.skipped_malformed == 1
+    assert r.stats.equipment_deleted == 0 and r.stats.systems_deleted == 0
+
+
+def test_a_reconcile_with_no_tenant_removes_nothing():
+    """Same rule as every other event, and the one where it matters most: a
+    reconcile stored under a fabricated tenant would delete another tenant's
+    plant."""
+    r = _apply("site_system", "reconciled", _reconcile(tenant_id=None))
+    assert r.reconciled == [] and r.stats.skipped_no_tenant == 1
+
+
+def test_only_the_system_subject_carries_a_reconcile():
+    """It is one message about a whole site, and it is published last. An
+    equipment-subject reconcile would be a second one nobody publishes."""
+    r = _apply("equipment", "reconciled", _reconcile())
+    assert r.reconciled == [] and r.stats.skipped_other_event == 1

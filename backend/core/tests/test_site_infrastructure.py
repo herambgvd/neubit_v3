@@ -948,3 +948,89 @@ async def test_a_tenant_without_the_bi_module_is_refused_even_with_bi_manage(app
     assert tree.status_code == 403
     assert tree.json()["error"]["code"] == "FEATURE_DISABLED"
     assert vocab_r.status_code == 403
+
+
+# ── republish: what a stream's retention cannot answer ───────────────────────
+
+
+async def test_a_republish_restates_the_whole_site_and_ends_by_naming_it(app, db, monkeypatch):
+    """A mirror down longer than the stream's retention never sees those writes
+    again, and no later write repairs what nobody has edited since. So core can
+    say it all again — and the reconcile at the end is how a delete whose event
+    aged out is repaired, because a restatement alone leaves it behind."""
+    t = await _tenant(db, "inf-resync")
+    await _site(db, t)
+    user = await _operator(db, t, "resync@x.io")
+
+    async with api_client(app) as c:
+        sid = await _system(c, user)
+        eq = await _chiller(c, user, sid, design={"tr": 222})
+        await c.put(f"{_base()}/equipment/{eq['equipment_id']}/slots/chws",
+                    json={"device_tag": "d", "point_tag": "p"}, headers=bearer(user))
+        seen = _capture(monkeypatch)  # only what the republish itself publishes
+        r = await c.post(f"{_base()}/republish", headers=bearer(user))
+
+    assert r.status_code == 200, r.text
+    assert r.json() == {"site_id": "site-1", "systems": 1, "equipment": 1}
+    assert [(e, ev) for e, ev, _ in seen] == [
+        ("site_system", "resynced"),
+        ("equipment", "resynced"),
+        # LAST, and once: everything the site really has, so the mirror can drop
+        # what it kept and core no longer holds.
+        ("site_system", "reconciled"),
+    ]
+    restated = seen[1][2]
+    assert restated["design"] == {"tr": 222} and restated["tag"] == "TEST-CH-1"
+    assert restated["slots"] == [{"slot": "chws", "device_tag": "d", "point_tag": "p"}]
+    # Core does not store which door each write came through, so a restatement
+    # says what it truthfully is rather than guessing at the original surface.
+    assert restated["source"] == "resync"
+    assert seen[2][2] == {"site_id": "site-1", "system_ids": [sid],
+                          "equipment_ids": [eq["equipment_id"]]}
+
+
+async def test_a_republish_of_an_empty_site_still_names_it_empty(app, db, monkeypatch):
+    """An operator who deleted a building's whole plant while the mirror was down
+    must not be left with all of it. Nothing to restate is not nothing to say."""
+    t = await _tenant(db, "inf-resync-empty")
+    await _site(db, t)
+    user = await _operator(db, t, "empty@x.io")
+    seen = _capture(monkeypatch)
+
+    async with api_client(app) as c:
+        r = await c.post(f"{_base()}/republish", headers=bearer(user))
+
+    assert r.json() == {"site_id": "site-1", "systems": 0, "equipment": 0}
+    assert [(e, ev) for e, ev, _ in seen] == [("site_system", "reconciled")]
+    assert seen[0][2]["system_ids"] == [] and seen[0][2]["equipment_ids"] == []
+
+
+async def test_republishing_writes_nothing_and_is_gated_as_a_write(app, db):
+    """It changes no row here and every mirror's rows elsewhere, which is a
+    decision, not a read — so it needs the key that writes the registry."""
+    t = await _tenant(db, "inf-resync-perm")
+    await _site(db, t)
+    writer = await _operator(db, t, "w@x.io")
+    reader = await _operator(db, t, "r@x.io", perms=("bi.read",))
+
+    async with api_client(app) as c:
+        sid = await _system(c, writer)
+        await _chiller(c, writer, sid)
+        refused = await c.post(f"{_base()}/republish", headers=bearer(reader))
+        ok = await c.post(f"{_base()}/republish", headers=bearer(writer))
+
+    assert refused.status_code == 403, refused.text
+    assert ok.status_code == 200
+    assert await _count(db, "site_equipment") == 1, "a restatement is not a write"
+    assert await _count(db, "site_systems") == 1
+
+
+async def test_another_tenants_site_cannot_be_republished(app, db):
+    t = await _tenant(db, "inf-resync-a")
+    await _site(db, t)
+    other = await _tenant(db, "inf-resync-b")
+    intruder = await _operator(db, other, "b@x.io")
+
+    async with api_client(app) as c:
+        r = await c.post(f"{_base()}/republish", headers=bearer(intruder))
+    assert r.status_code == 404, r.text
