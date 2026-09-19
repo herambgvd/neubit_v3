@@ -689,7 +689,7 @@ class SiteFactsRow(BaseModel):
     """A site as the reporting store mirrors it, with its rating inputs.
 
     Every value is nullable and NULL is NOT RECORDED — the state the Ratings
-    screen renders as "cannot rate", with a link to Configurations → Sites.
+    screen renders as "cannot rate", with a link to Building Intelligence → Setup → Building facts.
     """
 
     site_id: uuid.UUID

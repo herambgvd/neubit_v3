@@ -64,6 +64,11 @@ from .schemas import (
 )
 from .spec import TableResult as QueryResult
 
+#: Where an operator records a building's facts. Printed in every refusal that
+#: sends someone to go and record one, so the sentence and the screen cannot
+#: drift apart: BI configuration lives in BI, never in Configurations → Sites.
+FACTS_AT = "Building Intelligence → Setup → Building facts"
+
 # The permission key this API gates on. Registered in core's catalog
 # (`app/auth/permissions.py`, group "Building Intelligence") so a tenant admin can
 # actually grant it in the role editor — a key no catalog knows about can only
@@ -1843,7 +1848,8 @@ async def rating(
       are kilowatt-hour registers (`unit_source = 'operator'`). A unit the wire
       happened to send is not somebody standing behind it.
     * **Area** — `site_facts.gross_floor_area_sqm`, mirrored from core, typed by
-      an operator in Configurations → Sites. NULL blocks the rating outright.
+      an operator in Building Intelligence → Setup → Building facts. NULL blocks
+      the rating outright.
     * **Which meters** — the CALLER's, passed as `point_id`. There is no stored
       fact saying which register measures the whole supply, and picking one by
       tag would be a fabrication; summing everything would double-count an
@@ -1905,7 +1911,7 @@ async def rating(
         blocked.append(
             "Cannot rate — no built-up area recorded for this site. An EPI is "
             "kWh per square metre per year; record the gross floor area in "
-            "Configurations → Sites and this becomes computable. Nothing is "
+            f"{FACTS_AT} and this becomes computable. Nothing is "
             "defaulted or estimated in the meantime."
         )
 
