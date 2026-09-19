@@ -65,6 +65,57 @@ depends_on = None
 
 _SEEDED_BY = "platform (CCEI Methodology Spec v1.0) via migration 0018"
 
+# THE ROWS THIS REVISION OWNS, PINNED — (key, version), frozen at 0018.
+#
+# `reporting.ccei_spec.definitions()` is the live spec module, and it GROWS: 0019
+# added the `chw_delta_t_in_band` leaf to it, 0020 added `carbon_intensity`.
+# Looping over everything it returns therefore made this revision a moving
+# target — the same defect `0001_reporting_baseline` had with `Base.metadata`,
+# in seed data instead of DDL. On a FRESH database it seeded rows that belong to
+# later revisions, and the first one it reached was fatal:
+#
+#     alembic upgrade head
+#     -> new row for relation "metric_definitions" violates check constraint
+#        "ck_metric_defs_kind"
+#
+# because `chw_delta_t_in_band` is `kind = 'occupancy'` and 0019 — the revision
+# that WIDENS that constraint to allow it — had not run yet. An EXISTING database
+# never saw it: 0018 ran when the module held only these five.
+#
+# Even without the constraint, the attribution would have been wrong. `created_by`
+# is per-revision and both later downgrades delete by it, so a fresh database
+# would have carried `carbon_intensity` stamped "via migration 0018" and 0020's
+# downgrade would silently have deleted nothing.
+#
+# The row BODIES still come from `ccei_spec`, deliberately: a definition's
+# identity here is (key, version) and the NOT EXISTS guard means an existing pair
+# is never rewritten, so a content change enters as a NEW VERSION and a new
+# revision — never as a mutation of one of these. Copying the fourteen component
+# tables into this file would make a second source of truth for the same
+# published spec, which the registry's own typecheck reads. What had to be frozen
+# is WHICH rows are this step, and that is the tuple below.
+_SEEDS = (
+    ("eei", 1),
+    ("opi", 1),
+    ("cpi", 1),
+    ("cci", 1),
+    ("ccei", 2),
+)
+
+
+def _rows():
+    """The pinned rows, in `definitions()`'s own order (children before parent)."""
+    by_id = {(d["key"], d["version"]): d for d in definitions()}
+    missing = [s for s in _SEEDS if s not in by_id]
+    if missing:  # pragma: no cover — a deletion from ccei_spec, caught loudly
+        raise RuntimeError(
+            f"0018 seeds {missing}, which reporting.ccei_spec no longer defines. "
+            f"A published spec row cannot be withdrawn by deleting it from the "
+            f"module: supersede it with a new version in a new revision."
+        )
+    return [by_id[s] for s in _SEEDS]
+
+
 # tenant_id IS NULL means the unique constraint cannot help us — Postgres treats
 # NULLs as distinct, so ON CONFLICT never fires on a platform row. The guard is
 # an explicit NOT EXISTS, which also makes the migration re-runnable.
@@ -86,7 +137,7 @@ _INSERT = sa.text(
 
 
 def upgrade() -> None:
-    for d in definitions():
+    for d in _rows():
         op.execute(
             _INSERT.bindparams(
                 key=d["key"],
@@ -108,7 +159,7 @@ def downgrade() -> None:
     # Only the platform rows this migration inserted. The tenant-scoped v1 rows
     # (`ccei` v1, `intensity_score` v1, `hvac_health` v1) are an operator's
     # assertions and are never touched by a schema migration.
-    for d in definitions():
+    for d in _rows():
         op.execute(
             sa.text(
                 "DELETE FROM metric_definitions "

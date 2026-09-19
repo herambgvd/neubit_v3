@@ -108,8 +108,21 @@ class EmbedPublic(BaseModel):
 
 
 class EmbedListResponse(BaseModel):
+    """The registrations, plus whether one of them could actually be OPENED.
+
+    ``integration_enabled`` is the deployment's existing DashForge config
+    (``DashForgeSettings.enabled`` + ``public_url``) restated for the console.
+    DashForge is an optional, separately-deployed peer, and this registry is
+    core's own — so listing works on a deployment that has no DashForge at all,
+    and ``POST /{id}/session`` is the call that answers 503. Without this flag the
+    console cannot tell the two apart until it has already put a dead tile in
+    front of an operator. It carries NO url and NO credential: it is one boolean
+    about this deployment's shape, not a way around the session gate.
+    """
+
     items: list[EmbedPublic]
     total: int
+    integration_enabled: bool
 
 
 class EmbedSession(BaseModel):

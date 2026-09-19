@@ -46,6 +46,7 @@ import NotReportingChallenge, {
   notReportingDetail,
   type NotReportingDetail,
 } from "./NotReportingChallenge";
+import UnitPatterns from "./UnitPatterns";
 
 const VIEWS = [
   { value: "unconfirmed", label: "UNCONFIRMED" },
@@ -189,6 +190,13 @@ export default function UnitsPanel() {
           </div>
         )}
       </div>
+
+      {/* The CATALOGUE, above the rows it is made of. 576 unconfirmed points are
+          a handful of conventions, and this is where an operator settles one of
+          them — after reading the points it would change, by name. The per-row
+          path below stays exactly as it was: it is where a state tag, an
+          ambiguous tag and anything no convention reads get their human. */}
+      <UnitPatterns />
 
       {/* the confirmation bar */}
       {mayWrite && ids.length > 0 && (

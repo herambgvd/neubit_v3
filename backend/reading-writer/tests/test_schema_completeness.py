@@ -94,12 +94,12 @@ def test_every_migrated_table_has_a_model():
 def _words_in_migration_strings() -> set[str]:
     """Every identifier-shaped word appearing in any string literal in any migration.
 
-    Coarse on purpose. `points` and `readings` are created by 0001 through
-    ``Table.create(bind)`` off the live model metadata, and the rest through raw
-    ``CREATE ... create_hypertable('readings', ...)`` SQL, so there is no single
-    call shape to match on. The question this answers is only "does any migration
-    mention this table at all", which is enough to catch the bug it is for: a
-    model added with no migration behind it.
+    Coarse on purpose. Most tables arrive through `op.create_table`, but not all
+    of them do: the hypertable and the continuous aggregates are raw
+    ``create_hypertable('readings', ...)`` / ``CREATE MATERIALIZED VIEW`` SQL, so
+    there is no single call shape to match on. The question this answers is only
+    "does any migration mention this table at all", which is enough to catch the
+    bug it is for: a model added with no migration behind it.
     """
     words: set[str] = set()
     for path in sorted(VERSIONS.glob("[0-9]*.py")):

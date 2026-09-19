@@ -88,6 +88,7 @@ import uuid
 
 from reporting.models import Point, Reading
 from reporting.placement import reconcile_placement
+from reporting.role_succession import inherit_roles
 from sqlalchemy import case, func, literal
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -388,6 +389,43 @@ async def write_batch(
         # any point with an explicit point-level placement; and its
         # IS DISTINCT FROM guard means it writes nothing in the steady state.
         await reconcile_placement(session, point_ids=list(due.keys()))
+
+        # ── 1c. inherit a role across a recorded succession ───────────────────
+        # The same shape as the placement inherit above, and for the same
+        # reason: this writer creates the `points` row (contract §6), so it is
+        # the only thing that can notice a point coming into existence or
+        # starting to report again — and a point that an operator has already
+        # said REPLACED another one should carry that other one's role without a
+        # human repeating the binding after every gateway rebuild.
+        #
+        # It is a derivation, not authorship, on exactly the terms §11 sets. Its
+        # only source is `points.superseded_by`, which is written by a human
+        # collapsing a ghost group or naming a successor for a renamed tag, and
+        # it moves what that human already asserted. NOTHING HERE READS A TAG: a
+        # message cannot carry a role, cannot create one, and cannot move one
+        # onto a point that already carries an operator's own — the statement
+        # refuses a heir that has a role of its own, which is the whole of the
+        # no-clobber rule for this column.
+        #
+        # It runs AFTER the upsert for a reason that is not cosmetic: a point
+        # reporting for the first time has no `points` row until the statement
+        # above writes it, so a succession naming it would match nothing if this
+        # ran first. And it runs inside the same transaction, so the ack rule
+        # covers it — a batch that fails leaves no half-moved role behind.
+        #
+        # In the steady state it selects nothing and writes nothing.
+        moved = await inherit_roles(session, point_ids=list(due.keys()))
+        if moved:
+            # Loud on purpose. A role moving is a change in what a number MEANS
+            # to every metric that selects on it, and it happened here without a
+            # human present — the human's decision was recorded earlier. The one
+            # thing that must never be true is that it happened and nothing said
+            # so.
+            for row in moved:
+                log.info(
+                    "role %s inherited across succession: %s -> %s",
+                    row["role"], row["donor_id"], row["heir_id"],
+                )
 
     await session.commit()
     # Only what was actually upserted: marking a point the batch skipped would

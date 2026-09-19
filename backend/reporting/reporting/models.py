@@ -221,6 +221,38 @@ class Point(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # WHY it was retired, and therefore which undo may touch it (migration 0024).
+    #
+    # NULL = an operator retired it by hand through `/bi/points/{id}/retire`,
+    # which is the only route that existed before this column and still writes
+    # nothing here. 'ghost' = the GHOST COLLAPSE retired it as a superseded
+    # duplicate.
+    #
+    # This is load-bearing for the undo, not a label. `/bi/points/ghosts/restore`
+    # refuses any row whose reason is not 'ghost', so undoing a collapse cannot
+    # resurrect a meter somebody decommissioned deliberately.
+    retire_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    # The point that REPLACED this one — the continuity chain (migration 0024).
+    #
+    # A conflux connection that is deleted and re-created mints a new `point_id`
+    # for every point behind it, so one physical register accumulates a
+    # generation per rebuild. This says which generation is current; history is
+    # joined by WALKING the chain, because `readings` is a compressed hypertable
+    # keyed `(point_id, ts)` and re-pointing a ghost's rows at the survivor would
+    # mean rewriting a primary key across compressed chunks for a cosmetic gain.
+    #
+    # THE WRITER NEVER CLEARS THIS, and that is deliberate. The points upsert
+    # does clear `retired_at` on a stored reading — a point that is reporting is
+    # not retired — but it does not name this column, so a superseded point that
+    # starts talking again comes back as live AND still superseded. That
+    # disagreement is a real signal (two generations of the same register are
+    # both reporting) and an operator has to see it; papering over it by clearing
+    # the chain would hide exactly the case worth looking at.
+    superseded_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+
     __table_args__ = (
         # The three values the comment above allows, enforced (migration 0008).
         CheckConstraint(
@@ -248,6 +280,13 @@ class Point(Base):
             "tenant_id",
             "last_seen_at",
             postgresql_where=text("retired_at IS NULL"),
+        ),
+        # "what did this point absorb" — the reverse of the continuity chain.
+        # Partial, because all but the collapsed tail is NULL.
+        Index(
+            "ix_points_superseded_by",
+            "superseded_by",
+            postgresql_where=text("superseded_by IS NOT NULL"),
         ),
     )
 

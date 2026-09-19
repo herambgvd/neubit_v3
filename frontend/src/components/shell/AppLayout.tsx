@@ -165,6 +165,12 @@ export default function AppLayout({ children }: Readonly<{ children?: ReactNode 
     pathname === "/bi/water" ||
     pathname === "/bi/insights" ||
     pathname === "/bi/ratings" ||
+    // Duplicate points is the same master/detail shape: the worklist scrolls
+    // inside its own panel and the group being settled stays put.
+    pathname === "/bi/duplicates" ||
+    // Stranded roles is master/detail too: the worklist scrolls in its own
+    // panel while the assertion being settled and its evidence stay put.
+    pathname === "/bi/succession" ||
     // Sites map is a full-bleed map surface — fills the bounded pane (no page scroll).
     pathname === "/map";
 

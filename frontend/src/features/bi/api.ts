@@ -172,6 +172,129 @@ export const bi = {
       }),
     ),
 
+  // The CATALOGUE of tag conventions, each with the set it is holding right now.
+  // A read, and nothing here is ever applied by reading it: 576 unconfirmed
+  // points are not 576 decisions, and this is how an operator sees the handful
+  // of conventions behind them.
+  //
+  // Three kinds come back and the screen must not flatten them: `unit` proposes
+  // one and can be applied; `state` (`OnOff STS`) is not a measurement; and
+  // `ambiguous` (`KWL1_A` — a power tag ending in the amps suffix) names one
+  // quantity while carrying another's suffix. The last two propose nothing, and
+  // that refusal is the feature.
+  unitPatterns: ({ category }: any = {}) =>
+    unwrap(api.get(`${BI}/units/patterns${qs({ category })}`)),
+
+  // The bulk path, and the ONE rule that makes it sound: a pattern is confirmed
+  // only after a DRY RUN has shown the operator the rows. `units.py` used to
+  // forbid server-side expansion outright, because "apply to everything matching
+  // `_kw`" evaluated on the server is a guess wearing a human's authority. What
+  // repeals that is the preview — the actual rows, before the button — so this
+  // client offers no way to call it without `dry_run` first.
+  //
+  // `unit` is NEVER sent beside `pattern`: the server applies the unit the
+  // catalogue proposed and the operator was shown, and rejects a request that
+  // names both by whether the key was SENT. So the key is absent here, not null.
+  confirmUnitPattern: ({ pattern, category, dry_run, acknowledge_not_reporting }: any) =>
+    unwrap(
+      api.post(`${BI}/units/confirm`, {
+        pattern,
+        ...(category ? { category } : {}),
+        dry_run: !!dry_run,
+        ...(acknowledge_not_reporting ? { acknowledge_not_reporting: true } : {}),
+      }),
+    ),
+
+  // ── GHOST POINTS ─ the duplicates that make every estate count wrong ─────
+  //
+  // A conflux connection that is deleted and re-created mints a NEW point_id for
+  // every point behind it, so one physical register accumulates a generation per
+  // rebuild — all unretired, all counted. `ghosts()` is the worklist: one entry
+  // per duplicated `(device_tag, point_tag)`, its members with their last-seen
+  // times, and a VERDICT that is a proposal rather than a decision.
+  //
+  //   auto    exactly one member reported inside `fresh_minutes`, so the others
+  //           are provably superseded and `survivor_point_id` names the one.
+  //   manual  zero fresh members, or more than one. Which generation is real is
+  //           then a question about the building; `survivor_point_id` is null
+  //           and nothing is ever auto-applied to it.
+  //
+  // `resurrected` is the other half: points the collapse superseded that have
+  // started reporting again. Two generations of one register are both talking,
+  // which is a real signal and must not be papered over.
+  ghosts: ({ category, mode }: any = {}) =>
+    unwrap(api.get(`${BI}/points/ghosts${qs({ category, mode })}`)),
+
+  // Either "collapse every group the classifier called AUTO", or an explicit
+  // list of groups whose survivor the operator named. Never both, and there is
+  // no bulk mode for MANUAL — a bulk answer to a question nobody read is the
+  // thing this feature exists not to do.
+  collapseGhosts: ({ mode, groups }: any) =>
+    unwrap(api.post(`${BI}/points/ghosts/collapse`, mode ? { mode } : { groups })),
+
+  // The undo, and it reaches a row only when the collapse retired it
+  // (`retire_reason = 'ghost'`). A point an operator decommissioned by hand is
+  // untouched however loudly it is named, and comes back under `refused` rather
+  // than being counted as a success. Roles are NOT put back.
+  restoreGhosts: ({ point_ids }: any) =>
+    unwrap(api.post(`${BI}/points/ghosts/restore`, { point_ids })),
+
+  // ── STRANDED ROLES ─ the other half of a gateway rebuild ────────────────
+  //
+  // A collapse groups on `(device_tag, point_tag)`, so it settles a connection
+  // rebuilt under the SAME tags. When the rebuild RENAMES the tag as well, the
+  // generations are not duplicates of anything and the operator's role binding
+  // is simply stranded on a point that stopped reporting — which is the state
+  // every `point_roles` row on this deployment is in.
+  //
+  // `roleOrphans()` is the worklist: each stranded role with who asserted it, why
+  // it is stranded (`orphan_reason`), how many points on its device were LOOKED
+  // AT (`candidates_considered`), and the credible successors on the SAME device
+  // ordered by score — each one carrying the EVIDENCE that produced the score, a
+  // sentence per signal. The evidence is the output, not a debugging aid: a score
+  // an operator cannot check is a score they must not act on.
+  //
+  // Orphaned is measured against the DEVICE'S OWN CLOCK, not the freshness
+  // window: this estate is routinely outside that window between ingest runs, and
+  // a worklist that empties and fills with ingest timing is not a worklist.
+  // `fresh` still comes back per point so the screen can say the estate is
+  // between runs; it decides nothing.
+  roleOrphans: ({ role }: any = {}) =>
+    unwrap(api.get(`${BI}/points/roles/orphans${qs({ role })}`)),
+
+  // The write, and it carries exactly the ids a human named. There is no mode, no
+  // threshold and no "apply everything above a score" — a role is a statement
+  // about what a number MEANS, and a plausible wrong binding computes silently
+  // where a refusal would have been visible.
+  //
+  // One transaction PER MOVE, so a batch can half-apply: every move comes back in
+  // `results` with `moved` or `refused` and the reason, and `moved` is a count of
+  // writes rather than of requests. The caller renders each outcome — a summary
+  // count would hide the four that were refused behind the six that were not.
+  repointRoles: ({ moves }: any) =>
+    unwrap(api.post(`${BI}/points/roles/repoint`, { moves })),
+
+  // The other half of the worklist, and the only thing that can be done to a
+  // stranded role whose POINT ROW IS GONE: a repoint needs a successor on the
+  // same device and there is no device left to read, so without this the
+  // assertion is unfixable AND undeletable from any screen.
+  //
+  // This DELETES a human's statement about what a number meant and no self-heal
+  // puts it back, so it is narrower than every other write here: point ids a
+  // person named, no mode, no sweep, no "forget every missing one". The server
+  // enforces the same narrowness — the "point is missing" condition is in the
+  // DELETE, so a point that came back between the read and the press is refused
+  // rather than silently unbound.
+  //
+  // One transaction per id. Three refusals come back as 200-with-a-reason so one
+  // stale id cannot discard the batch: the point exists again, no role is
+  // recorded for that id in this tenant, and the race where the DELETE touched
+  // nothing. Each FORGOTTEN result echoes the assertion back — after the delete
+  // that response is the last place it exists, which is why the caller renders
+  // every outcome rather than a count.
+  forgetRoles: ({ point_ids }: any) =>
+    unwrap(api.post(`${BI}/points/roles/forget`, { point_ids })),
+
   // ── INTAKE ──────────────────────────────────────────────────────────────
   //
   // What arrived in a window, what is still unconfirmed ranked so the useful

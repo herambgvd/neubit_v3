@@ -68,18 +68,28 @@ export function KpiStrip({ className = "", children }: Readonly<EstateFrameProps
 
 /** One KPI slot: icon + uppercase label, big mono value, one line of subtext.
  *  `value == null` renders "—" faint — the ABSENT state, with `sub` carrying
- *  the reason. `title` puts the same reason on hover. */
+ *  the reason. `title` puts the same reason on hover.
+ *
+ *  `action` is the slot under the subtext, for the case where the NUMBER ITSELF
+ *  is in question: a figure that is inflated, blocked or disputed says so there,
+ *  next to the link that settles it, rather than printing clean and leaving the
+ *  correction to a banner somewhere else on the page. It is the same rule
+ *  `SectionHead`/`PanelHeader` already follow — a count and the thing that
+ *  changes it belong on the same surface. Omitted when there is nothing wrong,
+ *  because an always-present caption saying "nothing is wrong" is noise. */
 export interface KpiProps {
   icon?: string;
   label?: ReactNode;
   /** null/undefined is the ABSENT state — rendered as "—" with `sub` as the reason. */
   value?: ReactNode;
   sub?: string;
+  /** What is wrong with this number and where it is fixed. Renders nothing when absent. */
+  action?: ReactNode;
   tone?: EstateTone;
   title?: string;
 }
 
-export function Kpi({ icon, label, value, sub, tone: t = "ink", title }: Readonly<KpiProps>) {
+export function Kpi({ icon, label, value, sub, action, tone: t = "ink", title }: Readonly<KpiProps>) {
   const absent = value === null || value === undefined;
   return (
     <div
@@ -94,6 +104,7 @@ export function Kpi({ icon, label, value, sub, tone: t = "ink", title }: Readonl
         {absent ? "—" : value}
       </p>
       {sub && <p className="mt-1 truncate text-[11px] text-nb-faint" title={title ?? sub}>{sub}</p>}
+      {action && <div className="mt-1.5 text-[10.5px] leading-tight">{action}</div>}
     </div>
   );
 }

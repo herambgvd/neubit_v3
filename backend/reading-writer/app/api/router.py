@@ -42,6 +42,7 @@ from . import rating as rt
 from . import units as un
 from . import registry
 from . import spec as widget_spec
+from . import succession as sx
 from .metrics import metrics_router as _metrics_router
 from .schemas import (
     ActivityBucket,
@@ -55,6 +56,7 @@ from .schemas import (
     SiteFactsListResponse,
     SummaryResponse,
     UnitListResponse,
+    UnitPatternsResponse,
 )
 from .spec import TableResult as QueryResult
 
@@ -323,6 +325,379 @@ async def unretire_point(db: Db, scope: Caller, point_id: uuid.UUID) -> dict:
     the point of the horizon.
     """
     return await q.set_retired(db, _tenant(scope), point_id, retired=False)
+
+
+# ── Ghost points ─────────────────────────────────────────────────────────────
+
+
+class GhostChoice(BaseModel):
+    """One group, and WHICH member the operator says is the real one.
+
+    The pair identifies the group and `survivor_point_id` must be one of its
+    members — a survivor that is not is refused with a 400 and nothing is
+    collapsed, because "keep this point" naming a point that was never part of
+    the group is a claim about identity that was never true.
+    """
+
+    device_tag: str = PField(max_length=255)
+    point_tag: str = PField(max_length=255)
+    survivor_point_id: uuid.UUID
+
+
+class CollapseGhostsRequest(BaseModel):
+    """Either "collapse everything that is unambiguous", or an explicit list.
+
+    `mode = "auto"` collapses every group the classifier called AUTO — exactly
+    one member reporting inside the freshness window — and can never reach a
+    MANUAL one. There is no `mode = "manual"`: a manual group is a question, and
+    a bulk answer to a question nobody read is the thing this whole feature is
+    trying not to do.
+
+    `groups` is the answer to those questions, one at a time, and it is always a
+    list the operator saw. Same rule as `ConfirmUnitsRequest`: no server-side
+    pattern expansion, because a pattern evaluated here is a guess wearing a
+    human's authority.
+    """
+
+    mode: str | None = None
+    groups: list[GhostChoice] | None = PField(default=None, max_length=1000)
+
+
+class RestoreGhostsRequest(BaseModel):
+    """Undo a collapse for these points. Ids only — see the route's docstring
+    for what it will and will not touch."""
+
+    point_ids: list[uuid.UUID] = PField(min_length=1, max_length=1000)
+
+
+@bi_router.get(
+    "/points/ghosts",
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def ghost_points(
+    db: Db,
+    scope: Caller,
+    category: str | None = None,
+    mode: str | None = None,
+) -> dict:
+    """The duplicated `(device_tag, point_tag)` pairs, and what can be settled.
+
+    A conflux connection that is deleted and re-created mints a NEW `point_id`
+    for every point behind it, so one physical register accumulates a generation
+    per rebuild — all of them unretired, all of them counted in every estate
+    figure. This is the worklist for that: one entry per duplicated pair, its
+    members with their last-seen times, and a verdict.
+
+    `mode` is the verdict, and it is a proposal rather than a decision:
+
+      auto    exactly ONE member reported inside the freshness window, so the
+              others are provably superseded. `survivor_point_id` names it.
+      manual  zero fresh members (which generation is real is a question about
+              the building, not about the data) or more than one (two
+              generations are both delivering — collapsing either would destroy
+              a live series). `survivor_point_id` is null and stays null;
+              nothing is ever auto-applied to one of these.
+
+    The grouping deliberately ignores the retirement HORIZON and looks only at
+    `retired_at IS NULL`. A ghost has not reported in weeks by definition, so
+    applying the horizon would hide every member this endpoint exists to find.
+
+    `resurrected` is the other half, and it is here because the writer will not
+    hide it: a point the collapse superseded that has started reporting again
+    comes back live while still carrying `superseded_by`. That disagreement means
+    two generations of one register are both talking, and an operator needs to
+    see it rather than have it papered over.
+    """
+    tenant = _tenant(scope)
+    if mode is not None and mode not in ("auto", "manual"):
+        raise ValidationError("mode must be 'auto' or 'manual'")
+    groups = await q.ghost_groups(db, tenant, category=category, mode=mode)
+    return {
+        "groups": groups,
+        "total": len(groups),
+        "auto": sum(1 for g in groups if g["mode"] == "auto"),
+        "manual": sum(1 for g in groups if g["mode"] == "manual"),
+        "fresh_minutes": q.FRESH_MINUTES,
+        "resurrected": await q.resurrected_points(db, tenant, category=category),
+    }
+
+
+@bi_router.post(
+    "/points/ghosts/collapse",
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def collapse_ghost_points(
+    db: Db, scope: Caller, body: CollapseGhostsRequest
+) -> dict:
+    """Retire a group's superseded generations onto its survivor.
+
+    For each group: every non-survivor member gets `retired_at = now()`,
+    `retire_reason = 'ghost'` and `superseded_by = <survivor>`, and any role a
+    ghost carried MOVES to the survivor. Nothing is deleted and no reading is
+    touched — `readings` is a compressed hypertable keyed `(point_id, ts)`, and
+    the ghost keeps every row it ever produced under its own id. History is
+    joined by walking `superseded_by`, not by rewriting a primary key across
+    compressed chunks.
+
+    ONE GROUP IS ONE TRANSACTION. A half-collapsed group — roles moved but the
+    ghosts still live — is worse than an uncollapsed one, because nothing
+    downstream could tell it had happened.
+
+    Role migration is idempotent and the SURVIVOR WINS: `point_roles` is keyed by
+    point alone, so if the survivor already carries a role the ghost's is
+    discarded rather than overwriting it, and the count says so. Re-running a
+    collapse that already happened finds no duplicated pair and skips it.
+
+    Gated by `bi.manage`, the same key as retiring a point: this is a statement
+    about what the estate IS, not a reading of it.
+
+    Tenant-scoped, and the scoping is in the grouping rather than only in the
+    write: the duplicate set is computed INSIDE the caller's tenant, so a caller
+    cannot name another tenant's point as a survivor or reach one as a ghost.
+
+    It is reversible — see `/points/ghosts/restore`.
+    """
+    if body.mode is not None and body.groups is not None:
+        raise ValidationError("send either mode or groups, not both")
+    if body.mode is None and body.groups is None:
+        raise ValidationError("send either mode='auto' or an explicit groups list")
+    if body.mode is not None and body.mode != "auto":
+        # "manual" is refused BY NAME rather than ignored. A caller who sends it
+        # is asking for a bulk answer to the questions this feature exists to
+        # ask, and silently collapsing nothing would look like success.
+        raise ValidationError(
+            "the only bulk mode is 'auto'; a manual group is collapsed by naming "
+            "its survivor in `groups`"
+        )
+    return await q.collapse_ghosts(
+        db,
+        _tenant(scope),
+        mode=body.mode,
+        choices=(
+            None
+            if body.groups is None
+            else [g.model_dump() for g in body.groups]
+        ),
+    )
+
+
+@bi_router.post(
+    "/points/ghosts/restore",
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def restore_ghost_points(
+    db: Db, scope: Caller, body: RestoreGhostsRequest
+) -> dict:
+    """Undo a collapse for the named points — and ONLY for the ones it retired.
+
+    Clears `retired_at`, `retire_reason` and `superseded_by`: exactly the three
+    columns the collapse wrote, so a restored point is back where it started.
+
+    THE NARROWNESS IS THE POINT. This reaches a row only when
+    `retire_reason = 'ghost'`. A point an operator retired by hand through
+    `/points/{id}/retire` has a NULL reason and is untouched however loudly it is
+    named, which is what stops "undo that collapse" from also being "undo every
+    decommissioning decision anyone ever made". A named point that is not reached
+    comes back in `refused` rather than being counted as a success.
+
+    Roles are NOT put back. The collapse moved a ghost's role onto the survivor
+    because the survivor is the point that means something now; handing it back
+    would re-create the ambiguity a metric definition cannot resolve.
+    """
+    return await q.restore_ghosts(db, _tenant(scope), point_ids=body.point_ids)
+
+
+# ── Role succession ──────────────────────────────────────────────────────────
+#
+# The half of the rebuild problem the ghost collapse above cannot see. A collapse
+# groups on `(device_tag, point_tag)`, so it settles a connection rebuilt under
+# the SAME tags. When the rebuild RENAMES the tag as well, the generations are
+# not duplicates of anything and the operator's role binding is simply stranded
+# on a point that has stopped reporting — which is the state all 19 of this
+# deployment's `point_roles` rows that still HAVE a point are in. The table holds
+# 20: the twentieth names a point id with no dimension row at all, which no join
+# to `points` can see and which `/points/roles/forget` is the only answer to. See
+# `app/api/succession.py` for the measurement and for what "still reporting"
+# means here.
+
+
+class RoleMove(BaseModel):
+    """One role, the point it is stranded on, and the point that replaced it.
+
+    All three are required and none of them is inferred. `role` is checked
+    against what the predecessor CURRENTLY carries rather than trusted, so a
+    worklist that went stale between the GET and the POST is refused instead of
+    rebinding something the operator never saw.
+    """
+
+    role: str = PField(max_length=64)
+    from_point_id: uuid.UUID
+    to_point_id: uuid.UUID
+
+
+class RepointRolesRequest(BaseModel):
+    """An explicit list of moves the operator chose, and nothing else.
+
+    Same rule as `ConfirmUnitsRequest` and `CollapseGhostsRequest`: no mode, no
+    pattern, no "apply everything above a score". The proposal is computed on
+    `GET /points/roles/orphans` and read by a human, and what comes back here is
+    the ids they picked.
+    """
+
+    moves: list[RoleMove] = PField(min_length=1, max_length=500)
+
+
+class ForgetRolesRequest(BaseModel):
+    """The point ids whose role rows the operator chose to delete. Nothing else.
+
+    Same shape as `RestoreGhostsRequest`, and for a stronger reason: this DELETES
+    an operator's assertion and no self-heal puts it back. There is deliberately
+    no `mode`, so "forget every orphan whose point is missing" is not a request
+    this API can express — the worklist is read by a human and what comes back is
+    the ids they picked, one at a time.
+    """
+
+    point_ids: list[uuid.UUID] = PField(min_length=1, max_length=500)
+
+
+@bi_router.get(
+    "/points/roles/orphans",
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def orphan_roles(db: Db, scope: Caller, role: str | None = None) -> dict:
+    """Roles bound to points that have stopped reporting, and who could succeed them.
+
+    A gateway rebuild that renames a tag mints a new `point_id` under the new
+    spelling and leaves the old row behind. The operator's role binding stays on
+    the old row, which is still `retired_at IS NULL` and still looks like a point,
+    so every metric that selects the role reads a series that stopped weeks ago
+    and refuses with `no_data` — for a chiller that is running.
+
+    For each stranded role this returns the candidates on the SAME device, ordered
+    by score, WITH THE EVIDENCE THAT PRODUCED THE SCORE. The evidence is the
+    output, not a debugging aid: a number an operator cannot check is a number
+    they should not act on, so every signal comes back as a sentence naming what
+    matched — the unchanged tag, the shared measurement token and its position,
+    this estate's own role convention, the unit, the dimension.
+
+    ORPHANED IS MEASURED AGAINST THE DEVICE, NOT THE CLOCK. A role is orphaned
+    when its point is behind its device's newest reading, not when it is outside
+    the 15-minute freshness window. On this deployment the whole estate is
+    routinely outside that window between ingest runs, and a worklist that empties
+    and fills depending on ingest timing is not usable. `fresh` is still reported
+    per point so the operator can see the estate is between runs.
+
+    NOTHING HERE IS APPLIED. There is no threshold above which a score becomes a
+    decision. Where no candidate is credible the list is empty and
+    `candidates_considered` says how many points were looked at, because "no
+    successor found" is a correct answer and has to be distinguishable from a
+    screen that did not run.
+
+    THREE WAYS TO BE ORPHANED, reported apart in `orphan_reason` because they are
+    different facts about the building and have different answers:
+
+      * `superseded` — the point is behind its device's leading edge. The device
+        is still delivering, through another tag. This is what a repoint settles;
+      * `retired` — the point is retired, so it is not part of the estate and a
+        role on it cannot be selecting anything;
+      * `point_missing` — there is no `points` row for that id AT ALL. Not
+        retired: gone. `point_roles` has no foreign key to `points`, so a role
+        outlives the dimension row it names, and this worklist used to INNER JOIN
+        `points` and therefore hide the single most orphaned assertion on the
+        estate. Such a row comes back with every point-shaped field null, zero
+        candidates and `candidates_considered = 0` — with no device tag there is
+        no candidate set, because the same-device rule is the whole of the safety
+        and here it has nothing to stand on. The only honest action on it is
+        `POST /points/roles/forget`.
+
+    `total` counts every row returned and `with_candidates + without_candidates`
+    equals it; a `point_missing` row is always in `without_candidates`.
+
+    `role` narrows the result to one role name. It cannot change any candidate
+    set — candidates are a property of the device.
+    """
+    return await sx.orphan_roles(db, _tenant(scope), role=role)
+
+
+@bi_router.post(
+    "/points/roles/repoint",
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def repoint_roles(db: Db, scope: Caller, body: RepointRolesRequest) -> dict:
+    """Move each named role onto the successor the operator named. One transaction per move.
+
+    Per move: `points.superseded_by` on the predecessor names the successor — the
+    same continuity chain a ghost collapse writes, so a rename joins history the
+    same way a re-key does — and the role is carried across that chain by
+    `reporting.role_succession`, the same statement the writer runs when a
+    superseded point's successor starts reporting. One reconcile, two callers, so
+    an operator's move and a self-heal cannot drift apart.
+
+    It writes NO retirement. The old generation stops being counted by the
+    `last_seen_at` horizon on its own; retiring it here would be a second decision
+    this route was not asked to make, and marking it `retire_reason = 'ghost'`
+    would hand it to an undo built for a different operation.
+
+    REFUSALS, all of them before anything is written, all of them reported rather
+    than raised so one stale row cannot discard the rest of a worklist:
+
+      * a successor on a DIFFERENT DEVICE. Cross-device succession is a separate
+        and riskier feature — `IWT` is on every chiller in the building — and the
+        rule is enforced here and not only in the proposal, because ids are what
+        the operator posts back, not the worklist;
+      * a predecessor that no longer carries the named role;
+      * a successor that already carries a DIFFERENT role. `point_roles` is keyed
+        by point alone, so one of the two assertions would have to go, and both
+        are an operator's. This diverges from the collapse, which reports
+        `roles_discarded` and lets the survivor win: there the caller asked to
+        settle a group, here they named this successor for this role, so
+        discarding either side would discard what they explicitly asked for. The
+        conflicting role is named so it can be settled on the roles screen;
+      * a successor that is retired, or that is the predecessor.
+
+    Gated by `bi.manage`, like retiring a point and like collapsing a group: this
+    is a statement about what the estate MEANS, not a reading of it.
+    """
+    return await sx.repoint_roles(
+        db, _tenant(scope), moves=[m.model_dump() for m in body.moves]
+    )
+
+
+@bi_router.post(
+    "/points/roles/forget",
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def forget_roles(db: Db, scope: Caller, body: ForgetRolesRequest) -> dict:
+    """Delete the role rows whose point no longer exists. Named ids, one transaction each.
+
+    The only action available on an orphan whose `orphan_reason` is
+    `point_missing`. A repoint cannot reach it — a successor must be on the same
+    device and there is no device tag to read, because the row that carried it is
+    gone — so without this the assertion is unfixable AND undeletable from any
+    screen, which is the state that made it invisible in the first place.
+
+    IT REACHES A ROW ONLY WHEN THAT ROW'S POINT IS MISSING, and the condition is
+    in the DELETE and not only in the check before it. A role whose point exists
+    is refused by name: moving it is a repoint and clearing it is an unbind, and
+    they are different decisions about a measurement that is still there. The
+    restatement is not belt and braces — the writer mints a `points` row for any
+    id a reading arrives under, so a point CAN come back between the check and the
+    write, and the guard has to be where the row is.
+
+    NOTHING IS SWEPT. There is no mode and no "forget every missing one": this
+    erases a human's statement about what a number meant and nothing puts it back,
+    so it takes the ids a human named, the same rule `/points/ghosts/restore`
+    follows for a far more reversible operation. Each deleted assertion is echoed
+    back in `results` — after the delete, that response is the last place it
+    exists.
+
+    Gated by `bi.manage`, like the repoint and the collapse.
+
+    Tenant-scoped on `point_roles.tenant_id`, which is the only tenant column
+    left once the point is gone. Another tenant's row is not in the rows at all,
+    so "there is no such role" and "it is not yours" are the same refusal.
+    """
+    return await sx.forget_roles(db, _tenant(scope), point_ids=body.point_ids)
 
 
 # ── Placement ────────────────────────────────────────────────────────────────
@@ -755,6 +1130,45 @@ async def units(
     return UnitListResponse(counts=counts, items=rows)
 
 
+@bi_router.get(
+    "/units/patterns",
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def unit_patterns(
+    db: Db,
+    scope: Caller,
+    category: str | None = None,
+) -> UnitPatternsResponse:
+    """The catalogue of tag conventions, each with the set it is holding RIGHT NOW.
+
+    576 of this estate's 766 live points have no confirmed unit, and they are not
+    576 decisions: `1FYC1_IWT`, `4FKC2_IWT` and `1FYorkChiller1_IWT` are one
+    decision about one convention. This route is how an operator sees that — per
+    pattern, what it proposes, how many unconfirmed points it matches, a sample of
+    their tags, and how many it would SKIP because a human already ruled on them.
+
+    It is a READ. Nothing here writes, nothing here is applied, and there is no
+    threshold above which anything would be: the numbers exist so that a person
+    can look at forty tags and decide, not so the server can decide for them.
+
+    Three kinds of row come back and the screen must not flatten them:
+
+    * `kind="unit"` — a unit is proposed and `POST /units/confirm` can apply it.
+    * `kind="state"` — `OnOff STS`, `Work_Mode`. Not measurements. No unit is
+      proposed and none can be applied in bulk.
+    * `kind="ambiguous"` — `KWL1_A` names power and ends in the amps suffix;
+      `Cum_Flow` does not say whether it is a volume or a rate. The pattern
+      exists so the collision is VISIBLE, and it proposes nothing.
+
+    `category` narrows to one BI category (`hvac` is the worst backlog: 28 of 176
+    confirmed). Pass it here and pass the same value to the confirm call, or the
+    set previewed and the set written are not the same set.
+    """
+    return UnitPatternsResponse(
+        **await un.pattern_catalogue(db, _tenant(scope), category=category)
+    )
+
+
 # ── Intake ───────────────────────────────────────────────────────────────────
 #
 # The surface the units and roles screens were missing. New devices land on this
@@ -814,64 +1228,296 @@ async def intake(
     )
 
 
-@bi_router.post(
-    "/units/confirm",
-    dependencies=[Depends(require_permission(PERM_MANAGE))],
-)
-async def confirm_units(db: Db, scope: Caller, who: Who, body: ConfirmUnitsRequest) -> dict:
-    """An operator asserts the unit for a named set of points.
+# The ceiling on one pattern application. No pattern on this estate comes near
+# it — the largest is 124 points — and that is the point: a request that would
+# write to more than this is a request whose set nobody could have reviewed, and
+# it is refused with the number rather than truncated to it.
+MAX_PATTERN_APPLY = 1000
 
-    Gated by `bi.manage`, not `bi.read`: this WRITES a fact that a rating divides
-    by. It is the same key that gates retiring a point — statements about the
-    estate rather than readings of it.
 
-    The ids are explicit. There is deliberately no server-side pattern expansion:
-    a bulk confirmation is a list the operator saw before pressing the button.
+def _actor_id(who) -> str | None:
+    """The caller's USER ID, from the token.
 
-    `unit: null` clears back to unconfirmed, which has to be reachable — see
-    `ConfirmUnitsRequest`.
-
-    A unit asserted on a point that is not carrying readings is CHALLENGED, not
-    stored (`app/api/intake.py`): kWh on an address that has never produced a
-    number is a fact no rating can ever use, and the confirmation succeeding is
-    what makes it invisible. Clearing is never challenged.
+    Not an email: the JWT does not carry one and asking core for it would be an
+    HTTP round-trip to decorate a provenance field. An id that resolves in the
+    audit log is a better record than a name that could go stale.
     """
-    challenged: list[dict] = []
-    if body.unit is not None:
-        challenged = await intake_store.guard_confirmable(
-            db,
-            _tenant(scope),
-            point_ids=body.point_ids,
-            acknowledged=body.acknowledge_not_reporting,
-            what="unit",
-        )
-    # The caller's USER ID, from the token. Not an email: the JWT does not carry
-    # one and asking core for it would be an HTTP round-trip to decorate a
-    # provenance field. An id that resolves in the audit log is a better record
-    # than a name that could go stale.
-    actor = str(getattr(who, "user_id", "") or "") or None
-    updated = await un.confirm_units(
-        db,
-        _tenant(scope),
-        point_ids=body.point_ids,
-        unit=body.unit,
-        actor=actor,
-    )
+    return str(getattr(who, "user_id", "") or "") or None
+
+
+def _confirm_label(row: dict) -> str:
+    return f"{row.get('device_tag') or '?'} / {row.get('point_tag') or '?'}"
+
+
+def _confirm_response(
+    *,
+    mode: str,
+    pattern,
+    unit: str | None,
+    actor: str | None,
+    dry_run: bool,
+    requested: int,
+    resolved: int,
+    updated: int,
+    not_visible: int,
+    skipped: list[dict],
+    challenged: list[dict],
+    would_update: list[dict] | None = None,
+) -> dict:
+    """One shape for both selectors, and every number in it is a DIFFERENT number
+    on purpose.
+
+    `requested` is what the selector covered, `resolved` what survived the
+    guards, `updated` what was actually written — 0 on a dry run, always, with
+    `would_update` carrying the preview instead. Collapsing these into a single
+    "300 confirmed" would hide the two facts that matter most: the rows a human
+    had already ruled on, and the rows that are not carrying readings at all.
+    """
     return {
-        "updated": len(updated),
-        "requested": len(body.point_ids),
+        "mode": mode,
+        "dry_run": dry_run,
+        "pattern": None if pattern is None else pattern.key,
+        "pattern_basis": None if pattern is None else pattern.basis,
+        "updated": updated,
+        "would_update_count": resolved if dry_run else None,
+        "would_update": would_update,
+        "requested": requested,
+        "resolved": resolved,
         # A requested id that is not the caller's tenant's simply does not come
         # back. Said out loud rather than reported as a success.
-        "not_visible": len(body.point_ids) - len(updated),
-        "unit": body.unit,
-        "unit_source": None if body.unit is None else "operator",
-        "confirmed_by": None if body.unit is None else actor,
+        "not_visible": not_visible,
+        # Rule 2, made visible. Points a human already confirmed, which a pattern
+        # is never allowed to overwrite. Reported apart from `updated` because
+        # "applied 300" when 40 were skipped is a lie about what happened.
+        "skipped_already_confirmed": skipped,
+        "skipped_already_confirmed_count": len(skipped),
+        "unit": unit,
+        "unit_source": None if unit is None or dry_run else "operator",
+        "confirmed_by": None if unit is None or dry_run else actor,
         # Said out loud in the success response too. An acknowledged assertion on
         # a silent point is a legitimate act, but it is not the same act as
         # confirming a point that is delivering values, and the operator who did
         # it should see which ones they overrode.
         "confirmed_not_reporting": challenged,
     }
+
+
+async def _confirm_by_ids(db, tenant, actor: str | None, body: ConfirmUnitsRequest) -> dict:
+    """The original path: the operator names the rows.
+
+    Already-confirmed points are NOT skipped here, and that is deliberate. A
+    human who selected a row they had ruled on before and asserted again is
+    correcting themselves. The guard against silent overwriting belongs to the
+    PATTERN path, where the set was expanded by a rule rather than chosen.
+    """
+    visible = await un.visible_points(db, tenant, body.point_ids)
+    if body.dry_run:
+        # `acknowledged=True` so the guard REPORTS instead of raising. A dry run
+        # exists to show an operator the challenge before they meet it; raising
+        # here would make the preview harder to read than the real call.
+        challenged = (
+            []
+            if body.unit is None
+            else await intake_store.guard_confirmable(
+                db, tenant, point_ids=body.point_ids, acknowledged=True, what="unit"
+            )
+        )
+        return _confirm_response(
+            mode="point_ids",
+            pattern=None,
+            unit=body.unit,
+            actor=actor,
+            dry_run=True,
+            requested=len(body.point_ids),
+            resolved=len(visible),
+            updated=0,
+            not_visible=len(body.point_ids) - len(visible),
+            skipped=[],
+            challenged=challenged,
+            would_update=[
+                {"point_id": r["point_id"], "label": _confirm_label(r)} for r in visible
+            ],
+        )
+
+    challenged = []
+    if body.unit is not None:
+        challenged = await intake_store.guard_confirmable(
+            db,
+            tenant,
+            point_ids=body.point_ids,
+            acknowledged=body.acknowledge_not_reporting,
+            what="unit",
+        )
+    updated = await un.confirm_units(
+        db, tenant, point_ids=body.point_ids, unit=body.unit, actor=actor
+    )
+    return _confirm_response(
+        mode="point_ids",
+        pattern=None,
+        unit=body.unit,
+        actor=actor,
+        dry_run=False,
+        requested=len(body.point_ids),
+        resolved=len(visible),
+        updated=len(updated),
+        not_visible=len(body.point_ids) - len(updated),
+        skipped=[],
+        challenged=challenged,
+    )
+
+
+async def _confirm_by_pattern(db, tenant, actor: str | None, body: ConfirmUnitsRequest) -> dict:
+    """The bulk path: the operator confirms a CATALOGUED convention.
+
+    Every guard this feature has lives in the first thirty lines below, and each
+    one is a refusal rather than a correction:
+
+    * an unknown pattern key is a 400 naming the catalogue, never a no-op — a
+      client that misspelt `active_power_kw` must not be told it succeeded on
+      zero rows;
+    * a `state` or `ambiguous` pattern cannot be applied AT ALL. `OnOff STS` is
+      not a measurement, and `KWL1_A` is a tag whose two halves disagree; there
+      is no unit to write, and the per-id path is where a human settles them;
+    * the unit is the CATALOGUE'S, never the request's — `ConfirmUnitsRequest`
+      rejects a `unit` sent alongside a `pattern`, so what gets written is
+      exactly what `GET /units/patterns` displayed;
+    * points a human already confirmed are removed from the set BEFORE the write
+      and reported back under `skipped_already_confirmed`. A pattern is not
+      allowed to overrule a person.
+    """
+    pattern = un.PATTERNS_BY_KEY.get(body.pattern or "")
+    if pattern is None:
+        raise ValidationError(
+            f"unknown unit pattern `{body.pattern}` — see GET /bi/units/patterns "
+            f"for the catalogue",
+            code="UNKNOWN_UNIT_PATTERN",
+            details={"patterns": sorted(un.PATTERNS_BY_KEY)},
+        )
+    if not pattern.proposes_unit:
+        raise ValidationError(
+            f"`{pattern.key}` proposes no unit and cannot be applied in bulk: "
+            f"{pattern.basis}. Confirm these points by `point_ids` if a human has "
+            f"decided what they measure.",
+            code="PATTERN_PROPOSES_NO_UNIT",
+            details={"pattern": pattern.key, "kind": pattern.kind, "basis": pattern.basis},
+        )
+
+    _, eligible, already = await un.pattern_targets(
+        db, tenant, key=pattern.key, category=body.category
+    )
+    if len(eligible) > MAX_PATTERN_APPLY:
+        raise ValidationError(
+            f"`{pattern.key}` matches {len(eligible)} unconfirmed points, above the "
+            f"{MAX_PATTERN_APPLY} this route will apply in one call. Narrow it with "
+            f"`category` — a set this size is one nobody reviewed.",
+            code="PATTERN_TOO_BROAD",
+        )
+
+    point_ids = [r["point_id"] for r in eligible]
+    skipped = [
+        {
+            "point_id": r["point_id"],
+            "point_tag": r["point_tag"],
+            "unit": r["unit"],
+            "unit_source": r["unit_source"],
+        }
+        for r in already
+    ]
+
+    if body.dry_run:
+        challenged = await intake_store.guard_confirmable(
+            db, tenant, point_ids=point_ids, acknowledged=True, what="unit"
+        )
+        return _confirm_response(
+            mode="pattern",
+            pattern=pattern,
+            unit=pattern.unit,
+            actor=actor,
+            dry_run=True,
+            requested=len(eligible) + len(already),
+            resolved=len(point_ids),
+            updated=0,
+            not_visible=0,
+            skipped=skipped,
+            challenged=challenged,
+            # The whole set, named. A count is what the operator decides on; the
+            # names are what let them find the one row that does not belong.
+            would_update=[
+                {"point_id": r["point_id"], "label": _confirm_label(r)} for r in eligible
+            ],
+        )
+
+    challenged = await intake_store.guard_confirmable(
+        db,
+        tenant,
+        point_ids=point_ids,
+        acknowledged=body.acknowledge_not_reporting,
+        what="unit",
+    )
+    updated = await un.confirm_units(
+        db, tenant, point_ids=point_ids, unit=pattern.unit, actor=actor
+    )
+    return _confirm_response(
+        mode="pattern",
+        pattern=pattern,
+        unit=pattern.unit,
+        actor=actor,
+        dry_run=False,
+        requested=len(eligible) + len(already),
+        resolved=len(point_ids),
+        updated=len(updated),
+        not_visible=0,
+        skipped=skipped,
+        challenged=challenged,
+    )
+
+
+@bi_router.post(
+    "/units/confirm",
+    dependencies=[Depends(require_permission(PERM_MANAGE))],
+)
+async def confirm_units(db: Db, scope: Caller, who: Who, body: ConfirmUnitsRequest) -> dict:
+    """An operator asserts the unit for a set of points they have seen.
+
+    Gated by `bi.manage`, not `bi.read`: this WRITES a fact that a rating divides
+    by. It is the same key that gates retiring a point — statements about the
+    estate rather than readings of it.
+
+    THE SET IS NAMED TWO WAYS and both of them are a human's. `point_ids` is the
+    rows in front of the operator. `pattern` is a catalogued convention
+    (`GET /units/patterns`) whose count and sample they read first and whose full
+    membership `dry_run` enumerates — because 576 unconfirmed points is not 576
+    decisions, and a backlog nobody can finish is its own way of having no units
+    at all.
+
+    What is NOT negotiable, and is enforced rather than documented:
+
+    * nothing is auto-applied. This route is the only writer, it runs when a
+      person calls it, and there is no confidence score anywhere beneath it;
+    * a pattern applies the CATALOGUE'S unit. `ConfirmUnitsRequest` refuses a
+      `unit` sent beside a `pattern`, so the thing written is the thing shown;
+    * a pattern never overwrites a confirmed unit — those rows come back under
+      `skipped_already_confirmed`, counted apart from `updated`;
+    * a pattern that proposes no unit (a STATE like `OnOff STS`, or an AMBIGUITY
+      like `KWL1_A`) is refused outright. Bulk is precisely the wrong tool for a
+      tag whose meaning is in doubt.
+
+    `dry_run: true` resolves the whole thing and writes nothing.
+
+    `unit: null` clears back to unconfirmed — per id only, which has to be
+    reachable; see `ConfirmUnitsRequest`.
+
+    A unit asserted on a point that is not carrying readings is CHALLENGED, not
+    stored (`app/api/intake.py`): kWh on an address that has never produced a
+    number is a fact no rating can ever use, and the confirmation succeeding is
+    what makes it invisible. Clearing is never challenged, and a dry run reports
+    the challenge instead of raising it.
+    """
+    tenant = _tenant(scope)
+    actor = _actor_id(who)
+    if body.pattern:
+        return await _confirm_by_pattern(db, tenant, actor, body)
+    return await _confirm_by_ids(db, tenant, actor, body)
 
 
 # ── Ratings ──────────────────────────────────────────────────────────────────

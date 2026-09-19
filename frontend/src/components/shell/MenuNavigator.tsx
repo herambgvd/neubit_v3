@@ -18,6 +18,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { launcherGroups } from "@/config/launcher";
+import { useDashForgeAvailable } from "@/features/dashforge/useDashForgeAvailable";
 import { menuItems, type NavItem } from "@/config/menu";
 import { useAuth } from "@/lib/auth";
 
@@ -85,6 +86,12 @@ export default function MenuNavigator() {
   const router = useRouter();
   const { can, hasModule, user } = useAuth();
 
+  // DashForge is an optional, separately-deployed peer, so its tiles need a third
+  // question beyond permission and module: is it actually there. One boolean, one
+  // integration — widen this when a second optional peer earns a tile.
+  const dashforgeUp = useDashForgeAvailable();
+  const hasIntegration = (key: string) => (key === "dashforge" ? dashforgeUp : true);
+
   useEffect(() => setMounted(true), []);
 
   // Close on Escape.
@@ -118,7 +125,7 @@ export default function MenuNavigator() {
   // Automation), the same surfaces, in the same order — because both render the one
   // launcher IA in config/launcher.js. Home shows one mode at a time; the overlay
   // shows every mode's groups at once. Nothing to keep in sync by hand.
-  const groups = launcherGroups({ can, hasModule }).map((g) => ({
+  const groups = launcherGroups({ can, hasModule, hasIntegration }).map((g) => ({
     ...g,
     // Cell speaks {title, icon, link}; a gated or unbuilt tile arrives with no href
     // and renders as the dimmed "Soon" cell, just as it renders a SOON tile on Home.

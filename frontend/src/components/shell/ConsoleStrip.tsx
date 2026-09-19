@@ -31,6 +31,7 @@ const STRIP_ROUTES = new Set<string>([
   // already shows them as SOON, and a dead segment cell would be exactly the
   // "fabricated destination" this feature must not ship.
   "/bi/portfolio", "/bi/energy", "/bi/hvac", "/bi/water", "/bi/insights", "/bi/ratings",
+  "/bi/duplicates", "/bi/succession",
 ]);
 
 export function hasConsoleStrip(pathname: string | null | undefined): boolean {
@@ -143,6 +144,12 @@ export default function ConsoleStrip() {
               { href: "/bi/water", label: "WATER", icon: "heroicons-outline:beaker" },
               { href: "/bi/insights", label: "INSIGHTS", icon: "heroicons-outline:chart-pie" },
               { href: "/bi/ratings", label: "RATINGS", icon: "heroicons-outline:star" },
+              // The estate's own hygiene, beside the screens whose counts it
+              // corrects: a duplicated register inflates every one of them.
+              { href: "/bi/duplicates", label: "DUPLICATES", icon: "heroicons-outline:document-duplicate" },
+              // Gate 4, beside gate 1: a duplicated register inflates the counts,
+              // a stranded role stops the metrics above it computing at all.
+              { href: "/bi/succession", label: "STRANDED ROLES", icon: "heroicons-outline:link" },
             ].map((s) => (
               <Link key={s.href} href={s.href} className={seg(pathname === s.href)}>
                 <Icon icon={s.icon} className="text-[14px]" /> {s.label}

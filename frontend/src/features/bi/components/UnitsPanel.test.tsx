@@ -55,6 +55,13 @@ const renderPanel = () => {
 
 beforeEach(() => {
   canRef.fn = () => true;
+  // The pattern CATALOGUE now sits above this table (UnitPatterns). It has its
+  // own tests; stubbed empty here so these ones stay about the row path.
+  vi.spyOn(bi, "unitPatterns").mockResolvedValue({
+    patterns: [],
+    totals: { points: 0, matched: 0, unmatched: 0, eligible: 0, already_confirmed: 0 },
+    unmatched_sample: [],
+  });
 });
 
 describe("a failed load", () => {

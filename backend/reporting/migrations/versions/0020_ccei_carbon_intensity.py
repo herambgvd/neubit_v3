@@ -49,7 +49,17 @@ branch_labels = None
 depends_on = None
 
 _SEEDED_BY = "platform (CCEI Methodology Spec v1.0) via migration 0020"
-_ADDED = ("carbon_intensity",)
+
+# THE ROW THIS REVISION OWNS, PINNED — see the long note in 0018.
+#
+# This revision is currently head of the CCEI seed chain, so looping over the
+# whole of `definitions()` happens to be harmless TODAY: everything the module
+# holds has already been inserted by 0018 or 0019 and the NOT EXISTS guard makes
+# those a no-op. That is luck, not design, and it expires the moment somebody
+# adds leaf fifteen to `ccei_spec` for 0025 — at which point this revision starts
+# seeding it, stamped "via migration 0020", exactly as 0018 was doing to this
+# leaf. Pinned for the same reason and in the same shape as the two before it.
+_SEEDS = (("carbon_intensity", 1),)
 
 _INSERT = sa.text(
     """
@@ -68,8 +78,21 @@ _INSERT = sa.text(
 )
 
 
+def _rows():
+    """The pinned rows, in `definitions()`'s own order."""
+    by_id = {(d["key"], d["version"]): d for d in definitions()}
+    missing = [s for s in _SEEDS if s not in by_id]
+    if missing:  # pragma: no cover — a deletion from ccei_spec, caught loudly
+        raise RuntimeError(
+            f"0020 seeds {missing}, which reporting.ccei_spec no longer defines. "
+            f"A published spec row cannot be withdrawn by deleting it from the "
+            f"module: supersede it with a new version in a new revision."
+        )
+    return [by_id[s] for s in _SEEDS]
+
+
 def upgrade() -> None:
-    for d in definitions():
+    for d in _rows():
         op.execute(
             _INSERT.bindparams(
                 key=d["key"],
@@ -88,10 +111,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    for key in _ADDED:
+    for d in _rows():
         op.execute(
             sa.text(
                 "DELETE FROM metric_definitions "
-                "WHERE tenant_id IS NULL AND key = :key AND created_by = :seeded_by"
-            ).bindparams(key=key, seeded_by=_SEEDED_BY)
+                "WHERE tenant_id IS NULL AND key = :key AND version = :version "
+                "AND created_by = :seeded_by"
+            ).bindparams(key=d["key"], version=d["version"], seeded_by=_SEEDED_BY)
         )

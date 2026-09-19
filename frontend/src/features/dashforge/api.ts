@@ -68,6 +68,10 @@ export const dashforge = {
   list: (params: { search?: string; category?: string } = {}): Promise<{
     items: DashForgeEmbed[];
     total: number;
+    /** Whether this deployment can actually OPEN one — DashForge is an optional,
+     *  separately-deployed peer, and core's registry lists fine without it. See
+     *  `useDashForgeAvailable.ts`, which is what the launcher tiles gate on. */
+    integration_enabled: boolean;
   }> => {
     const q: Record<string, string> = {};
     if (params.search) q.search = params.search;

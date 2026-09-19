@@ -159,10 +159,43 @@ _EXTENT_SQL = text(
 # bucket start, which would round backwards. That column is the ts of a reading
 # the writer actually STORED — it used to be the arrival time of any message,
 # including a replayed one that stored nothing.
+#
+# ── `registers`: HOW MANY THINGS, as against how many ROWS ────────────────────
+#
+# `points` counts point ids and a rebuilt gateway connection mints a new id for
+# every point behind it (see the ghost-points block below), so `points` is rows
+# and `registers` is the physical registers those rows describe: 766 against 475
+# on this deployment, 291 of the rows being later generations of something
+# already counted.
+#
+# IT IS COMPUTED HERE, IN THIS STATEMENT, ON PURPOSE. The number cannot be
+# derived on a screen by subtracting the ghost worklist's duplicate excess from
+# `total_points`, because those two are counted over DIFFERENT ROW SETS: this one
+# applies the retirement horizon (LIVE_POINT) and the ghost grouping deliberately
+# applies only `retired_at IS NULL`, since applying the horizon would hide the
+# members that worklist exists to find. A generation dead long enough to be past
+# the horizon is therefore in the worklist and was never in the total, and the
+# subtraction under-counts by exactly those rows. Today the two happen to agree;
+# that is a coincidence of this estate's ages and not a property. Putting the
+# distinct count in the same SELECT as `points` makes the two share one predicate
+# by construction rather than by two places agreeing.
+#
+# A register is `(device_tag, point_tag)`, the same key the ghost grouping uses,
+# joined by an ASCII unit separator so `('1FYC1', 'A_B')` and `('1FYC1_A', 'B')`
+# cannot collide. A row missing either tag falls back to its own `point_id`, so it
+# counts as one register of its own: two untagged rows cannot be shown to be the
+# same thing, and grouping them — which a plain `count(DISTINCT (a, b))` would do,
+# because DISTINCT reads NULLs as equal — would silently merge every unlabelled
+# point on the estate into one.
 _TOTALS_SQL = text(
     """
     SELECT count(DISTINCT coalesce(p.device_id::text, p.device_tag)) AS devices,
            count(*)                                        AS points,
+           count(DISTINCT CASE
+                   WHEN p.device_tag IS NOT NULL AND p.point_tag IS NOT NULL
+                   THEN p.device_tag || chr(31) || p.point_tag
+                   ELSE p.point_id::text
+                 END)                                      AS registers,
            count(*) FILTER (
                WHERE p.last_seen_at >= now() - make_interval(mins => :fresh)
            )                                               AS points_reporting,
@@ -240,6 +273,12 @@ async def summary(db: AsyncSession, tenant: uuid.UUID | None) -> dict:
         # From _TOTALS_SQL, not summed from `categories` — see its comment.
         "total_devices": int(row.get("devices") or 0),
         "total_points": int(row.get("points") or 0),
+        # The same rows as `total_points`, counted as THINGS rather than as ids —
+        # see _TOTALS_SQL. `total_points - total_registers` is the number of rows
+        # that are later generations of a register already counted, and it is
+        # honest only because both halves came out of one statement over one
+        # predicate.
+        "total_registers": int(row.get("registers") or 0),
         "total_points_reporting": int(row.get("points_reporting") or 0),
         "first_reading_at": row.get("first_seen_at") or ext.get("first_bucket"),
         "last_reading_at": row.get("last_seen_at"),
@@ -418,11 +457,25 @@ _SITE_ALERTS_SQL = text(
 # keys defensively means a new fact flows through without an edit here — and an
 # absent one reads as NULL, which renders as "—" with its reason, never as a
 # stand-in.
+#
+# `f.is_active` IS A FILTER, NOT A COLUMN TO RENDER. Core's site delete is SOFT
+# (`sites/site/service.py`), and the mirror deliberately deletes nothing — a
+# `deleted` event only flips this flag (`site_facts_sync.py`). So without this
+# predicate a site an operator deleted in Configurations → Sites vanishes from
+# Sites and stays on the BI leaderboard forever, indistinguishable from a live
+# one. That is not a hypothetical: two rows named "TEMP smoke site" sat on this
+# portfolio with `is_active = false` and no row left in core at all.
+#
+# Filtered rather than rendered as "archived": a deleted site is a site the
+# operator said is not theirs any more, and an estate score that still averages
+# it in is wrong in the direction that matters. A retired-sites view, if anyone
+# ever wants one, asks a different question and gets its own query.
 _SITE_FACTS_SQL = text(
     """
     SELECT f.*
       FROM site_facts f
      WHERE (CAST(:tenant AS uuid) IS NULL OR f.tenant_id = CAST(:tenant AS uuid))
+       AND f.is_active
      ORDER BY f.site_name NULLS LAST
     """
 )
@@ -1109,6 +1162,475 @@ async def set_retired(
             and (dt.datetime.now(dt.timezone.utc) - row["last_seen_at"]).days
             >= RETIRE_AFTER_DAYS
         ),
+    }
+
+
+# ── Ghost points ─────────────────────────────────────────────────────────────
+#
+# THE SHAPE OF THE PROBLEM, measured on this deployment rather than reasoned
+# about: 766 rows with `retired_at IS NULL` against 475 distinct
+# `(device_tag, point_tag)` pairs. 283 pairs are duplicated, spanning 574 rows.
+#
+# Nothing here is a gateway bug. A conflux connection that is deleted and
+# re-created mints a NEW `point_id` for every point behind it — the id belongs to
+# the connection, not to the meter — and the writer's upsert must create a
+# dimension row for an id it has never seen (contract §6), or it would be
+# dropping readings. Sometimes the tag spelling changes across the rebuild too.
+# So one physical register accumulates a GENERATION per rebuild, every one of
+# them unretired, every one of them counted.
+#
+# WHY THE RETIREMENT HORIZON DOES NOT ALREADY COVER IT. The horizon (see
+# LIVE_POINT) is applied at query time on `last_seen_at`, so a ghost does stop
+# being COUNTED after RETIRE_AFTER_DAYS. It never stops being a row: it is still
+# `retired_at IS NULL`, it is still in the browse list, nothing records that it
+# was superseded, and its history is unreachable from the point that replaced it.
+# The horizon answers "is this reporting". It cannot answer "which row IS this
+# meter now", and that is the question an estate count is really asking.
+#
+# THE DUPLICATE SET IS DELIBERATELY NOT THE LIVE SET. The grouping below filters
+# on `retired_at IS NULL` alone and does NOT apply LIVE_POINT. Applying the
+# horizon would hide exactly the members this feature exists to find — a ghost
+# has not reported in weeks, which is the whole reason it is a ghost — and every
+# duplicated pair would collapse to one apparent member and vanish from the
+# worklist.
+
+_GHOST_MEMBERS_SQL = text(
+    """
+    WITH candidate AS (
+        SELECT p.point_id,
+               p.device_tag,
+               p.point_tag,
+               p.category,
+               p.unit,
+               p.last_seen_at,
+               p.last_seen_at >= now() - make_interval(mins => :fresh) AS fresh,
+               r.point_id IS NOT NULL                                  AS has_role,
+               r.role                                                  AS role
+          FROM points p
+          -- One row at most: `point_roles` is keyed by point_id alone, so this
+          -- join cannot fan a member out into several.
+          LEFT JOIN point_roles r ON r.point_id = p.point_id
+         WHERE (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
+           AND p.retired_at IS NULL
+           -- A NULL tag cannot identify a duplicate of anything. Grouping NULLs
+           -- together would merge every unlabelled point on the estate into one
+           -- enormous bogus group.
+           AND p.device_tag IS NOT NULL
+           AND p.point_tag IS NOT NULL
+           AND (CAST(:category AS text) IS NULL OR p.category = CAST(:category AS text))
+    ),
+    duplicated AS (
+        SELECT device_tag, point_tag
+          FROM candidate
+         GROUP BY device_tag, point_tag
+        HAVING count(*) > 1
+    )
+    SELECT c.*
+      FROM candidate c
+      JOIN duplicated d USING (device_tag, point_tag)
+     -- Newest first WITHIN a group, so the member a human reads first is the one
+     -- most likely to be the survivor. NULLS LAST is defensive: `last_seen_at`
+     -- is NOT NULL in the schema.
+     ORDER BY c.device_tag, c.point_tag, c.last_seen_at DESC NULLS LAST
+    """
+)
+
+# The state decision 4 refuses to paper over: a point the collapse superseded
+# that is REPORTING again. The writer clears `retired_at` when a reading actually
+# stores and deliberately does not name `superseded_by`, so this row comes back
+# as live while still pointing at its survivor. Two generations of one register
+# are both talking, which is a fact an operator has to act on — so it is surfaced
+# here rather than repaired silently.
+_GHOST_RESURRECTED_SQL = text(
+    """
+    SELECT p.point_id,
+           p.device_tag,
+           p.point_tag,
+           p.category,
+           p.last_seen_at,
+           p.superseded_by
+      FROM points p
+     WHERE (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
+       AND p.superseded_by IS NOT NULL
+       AND p.retired_at IS NULL
+       AND (CAST(:category AS text) IS NULL OR p.category = CAST(:category AS text))
+     ORDER BY p.last_seen_at DESC
+    """
+)
+
+
+def _classify(members: list[dict]) -> tuple[str, uuid.UUID | None]:
+    """AUTO or MANUAL, and the survivor when there is one.
+
+    The rule is deliberately the narrowest one that is defensible: a group is
+    AUTO only when EXACTLY ONE member is fresh. That member is the generation the
+    gateway is currently writing to, so the others are provably superseded rather
+    than merely older.
+
+    Everything else is MANUAL, and there are two kinds:
+
+      * ZERO fresh members — the whole register has stopped reporting. Which
+        generation "survives" is then a question about the building, not about
+        the data; picking the newest `last_seen_at` would be a guess that reads
+        like a fact. 19 of the 283 duplicated pairs here are in this state.
+      * MORE THAN ONE fresh member — two generations are both delivering right
+        now, which usually means a cutover in progress or a genuinely duplicated
+        tag. Collapsing one into the other would destroy a live series. There are
+        none on this deployment today; the branch exists because the state is
+        reachable the moment a connection is rebuilt.
+
+    Nothing is ever auto-applied to a MANUAL group.
+    """
+    fresh = [m for m in members if m["fresh"]]
+    if len(fresh) == 1:
+        return "auto", fresh[0]["point_id"]
+    return "manual", None
+
+
+async def ghost_groups(
+    db: AsyncSession,
+    tenant: uuid.UUID | None,
+    *,
+    category: str | None = None,
+    mode: str | None = None,
+) -> list[dict]:
+    """Every duplicated `(device_tag, point_tag)`, with its members and a verdict.
+
+    One entry per duplicated pair. `mode` filters the RESULT, not the grouping —
+    a group is classified over all of its members and then kept or dropped — so
+    asking for `mode="auto"` can never change which members a group has.
+
+    `category` DOES filter before the grouping, and that is the intended
+    semantics: "show me the ghosts in Energy & Metering" is a question about
+    duplication within that view. Category is a device-level attribute, so
+    members of a real group share it in practice; a group whose generations were
+    reclassified between rebuilds is split by this filter and shows up in
+    whichever category has two or more members left.
+
+    Tenant-scoped like everything else here: the duplicate set is computed
+    INSIDE the tenant, so two tenants that happen to use the same device tag are
+    never each other's ghosts.
+    """
+    rows = _rows(
+        await db.execute(
+            _GHOST_MEMBERS_SQL,
+            {
+                "tenant": str(tenant) if tenant else None,
+                "category": category,
+                "fresh": FRESH_MINUTES,
+            },
+        )
+    )
+
+    grouped: dict[tuple[str, str], list[dict]] = {}
+    for row in rows:
+        grouped.setdefault((row["device_tag"], row["point_tag"]), []).append(row)
+
+    out: list[dict] = []
+    for (device_tag, point_tag), members in grouped.items():
+        group_mode, survivor = _classify(members)
+        if mode is not None and mode != group_mode:
+            continue
+        out.append(
+            {
+                "device_tag": device_tag,
+                "point_tag": point_tag,
+                # The category of the group, as far as the members agree. They
+                # disagree only when a rebuild reclassified the device, and the
+                # honest answer then is the one the first member carries rather
+                # than a merged label nothing said.
+                "category": members[0]["category"],
+                "mode": group_mode,
+                "survivor_point_id": survivor,
+                "members": [
+                    {
+                        "point_id": m["point_id"],
+                        "last_seen_at": m["last_seen_at"],
+                        "unit": m["unit"],
+                        "fresh": bool(m["fresh"]),
+                        "has_role": bool(m["has_role"]),
+                        "role": m["role"],
+                    }
+                    for m in members
+                ],
+            }
+        )
+    return out
+
+
+async def resurrected_points(
+    db: AsyncSession,
+    tenant: uuid.UUID | None,
+    *,
+    category: str | None = None,
+) -> list[dict]:
+    """Points that were superseded and are reporting again — see the SQL above."""
+    return _rows(
+        await db.execute(
+            _GHOST_RESURRECTED_SQL,
+            {"tenant": str(tenant) if tenant else None, "category": category},
+        )
+    )
+
+
+# ── Collapsing a ghost group ─────────────────────────────────────────────────
+#
+# Three statements, in this order, per group. The order is not arbitrary: the
+# role INSERT reads the ghosts' rows, so it has to run before the DELETE that
+# removes them.
+
+# Move a role from the ghosts onto the survivor.
+#
+# `point_roles` is keyed by `point_id` ALONE, so a point carries at most one
+# role and the survivor either has one or does not. `ON CONFLICT DO NOTHING` is
+# therefore the whole of the "do not create a duplicate role" rule AND the whole
+# of "a survivor that already carries a role wins": the insert is a no-op, the
+# ghost's row is dropped by the next statement, and the operator's assertion
+# about the surviving point is never overwritten by an older generation's.
+#
+# LIMIT 1 over the ghosts, newest assertion first: when two ghosts carry roles
+# only one can land, and the most recent statement is the better one to keep.
+# The `RETURNING` is what makes the count honest — it reports rows that actually
+# landed, not rows that were offered.
+_MIGRATE_ROLE_SQL = text(
+    """
+    WITH ghost_role AS (
+        SELECT r.tenant_id, r.role, r.role_source, r.confirmed_by, r.confirmed_at
+          FROM point_roles r
+         WHERE r.point_id = ANY(CAST(:ghosts AS uuid[]))
+           AND (CAST(:tenant AS uuid) IS NULL OR r.tenant_id = CAST(:tenant AS uuid))
+         ORDER BY r.confirmed_at DESC
+         LIMIT 1
+    )
+    INSERT INTO point_roles (point_id, tenant_id, role, role_source, confirmed_by, confirmed_at)
+    SELECT CAST(:survivor AS uuid), g.tenant_id, g.role, g.role_source, g.confirmed_by, g.confirmed_at
+      FROM ghost_role g
+    ON CONFLICT (point_id) DO NOTHING
+    RETURNING point_id
+    """
+)
+
+# Whatever the survivor did or did not absorb, the ghosts keep no role. A role is
+# "what this point MEANS", and a superseded generation means nothing any more —
+# leaving the row would let a metric definition select a retired point.
+_DROP_GHOST_ROLES_SQL = text(
+    """
+    DELETE FROM point_roles r
+     WHERE r.point_id = ANY(CAST(:ghosts AS uuid[]))
+       AND (CAST(:tenant AS uuid) IS NULL OR r.tenant_id = CAST(:tenant AS uuid))
+    RETURNING r.point_id
+    """
+)
+
+# The retire itself. Three columns, no deletes, no readings touched — which is
+# what makes the whole operation reversible by clearing the same three.
+_RETIRE_GHOSTS_SQL = text(
+    """
+    UPDATE points p
+       SET retired_at = now(),
+           retire_reason = 'ghost',
+           superseded_by = CAST(:survivor AS uuid)
+     WHERE p.point_id = ANY(CAST(:ghosts AS uuid[]))
+       AND (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
+    RETURNING p.point_id
+    """
+)
+
+
+async def collapse_ghost_group(
+    db: AsyncSession,
+    tenant: uuid.UUID | None,
+    *,
+    survivor_point_id: uuid.UUID,
+    ghost_point_ids: list[uuid.UUID],
+) -> dict:
+    """Retire one group's ghosts onto its survivor. ONE TRANSACTION.
+
+    The three statements are committed together and rolled back together. A
+    half-collapsed group — roles moved but the ghosts still live, or ghosts
+    retired with their roles still pointing at dead rows — would be worse than
+    not collapsing at all, because nothing downstream could tell it had happened.
+
+    The caller is responsible for having VALIDATED the group first (see
+    `collapse_ghosts`): by the time this runs, the survivor is known to be a
+    member and the ghosts are known to be its siblings in the caller's tenant.
+    """
+    params = {
+        "survivor": str(survivor_point_id),
+        "ghosts": [str(p) for p in ghost_point_ids],
+        "tenant": str(tenant) if tenant else None,
+    }
+    try:
+        migrated = _rows(await db.execute(_MIGRATE_ROLE_SQL, params))
+        dropped = _rows(await db.execute(_DROP_GHOST_ROLES_SQL, params))
+        retired = _rows(await db.execute(_RETIRE_GHOSTS_SQL, params))
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    return {
+        "survivor_point_id": survivor_point_id,
+        "points_retired": len(retired),
+        # Landed on the survivor.
+        "roles_migrated": len(migrated),
+        # Removed from the ghosts WITHOUT landing — the survivor already carried
+        # a role, so the older generation's assertion was discarded. Reported
+        # separately because it is a loss, and an operator should see it.
+        "roles_discarded": max(0, len(dropped) - len(migrated)),
+    }
+
+
+async def collapse_ghosts(
+    db: AsyncSession,
+    tenant: uuid.UUID | None,
+    *,
+    mode: str | None = None,
+    choices: list[dict] | None = None,
+) -> dict:
+    """Collapse every AUTO group, or an explicit list the operator chose.
+
+    Exactly one of `mode` and `choices` is meaningful; the router enforces that.
+
+    VALIDATION HAPPENS FIRST, FOR ALL GROUPS. Every explicit choice is resolved
+    against the live duplicate set before a single statement runs, and a bad
+    survivor raises out of this function with nothing written. Validating as we
+    go would leave the groups before the bad one collapsed and the ones after it
+    untouched — a partial apply the operator never asked for and cannot see.
+
+    A group the caller named that is NOT a duplicated pair in their tenant is
+    SKIPPED with a reason rather than refused: the worklist it was read from can
+    legitimately go stale between the GET and the POST — a rebuild retires a
+    member, or another operator collapsed it first — and failing the whole batch
+    for that would make the screen unusable. Naming a survivor that is not a
+    member is different: that is a claim about identity that was never true, so
+    it raises.
+    """
+    from kernel.errors import ValidationError
+
+    groups = await ghost_groups(db, tenant)
+    by_pair = {(g["device_tag"], g["point_tag"]): g for g in groups}
+
+    planned: list[tuple[dict, uuid.UUID]] = []
+    skipped: list[dict] = []
+
+    if choices is None:
+        # `mode="auto"`: every group the classifier called auto, and ONLY those.
+        # A manual group has no `survivor_point_id` and is never reachable from
+        # here — there is no fallback that picks one.
+        for group in groups:
+            if group["mode"] == "auto":
+                planned.append((group, group["survivor_point_id"]))
+    else:
+        for choice in choices:
+            pair = (choice["device_tag"], choice["point_tag"])
+            group = by_pair.get(pair)
+            if group is None:
+                skipped.append(
+                    {
+                        "device_tag": pair[0],
+                        "point_tag": pair[1],
+                        "reason": "no duplicated points with these tags in this tenant",
+                    }
+                )
+                continue
+            survivor = choice["survivor_point_id"]
+            if survivor not in {m["point_id"] for m in group["members"]}:
+                raise ValidationError(
+                    f"survivor {survivor} is not a member of "
+                    f"{pair[0]}/{pair[1]} — nothing was collapsed"
+                )
+            planned.append((group, survivor))
+
+    collapsed = 0
+    points_retired = 0
+    roles_migrated = 0
+    roles_discarded = 0
+    for group, survivor in planned:
+        ghosts = [m["point_id"] for m in group["members"] if m["point_id"] != survivor]
+        if not ghosts:
+            # Cannot happen for a group read out of `ghost_groups` (every group
+            # has at least two members), but a group of one is a no-op rather
+            # than an error if the set ever changes underneath us.
+            skipped.append(
+                {
+                    "device_tag": group["device_tag"],
+                    "point_tag": group["point_tag"],
+                    "reason": "the survivor is the only member",
+                }
+            )
+            continue
+        result = await collapse_ghost_group(
+            db, tenant, survivor_point_id=survivor, ghost_point_ids=ghosts
+        )
+        collapsed += 1
+        points_retired += result["points_retired"]
+        roles_migrated += result["roles_migrated"]
+        roles_discarded += result["roles_discarded"]
+
+    return {
+        "groups_collapsed": collapsed,
+        "points_retired": points_retired,
+        "roles_migrated": roles_migrated,
+        "roles_discarded": roles_discarded,
+        "groups_skipped": len(skipped),
+        "skipped": skipped,
+    }
+
+
+# The undo, and the reason `retire_reason` exists.
+#
+# `retire_reason = 'ghost'` is the ONLY row this statement can reach. A point an
+# operator retired by hand has a NULL reason and is untouched however loudly a
+# caller names it — which is the whole safety of this route: a bulk undo of a
+# collapse must not be a bulk undo of every decommissioning decision anyone ever
+# made. It clears exactly the three columns the collapse wrote and nothing else,
+# so a restored point is byte-for-byte back where it started.
+_RESTORE_GHOSTS_SQL = text(
+    """
+    UPDATE points p
+       SET retired_at = NULL,
+           retire_reason = NULL,
+           superseded_by = NULL
+     WHERE p.point_id = ANY(CAST(:pids AS uuid[]))
+       AND p.retire_reason = 'ghost'
+       AND (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
+    RETURNING p.point_id, p.device_tag, p.point_tag
+    """
+)
+
+
+async def restore_ghosts(
+    db: AsyncSession,
+    tenant: uuid.UUID | None,
+    *,
+    point_ids: list[uuid.UUID],
+) -> dict:
+    """Undo a collapse for the named points, and ONLY for the ones it retired.
+
+    Roles are NOT put back, and that is stated rather than hidden. The collapse
+    moved a ghost's role onto the survivor precisely because the survivor is the
+    point that means something now; handing it back to a restored ghost would
+    re-create the ambiguity a metric definition cannot resolve. An operator who
+    restores a point and wants it to carry a role asserts one.
+    """
+    rows = _rows(
+        await db.execute(
+            _RESTORE_GHOSTS_SQL,
+            {
+                "pids": [str(p) for p in point_ids],
+                "tenant": str(tenant) if tenant else None,
+            },
+        )
+    )
+    await db.commit()
+    restored = {r["point_id"] for r in rows}
+    return {
+        "restored": len(rows),
+        "requested": len(point_ids),
+        "points": rows,
+        # Named but not reached: retired by another route, another tenant's, or
+        # not retired at all. Said out loud rather than reported as a success.
+        "refused": [p for p in point_ids if p not in restored],
     }
 
 

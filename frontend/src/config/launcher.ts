@@ -30,6 +30,10 @@ export interface LauncherTile {
   tone?: LauncherTone;
   perm?: string;
   module?: string;
+  /** An optional peer this surface needs deployed. `perm` and `module` say the
+   *  caller is allowed in; this says there is something on the other side of the
+   *  door at all. Resolved by `LauncherGate.hasIntegration`. */
+  integration?: "dashforge";
   soon?: boolean;
 }
 
@@ -54,6 +58,10 @@ export interface LauncherMode {
 export interface LauncherGate {
   can: (perm: string) => boolean;
   hasModule: (key?: string) => boolean;
+  /** Whether an optional peer is actually deployed — see `LauncherTile.integration`.
+   *  Omitted, every integration is assumed present, so a caller that does not
+   *  know cannot hide a working surface. */
+  hasIntegration?: (key: string) => boolean;
 }
 
 // GATE KEYS ARE CATALOG KEYS.
@@ -130,7 +138,7 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           // module the routes are mounted behind. NOT `vms`: the module gate is
           // the backend's, and naming a different one here would show a tile that
           // 403s.
-          { icon: "heroicons:squares-2x2", label: "Dashboards", href: "/surveillance/dashboards", tone: "teal", perm: "dashforge.read", module: "analytics" },
+          { icon: "heroicons:squares-2x2", label: "Dashboards", href: "/surveillance/dashboards", tone: "teal", perm: "dashforge.read", module: "analytics", integration: "dashforge" },
         ],
       },
     ],
@@ -242,6 +250,22 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           // IoT devices in the same palette as cameras and doors; the pin reaches
           // Building Intelligence over the sites event spine. Portfolio still
           // reports placed / unplaced and links to Sites.
+          // BUILT 2026-09-19. Gate 1 of the six: what actually ARRIVED. A
+          // rebuilt gateway connection re-creates its points under new ids, so
+          // one register accumulates a generation per rebuild and every estate
+          // count above it is inflated — 766 live rows for 475 real registers.
+          // This is where those are collapsed onto a survivor, reversibly. It
+          // sits in SENSE rather than THINK because it is a statement about what
+          // the estate IS, not an analysis of it. Reading needs `bi.read` +
+          // `analytics` like every tile here; collapsing needs `bi.manage`.
+          { icon: "heroicons:rectangle-stack", label: "Duplicate Points", href: "/bi/duplicates", tone: "teal", perm: "bi.read", module: "analytics" },
+          // BUILT 2026-09-19. Gate 4 of the six: what a number BINDS to. Every
+          // role an operator asserted is stranded on a point a gateway rebuild
+          // renamed away, so the metrics above them refuse for machines that are
+          // running. This is where the assertion is moved onto the point that
+          // replaced it, one at a time, against the evidence that ranked it —
+          // never swept. `bi.read` + `analytics` to read; moving needs `bi.manage`.
+          { icon: "heroicons:variable", label: "Stranded Roles", href: "/bi/succession", tone: "teal", perm: "bi.read", module: "analytics" },
           // No environment points exist. Stays SOON until some do.
           { icon: "heroicons:sparkles", label: "IAQ & Environment", soon: true },
         ],
@@ -287,7 +311,10 @@ export const LAUNCHER_MODES: LauncherMode[] = [
           // THIS console's dashboards rather than every dashboard registered on
           // the platform — Surveillance has its own tile onto its own category,
           // and Configurations → Dashboards is where they are filed.
-          { icon: "heroicons:squares-2x2", label: "Dashboards", href: "/bi/dashboards", tone: "att", perm: "dashforge.read", module: "analytics" },
+          // `integration: "dashforge"` because the permission and the module BOTH pass
+          // on a deployment that has no DashForge — the registry is core's own, so the
+          // only thing that ever said so was the 503 the operator got after clicking.
+          { icon: "heroicons:squares-2x2", label: "Dashboards", href: "/bi/dashboards", tone: "att", perm: "dashforge.read", module: "analytics", integration: "dashforge" },
         ],
       },
     ],
@@ -349,9 +376,15 @@ export const LAUNCHER_MODES: LauncherMode[] = [
 // Gate one tile against the caller. An unreachable surface keeps its label but loses
 // its destination — it renders SOON instead of a link that would 403. Tiles already
 // marked `soon` pass straight through (there is nothing to gate).
-export function gateTile(tile: LauncherTile, { can, hasModule }: LauncherGate): LauncherTile {
+export function gateTile(
+  tile: LauncherTile,
+  { can, hasModule, hasIntegration }: LauncherGate,
+): LauncherTile {
   if (tile.soon) return tile;
-  const ok = (!tile.perm || can(tile.perm)) && (!tile.module || hasModule(tile.module));
+  const ok =
+    (!tile.perm || can(tile.perm)) &&
+    (!tile.module || hasModule(tile.module)) &&
+    (!tile.integration || !hasIntegration || hasIntegration(tile.integration));
   return ok ? tile : { ...tile, href: undefined, soon: true };
 }
 

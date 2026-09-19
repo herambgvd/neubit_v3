@@ -51,6 +51,27 @@
 // surface where a site is already being read, and pinning still happens in
 // Configurations → Sites.
 //
+// THE POINT COUNT IS NOT THE NUMBER OF POINTS, and the strip now says so. The
+// `points` dimension holds one row per point_id, and a conflux connection that is
+// deleted and re-created mints a NEW id for every point behind it — so one
+// physical register accumulates a generation per rebuild, all unretired, all
+// counted. On this deployment that is 766 rows for 475 real registers: the
+// headline figure was inflated by 61% and nothing on the screen admitted it.
+// The Points slot therefore carries the distinct-register figure, the number of
+// rows that are later generations, and a link to /bi/duplicates, which is the
+// only screen that can change any of them. Same rule as the dash: a number that
+// is wrong prints WHAT is wrong with it, beside the thing that fixes it.
+//
+// THE TWO HALVES OF THAT ANNOTATION COME FROM DIFFERENT PLACES, and they are
+// rendered apart for it. The register figures are `total_points` and
+// `total_registers` out of the SAME summary statement under the same retirement
+// horizon, so they are honest on their own and render whenever the estate has
+// repeats. The PAIR COUNT and its link belong to the duplicate worklist, which
+// is a second request: while it is loading, when it fails, and when the estate
+// has no duplicated pair, nothing is linked and nothing is invented. A permanent
+// "0 duplicates" line would be a control with no consumer, and a link carrying a
+// count this page guessed would be worse.
+//
 // The "no console yet" caption is NOT dead code. `fire` still has none and must
 // keep none: its single point has never produced a reading, so the category does
 // not appear in `points` at all, and the caption is what a category earns by
@@ -71,12 +92,13 @@ import {
   LeaderChip,
 } from "@/components/console";
 import { apiError } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { fmtRelative } from "@/lib/format";
 
 import ActivityChart from "./components/ActivityChart";
 import FaultQueue, { FaultSeverity } from "./components/FaultQueue";
 import { bi } from "./api";
-import { categoryMeta, deviceTypeLabel } from "./constants";
+import { MODULE, PERM_READ, categoryMeta, deviceTypeLabel } from "./constants";
 
 // The fault window. 24 hours matches the ingest chart beside it; the server caps
 // this endpoint at 48 because it reads the raw alert table.
@@ -253,6 +275,13 @@ function SiteRow({ site, alertHours }: any) {
 }
 
 export default function Portfolio() {
+  // /bi/duplicates is gated on `bi.read` + the `analytics` module, exactly like
+  // its launcher tile (config/launcher.ts). A viewer who cannot open it is not
+  // sent there — and is not asked to pay for the request either, which is why
+  // the gate sits on the query rather than only on the link.
+  const { can, hasModule } = useAuth();
+  const mayOpenDuplicates = can(PERM_READ) && hasModule(MODULE);
+
   const summaryQ = useQuery<any>({
     queryKey: ["bi-summary"],
     queryFn: () => bi.summary(),
@@ -269,6 +298,16 @@ export default function Portfolio() {
     queryKey: ["bi-alerts", ALERT_HOURS],
     queryFn: () => bi.alerts({ hours: ALERT_HOURS, limit: 50 }),
     refetchInterval: 30_000,
+  });
+
+  // The duplicate worklist, under the SAME query key the duplicates console uses
+  // for its unfiltered view — so the two cannot disagree, and a collapse over
+  // there refreshes this annotation with the summary it already invalidates.
+  // No refetchInterval: this is an annotation on a number, not a live figure.
+  const ghostsQ = useQuery<any>({
+    queryKey: ["bi-ghosts", ""],
+    queryFn: () => bi.ghosts(),
+    enabled: mayOpenDuplicates,
   });
 
   const s = summaryQ.data;
@@ -293,6 +332,28 @@ export default function Portfolio() {
   const measuredTotal = measured.length
     ? measured.reduce((n: number, x: any) => n + (x.kwh.consumption_kwh || 0), 0)
     : null;
+
+  // How much of the point count is the same register counted twice. BOTH HALVES
+  // COME FROM THE SUMMARY: `total_registers` counts the same rows as
+  // `total_points`, in the same SELECT and under the same retirement horizon, so
+  // the difference between them is a subtraction the server already vouched for.
+  // This used to be `total_points` minus the duplicate worklist's excess, which
+  // compared two row sets that never agreed to be compared — the worklist
+  // deliberately ignores the horizon a ghost is usually past — and was clamped at
+  // zero for it. The clamp is gone with the divergence that needed it.
+  //
+  // Absent rather than zero when the field is missing: a store that does not
+  // report it has not said the estate is clean, and an annotation nobody can
+  // check is worse than none.
+  const registers: number | null =
+    typeof s?.total_registers === "number" ? s.total_registers : null;
+  const repeats: number | null = registers == null ? null : s.total_points - registers;
+
+  // The DUPLICATED PAIRS are a different question and still a different request.
+  // The register line above says what the estate really has; this says how many
+  // groups an operator would have to settle, which only the worklist knows — and
+  // a viewer who may not open that console is never charged for it.
+  const dupGroups: any[] = ghostsQ.data?.groups ?? [];
 
   return (
     <ConsolePage>
@@ -358,6 +419,50 @@ export default function Portfolio() {
               value={s.total_points}
               sub={`${s.total_points_reporting} reporting in last ${s.fresh_minutes} min`}
               tone={s.total_points_reporting === s.total_points ? "good" : "warn"}
+              // The headline stays the ROW count, because that is what every
+              // other figure on this page was computed over and a silently
+              // corrected total would disagree with all of them. What changes is
+              // that it no longer prints alone: underneath it sit the number of
+              // registers those rows really describe, the rows that are repeats
+              // of them, and the screen where they are settled.
+              title={
+                !repeats
+                  ? undefined
+                  : `One row per point id. A rebuilt gateway connection re-creates its points under new ids, so ${repeats} of these rows are later generations of registers already counted here — ${registers} distinct registers. Both figures are counted over the same rows in the same statement.${
+                      dupGroups.length
+                        ? ` ${dupGroups.length} duplicated pairs are waiting to be settled; collapsing them deletes no reading and can be undone.`
+                        : ""
+                    }`
+              }
+              action={
+                // Two statements, from two different requests, and they are no
+                // longer one block. The register line is arithmetic on the
+                // summary this page already has, so it renders whenever the
+                // estate has repeats — a failed or pending worklist cannot take
+                // it away. The LINK still belongs to the worklist: the pair
+                // count is the worklist's own, and a link offered with an
+                // invented count is exactly the decorative control this console
+                // does not ship.
+                !repeats && !dupGroups.length ? null : (
+                  <>
+                    {!!repeats && (
+                      <p className="text-nb-warn">
+                        <span className="font-mono">{registers}</span> registers ·{" "}
+                        <span className="font-mono">{repeats}</span> rows are repeats of them
+                      </p>
+                    )}
+                    {dupGroups.length > 0 && (
+                      <Link
+                        href="/bi/duplicates"
+                        className="mt-0.5 inline-flex items-center gap-1 text-nb-blueb hover:underline"
+                      >
+                        Settle {dupGroups.length} duplicated pairs
+                        <Icon icon="heroicons:arrow-up-right" className="text-[11px]" />
+                      </Link>
+                    )}
+                  </>
+                )
+              }
             />
             <Kpi
               icon="heroicons:bolt"

@@ -122,8 +122,15 @@ async def list_embeds(
     items, total = await svc.list_(
         search=search, category=normalize_category(category) if category else None
     )
+    cfg = get_dashforge_settings()
     return EmbedListResponse(
-        items=[EmbedPublic.model_validate(r) for r in items], total=total
+        items=[EmbedPublic.model_validate(r) for r in items],
+        total=total,
+        # Exactly the pair `open_session` below needs: a configured client AND a
+        # browser-resolvable public url. Either one missing and every dashboard
+        # in `items` is a 503 waiting to happen, which is what the console uses
+        # this to stop offering.
+        integration_enabled=cfg.enabled and bool(cfg.public_url),
     )
 
 

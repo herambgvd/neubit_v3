@@ -448,3 +448,30 @@ def test_no_ccei_definition_at_all_is_a_stated_reason_and_not_a_failed_request(
     out = _breakdown(db)
     assert len(out) == 2
     assert all(r["score"] is None and r["score_reason"].startswith("no score:") for r in out)
+
+
+class TestDeletedSitesLeaveTheLeaderboard:
+    """A site deleted in Configurations → Sites must not survive on Portfolio.
+
+    Core's delete is SOFT and the mirror deletes nothing — a `deleted` event only
+    flips `site_facts.is_active` to false. So the leaderboard's own query is the
+    only thing standing between "the operator deleted this site" and "the site
+    scores the estate forever". Two rows named "TEMP smoke site" sat on this
+    portfolio in exactly that state, with no row left in core at all.
+
+    The suite never executes SQL (see this module's docstring), so the predicate
+    itself is the subject here: there is nothing else to assert against.
+    """
+
+    def test_the_facts_query_filters_on_is_active(self):
+        sql = str(q._SITE_FACTS_SQL)
+        assert "f.is_active" in sql
+
+    def test_is_active_is_a_predicate_and_not_merely_selected(self):
+        """`SELECT f.*` already carries `is_active` into the payload, and it has
+        ridden there for months while the screen ignored it. Asserting the column
+        appears somewhere would therefore have passed before the fix and proves
+        nothing. It has to be in the WHERE."""
+        sql = str(q._SITE_FACTS_SQL)
+        where = sql.split("WHERE", 1)[1]
+        assert "f.is_active" in where

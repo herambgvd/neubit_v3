@@ -45,7 +45,7 @@ import json
 
 import sqlalchemy as sa
 from alembic import op
-from reporting.ccei_spec import LEAF_DEFINITIONS, definitions
+from reporting.ccei_spec import definitions
 
 revision = "0019_ccei_delta_t_occupancy"
 down_revision = "0018_ccei_v2_spec"
@@ -53,6 +53,17 @@ branch_labels = None
 depends_on = None
 
 _SEEDED_BY = "platform (CCEI Methodology Spec v1.0) via migration 0019"
+
+# THE ROW THIS REVISION OWNS, PINNED — see the long note in 0018 for the whole
+# story. Short version: `definitions()` is the LIVE spec module and it grew after
+# this revision shipped (0020 added `carbon_intensity` to it), so looping over
+# everything it returns made this a moving target. On a fresh database it seeded
+# 0020's leaf here, stamped with 0019's `created_by`, which 0020's downgrade then
+# could not find. `LEAF_DEFINITIONS` had the same problem in the downgrade below
+# for exactly the same reason.
+#
+# One leaf. It is the one the constraint widening above is FOR.
+_SEEDS = (("chw_delta_t_in_band", 1),)
 
 _INSERT = sa.text(
     """
@@ -74,6 +85,19 @@ _INSERT = sa.text(
 _KINDS = ("formula", "composite", "occupancy")
 
 
+def _rows():
+    """The pinned rows, in `definitions()`'s own order."""
+    by_id = {(d["key"], d["version"]): d for d in definitions()}
+    missing = [s for s in _SEEDS if s not in by_id]
+    if missing:  # pragma: no cover — a deletion from ccei_spec, caught loudly
+        raise RuntimeError(
+            f"0019 seeds {missing}, which reporting.ccei_spec no longer defines. "
+            f"A published spec row cannot be withdrawn by deleting it from the "
+            f"module: supersede it with a new version in a new revision."
+        )
+    return [by_id[s] for s in _SEEDS]
+
+
 def upgrade() -> None:
     op.drop_constraint("ck_metric_defs_kind", "metric_definitions", type_="check")
     op.create_check_constraint(
@@ -81,7 +105,7 @@ def upgrade() -> None:
         "metric_definitions",
         "kind IN " + str(_KINDS),
     )
-    for d in definitions():
+    for d in _rows():
         op.execute(
             _INSERT.bindparams(
                 key=d["key"],
@@ -101,13 +125,13 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # Only the leaf this migration added. 0018's composites are 0018's to remove.
-    for key, d in LEAF_DEFINITIONS.items():
+    for d in _rows():
         op.execute(
             sa.text(
                 "DELETE FROM metric_definitions "
                 "WHERE tenant_id IS NULL AND key = :key AND version = :version "
                 "AND created_by = :seeded_by"
-            ).bindparams(key=key, version=d["version"], seeded_by=_SEEDED_BY)
+            ).bindparams(key=d["key"], version=d["version"], seeded_by=_SEEDED_BY)
         )
     # Narrow the constraint back only AFTER the rows that need the wider one are
     # gone, or the constraint would be rejected by its own table.

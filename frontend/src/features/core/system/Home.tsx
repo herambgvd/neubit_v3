@@ -25,6 +25,7 @@ const IconSpark = (p: SVGProps<SVGSVGElement>) => (
 );
 
 import { LAUNCHER_MODES, gateTile, type LauncherGroup, type LauncherTile, type LauncherTone } from "@/config/launcher";
+import { useDashForgeAvailable } from "@/features/dashforge/useDashForgeAvailable";
 import { vms } from "@/features/vms/api";
 import { useAuth } from "@/lib/auth";
 import type { CameraPublic, FederatedCameraList, Paged } from "@/lib/types";
@@ -244,6 +245,12 @@ const MODE_IDS = MODES.map((m) => m.id);
 
 export default function HomePage() {
   const { can, hasModule } = useAuth();
+
+  // DashForge is an optional, separately-deployed peer, so its tiles need a third
+  // question beyond permission and module: is it actually there. One boolean, one
+  // integration — widen this when a second optional peer earns a tile.
+  const dashforgeUp = useDashForgeAvailable();
+  const hasIntegration = (key: string) => (key === "dashforge" ? dashforgeUp : true);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -290,7 +297,7 @@ export default function HomePage() {
   const decorate = (t: LauncherTile): TileProps =>
     t.href === "/streaming" ? { ...t, count: cameraCount, stats: cameraStats } : t;
   const tilesOf = (group: LauncherGroup) =>
-    group.tiles.map((t) => gateTile(decorate(t), { can, hasModule }));
+    group.tiles.map((t) => gateTile(decorate(t), { can, hasModule, hasIntegration }));
 
   const activeMode = MODES.find((m) => m.id === mode) || MODES[0];
 
