@@ -85,6 +85,8 @@ const groups = [
 function estate(over: Record<string, unknown> = {}) {
   vi.spyOn(bi, "summary").mockResolvedValue({ ...summary, ...over });
   vi.spyOn(bi, "activity").mockResolvedValue([]);
+  // Gate 3's evidence rows — the strip asks for the unplaced devices.
+  vi.spyOn(bi, "devices").mockResolvedValue({ total: 0, items: [] });
   vi.spyOn(bi, "alerts").mockResolvedValue({
     available: true,
     items: [],
@@ -197,6 +199,16 @@ describe("the layer", () => {
     }
     // The domains are a lane of this one estate, below the questions.
     expect(screen.getByText("Domains")).toBeInTheDocument();
+  });
+
+  it("sends the unplaced row to the worklist that assigns its devices", async () => {
+    estate({
+      sites: [{ site_id: null, site_name: null, score: null, points: 75, categories: [] }],
+    });
+    worklist();
+    renderWithProviders(<Portfolio />);
+    const meta = await screen.findByText("no site owns these points — assign their devices to a building");
+    expect(meta.closest("a")).toHaveAttribute("href", "/bi/placement");
   });
 
   it("prints a blocked answer as its blockage plus the action that changes it", async () => {

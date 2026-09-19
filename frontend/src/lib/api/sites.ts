@@ -11,6 +11,8 @@ import type { AxiosResponse } from "axios";
 
 import { api } from "@/lib/api";
 import type {
+  AssignDevicesRequest,
+  AssignDevicesResponse,
   BuildingFactsUpdate,
   CreateFloorRequest,
   CreateSiteRequest,
@@ -146,6 +148,11 @@ export const sites = {
   devicePlacements: {
     register: (body: RegisterDeviceRequest) =>
       unwrap(api.post<DevicePlacementPublic>(`${DEVICE_PLACEMENTS}/register`, body)),
+    /** The DEVICE-FIRST write: a named list of devices into one named site, a
+     *  floor optional and a pin never required. `devices.create`. 200, with one
+     *  outcome per device — including `pin_cleared`, which the caller must show. */
+    assign: (body: AssignDevicesRequest) =>
+      unwrap(api.post<AssignDevicesResponse>(`${DEVICE_PLACEMENTS}/assign`, body)),
     get: (deviceId: string) => unwrap(api.get<DevicePlacementPublic>(`${DEVICE_PLACEMENTS}/${deviceId}`)),
     update: (deviceId: string, body: UpdateDeviceRequest) =>
       unwrap(api.patch<DevicePlacementPublic>(`${DEVICE_PLACEMENTS}/${deviceId}`, body)),

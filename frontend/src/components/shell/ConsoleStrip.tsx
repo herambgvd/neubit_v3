@@ -31,10 +31,10 @@ const STRIP_ROUTES = new Set<string>([
   // already shows them as SOON, and a dead segment cell would be exactly the
   // "fabricated destination" this feature must not ship.
   //
-  // The two GATE WORKLISTS are listed so the strip still renders when one is
+  // The three GATE WORKLISTS are listed so the strip still renders when one is
   // deep-linked, but they are NOT segment cells — see GATE_WORKLISTS below.
   "/bi/portfolio", "/bi/energy", "/bi/hvac", "/bi/water", "/bi/insights", "/bi/ratings",
-  "/bi/duplicates", "/bi/succession",
+  "/bi/duplicates", "/bi/placement", "/bi/succession",
 ]);
 
 export function hasConsoleStrip(pathname: string | null | undefined): boolean {
@@ -49,7 +49,7 @@ const seg = (on: boolean) =>
   }`;
 const segBox = "flex shrink-0 gap-0.5 rounded-[8px] border border-nb-line bg-[rgba(8,15,34,.7)] p-[3px]";
 
-/** The two GATE WORKLISTS. They are not layers of Building Intelligence and not
+/** The three GATE WORKLISTS. They are not layers of Building Intelligence and not
  *  siblings of the estate view — each one is what a SHUT GATE opens, and the way
  *  in is pressing that gate on whatever layer you are standing on. So they are
  *  absent from the launcher and absent from the segment below, and a deep link
@@ -61,6 +61,11 @@ const GATE_WORKLISTS: Record<string, { gate: string; label: string; icon: string
     gate: "Gate 1 · ARRIVES",
     label: "Duplicate registers",
     icon: "heroicons-outline:document-duplicate",
+  },
+  "/bi/placement": {
+    gate: "Gate 3 · BELONGS",
+    label: "Unplaced devices",
+    icon: "heroicons-outline:map-pin",
   },
   "/bi/succession": {
     gate: "Gate 4 · BINDS",

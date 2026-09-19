@@ -46,10 +46,10 @@
 // restructure removes.
 //
 // A GATE THAT IS PASSING IS NOT A LINK TO NOWHERE. It renders as a span with a
-// tooltip, never as a button and never as an anchor. Gate 3 · BELONGS has no
-// worklist in this console at all and never will — placement is one fact, owned
-// by the Sites floor plan — so its panel states the blockage and links out to
-// the console that owns it, rather than growing a second placing surface here.
+// tooltip, never as a button and never as an anchor. Gate 3 · BELONGS opens the
+// head of ITS worklist like gates 1 and 4 do — the devices no building owns —
+// and links to /bi/placement, where an operator assigns them by name. The write
+// there is core's, into the same table the floor plan pins into: one fact.
 //
 // THE READS ARE THE ONES THE CONSOLE ALREADY MAKES, under the SAME query keys, so
 // a strip above Portfolio costs nothing extra and a collapse on /bi/duplicates
@@ -119,13 +119,12 @@ export default function GateStrip({ subject, className = "" }: Readonly<GateStri
   const mayBi = can(PERM_READ) && hasModule(MODULE);
   const [opened, setOpened] = useState<GateId | null>(null);
 
-  const category = subject.kind === "domain" ? subject.category : undefined;
-  // A SITE subject asks none of the three worklists, and that is not an
-  // optimisation. They take a `category` and nothing else, so an answer fetched
-  // here would be the domain's answer rendered under one building's name —
-  // which is the single thing a two-scope console must never do. The site gates
-  // read `summary.sites`, which the estate already fetched under this key.
-  const wantsWorklists = mayBi && subject.kind !== "site";
+  // A site subject may also name a domain ("this building's HVAC").
+  const category = subject.kind !== "estate" ? subject.category || undefined : undefined;
+  // The three worklists take `site_id`, so a building's strip asks them for that
+  // building's rows — never the domain's answer under a building's name.
+  const siteId = subject.kind === "site" ? subject.siteId : undefined;
+  const wantsWorklists = mayBi;
 
   const summaryQ = useQuery<any>({
     queryKey: ["bi-summary"],
@@ -133,18 +132,27 @@ export default function GateStrip({ subject, className = "" }: Readonly<GateStri
     refetchInterval: 30_000,
   });
   const ghostsQ = useQuery<any>({
-    queryKey: ["bi-ghosts", category ?? ""],
-    queryFn: () => bi.ghosts(category ? { category } : undefined),
+    queryKey: ["bi-ghosts", category ?? "", siteId ?? ""],
+    queryFn: () => bi.ghosts(category || siteId ? { category, site_id: siteId } : undefined),
     enabled: wantsWorklists,
   });
   const patternsQ = useQuery<any>({
-    queryKey: ["bi-unit-patterns", category ?? null],
-    queryFn: () => bi.unitPatterns({ category }),
+    queryKey: ["bi-unit-patterns", category ?? null, siteId ?? null],
+    queryFn: () => bi.unitPatterns({ category, site_id: siteId }),
     enabled: wantsWorklists,
   });
+  // Gate 3's rows: the devices no building owns, scoped like every other
+  // worklist. The gate's COUNT stays the summary's; this is the evidence under it.
+  // Not at site scope: a device placed at this building is by definition not
+  // unplaced, and gate 3 passes there by construction.
+  const unplacedQ = useQuery<any>({
+    queryKey: ["bi-devices", "unplaced", category ?? ""],
+    queryFn: () => bi.devices({ placement: "unplaced", category, limit: 6 }),
+    enabled: wantsWorklists && subject.kind !== "site",
+  });
   const orphansQ = useQuery<any>({
-    queryKey: ["bi-role-orphans"],
-    queryFn: () => bi.roleOrphans(),
+    queryKey: ["bi-role-orphans", siteId ?? ""],
+    queryFn: () => bi.roleOrphans(siteId ? { site_id: siteId } : undefined),
     enabled: wantsWorklists,
   });
   const alertsQ = useQuery<any>({
@@ -159,8 +167,9 @@ export default function GateStrip({ subject, className = "" }: Readonly<GateStri
     ghosts: ghostsQ.data,
     patterns: patternsQ.data,
     orphans: orphansQ.data,
+    unplaced: unplacedQ.data,
     alerts: alertsQ.data,
-    may: { bi: mayBi, sites: can("sites.read") },
+    may: { bi: mayBi },
   });
 
   // Nothing is claimed before the estate has answered. "Six gates, all open" on

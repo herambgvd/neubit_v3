@@ -120,7 +120,7 @@ function ScopeBadge({ site }: Readonly<{ site: boolean }>) {
  *  the UNPLACED PSEUDO-ROW (`site_id: null`) for the points no building owns. So
  *  the rollup is a rollup of WHERE THIS DOMAIN LIVES, which is a question the
  *  store can answer exactly, and every row is a door: a building opens the
- *  scoped console, the unplaced remainder opens the console that owns placement.
+ *  scoped console, the unplaced remainder opens gate 3's assign worklist.
  *
  *  THE CAVEAT IS NOT DECORATION. There is exactly ONE real site on this
  *  deployment, so "every building combined" is one building and a large
@@ -152,8 +152,12 @@ function EstateRollup({
         name: site.site_id === null ? "No building" : site.site_name || "Unnamed building",
         devices: c.devices,
         points: c.points,
-        href: site.site_id === null ? "/sites" : `/bi/${category}?site=${site.site_id}`,
-        action: site.site_id === null ? "Pin them on the Sites floor plan" : "Open this building",
+        // The remainder opens gate 3's worklist, scoped to this domain.
+        href:
+          site.site_id === null
+            ? `/bi/placement?category=${encodeURIComponent(category)}`
+            : `/bi/${category}?site=${site.site_id}`,
+        action: site.site_id === null ? "Assign them to a building" : "Open this building",
       });
     }
     // The unplaced remainder last: it is the residue of the estate, not a peer

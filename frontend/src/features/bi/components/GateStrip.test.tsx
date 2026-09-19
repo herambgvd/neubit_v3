@@ -102,7 +102,25 @@ function store(over: Record<string, any> = {}) {
     over.orphans ?? { orphans: [], total: 0, with_candidates: 0, without_candidates: 0 },
   );
   vi.spyOn(bi, "alerts").mockResolvedValue(over.alerts ?? { available: true, items: [] });
+  vi.spyOn(bi, "devices").mockResolvedValue(over.devices ?? { total: 0, items: [] });
 }
+
+/** Two devices no building owns — gate 3's evidence rows. */
+const unplacedDevices = {
+  total: 2,
+  items: [
+    { device_id: "d-ahu", device_tag: "AHU-2", category: "hvac", device_type: "ahu", points: 40, site_id: null, site_name: null },
+    { device_id: "d-fcu", device_tag: "FCU-7", category: "hvac", device_type: "fcu", points: 35, site_id: null, site_name: null },
+  ],
+};
+
+const unplacedSummary = {
+  ...healthySummary,
+  sites: [
+    { site_id: "s1", site_name: "HQ", score: 62, points: 400, categories: [] },
+    { site_id: null, site_name: null, score: null, points: 75, categories: [{ category: "hvac", points: 75 }] },
+  ],
+};
 
 const estate = <GateStrip subject={{ kind: "estate", label: "the estate" }} />;
 
@@ -252,53 +270,56 @@ describe("shut — one gate expands, and it is the earliest", () => {
   });
 });
 
-describe("gate 3 · BELONGS — the gate with no worklist here", () => {
-  it("names its blockage and points at the console that owns placement", async () => {
-    store({
-      summary: {
-        ...healthySummary,
-        sites: [
-          { site_id: "s1", site_name: "HQ", score: 62, points: 400, categories: [] },
-          { site_id: null, site_name: null, score: null, points: 75, categories: [{ category: "hvac", points: 75 }] },
-        ],
-      },
-    });
+describe("gate 3 · BELONGS — opens the unplaced-device worklist in context", () => {
+  it("shows the devices no building owns and links to where they are assigned", async () => {
+    store({ summary: unplacedSummary, devices: unplacedDevices });
     renderWithProviders(estate);
 
     await screen.findByText(/^Gate 3 · BELONGS/);
+    // The worklist read is the unplaced one — nothing else is a list of work.
+    expect(bi.devices).toHaveBeenCalledWith({ placement: "unplaced", category: undefined, limit: 6 });
     const belongs = screen.getByText(/75 of 475 points belong to no site/);
-    // The refusal to grow a placement worklist is an argument, not a fact about
-    // this estate: it reads once, on hover or on a press, not every morning.
-    expect(belongs).toHaveAttribute(
-      "title",
-      expect.stringContaining("has no placement worklist and will not grow one"),
-    );
-    await userEvent.click(within(belongs).getByRole("button", { name: "why" }));
-    expect(
-      screen.getByText(/has no placement worklist and will not grow one/),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Pin the devices on the Sites floor plan/ })).toHaveAttribute(
+    expect(belongs).toHaveAttribute("title", expect.stringContaining("They sit on 2 devices."));
+    // The evidence, not a count of it.
+    expect(await screen.findByText("AHU-2")).toBeInTheDocument();
+    expect(screen.getByText("40 points · hvac")).toBeInTheDocument();
+    expect(screen.getByText("FCU-7")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Assign devices to a building/ })).toHaveAttribute(
       "href",
-      "/sites",
+      "/bi/placement",
     );
   });
 
-  it("states the blockage without a door when the caller cannot reach Sites", async () => {
-    auth.can = (p: string) => p !== "sites.read";
-    store({
-      summary: {
-        ...healthySummary,
-        sites: [
-          { site_id: "s1", site_name: "HQ", score: 62, points: 400, categories: [] },
-          { site_id: null, site_name: null, score: null, points: 75, categories: [] },
-        ],
-      },
-    });
+  it("scopes the worklist and its link to a domain strip's own category", async () => {
+    store({ summary: unplacedSummary, devices: unplacedDevices });
+    renderWithProviders(<GateStrip subject={{ kind: "domain", category: "hvac", label: "HVAC & Assets" }} />);
+
+    await screen.findByText(/^Gate 3 · BELONGS/);
+    expect(bi.devices).toHaveBeenCalledWith({ placement: "unplaced", category: "hvac", limit: 6 });
+    expect(screen.getByRole("link", { name: /Assign devices to a building/ })).toHaveAttribute(
+      "href",
+      "/bi/placement?category=hvac",
+    );
+  });
+
+  it("says nothing about devices, rather than a zero, when the device read has not answered", async () => {
+    store({ summary: unplacedSummary });
+    vi.spyOn(bi, "devices").mockReturnValue(new Promise(() => {}));
+    renderWithProviders(estate);
+
+    const belongs = await screen.findByText(/75 of 475 points belong to no site/);
+    expect(belongs.getAttribute("title")).not.toMatch(/sit on/);
+  });
+
+  it("states the blockage without a door, and asks for no worklist, without bi.read", async () => {
+    auth.can = (p: string) => p !== "bi.read";
+    store({ summary: unplacedSummary, devices: unplacedDevices });
     renderWithProviders(estate);
 
     await screen.findByText(/^Gate 3 · BELONGS/);
     expect(screen.getByText(/75 of 475 points belong to no site/)).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /Sites floor plan/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Assign devices/ })).not.toBeInTheDocument();
+    expect(bi.devices).not.toHaveBeenCalled();
     expect(screen.getByText("Nothing you can reach from here opens this gate.")).toBeInTheDocument();
   });
 });
@@ -433,21 +454,48 @@ const atAeon = (
 );
 
 describe("scope — the same strip, inside one building", () => {
-  it("never asks a worklist that carries no site", async () => {
+  // The three worklists take `site_id`, so a building's strip asks them for THAT
+  // building's rows. It used to ask nothing and defer gates 1, 2 and 4 to the
+  // estate, which left every building permanently in diagnostic mode.
+
+  /** One duplicated pair with a generation at Aeon — the server already scoped it. */
+  const aeonGhosts = {
+    groups: [
+      {
+        device_tag: "YC-1",
+        point_tag: "IWT",
+        category: "hvac",
+        mode: "auto",
+        survivor_point_id: "p2",
+        members: [{ point_id: "p1" }, { point_id: "p2" }],
+      },
+    ],
+    resurrected: [],
+    fresh_minutes: 15,
+  };
+
+  it("asks every worklist for this building, and not the unplaced list", async () => {
     store({ summary: scopedSummary });
     renderWithProviders(atAeon);
 
-    await screen.findByText("BELONGS");
-    // Not "asked with a site" — NOT ASKED. An answer fetched here could only be
-    // the domain's, and rendering it under this building's name is the one thing
-    // a two-scope strip must not do.
-    expect(bi.ghosts).not.toHaveBeenCalled();
-    expect(bi.unitPatterns).not.toHaveBeenCalled();
-    expect(bi.roleOrphans).not.toHaveBeenCalled();
+    await screen.findByText("· six gates, all open");
+    expect(bi.ghosts).toHaveBeenCalledWith({ category: "hvac", site_id: "aeon-1" });
+    expect(bi.unitPatterns).toHaveBeenCalledWith({ category: "hvac", site_id: "aeon-1" });
+    expect(bi.roleOrphans).toHaveBeenCalledWith({ site_id: "aeon-1" });
+    // A device placed at this building is by definition not unplaced.
+    expect(bi.devices).not.toHaveBeenCalled();
+  });
+
+  it("recedes to one quiet line when the building is healthy", async () => {
+    store({ summary: scopedSummary });
+    renderWithProviders(atAeon);
+
+    expect(await screen.findByText("· six gates, all open")).toBeInTheDocument();
+    expect(screen.queryByText(/^Gate \d/)).not.toBeInTheDocument();
   });
 
   it("passes gate 3 where the estate's strip is shut on it", async () => {
-    store({ summary: scopedSummary });
+    store({ summary: scopedSummary, ghosts: aeonGhosts });
     renderWithProviders(atAeon);
 
     const belongs = await screen.findByText("BELONGS");
@@ -468,37 +516,15 @@ describe("scope — the same strip, inside one building", () => {
     expect(screen.getByText(/93 of 176 points belong to no site/)).toBeInTheDocument();
   });
 
-  it("defers the gates whose worklists are scoped by domain, with a door to where they are answered", async () => {
-    store({ summary: scopedSummary });
+  it("answers gate 1 for the building from its own duplicated pairs", async () => {
+    store({ summary: scopedSummary, ghosts: aeonGhosts });
     renderWithProviders(atAeon);
 
-    // Deferred is not shut: nothing auto-opens, and the strip stays a row of
-    // segments over the equipment rather than a diagnosis of it.
-    await screen.findByText("ARRIVES");
-    expect(screen.queryByText(/^Gate \d/)).not.toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: /1 ARRIVES/ }));
-    expect(
-      screen.getByText(/83 HVAC & Assets at Aeon Tower points are pinned at this building/),
-    ).toBeInTheDocument();
-    const deferred = screen.getByText(
-      /83 HVAC & Assets at Aeon Tower points are pinned at this building/,
-    );
-    expect(deferred).toHaveAttribute(
-      "title",
-      expect.stringContaining("duplicate worklist is scoped by category and carries no site"),
-    );
-    await userEvent.click(within(deferred).getByRole("button", { name: "why" }));
-    expect(
-      screen.getByText(/duplicate worklist is scoped by category and carries no site/),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Answer it across the whole estate/ })).toHaveAttribute(
-      "href",
-      "/bi/hvac",
-    );
-    expect(
-      screen.getByText("Scoped to HVAC & Assets at Aeon Tower — one building. Nothing here is the estate's figure."),
-    ).toBeInTheDocument();
+    // Shut, so it opens itself — the earliest shut gate — with the building's pair.
+    expect(await screen.findByText(/^Gate 1 · ARRIVES/)).toBeInTheDocument();
+    expect(screen.getByText("YC-1 · IWT")).toBeInTheDocument();
+    // No deferral door any more: the answer is this building's.
+    expect(screen.queryByRole("link", { name: /Answer it across the whole estate/ })).not.toBeInTheDocument();
   });
 
   it("rates the building on its OWN score, and prints the registry's refusal when it has none", async () => {

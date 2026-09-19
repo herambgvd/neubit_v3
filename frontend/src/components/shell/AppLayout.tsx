@@ -171,6 +171,9 @@ export default function AppLayout({ children }: Readonly<{ children?: ReactNode 
     // Stranded roles is master/detail too: the worklist scrolls in its own
     // panel while the assertion being settled and its evidence stay put.
     pathname === "/bi/succession" ||
+    // Unplaced devices (gate 3): the list scrolls in its panel, the assign
+    // control stays in the panel footer.
+    pathname === "/bi/placement" ||
     // Sites map is a full-bleed map surface — fills the bounded pane (no page scroll).
     pathname === "/map";
 

@@ -12,11 +12,19 @@
 export const PERM_READ = "bi.read";
 
 // The WRITE key. It gates RETIRING a point — what is part of the estate at all —
-// and never touches a measurement. It used to gate PLACING a device too; a device
-// is now placed once, on the Sites floor plan, under core's own sites
-// permissions. Registered in core's catalog beside bi.read, so it is grantable in
+// and never touches a measurement. It used to gate PLACING a device too; placing
+// is now core's write (the floor plan's pin, or gate 3's assign worklist), under
+// core's own `devices.create` — see PERM_ASSIGN below. Registered in core's catalog beside bi.read, so it is grantable in
 // the role editor rather than reachable only by a wildcard admin.
 export const PERM_MANAGE = "bi.manage";
+
+// ASSIGNING a device to a building is core's write, under core's permission:
+// `POST /device-placements/assign` is gated on `devices.create`, the same key the
+// floor plan's pin is. Choosing the building needs `sites.read` (the list of
+// them); a floor is optional and is offered only with `floors.read`.
+export const PERM_ASSIGN = "devices.create";
+export const PERM_SITES_READ = "sites.read";
+export const PERM_FLOORS_READ = "floors.read";
 
 // Module the routes are gated by — "Dashboards & Reports" in the core module
 // catalog. Building Intelligence is analytics over the reading store, so it rides

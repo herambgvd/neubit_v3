@@ -388,6 +388,47 @@ export interface UpdateDeviceRequest {
   metadata?: Record<string, unknown> | null;
 }
 
+/** One device in `POST /device-placements/assign`. Three whole shapes: the
+ *  device alone (site only), with a floor (on that storey, not pinned), or with a
+ *  floor and a position. A position never travels without its floor. */
+export interface AssignDeviceItem {
+  device_id: string;
+  device_type?: DeviceType;
+  service?: ServiceType;
+  floor_id?: string;
+  zone_id?: string;
+  floor_position?: FloorPosition;
+}
+
+/** `AssignDevicesRequest` — an EXPLICIT list of devices put in one named site.
+ *  1..500 items, no device named twice. `device_type` / `service` are batch
+ *  defaults and are REQUIRED for a device with no placement yet (409 without). */
+export interface AssignDevicesRequest {
+  site_id: string;
+  device_type?: DeviceType;
+  service?: ServiceType;
+  devices: AssignDeviceItem[];
+}
+
+/** What happened to one device. `pin_cleared` is the only signal that moving a
+ *  device to another building dropped its floor-plan pin. */
+export interface AssignedDevice {
+  device_id: string;
+  placement_id: string;
+  site_id: string;
+  floor_id: string | null;
+  /** True when the device had no placement before ("assigned" vs "moved"). */
+  created: boolean;
+  pin_cleared: boolean;
+}
+
+export interface AssignDevicesResponse {
+  site_id: string;
+  site_name: string | null;
+  assigned: number;
+  items: AssignedDevice[];
+}
+
 /** `DeviceListResponse` — note `count`, not `total`. */
 export interface DevicePlacementListResponse {
   items: DevicePlacementPublic[];

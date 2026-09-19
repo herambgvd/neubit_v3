@@ -322,8 +322,8 @@ describe("the whole estate — the unscoped console", () => {
     expect(remainder).toHaveTextContent("93");
     // Every count ships with the action that changes it, and placement is owned
     // by Sites — this console has no placement worklist and must not grow one.
-    expect(remainder).toHaveTextContent("Pin them on the Sites floor plan");
-    expect(remainder).toHaveAttribute("href", "/sites");
+    expect(remainder).toHaveTextContent("Assign them to a building");
+    expect(remainder).toHaveAttribute("href", "/bi/placement?category=hvac");
   });
 
   it("does not imply a portfolio that is not there", async () => {
@@ -391,13 +391,9 @@ describe("one building — the ?site= scoped console", () => {
 
   it("does not let the estate's gate counts follow it in", async () => {
     renderWithProviders(<CategoryConsole category="hvac" />);
-    await screen.findByText("BELONGS");
-    // The 93 unplaced points are the estate's fact. This console is defined by
-    // placement, so gate 3 is open here and that figure appears nowhere.
+    // The building's worklists are clean, so its strip recedes — and the 93
+    // unplaced points, the estate's fact, appear nowhere on it.
+    expect(await screen.findByText("· six gates, all open")).toBeInTheDocument();
     expect(screen.queryByText(/belong to no site/)).not.toBeInTheDocument();
-    expect(screen.getByText("BELONGS").closest("[title]")).toHaveAttribute(
-      "title",
-      expect.stringContaining("open"),
-    );
   });
 });

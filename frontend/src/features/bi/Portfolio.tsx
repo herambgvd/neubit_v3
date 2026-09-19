@@ -236,7 +236,7 @@ function SiteRow({ site, alertHours }: any) {
     site.city ? null : "city not carried by the site mirror yet.",
   ].filter(Boolean);
   const meta = unplaced
-    ? "no site owns these points — pin devices on the floor plan under Sites"
+    ? "no site owns these points — assign their devices to a building"
     : `${areaText} · ${site.city ?? "city —"}`;
   const metaTitle = unplaced ? undefined : gaps.join(" ") || undefined;
   const kwhTitle =
@@ -288,7 +288,9 @@ function SiteRow({ site, alertHours }: any) {
       }
       trend={null}
       trendTitle="no score history exists yet — CCEI began evaluating today, and a trend needs a history of scores"
-      href={unplaced ? undefined : `/bi/energy?site=${site.site_id}`}
+      // The unplaced row's count ships with the action that changes it: gate 3's
+      // worklist, where its devices are assigned to a building by name.
+      href={unplaced ? "/bi/placement" : `/bi/energy?site=${site.site_id}`}
     />
   );
 }

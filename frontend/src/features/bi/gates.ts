@@ -30,8 +30,8 @@
 // actually shut, waiting on one that is, or unable to answer.
 //
 // NOTHING HERE INVENTS A NUMBER. A figure the reads did not supply produces the
-// `unknown` state and a sentence saying so, never a zero. Gate 3 has no worklist
-// in this console at all, and says that rather than offering a door.
+// `unknown` state and a sentence saying so, never a zero. Gate 3's worklist is
+// the unplaced devices, assigned to a building by an operator on /bi/placement.
 
 /** Which slice of the estate a strip is answering about.
  *
@@ -111,10 +111,9 @@ export interface GateView {
  *  would 403: a gate whose action the caller cannot open still states its
  *  blockage, it just states it without a link. */
 export interface GatePermits {
-  /** `bi.read` + the `analytics` module — every /bi worklist route. */
+  /** `bi.read` + the `analytics` module — every /bi worklist route, gate 3's
+   *  included. Whether the caller may also WRITE there is the worklist's to say. */
   bi: boolean;
-  /** `sites.read` — Configurations → Sites, where placement is done. */
-  sites: boolean;
 }
 
 export interface GateInput {
@@ -127,6 +126,9 @@ export interface GateInput {
   patterns?: any;
   /** GET /bi/points/roles/orphans — estate-wide; scoped here by category */
   orphans?: any;
+  /** GET /bi/devices?placement=unplaced, scoped to the subject — the head of
+   *  gate 3's worklist. Rows only; the gate's COUNT stays the summary's. */
+  unplaced?: any;
   /** GET /bi/alerts — estate-wide, and gate 6 says so */
   alerts?: any;
   may: GatePermits;
@@ -179,41 +181,15 @@ function subjectPoints(summary: any, subject: GateSubject): number | null {
   return summary?.total_points ?? null;
 }
 
-/** Where the domain-wide answer lives, for the gates a site strip cannot scope.
- *  A sentence naming a blockage with nowhere to go is the dead end this console
- *  does not ship — so the site gates that defer always defer somewhere. */
-const domainHref = (subject: GateSubject): string | null =>
-  subject.category ? `/bi/${subject.category}` : "/bi/portfolio";
-
-/** The two gates whose worklists are scoped by DOMAIN and by nothing else. Both
- *  read the same way at site scope, so they are written once. */
-function deferredToDomain(
-  input: GateInput,
-  id: GateId,
-  what: string,
-): GateView {
-  const { subject, may } = input;
-  const href = domainHref(subject);
-  return {
-    ...gate(id),
-    state: "unknown",
-    quiet: "",
-    count: null,
-    blocking:
-      `${what} is settled for ${subject.category ? "this domain" : "the estate"} as a whole, not for one building — ` +
-      "the worklist behind this gate is scoped by domain and carries no site. " +
-      `So this gate cannot be answered for ${subject.label}, and a figure here would be the estate's wearing a building's name.`,
-    action: may.bi && href ? { href, label: "Answer it across the whole estate" } : null,
-    rows: [],
-  };
-}
-
 /** Rows belonging to this subject. An estate strip takes everything; a domain
  *  strip takes its own category, and a row that carries no category (a stranded
  *  role whose point row is GONE) belongs to no domain and is only ever counted
  *  at estate scope. */
 function scoped<T extends { category?: string | null }>(rows: T[], subject: GateSubject): T[] {
   if (subject.kind === "estate") return rows;
+  // A site strip's worklists were asked with `site_id`, so every row is already
+  // this building's; only a domain named on top of the building narrows further.
+  if (subject.kind === "site" && !subject.category) return rows;
   return rows.filter((r) => r.category === subject.category);
 }
 
@@ -257,20 +233,9 @@ function arrives(input: GateInput): GateView {
     };
   }
 
-  // ONE BUILDING. The count is the leaderboard's own per-category figure for
-  // this site, and it is stated — but whether any of those rows is a later
-  // generation of a register already counted is a DOMAIN question (see
-  // `deferredToDomain`), so this gate says the count and defers the verdict
-  // rather than passing on a check it never made.
-  if (subject.kind === "site") {
-    return {
-      ...deferredToDomain(input, "arrives", "Whether a register arrived once or several times"),
-      blocking:
-        `${points} ${subject.label} ${plural(points, "point is", "points are")} pinned at this building. ` +
-        "Whether any of them is a later generation of a register already counted is a question about the DOMAIN — " +
-        "the duplicate worklist is scoped by category and carries no site — so it cannot be settled from one building.",
-    };
-  }
+  // ONE BUILDING answers from the duplicate worklist asked with `site_id`, which
+  // keeps a pair when ANY generation is here. `total_registers` is estate-only,
+  // so a building's verdict rests on the pairs alone.
 
   const shut = groups.length > 0 || !!repeats;
   if (!shut) {
@@ -330,11 +295,8 @@ function arrives(input: GateInput): GateView {
 // (`Batt_Time_Rem`, `Point1`) is one-by-one work, and a single backlog figure
 // cannot tell an operator which of the two they are looking at.
 function means(input: GateInput): GateView {
-  const { patterns, subject, may } = input;
+  const { patterns, may } = input;
   const base = gate("means");
-  if (subject.kind === "site") {
-    return deferredToDomain(input, "means", "What a point measures");
-  }
   const totals = patterns?.totals;
   if (!totals) {
     return {
@@ -374,22 +336,23 @@ function means(input: GateInput): GateView {
 
 // ── Gate 3 ─ BELONGS ────────────────────────────────────────────────────────
 //
-// THIS GATE HAS NO WORKLIST IN BUILDING INTELLIGENCE AND MUST NOT GROW ONE. A
-// device is placed once, on the Sites floor plan, which pins it at {x, y,
-// rotation} and reaches this store over the sites event spine. A second placing
-// surface here would be a second answer to one question.
+// A point belongs to a place through its DEVICE's placement, which core owns
+// (`device_placements`) and this store mirrors. A placement used to need a pin
+// on a drawn floor plan, and this estate has almost none — so most points
+// belonged nowhere with no way to say otherwise. Core now takes a site alone, or
+// a site and a floor, through `POST /device-placements/assign`, and this gate's
+// worklist is where an operator does that: /bi/placement, the devices
+// `placement=unplaced` returns, ticked one by one and assigned by name.
 //
-// So the gate names its blockage and points at the console that owns the fact.
-// That link is not a worklist and is not pretending to be one: it is the only
-// honest action a count of unplaced points can ship with, and a gate that named
-// a problem with nowhere to go would be the dead end this console does not ship.
-// Without `sites.read` there is no link, only the sentence.
+// It is still ONE fact with one owner. The worklist writes the same table the
+// floor plan does; neither is a second answer.
 //
-// The figure is the UNPLACED PSEUDO-ROW of the leaderboard — points no site
+// The COUNT is the UNPLACED PSEUDO-ROW of the leaderboard — points no site
 // owns — because that is the row that exists at both scopes: the estate takes
-// its point count, a domain takes its own category's share of it.
+// its point count, a domain takes its own category's share of it. The ROWS are
+// the devices those points sit on, which is what an operator actually assigns.
 function belongs(input: GateInput): GateView {
-  const { summary, subject, may } = input;
+  const { summary, unplaced: devicesRead, subject, may } = input;
   const base = gate("belongs");
   const sites: any[] = summary?.sites ?? [];
   const points: number | null = subjectPoints(summary, subject);
@@ -434,6 +397,13 @@ function belongs(input: GateInput): GateView {
   if (!unplaced) {
     return { ...base, state: "pass", quiet: "all placed", count: null, blocking: "", action: null, rows: [] };
   }
+  // How many DEVICES carry those points, when the worklist answered. Absent, the
+  // sentence says nothing about devices rather than a zero.
+  const devices: number | null = typeof devicesRead?.total === "number" ? devicesRead.total : null;
+  const href =
+    subject.kind === "domain" && subject.category
+      ? `/bi/placement?category=${encodeURIComponent(subject.category)}`
+      : "/bi/placement";
   return {
     ...base,
     state: "shut",
@@ -441,9 +411,14 @@ function belongs(input: GateInput): GateView {
     quiet: "all placed",
     blocking:
       `${unplaced} of ${points} points belong to no site, so nothing above this gate can answer a question about a place. ` +
-      "Building Intelligence has no placement worklist and will not grow one — a device is pinned once, on the Sites floor plan, and reaches this store from there.",
-    action: may.sites ? { href: "/sites", label: "Pin the devices on the Sites floor plan" } : null,
-    rows: [],
+      (devices != null ? `They sit on ${devices} ${plural(devices, "device", "devices")}. ` : "") +
+      "Each is assigned to a building by an operator, by name — a floor is optional, a pin is never needed, and nothing is assigned for you.",
+    action: may.bi ? { href, label: "Assign devices to a building" } : null,
+    rows: ((devicesRead?.items ?? []) as any[]).slice(0, 6).map((d: any) => ({
+      key: d.device_id ?? `tag:${d.device_tag}`,
+      title: d.device_tag ?? "device with no tag",
+      meta: `${d.points} ${plural(d.points, "point", "points")} · ${d.category ?? "unclassified"}`,
+    })),
   };
 }
 
@@ -457,9 +432,6 @@ function belongs(input: GateInput): GateView {
 function binds(input: GateInput): GateView {
   const { orphans, subject, may } = input;
   const base = gate("binds");
-  if (subject.kind === "site") {
-    return deferredToDomain(input, "binds", "Which metric role a point plays");
-  }
   if (!orphans) {
     return {
       ...base,

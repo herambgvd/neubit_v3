@@ -66,6 +66,12 @@ describe("a gate worklist, deep-linked", () => {
     expect(screen.getByRole("link", { name: /Building/ })).toHaveAttribute("href", "/bi/portfolio");
   });
 
+  it("does the same for gate 3", () => {
+    at("/bi/placement");
+    expect(screen.getByText(/Gate 3 · BELONGS — Unplaced devices/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Building/ })).toHaveAttribute("href", "/bi/portfolio");
+  });
+
   it("does the same for gate 4", () => {
     at("/bi/succession");
     expect(screen.getByText(/Gate 4 · BINDS — Stranded roles/)).toBeInTheDocument();
@@ -79,6 +85,8 @@ describe("the routes behind the demoted doors", () => {
     // Building's gate 1 all name these paths.
     const dup = await import("@/app/(app)/bi/duplicates/page");
     const succ = await import("@/app/(app)/bi/succession/page");
+    const place = await import("@/app/(app)/bi/placement/page");
+    expect(typeof place.default).toBe("function");
     expect(typeof dup.default).toBe("function");
     expect(typeof succ.default).toBe("function");
   });
