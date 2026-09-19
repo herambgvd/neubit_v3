@@ -346,7 +346,11 @@ export interface FloorPosition {
   rotation: number;
 }
 
-/** `DevicePlacementPublic` — a device pinned onto a floor. Id-only: the device's
+/** `DevicePlacementPublic` — a device placed in a building, and OPTIONALLY pinned
+ *  onto a floor of it. `floor_id` and `floor_position` travel together or not at
+ *  all (core migration 0031 enforces that pairing in the database): both null is
+ *  "assigned to the site, not pinned", which is a complete placement and must not
+ *  render as an error or as a missing value. Id-only: the device's
  *  name lives in the owning service (see useDeviceInventory). */
 export interface DevicePlacementPublic {
   placement_id: string;
@@ -354,9 +358,9 @@ export interface DevicePlacementPublic {
   device_type: DeviceType;
   service: ServiceType;
   site_id: string;
-  floor_id: string;
+  floor_id: string | null;
   zone_id: string | null;
-  floor_position: FloorPosition;
+  floor_position: FloorPosition | null;
   metadata: Record<string, unknown> | null;
   status: string;
   status_updated_at: string | null;
@@ -370,9 +374,11 @@ export interface RegisterDeviceRequest {
   device_type: DeviceType;
   service: ServiceType;
   site_id: string;
-  floor_id: string;
+  // Send both or neither: the floor-plan editor states the whole pin, an
+  // operator assigning a device to a building states neither.
+  floor_id?: string | null;
   zone_id?: string | null;
-  floor_position: FloorPosition;
+  floor_position?: FloorPosition | null;
   metadata?: Record<string, unknown> | null;
 }
 
@@ -576,6 +582,10 @@ export interface BiDeviceRow {
   points_reporting: number;
   first_seen_at: string | null;
   last_seen_at: string | null;
+  /** The building the device's points are placed at. Null = in no building —
+   *  the list `GET /bi/devices?placement=unplaced` returns, and gate 3's work. */
+  site_id?: string | null;
+  site_name?: string | null;
 }
 
 export interface BiDeviceListResponse {

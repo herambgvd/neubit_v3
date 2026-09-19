@@ -220,6 +220,11 @@ class DeviceRow(BaseModel):
     device_tag: str | None
     category: str | None
     device_type: str | None
+    # Where this device is. NULL is UNPLACED — a device that belongs to no
+    # building, which is a state and not a missing field, and the one a
+    # device-first assignment screen exists to resolve.
+    site_id: uuid.UUID | None = None
+    site_name: str | None = None
     points: int
     numeric_points: int
     text_points: int

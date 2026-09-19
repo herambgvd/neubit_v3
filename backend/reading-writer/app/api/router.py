@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
-from typing import Annotated, get_args
+from typing import Annotated, Literal, get_args
 
 from fastapi import APIRouter, Depends, Query
 from kernel.auth import Principal, Scope, get_principal, get_scope, require_permission
@@ -210,6 +210,7 @@ async def devices(
     device_type: str | None = None,
     search: str | None = None,
     site_id: uuid.UUID | None = None,
+    placement: Literal["placed", "unplaced"] | None = None,
     include_retired: bool = False,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -217,8 +218,14 @@ async def devices(
     """Devices that have REPORTED, grouped from `points`.
 
     `category=` (empty string) selects the devices nothing has classified — a
-    real question, and the honest way to show the 8 unclassified points instead
-    of quietly dropping them.
+    real question, and the honest way to show the unclassified points instead of
+    quietly dropping them.
+
+    `placement=unplaced` is the same kind of question about space: the devices no
+    site owns, which is the list an operator works from when assigning devices to
+    a building through core's `POST /device-placements/assign`. It is a filter
+    over what is already true and it selects nothing on anybody's behalf — the
+    assignment names its devices one by one.
     """
     total, rows = await q.devices(
         db,
@@ -233,6 +240,7 @@ async def devices(
         # no "unplaced" sentinel here — the unplaced row links to the floor
         # plan, because its fix is placement, not a filtered console.
         site_id=site_id,
+        placement=placement,
     )
     return DeviceListResponse(total=total, items=rows)
 
@@ -729,10 +737,14 @@ async def forget_roles(db: Db, scope: Caller, body: ForgetRolesRequest) -> dict:
 #
 # WHAT IS GONE WITH THEM, STATED RATHER THAN HIDDEN:
 #
-# * **Site-without-floor placement.** `device_placements.floor_id` is NOT NULL, so
-#   a rooftop meter that belongs to the building and to no storey can no longer be
-#   expressed. `device_locations` still MODELS it (floor is nullable) and the
-#   reconcile still handles it; nothing can write it.
+# * ~~**Site-without-floor placement.**~~ RESTORED, at the source of truth rather
+#   than by a second writer here. Core's migration 0031 made
+#   `device_placements.floor_id` and `floor_position` nullable TOGETHER (a floor
+#   with no coordinates is a pin at no coordinates, and that is refused by a CHECK
+#   constraint), and added `POST /device-placements/assign` — the device-first
+#   surface that names a site for an explicit list of devices. A rooftop meter
+#   that belongs to the building and to no storey is expressible again, it travels
+#   the same event path, and `device_locations` has always modelled it.
 # * **The point-level override.** `/placement/points` was the only way to say
 #   "this sub-meter is not where its panel is". `reconcile_placement` still
 #   refuses to touch a row marked `placement_source = 'point'`, and

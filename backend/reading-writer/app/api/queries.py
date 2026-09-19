@@ -200,7 +200,15 @@ _TOTALS_SQL = text(
                WHERE p.last_seen_at >= now() - make_interval(mins => :fresh)
            )                                               AS points_reporting,
            min(p.first_seen_at)                            AS first_seen_at,
-           max(p.last_seen_at)                             AS last_seen_at
+           max(p.last_seen_at)                             AS last_seen_at,
+           -- WHERE this device is, so a device-first screen can show what it is
+           -- about to change and which devices have no building at all. Placement
+           -- is a device-level statement, so these agree across a device's points
+           -- except where an operator has overridden ONE point
+           -- (`placement_source = 'point'`); `max` then reports one of the two,
+           -- and the point console is where that distinction is visible.
+           max(p.site_id::text)                            AS site_id,
+           max(p.site_name)                                AS site_name
       FROM points p
      WHERE (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
        AND """ + LIVE_POINT + """
@@ -776,7 +784,15 @@ _DEVICES_SQL = """
                WHERE p.last_seen_at >= now() - make_interval(mins => :fresh)
            )                                               AS points_reporting,
            min(p.first_seen_at)                            AS first_seen_at,
-           max(p.last_seen_at)                             AS last_seen_at
+           max(p.last_seen_at)                             AS last_seen_at,
+           -- WHERE this device is, so a device-first screen can show what it is
+           -- about to change and which devices have no building at all. Placement
+           -- is a device-level statement, so these agree across a device's points
+           -- except where an operator has overridden ONE point
+           -- (`placement_source = 'point'`); `max` then reports one of the two,
+           -- and the point console is where that distinction is visible.
+           max(p.site_id::text)                            AS site_id,
+           max(p.site_name)                                AS site_name
       FROM points p
      WHERE (CAST(:tenant AS uuid) IS NULL OR p.tenant_id = CAST(:tenant AS uuid))
        AND {live}
@@ -786,7 +802,24 @@ _DEVICES_SQL = """
 """
 
 
-def _device_filters(category: str | None, device_type: str | None, search: str | None):
+#: `placement=` on `/bi/devices`. Two answers, and NEITHER of them is a default:
+#: a screen asks for one explicitly or gets the whole estate. "unplaced" is the
+#: list an operator works from when assigning devices to a building, and it is a
+#: filter over what is ALREADY TRUE — it never becomes a selection that something
+#: then acts on by itself.
+PLACEMENT_FILTERS = {
+    # Not one point of this device belongs to any site.
+    "unplaced": "count(*) FILTER (WHERE p.site_id IS NOT NULL) = 0",
+    "placed": "count(*) FILTER (WHERE p.site_id IS NOT NULL) > 0",
+}
+
+
+def _device_filters(
+    category: str | None,
+    device_type: str | None,
+    search: str | None,
+    placement: str | None = None,
+):
     """Category/type are DEVICE facts, so they filter AFTER the grouping.
 
     A device can own a point the gateway never classified (this deployment has
@@ -809,6 +842,17 @@ def _device_filters(category: str | None, device_type: str | None, search: str |
     if device_type:
         having.append("max(p.device_type) = :device_type")
         params["device_type"] = device_type
+    if placement:
+        # Placement is a device fact for the same reason category is, so it
+        # filters after the grouping too: a device with one placed point and one
+        # unplaced one is not two devices.
+        if placement not in PLACEMENT_FILTERS:
+            from kernel.errors import ValidationError  # lazy, as below
+
+            raise ValidationError(
+                f"placement must be one of: {sorted(PLACEMENT_FILTERS)}"
+            )
+        having.append(PLACEMENT_FILTERS[placement])
     search_sql = ""
     if search:
         search_sql = "AND p.device_tag ILIKE :search"
@@ -831,8 +875,11 @@ async def devices(
     offset: int,
     include_retired: bool = False,
     site_id: uuid.UUID | None = None,
+    placement: str | None = None,
 ) -> tuple[int, list[dict]]:
-    having, search_sql, extra = _device_filters(category, device_type, search)
+    having, search_sql, extra = _device_filters(
+        category, device_type, search, placement
+    )
     # Site scope (Portfolio drill-down). Placement is a DEVICE-level statement
     # (every point of a device carries its pin), so a plain WHERE on the point
     # rows cannot split a device the way a category filter would.

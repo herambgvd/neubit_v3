@@ -38,6 +38,39 @@ the reserved literal `platform`. `device_locations.tenant_id` is a real
   be a fabricated placement, and NAKing it would redeliver a message that can
   never succeed. `skipped_no_tenant` on /stats is where it shows up.
 
+A PLACEMENT WITH NO FLOOR IS A PLACEMENT
+-----------------------------------------
+Core's `device_placements` used to require a floor AND an `{x, y, rotation}` on a
+drawn floor plan, so every event arriving here named a floor. Since core's
+migration 0031 a placement may name the SITE ALONE — a meter belongs to a
+building whether or not anyone has drawn that building — and `floor_id`,
+`floor_name` and `zone_id` come through as NULL.
+
+`device_locations` has modelled that since the day it was created: migration 0010
+made its floor nullable and said in its own docstring that this was exactly why
+it could not reuse `device_placements`. So nothing here had to be relaxed to let
+it through — what had to change is that the case now ARRIVES, and the tests below
+that (`tests/test_floorless_placement.py`) pin it, because "it happens to work"
+and "it is guaranteed to work" are not the same thing for a consumer nobody
+watches.
+
+What a NULL floor costs downstream, checked rather than assumed:
+
+* `reconcile_placement` copies the NULLs onto the device's points, so those
+  points have a `site_id` and no `floor_id`. That is the whole point: gate 3 asks
+  whether a reading belongs to a PLACE, and the place is the building.
+* `/bi/summary`'s `placement` block counts `with_site`, `with_floor` and
+  `with_zone` INDEPENDENTLY — it has never assumed `with_site >= with_floor` —
+  and its `unplaced` is deliberately `points − with_floor`, i.e. "cannot answer a
+  FLOOR-wise question". A site-only estate makes that number stay high while the
+  site counts rise, and that is correct rather than a regression: the number gate
+  3 reads is the sites leaderboard's unplaced pseudo-row (`site_id: null`), which
+  a site-only placement does empty.
+* `/bi/floors` returns the NULL floor as a bucket rather than dropping it, so
+  those points stay visible and stay countable.
+* `ix_device_locations_floor` is a btree on `(tenant_id, floor_id)`; Postgres
+  indexes NULLs, so the reverse lookup is unaffected.
+
 WHAT IT DOES NOT DO
 -------------------
 * **It never invents a placement.** Every value it writes came from a
@@ -92,10 +125,19 @@ DURABLE = "reading-writer-placement"
 _PLACE_EVENTS = {"placed", "placement_updated"}
 _REMOVE_EVENT = "placement_removed"
 
-# Written into `device_locations.source`. Not "operator": an operator did make
-# this placement, but they made it on a floor plan, and the provenance of the row
-# should say which surface it came through.
+# Written into `device_locations.source`. Not "operator": an operator made every
+# placement that reaches here, and the column's job is to say through WHICH
+# SURFACE — a pin dragged onto a drawing, one device assigned to a building, or a
+# named list of them assigned at once.
+#
+# Core states it on the event (`app/sites/device/service.py`'s SOURCE_*). The set
+# is allow-listed rather than passed through: `source` is provenance, and a
+# consumer that stores whatever string it is handed is not recording provenance,
+# it is recording an assertion of it. An unrecognised value falls back to the
+# surface that existed before the field did, which is the only honest default —
+# and it is a value, never a NULL, because the column is NOT NULL.
 _SOURCE = "floor_plan"
+_SOURCES = {"floor_plan", "device_assignment", "bulk_assignment"}
 
 
 class PlacementStats:
@@ -150,7 +192,7 @@ class PlacementSync:
 
     async def start(self, nats_url: str) -> None:
         if not nats_url:
-            log.info("VE_NATS_URL unset — floor-plan placements will not reach BI")
+            log.info("VE_NATS_URL unset — placements will not reach BI")
             return
         self._running = True
         self._task = asyncio.create_task(self._run(nats_url), name="rw-placement-sync")
@@ -306,13 +348,16 @@ class PlacementSync:
                 zone_id=_uuid(payload.get("zone_id")),
                 zone_name=payload.get("zone_name"),
             )
+            source = str(payload.get("source") or "")
+            if source not in _SOURCES:
+                source = _SOURCE
             result = await pl.place_devices(
                 session,
                 tenant,
                 device_ids=[device_id],
                 where=where,
                 placed_by=_uuid(payload.get("actor_id")),
-                source=_SOURCE,
+                source=source,
             )
             if result.get("unknown_device_ids"):
                 # The pin is real, but this store has never received a reading
@@ -320,11 +365,11 @@ class PlacementSync:
                 # out loud rather than reported as a success.
                 self.stats.skipped_unknown_device += 1
                 log.info(
-                    "floor-plan pin for %s has no reporting points yet; "
+                    "placement of %s has no reporting points yet; "
                     "nothing placed in the reporting store",
                     device_id,
                 )
                 return
             self.stats.placed += result.get("devices_placed", 0)
             self.stats.points_updated += result.get("points_updated", 0)
-            log.info("mirrored floor-plan placement of %s: %s", device_id, result)
+            log.info("mirrored placement of %s (%s): %s", device_id, source, result)

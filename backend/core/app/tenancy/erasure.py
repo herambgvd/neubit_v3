@@ -186,7 +186,9 @@ DISPOSITIONS: dict[str, Disposition] = {
     "floors": Disposition(ERASE, "floors of the tenant's sites; not even FK'd to sites"),
     "zones": Disposition(ERASE, "zones of the tenant's floors; not even FK'd to floors"),
     "device_placements": Disposition(
-        ERASE, "where the tenant's devices sit on its floor plans — location data"
+        ERASE,
+        "where the tenant's devices are: the building, and the pin on its floor "
+        "plan when one was drawn — location data either way",
     ),
     "site_tariff_slabs": Disposition(ERASE, "the tenant's commercial energy tariffs"),
     "site_emission_factors": Disposition(ERASE, "the tenant's emission factors"),
