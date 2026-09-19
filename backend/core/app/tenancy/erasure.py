@@ -191,6 +191,16 @@ DISPOSITIONS: dict[str, Disposition] = {
         "plan when one was drawn — location data either way",
     ),
     "site_tariff_slabs": Disposition(ERASE, "the tenant's commercial energy tariffs"),
+    # Children first. The three reference each other ON DELETE CASCADE, so the
+    # order is not what makes this work on Postgres — it is what keeps it working
+    # if a cascade is ever dropped, since this loop runs in DISPOSITIONS order.
+    "equipment_point_slots": Disposition(
+        ERASE, "which of the tenant's points feed which of its equipment"
+    ),
+    "site_equipment": Disposition(
+        ERASE, "the tenant's plant equipment and its nameplate facts"
+    ),
+    "site_systems": Disposition(ERASE, "the tenant's plant loops and fleets"),
     "site_emission_factors": Disposition(ERASE, "the tenant's emission factors"),
     "tags": Disposition(ERASE, "the tenant's labels — named in 0022 as uncovered"),
     "tag_links": Disposition(
