@@ -40,6 +40,7 @@ from . import findings as fx
 from . import intake as intake_store
 from . import permsync
 from . import plant as plant_view
+from . import suggest_equipment
 from . import queries as q
 from . import rating as rt
 from . import units as un
@@ -1269,6 +1270,25 @@ async def site_plant(
     tenant = _tenant(scope)
     start_at, end_at = _window(start, end, hours)
     return await plant_view.plant(db, tenant, site_id, start=start_at, end=end_at)
+
+
+@bi_router.get(
+    "/sites/{site_id}/equipment/suggestions",
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def equipment_suggestions(db: Db, scope: Caller, site_id: uuid.UUID) -> dict:
+    """What each device placed in this building probably IS — proposed, never saved.
+
+    For every device: a class of machine (or `null`, said), which point goes in
+    which slot with the value it read, checks on those readings, whether it is
+    already registered, and — for the power chain — what probably feeds it (one
+    candidate is a suggestion, several are a shortlist). Leftovers of old copies
+    come back as `fragment: true` so the drawing can keep them off.
+
+    Writes nothing. The console saves through core, which validates every word.
+    See `suggest_equipment.py`.
+    """
+    return await suggest_equipment.suggestions(db, _tenant(scope), site_id)
 
 
 @bi_router.get(
