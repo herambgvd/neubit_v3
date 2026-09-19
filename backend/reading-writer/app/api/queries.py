@@ -1250,6 +1250,13 @@ _GHOST_MEMBERS_SQL = text(
                p.category,
                p.unit,
                p.site_id,
+               -- WHEN THIS GENERATION STARTED, and how much it carries. Without
+               -- both, a group whose members have all gone quiet offers an
+               -- operator two uuids and two timestamps minutes apart, which is
+               -- not a question a human can answer. WITH them the question is
+               -- ordinary: one generation ran for months and holds the history,
+               -- the other appeared at a rebuild.
+               p.first_seen_at,
                p.last_seen_at,
                p.last_seen_at >= now() - make_interval(mins => :fresh) AS fresh,
                r.point_id IS NOT NULL                                  AS has_role,
@@ -1273,9 +1280,19 @@ _GHOST_MEMBERS_SQL = text(
          GROUP BY device_tag, point_tag
         HAVING count(*) > 1
     )
-    SELECT c.*
+    SELECT c.*,
+           -- Off `readings_1h`, never off `readings`: the raw hypertable is
+           -- compressed and counting it per member would scan chunks. The
+           -- aggregate already holds the count, and the set here is only the
+           -- duplicated members, never the estate.
+           COALESCE(v.readings, 0)::bigint AS readings
       FROM candidate c
       JOIN duplicated d USING (device_tag, point_tag)
+      LEFT JOIN LATERAL (
+          SELECT sum(r.sample_count) AS readings
+            FROM readings_1h r
+           WHERE r.point_id = c.point_id
+      ) v ON TRUE
      -- Newest first WITHIN a group, so the member a human reads first is the one
      -- most likely to be the survivor. NULLS LAST is defensive: `last_seen_at`
      -- is NOT NULL in the schema.
@@ -1414,7 +1431,11 @@ async def ghost_groups(
                 "members": [
                     {
                         "point_id": m["point_id"],
+                        "first_seen_at": m["first_seen_at"],
                         "last_seen_at": m["last_seen_at"],
+                        # What the member CARRIES, so the console can say "252
+                        # days, 331k readings" instead of showing a uuid twice.
+                        "readings": int(m["readings"] or 0),
                         "unit": m["unit"],
                         "fresh": bool(m["fresh"]),
                         "has_role": bool(m["has_role"]),

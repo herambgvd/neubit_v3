@@ -138,6 +138,8 @@ def member(
     *,
     device="MFM-4F-01",
     point="KWH_kwh",
+    first_seen=None,
+    readings=0,
     last_seen=LAST_MONTH,
     fresh=False,
     unit=None,
@@ -152,6 +154,8 @@ def member(
         "point_tag": point,
         "category": category,
         "unit": unit,
+        "first_seen_at": first_seen,
+        "readings": readings,
         "last_seen_at": last_seen,
         "fresh": fresh,
         "has_role": has_role,
@@ -216,27 +220,48 @@ class TestTheGroupingItself:
         assert {g["point_tag"] for g in groups} == {"KWH_kwh", "PF_pf"}
 
     def test_each_member_carries_what_the_operator_has_to_decide_on(self):
-        """A manual group is a question put to a human, and the answer depends on
-        the unit and on whether a metric definition is already selecting one of
-        the members. A member row missing either is a question nobody can
-        answer."""
+        """A manual group is a question put to a human, and the whole worklist
+        stands or falls on whether that question is ANSWERABLE from the row.
+
+        When every member has gone quiet — the case 45 of this estate's 46 pairs
+        are in — a row of uuid + last-seen offers two addresses that stopped
+        minutes apart, and no person can choose between them. WHEN IT STARTED and
+        HOW MUCH IT HOLDS are what make it an ordinary judgement: one generation
+        ran for months and carries the history, the other appeared at a rebuild.
+        So they travel with the member, beside the unit and the role."""
         keep = uuid.uuid4()
         db = ScriptedDb(
             members=[
-                member(keep, last_seen=JUST_NOW, fresh=True, unit="kWh",
-                       has_role=True, role="site_main_incomer"),
+                member(keep, first_seen=LAST_MONTH, readings=331_440, last_seen=JUST_NOW,
+                       fresh=True, unit="kWh", has_role=True, role="site_main_incomer"),
                 member(uuid.uuid4()),
             ]
         )
         first = run(q.ghost_groups(db, TENANT))[0]["members"][0]
         assert first == {
             "point_id": keep,
+            "first_seen_at": LAST_MONTH,
+            "readings": 331_440,
             "last_seen_at": JUST_NOW,
             "unit": "kWh",
             "fresh": True,
             "has_role": True,
             "role": "site_main_incomer",
         }
+
+    def test_a_reading_volume_that_is_absent_is_zero_and_never_a_crash(self):
+        """`readings` comes off a LEFT JOIN on the hourly aggregate: a generation
+        the aggregate has not covered yet answers NULL, and the console has to
+        get a number."""
+        db = ScriptedDb(members=[member(uuid.uuid4(), readings=None), member(uuid.uuid4())])
+        assert run(q.ghost_groups(db, TENANT))[0]["members"][0]["readings"] == 0
+
+    def test_the_volume_is_counted_off_the_aggregate_not_the_raw_hypertable(self):
+        """`readings` is compressed and keyed (point_id, ts); counting it per
+        member would scan chunks on every load of this screen."""
+        sql = " ".join(str(q._GHOST_MEMBERS_SQL).split())
+        assert "FROM readings_1h" in sql
+        assert "FROM readings " not in sql
 
     def test_the_duplicate_set_ignores_the_retirement_horizon(self):
         """A ghost has not reported in weeks BY DEFINITION. If the grouping
