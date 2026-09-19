@@ -383,6 +383,12 @@ export const bi = {
   rating: ({ site_id, point_id, days }: any) =>
     unwrap(api.get(`${BI}/rating${qs({ site_id, point_id, days })}`)),
 
+  // What each device placed in a building probably IS — class, slots with the
+  // values they read, checks on those readings, what probably feeds it. A
+  // proposal: nothing is saved by reading it. See suggest_equipment.py.
+  equipmentSuggestions: (siteId: string) =>
+    unwrap(api.get(`${BI}/sites/${encodeURIComponent(siteId)}/equipment/suggestions`)),
+
   // ── THE PLANT ─ L3: one building's systems → equipment → slots ─────────
   //
   // Every slot with its DATA READINESS (reporting / silent / unbound /
