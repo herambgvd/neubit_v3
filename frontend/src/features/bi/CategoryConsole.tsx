@@ -72,6 +72,7 @@ import { fmtRelative } from "@/lib/format";
 import DeltaT, { hasDeltaT } from "./components/DeltaT";
 import GateStrip from "./components/GateStrip";
 import TrendChart from "./components/TrendChart";
+import Reason from "./components/Reason";
 import { bi } from "./api";
 import { categoryMeta, deviceTypeLabel, fmtReading, qualityTone } from "./constants";
 
@@ -168,16 +169,23 @@ function EstateRollup({
       <SectionHead
         icon="heroicons:squares-2x2"
         title={`${meta.label} across the estate`}
+        // `desc` is the FACT, `hint` is the argument behind it. Both still ship;
+        // only one of them costs a line of the screen every time it is read.
+        hint={
+          summary
+            ? "This is where the domain lives — not what it consumed: the source payloads carry no unit, so nothing here is summed into a quantity."
+            : "No figure is shown rather than a zero that would read as an answer."
+        }
         desc={
           loading
             ? "Asking the store where this domain lives…"
             : !summary
-              ? "The estate summary has not answered, so this rollup cannot say where the domain lives. No figure is shown rather than a zero that would read as an answer."
+              ? "The estate summary has not answered, so this rollup cannot say where the domain lives."
               : `${buildings.length} ${buildings.length === 1 ? "building has" : "buildings have"} ${meta.label} pinned to ${buildings.length === 1 ? "it" : "them"}${
                   unplaced
                     ? `, and ${unplaced.points} ${unplaced.points === 1 ? "point belongs" : "points belong"} to no building at all.`
                     : ", and every point of this domain belongs to one of them."
-                } This is where the domain lives — not what it consumed: the source payloads carry no unit, so nothing here is summed into a quantity.`
+                }`
         }
       />
       {summary && (
@@ -348,13 +356,23 @@ function CategoryConsoleInner({ category }: Readonly<{ category: string }>) {
             { label: meta.label, href: `/bi/${category}` },
             { label: siteName ?? "…" },
           ]}
-          desc={`ONE BUILDING — ${meta.label} at this site only. A device is here because it is pinned on this building's floor plan; every other building, and every point no building owns, is excluded. The estate-wide view is the ${meta.label} crumb above.`}
+          desc={
+            <span
+              title={`A device is here because it is pinned on this building's floor plan; every other building, and every point no building owns, is excluded. The estate-wide view is the ${meta.label} crumb above.`}
+            >
+              {`ONE BUILDING — ${meta.label} at this site only.`}
+            </span>
+          }
           right={<ScopeBadge site />}
         />
       ) : (
         <EstateHeader
           crumbs={[{ label: "Building", href: "/bi/portfolio" }, { label: meta.label }]}
-          desc={`THE WHOLE ESTATE — every ${meta.label} device that has reported, in every building AND outside all of them. Open a building below to scope this same console to it. Values carry no unit — the wire sends none, and none is invented.`}
+          desc={
+            <span title="Open a building below to scope this same console to it. Values carry no unit — the wire sends none, and none is invented.">
+              {`THE WHOLE ESTATE — every ${meta.label} device that has reported, in every building AND outside all of them.`}
+            </span>
+          }
           right={<ScopeBadge site={false} />}
         />
       )}
@@ -479,10 +497,7 @@ function CategoryConsoleInner({ category }: Readonly<{ category: string }>) {
             })}
           </PanelList>
           <PanelFooter>
-            <p className="text-[10.5px] leading-relaxed text-nb-faint">
-              A device is listed because it has REPORTED. The store has no configuration side —
-              the reading-writer creates a row from a reading, never from a device list.
-            </p>
+            <Reason text="A device is listed because it has REPORTED. The store has no configuration side — the reading-writer creates a row from a reading, never from a device list." />
           </PanelFooter>
         </ConsolePanel>
 
@@ -562,9 +577,11 @@ function CategoryConsoleInner({ category }: Readonly<{ category: string }>) {
                     <TrendChart buckets={series?.buckets || []} accent={meta.accent} label={chartedPoint?.point_tag} />
                   )}
                   {seriesQ.data && (
-                    <p className="mt-2 text-[10.5px] leading-relaxed text-nb-faint">
-                      {seriesQ.data.resolution_reason}. Shaded band is each bucket&apos;s min→max, the
-                      line is its average. No unit — the source reports none.
+                    <p
+                      className="mt-2 text-[10.5px] leading-relaxed text-nb-faint"
+                      title="The shaded band is each bucket's min→max and the line is its average. No unit — the source reports none."
+                    >
+                      {seriesQ.data.resolution_reason}
                     </p>
                   )}
                 </div>

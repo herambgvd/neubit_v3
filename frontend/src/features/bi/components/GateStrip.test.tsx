@@ -23,7 +23,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -175,11 +175,21 @@ describe("shut — one gate expands, and it is the earliest", () => {
     renderWithProviders(estate);
     await screen.findByText(/^Gate 1 · ARRIVES/);
 
-    expect(
-      screen.getByText(
-        /3 of the 475 rows counted here are later generations of a register already counted — 472 distinct registers\..*2 duplicated pairs are waiting to be settled/,
-      ),
-    ).toBeInTheDocument();
+    // THE LEAD IS WHAT RENDERS, THE WHOLE REASON IS STILL HERE. `gates.ts`
+    // writes two sentences: the inflation and its two figures, then the worklist
+    // waiting behind them. Only the first costs a line of the screen; the second
+    // is on the paragraph's `title` and one press away. Neither was dropped —
+    // see components/Reason.tsx.
+    const blockage = screen.getByText(
+      /3 of the 475 rows counted here are later generations of a register already counted — 472 distinct registers\./,
+    );
+    expect(blockage).toHaveAttribute(
+      "title",
+      expect.stringContaining("2 duplicated pairs are waiting to be settled"),
+    );
+    expect(screen.queryByText(/2 duplicated pairs are waiting to be settled/)).toBeNull();
+    await userEvent.click(within(blockage).getByRole("button", { name: "why" }));
+    expect(screen.getByText(/2 duplicated pairs are waiting to be settled/)).toBeInTheDocument();
     // The evidence, not a count of it.
     expect(screen.getByText("1F-DB · KWH")).toBeInTheDocument();
     expect(screen.getByText("2 generations · no choice needed")).toBeInTheDocument();
@@ -256,8 +266,16 @@ describe("gate 3 · BELONGS — the gate with no worklist here", () => {
     renderWithProviders(estate);
 
     await screen.findByText(/^Gate 3 · BELONGS/);
+    const belongs = screen.getByText(/75 of 475 points belong to no site/);
+    // The refusal to grow a placement worklist is an argument, not a fact about
+    // this estate: it reads once, on hover or on a press, not every morning.
+    expect(belongs).toHaveAttribute(
+      "title",
+      expect.stringContaining("has no placement worklist and will not grow one"),
+    );
+    await userEvent.click(within(belongs).getByRole("button", { name: "why" }));
     expect(
-      screen.getByText(/75 of 475 points belong to no site.*has no placement worklist and will not grow one/),
+      screen.getByText(/has no placement worklist and will not grow one/),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Pin the devices on the Sites floor plan/ })).toHaveAttribute(
       "href",
@@ -345,8 +363,10 @@ describe("a caller who may not open a worklist", () => {
 
     // Every control on the strip is a gate segment. Settling anything happens on
     // the console the link opens, behind that console's own `bi.manage` gate.
+    // `why` expands the rest of the blockage sentence in place. It is a
+    // disclosure, not a door and not a write, which is why it is allowed here.
     for (const b of screen.getAllByRole("button")) {
-      expect(b.textContent).toMatch(/ARRIVES|MEANS|BELONGS|BINDS|RATES|ACTS/);
+      expect(b.textContent).toMatch(/ARRIVES|MEANS|BELONGS|BINDS|RATES|ACTS|^why$|^less$/);
     }
   });
 
@@ -461,7 +481,17 @@ describe("scope — the same strip, inside one building", () => {
     expect(
       screen.getByText(/83 HVAC & Assets at Aeon Tower points are pinned at this building/),
     ).toBeInTheDocument();
-    expect(screen.getByText(/duplicate worklist is scoped by category and carries no site/)).toBeInTheDocument();
+    const deferred = screen.getByText(
+      /83 HVAC & Assets at Aeon Tower points are pinned at this building/,
+    );
+    expect(deferred).toHaveAttribute(
+      "title",
+      expect.stringContaining("duplicate worklist is scoped by category and carries no site"),
+    );
+    await userEvent.click(within(deferred).getByRole("button", { name: "why" }));
+    expect(
+      screen.getByText(/duplicate worklist is scoped by category and carries no site/),
+    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Answer it across the whole estate/ })).toHaveAttribute(
       "href",
       "/bi/hvac",

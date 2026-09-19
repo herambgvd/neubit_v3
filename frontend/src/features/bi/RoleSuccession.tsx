@@ -69,6 +69,7 @@ import { apiError } from "@/lib/api";
 import { fmtRelative } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 
+import Reason from "./components/Reason";
 import { bi } from "./api";
 import { PERM_MANAGE } from "./constants";
 
@@ -290,7 +291,12 @@ export default function RoleSuccession() {
     <ConsolePage>
       <EstateHeader
         crumbs={[{ label: "Stranded roles" }]}
-        desc="A role says what a number MEANS. A gateway rebuild renames the tag it was bound to, and the assertion is left on a point that stopped reporting — so the metric above it refuses for a machine that is running. This is where an operator moves the assertion onto the point that replaced it. Nothing is ever moved automatically: the successors below are proposed with the evidence that ranked them, and only ids a person names are written. Where the point row is gone entirely there is nothing to move onto, and the one thing left to decide is whether to forget the assertion — which deletes it."
+        desc={
+          <span title="A role says what a number MEANS. A gateway rebuild renames the tag it was bound to, and the assertion is left on a point that stopped reporting — so the metric above it refuses for a machine that is running. This is where an operator moves the assertion onto the point that replaced it. Nothing is ever moved automatically: the successors below are proposed with the evidence that ranked them, and only ids a person names are written. Where the point row is gone entirely there is nothing to move onto, and the one thing left to decide is whether to forget the assertion — which deletes it.">
+            an operator&apos;s assertion, left on a point that stopped · nothing moves unless you
+            name it
+          </span>
+        }
       />
 
       {applied && (
@@ -300,8 +306,11 @@ export default function RoleSuccession() {
               {applied.requested} move(s) requested · {applied.moved} moved ·{" "}
               {applied.refused} refused
             </span>
-            <span className="text-[10.5px] text-nb-faint">
-              One transaction per move, so a batch can half-apply. Every outcome is listed.
+            <span
+              className="text-[10.5px] text-nb-faint"
+              title="One transaction per move, so a batch can half-apply. Every outcome is listed below."
+            >
+              one transaction per move
             </span>
           </div>
           <ul className="mt-2 space-y-1">
@@ -340,9 +349,11 @@ export default function RoleSuccession() {
               {forgot.requested} assertion(s) named · {forgot.forgotten} forgotten ·{" "}
               {forgot.refused} refused
             </span>
-            <span className="text-[10.5px] text-nb-faint">
-              Each forgotten assertion is echoed back below. That echo is the last place it
-              exists — nothing on this platform holds another copy.
+            <span
+              className="text-[10.5px] text-nb-faint"
+              title="Each forgotten assertion is echoed back below. That echo is the last place it exists — nothing on this platform holds another copy."
+            >
+              echoed back below — the last place it exists
             </span>
           </div>
           <ul className="mt-2 space-y-1">
@@ -470,22 +481,22 @@ export default function RoleSuccession() {
                   </ActionButton>
                 )}
                 {conflicted.length > 0 && (
-                  <p className="text-[10.5px] leading-relaxed text-nb-warn">
-                    {conflicted.length} chosen successor(s) already carry a role, so the server will
-                    refuse those moves and nothing would be written for them. Settle that role on
-                    the metric roles screen, or choose a different successor.
-                  </p>
+                  <Reason
+                    className="text-[10.5px] leading-relaxed text-nb-warn"
+                    text={`${conflicted.length} chosen successor(s) already carry a role, so those moves would be refused. Settle that role on the metric roles screen, or choose a different successor.`}
+                  />
                 )}
-                <p className="text-[10.5px] leading-relaxed text-nb-faint">
-                  A move is written only for a successor you named. There is no sweep and no score
-                  above which this screen decides — a wrongly bound role computes a plausible answer
-                  nobody can see is wrong.
-                </p>
+                <Reason
+                  className="text-[10.5px] leading-relaxed text-nb-faint"
+                  text="A move is written only for a successor you named. There is no sweep and no score above which this screen decides — a wrongly bound role computes a plausible answer nobody can see is wrong."
+                />
               </div>
             ) : (
-              <p className="text-[10.5px] leading-relaxed text-nb-faint">
-                Moving a role needs <span className="font-mono">bi.manage</span>. You can read which
-                assertions are stranded, what is proposed for them and the evidence behind it.
+              <p
+                className="text-[10.5px] leading-relaxed text-nb-faint"
+                title="Moving a role needs bi.manage. You can read which assertions are stranded, what is proposed for them and the evidence behind it."
+              >
+                Moving a role needs <span className="font-mono">bi.manage</span>.
               </p>
             )}
           </PanelFooter>
@@ -529,26 +540,24 @@ export default function RoleSuccession() {
                 </p>
               </header>
 
-              <p className="mb-3 rounded-[10px] border border-[rgba(251,191,36,.45)] bg-[rgba(251,191,36,.07)] px-3 py-2 text-[11.5px] leading-relaxed text-nb-warn">
-                {whyStranded(selected, graceMinutes)}
-              </p>
+              <Reason
+                className="mb-3 rounded-[10px] border border-[rgba(251,191,36,.45)] bg-[rgba(251,191,36,.07)] px-3 py-2 text-[11.5px] leading-relaxed text-nb-warn"
+                text={whyStranded(selected, graceMinutes)}
+              />
 
               {selected.fresh === false && !subjectMissing(selected) && (
-                <p className="mb-3 text-[10.5px] leading-relaxed text-nb-faint">
-                  Nothing on this estate is inside the {freshMinutes}-minute freshness window right
-                  now — ingest runs in cycles. That is why being stranded is measured against this
-                  device&apos;s own newest reading rather than against the clock.
-                </p>
+                <Reason
+                  className="mb-3 text-[10.5px] leading-relaxed text-nb-faint"
+                  text={`Nothing on this estate is inside the ${freshMinutes}-minute freshness window right now — ingest runs in cycles. That is why being stranded is measured against this device's own newest reading rather than against the clock.`}
+                />
               )}
 
               {subjectMissing(selected) ? (
                 <>
-                  <div className="rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2.5 text-[11.5px] leading-relaxed text-nb-faint">
-                    No successor can be offered, because a successor is a point on the same device
-                    and there is no device left to read. This assertion has outlived its subject:
-                    the only thing left to decide about it is whether to forget it, and that is the
-                    control below.
-                  </div>
+                  <Reason
+                    className="rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2.5 text-[11.5px] leading-relaxed text-nb-faint"
+                    text="No successor can be offered: a successor is a point on the same device and there is no device left to read, so the only decision left about this assertion is whether to forget it — and that is the control below."
+                  />
 
                   {/* THE ONE DESTRUCTIVE CONTROL ON THIS CONSOLE, and the only
                       thing that can reach a role whose point row is gone — a
@@ -575,8 +584,7 @@ export default function RoleSuccession() {
                           : " at a time nobody recorded"}
                         {selected.role_source ? `, stated as ${selected.role_source}` : ""}, on
                         point <span className="font-mono text-nb-ink">{selected.point_id}</span>.
-                        Nothing puts it back — no self-heal writes a role and there is no undo. Only
-                        this one is forgotten: there is no sweep and no way to ask for one.
+                        Nothing puts it back.
                       </p>
                       {confirmForget === orphanKey(selected) ? (
                         <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -599,41 +607,37 @@ export default function RoleSuccession() {
                           </DangerButton>
                         </div>
                       )}
-                      <p className="mt-2 text-[10.5px] leading-relaxed text-nb-faint">
-                        If the point is back in the store, this is refused rather than applied —
-                        moving a live binding is a repoint and clearing one is an unbind, and both
-                        are different decisions about a measurement that is still there.
-                      </p>
+                      <Reason
+                        className="mt-2 text-[10.5px] leading-relaxed text-nb-faint"
+                        text="Only this one is forgotten: there is no sweep and no way to ask for one, and no self-heal writes a role back. If the point is back in the store this is refused rather than applied — moving a live binding is a repoint and clearing one is an unbind, and both are different decisions about a measurement that is still there."
+                      />
                     </div>
                   ) : (
-                    <p className="mt-3 text-[10.5px] leading-relaxed text-nb-faint">
-                      Forgetting an assertion needs{" "}
-                      <span className="font-mono">bi.manage</span>. You can read what was asserted,
-                      by whom and when; deleting it is the same authority as moving one.
+                    <p
+                      className="mt-3 text-[10.5px] leading-relaxed text-nb-faint"
+                      title="Forgetting an assertion needs bi.manage. You can read what was asserted, by whom and when; deleting it is the same authority as moving one."
+                    >
+                      Forgetting an assertion needs <span className="font-mono">bi.manage</span>.
                     </p>
                   )}
                 </>
               ) : (selected.candidates || []).length === 0 ? (
-                <div className="rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2.5 text-[11.5px] leading-relaxed text-nb-faint">
-                  {noCandidateReason(selected)}
-                </div>
+                <Reason
+                  className="rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2.5 text-[11.5px] leading-relaxed text-nb-faint"
+                  text={noCandidateReason(selected)}
+                />
               ) : (
                 <>
-                  <p className="mb-2 text-[11px] leading-relaxed text-nb-faint">
-                    {(selected.candidates || []).length} of {selected.candidates_considered ?? 0}{" "}
-                    point(s) looked at carried credible evidence. The score is an ORDER — the things
-                    worth reading, most promising first — not a probability and not a decision, so
-                    nothing is pre-selected however far ahead it is.
-                    {(selected.candidates || []).length === 1 && (
-                      <>
-                        {" "}
-                        This is the only credible candidate on the device, which makes it the only
-                        one offered — not evidence that it is the right one. Read its tag against
-                        the device above before you move anything: a gateway typo and a second
-                        machine look identical from here.
-                      </>
-                    )}
-                  </p>
+                  <Reason
+                    className="mb-2 text-[11px] leading-relaxed text-nb-faint"
+                    text={
+                      ((selected.candidates || []).length === 1
+                        ? "This is the only credible candidate on the device, which makes it the only one offered — not evidence that it is the right one. Read its tag against the device above before you move anything: a gateway typo and a second machine look identical from here. "
+                        : "") +
+                      `${(selected.candidates || []).length} of ${selected.candidates_considered ?? 0} point(s) looked at carried credible evidence. ` +
+                      "The score is an ORDER — the things worth reading, most promising first — not a probability and not a decision, so nothing is pre-selected however far ahead it is."
+                    }
+                  />
                   <ul className="space-y-2">
                     {(selected.candidates || []).map((c: any) => {
                       const picked = choices[orphanKey(selected)] === c.point_id;
@@ -692,32 +696,33 @@ export default function RoleSuccession() {
                           </ul>
 
                           {c.conflicting_role && (
-                            <p className="mt-2 rounded-[8px] border border-[rgba(248,113,113,.45)] bg-[rgba(248,113,113,.07)] px-2.5 py-1.5 text-[11px] leading-relaxed text-nb-crit">
-                              This point already carries{" "}
-                              <span className="font-mono">{c.conflicting_role}</span>. A move onto it
-                              will be refused and nothing will be written: a point carries one role,
-                              so one of the two assertions would have to go, and both are an
-                              operator&apos;s. Settle{" "}
-                              <span className="font-mono">{c.conflicting_role}</span> on the{" "}
+                            <p
+                              className="mt-2 flex flex-wrap items-baseline gap-x-1.5 rounded-[8px] border border-[rgba(248,113,113,.45)] bg-[rgba(248,113,113,.07)] px-2.5 py-1.5 text-[11px] leading-relaxed text-nb-crit"
+                              title={`This point already carries ${c.conflicting_role}. A move onto it will be refused and nothing will be written: a point carries one role, so one of the two assertions would have to go, and both are an operator's.`}
+                            >
+                              <span>
+                                A move onto it will be refused and nothing will be written — this
+                                point already carries{" "}
+                                <span className="font-mono">{c.conflicting_role}</span>
+                              </span>
                               <Link href="/bi/metrics" className="underline">
-                                metric roles screen
-                              </Link>{" "}
-                              first.
+                                Settle it on the metric roles screen →
+                              </Link>
                             </p>
                           )}
                         </li>
                       );
                     })}
                   </ul>
-                  <p className="mt-2 text-[10.5px] leading-relaxed text-nb-faint">
-                    Moving records the successor on the stranded point and carries the role across —
-                    the same continuity chain a duplicate collapse writes. It retires nothing: the
-                    renamed generation stops being counted on its own, and retiring it here would be
-                    a second decision nobody asked for.
-                    {mayWrite && chosen.length > 0 && (
-                      <> The move is applied from the button under the worklist.</>
-                    )}
-                  </p>
+                  <Reason
+                    className="mt-2 text-[10.5px] leading-relaxed text-nb-faint"
+                    text={
+                      (mayWrite && chosen.length > 0
+                        ? "The move is applied from the button under the worklist. "
+                        : "") +
+                      "Moving records the successor on the stranded point and carries the role across — the same continuity chain a duplicate collapse writes. It retires nothing: the renamed generation stops being counted on its own, and retiring it here would be a second decision nobody asked for."
+                    }
+                  />
                 </>
               )}
             </div>

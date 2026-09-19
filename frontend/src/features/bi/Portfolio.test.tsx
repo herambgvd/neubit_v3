@@ -103,7 +103,64 @@ function estate(over: Record<string, unknown> = {}) {
     with_candidates: 0,
     without_candidates: 0,
   });
+  vi.spyOn(bi, "correlations").mockResolvedValue({
+    hours: 168,
+    totals: {
+      correlations: 7,
+      live: 0,
+      blocked: 7,
+      blocking_gaps: 7,
+      blocking_gaps_by_kind: { unit_unconfirmed: 2, module_population_unknown: 1 },
+      needs_new_hardware: 0,
+      no_new_hardware_needed: 6,
+      hardware_undetermined: 1,
+      signal_gaps: 8,
+      signal_gaps_by_kind: {},
+      signal_gaps_needing_new_hardware: 0,
+      signal_gaps_needing_no_new_hardware: 7,
+      signal_gaps_hardware_undetermined: 1,
+    },
+    correlations: [correlation],
+  });
 }
+
+// One blocked cross-domain question, in the shape `/bi/correlations` returns.
+const correlation = {
+  key: "ambient_chiller",
+  name: "Ambient ↔ chiller load",
+  question: "Does the chiller's draw track the outside air?",
+  unlocks: "Weather-normalised plant efficiency",
+  domains: ["hvac"],
+  state: "blocked",
+  signals: [
+    {
+      key: "ambient_temp",
+      label: "Ambient temperature",
+      domain: "weather",
+      source: "point_unit",
+      unlocks: "the outside-air axis",
+      satisfied: false,
+      gap: {
+        kind: "unit_unconfirmed",
+        needs_new_hardware: false,
+        summary: "The measurement is arriving; nobody has said what it is in.",
+        remedy: "Confirm the unit on the points listed.",
+        where: "Building Intelligence → Units",
+        gate: "3 points match and none carries a confirmed unit.",
+      },
+      evidence: {},
+    },
+  ],
+  blocking_gap: {
+    signal: "ambient_temp",
+    kind: "unit_unconfirmed",
+    needs_new_hardware: false,
+    summary: "The measurement is arriving; nobody has said what it is in.",
+    remedy: "Confirm the unit on the points listed.",
+    where: "Building Intelligence → Units",
+    gate: "3 points match and none carries a confirmed unit.",
+  },
+};
 
 const worklist = (over: Record<string, unknown> = {}) =>
   vi.spyOn(bi, "ghosts").mockResolvedValue({
@@ -172,18 +229,50 @@ describe("the layer", () => {
     expect(screen.getByText("devices · 10 points across 0 domains")).toBeInTheDocument();
   });
 
-  it("ships no placeholder for the correlations lane", async () => {
-    // The slot is a comment in the source, between the questions and the
-    // domains. A card saying "correlations, coming soon" would be a control with
-    // no consumer and a destination that does not exist.
+  it("puts the cross-domain lane ABOVE the domains, and it is real", async () => {
+    // THIS ASSERTION IS AN INVERSION. It used to say the correlations slot
+    // shipped NOTHING — the backend was being built, and a card promising a
+    // destination this console could not honour is the one thing every screen
+    // here refuses. `GET /bi/correlations` shipped, so the slot is filled and
+    // what is tested now is the lane and its ORDER: a domain count is table
+    // stakes, a cross-domain answer is not, and the one a competitor cannot
+    // produce does not get filed underneath the one every competitor has.
     estate();
     worklist();
 
     renderWithProviders(<Portfolio />);
 
-    await screen.findByText("Domains");
-    expect(screen.queryByText(/correlation/i)).not.toBeInTheDocument();
+    const lane = await screen.findByText("Questions that need two domains at once");
+    const domains = screen.getByText("Domains");
+    expect(lane.compareDocumentPosition(domains) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // And still no placeholder: the lane renders because it has an answer.
     expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
+  });
+
+  it("carries the pitch on the lane — the tri-state, all three buckets", async () => {
+    estate();
+    worklist();
+
+    renderWithProviders(<Portfolio />);
+
+    expect(
+      await screen.findByText("of the 7 blocked need new hardware bought"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("6 need nothing bought")).toBeInTheDocument();
+    // Undetermined is never folded into "needs nothing", on this page either.
+    expect(screen.getByText("1 undetermined")).toBeInTheDocument();
+  });
+
+  it("costs a viewer without bi.read no correlations request and shows no lane", async () => {
+    estate();
+    worklist();
+    auth.can = (p: string) => p !== "bi.read";
+
+    renderWithProviders(<Portfolio />);
+
+    await screen.findByText("Domains");
+    expect(screen.queryByText("Questions that need two domains at once")).not.toBeInTheDocument();
+    expect(bi.correlations).not.toHaveBeenCalled();
   });
 });
 

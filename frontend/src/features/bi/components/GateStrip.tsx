@@ -64,6 +64,7 @@ import { Icon } from "@iconify/react";
 import { useAuth } from "@/lib/auth";
 
 import { bi } from "../api";
+import Reason from "./Reason";
 import { MODULE, PERM_READ } from "../constants";
 import {
   allOpen,
@@ -280,7 +281,13 @@ function GatePanel({ gate, subject }: Readonly<{ gate: GateView; subject: GateSu
         <Icon icon={gate.icon} className="mr-1.5 inline text-[13px]" />
         Gate {gate.n} · {gate.verb} — {gate.label}
       </p>
-      <p className="mt-1 max-w-4xl text-[11.5px] leading-relaxed text-nb-soft">{gate.blocking}</p>
+      {/* THE BLOCKAGE, AT LABEL DENSITY. `gates.ts` writes two or three
+          sentences per gate: the fact and its number first, the argument for
+          stating it that way after. The first is what an operator has to see
+          every time and the rest is what they need once, so the lead prints and
+          the tail is on hover and one press away. Nothing is dropped — see
+          components/Reason.tsx. */}
+      <Reason text={gate.blocking} className="mt-1 max-w-4xl text-[11.5px] leading-relaxed text-nb-soft" />
 
       {gate.rows.length > 0 && (
         <ul className="mt-2 space-y-1">

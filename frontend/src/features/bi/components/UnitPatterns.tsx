@@ -40,6 +40,7 @@ import { ActionButton, LoadingBlock, QuietButton } from "@/components/console";
 import { apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
+import Reason from "./Reason";
 import { bi } from "../api";
 import { PERM_MANAGE } from "../constants";
 import NotReportingChallenge, {
@@ -181,11 +182,7 @@ export default function UnitPatterns({ category }: Readonly<{ category?: string 
         )}
       </div>
 
-      <p className="text-[10.5px] leading-relaxed text-nb-faint">
-        A convention is not evidence and nothing here is applied by being displayed. Confirming one
-        shows you every point it would change, by name, before anything is written — and writes
-        exactly that set, in the unit the catalogue proposed.
-      </p>
+      <Reason text="A convention is not evidence and nothing here is applied by being displayed. Confirming one shows you every point it would change, by name, before anything is written — and writes exactly that set, in the unit the catalogue proposed." />
 
       {!patterns.length ? (
         <p className="py-4 text-center text-[11.5px] text-nb-faint">
@@ -236,13 +233,15 @@ export default function UnitPatterns({ category }: Readonly<{ category?: string 
                 {/* The deliberate refusal. Not an error, not an empty state —
                     the answer this pattern exists to give. */}
                 {!appliable && (
-                  <p className="mt-1.5 rounded-[8px] border border-dashed border-nb-line px-2.5 py-1.5 text-[10.5px] leading-relaxed text-nb-soft">
-                    Nothing is proposed for this convention and it cannot be applied in bulk —{" "}
-                    {p.kind === "state"
-                      ? "these tags are a state, not a measurement, so there is no unit to write."
-                      : "the tag names one quantity and carries another's suffix, so which one it measures is a question a person answers."}{" "}
-                    Settle these points one at a time in the list below.
-                  </p>
+                  <Reason
+                    className="mt-1.5 rounded-[8px] border border-dashed border-nb-line px-2.5 py-1.5 text-[10.5px] leading-relaxed text-nb-soft"
+                    text={
+                      (p.kind === "state"
+                        ? "Nothing to apply — these tags are a state, not a measurement, so there is no unit to write. "
+                        : "Nothing to apply — the tag names one quantity and carries another's suffix, so which one it measures is a question a person answers. ") +
+                      "Settle these points one at a time in the list below."
+                    }
+                  />
                 )}
 
                 {appliable && mayWrite && p.eligible > 0 && !pv && (
@@ -299,21 +298,25 @@ export default function UnitPatterns({ category }: Readonly<{ category?: string 
       )}
 
       {q.data?.unmatched_sample?.length ? (
-        <p className="text-[10.5px] leading-relaxed text-nb-faint">
+        <p
+          className="text-[10.5px] leading-relaxed text-nb-faint"
+          title="No convention reads these tags. They are one-by-one work, and saying so is the honest report."
+        >
           No convention reads{" "}
           <span className="font-mono text-nb-soft">
             {q.data.unmatched_sample.slice(0, 6).join(", ")}
           </span>
-          . Those are one-by-one work, and saying so is the honest report.
         </p>
       ) : null}
 
       {done && <p className="text-[11.5px] text-nb-good">{done}</p>}
       {err && <p className="text-[11.5px] text-nb-crit">{err}</p>}
       {!mayWrite && (
-        <p className="text-[11px] text-nb-faint">
-          Confirming a convention needs <span className="font-mono">bi.manage</span>. You can read
-          what each one holds and what a person has already decided.
+        <p
+          className="text-[11px] text-nb-faint"
+          title="Confirming a convention needs bi.manage. You can read what each one holds and what a person has already decided."
+        >
+          Confirming a convention needs <span className="font-mono">bi.manage</span>.
         </p>
       )}
     </div>
@@ -365,17 +368,18 @@ function PatternPreview({
 
       {skipped.length > 0 && (
         <p className="text-[10.5px] leading-relaxed text-nb-good">
-          {skipped.length} point(s) are left alone because a person already stated their unit —{" "}
+          {skipped.length} left alone — a pattern never overrules a person:{" "}
           <span className="font-mono">{skipped.slice(0, 4).map((s) => s.point_tag).join(", ")}</span>
-          . A pattern never overrules a person.
         </p>
       )}
 
       {notReporting.length > 0 && (
-        <p className="text-[10.5px] leading-relaxed text-nb-warn">
+        <p
+          className="text-[10.5px] leading-relaxed text-nb-warn"
+          title="A unit asserted on an address that has produced no number is a fact no rating can use — the server will refuse, and say so."
+        >
           <Icon icon="heroicons:exclamation-triangle" className="mr-1 inline text-[12px]" />
-          {notReporting.length} of them are carrying no readings. A unit asserted on an address that
-          has produced no number is a fact no rating can use — the server will refuse, and say so.
+          {notReporting.length} of them are carrying no readings — the server will refuse
         </p>
       )}
 

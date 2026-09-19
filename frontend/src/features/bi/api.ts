@@ -14,6 +14,7 @@
 //   GET /bi/points    ?device_id|device_tag&category&type&search&with_latest
 //   GET /bi/series    ?point_id(xN)&start&end&hours&resolution=auto|1m|1h|raw
 //   GET /bi/correlation ?point_id(x2..12)&hours&resolution=auto|1m|1h
+//   GET /bi/correlations ?hours&start&end            the cross-domain REGISTRY
 //   GET /bi/units     ?category&search&confirmed=all|confirmed|unconfirmed
 //   POST /bi/units/confirm  {point_ids, unit}      (bi.manage)
 //   GET /bi/rating/sites                            site facts + rating inputs
@@ -135,6 +136,35 @@ export const bi = {
   // coefficient was computed from, so the scatter and the number cannot disagree.
   correlation: ({ point_id, hours, start, end, resolution }: any) =>
     unwrap(api.get(`${BI}/correlation${qs({ point_id, hours, start, end, resolution })}`)),
+
+  // ── CROSS-DOMAIN CORRELATIONS ─ the registry, not the coefficient ──────
+  //
+  // `correlation()` above computes r between two series a caller names. THIS one
+  // answers the question a step earlier and the one a buyer is actually asking:
+  // which cross-domain questions can this estate answer at all, and for the ones
+  // it cannot, WHAT KIND of thing is missing.
+  //
+  // A BMS owns one domain, so it can only ask questions inside one. Every
+  // correlation here declares the signals it needs — a role, a confirmed unit, a
+  // module's events, a typed site fact — and the server resolves those
+  // declarations against this estate over the SAME window the coefficient would
+  // be computed over. A signal counts as present because it produced readings
+  // inside that window, never because a row exists or a role was bound once.
+  //
+  // THE FIELD THIS ENDPOINT EXISTS FOR is `gap.needs_new_hardware`, and it is a
+  // TRI-STATE: true costs money, false does not, and `null` is UNDETERMINED —
+  // the fact that would settle it lives in a database the reading-writer is not
+  // allowed to open. `totals` carries three buckets for exactly that reason, and
+  // a client that folds `hardware_undetermined` into `no_new_hardware_needed`
+  // has made a claim the backend deliberately refused to make. So the totals are
+  // read, never re-derived here: the headline is a `totals` lookup and not
+  // arithmetic over `correlations`.
+  //
+  // `blocking_gaps_*` is ONE gap per blocked correlation — what the headline
+  // counts. `signal_gaps_*` is every unsatisfied signal, which is the real
+  // backlog and a bigger number. They are two populations and must not be mixed.
+  correlations: ({ hours, start, end }: any = {}) =>
+    unwrap(api.get(`${BI}/correlations${qs({ hours, start, end })}`)),
 
   // ── UNITS ─ the one thing that turns a number into a quantity ──────────
   //

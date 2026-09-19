@@ -61,6 +61,14 @@
 //   • No IAQ / environment panel. There are ZERO environment points, so that tile
 //     stays SOON in the launcher rather than being filled with something else.
 //
+// THE CORRELATIONS LANE IS NOW REAL, and it sits between the questions and the
+// domains. The slot was a comment in this file for as long as the backend was
+// being built, because a card reading "correlations, coming soon" is a control
+// with no consumer. `GET /bi/correlations` shipped, so the lane reads it — and
+// it reads ABOVE the Domains lane on purpose: a domain count is table stakes and
+// a cross-domain answer is not, so the thing a competitor cannot produce is not
+// filed underneath the thing every competitor has.
+//
 // THE PAGE DOES NOT EXPLAIN ITSELF ON SCREEN, and that is a deliberate trade. It
 // used to carry a standfirst, a "What is not here" panel and a paragraph under
 // Floor-wise — together more prose than data, which buried the numbers they were
@@ -71,6 +79,14 @@
 // The rule that survives ON screen is the one that cannot be moved: a slot with
 // no honest input renders "—" and carries its reason in the row or the tooltip
 // beside it, never a zero and never a guess.
+//
+// THE SAME TRADE WAS THEN MADE ON WHAT WAS LEFT. The standfirst and the three
+// section descriptions were still paragraphs in front of an operator who reads
+// them every morning. None of them was wrong and none of them was deleted: each
+// one moved onto the `hint` / `title` of the thing it qualifies, which is one
+// hover away and costs the screen no line. The `sub` under a blocked KPI stayed
+// where it is — a blocked number printing its blockage is the rule, not the
+// prose.
 //
 // The "no console yet" caption is NOT dead code. `fire` still has none and must
 // keep none: its single point has never produced a reading, so the category does
@@ -97,6 +113,7 @@ import { apiError } from "@/lib/api";
 import { fmtRelative } from "@/lib/format";
 
 import ActivityChart from "./components/ActivityChart";
+import Correlations from "./components/Correlations";
 import FaultQueue, { FaultSeverity } from "./components/FaultQueue";
 import GateStrip from "./components/GateStrip";
 import { bi } from "./api";
@@ -331,7 +348,11 @@ export default function Portfolio() {
           seeing, so both stay, side by side. */}
       <EstateHeader
         crumbs={[{ label: "Building" }]}
-        desc="One building, one pipeline. The gates say whether these numbers can be trusted; the questions are what the building has to answer; the domains are where the numbers come from."
+        desc={
+          <span title="One building, one pipeline. The gates say whether these numbers can be trusted; the questions are what the building has to answer; the domains are where the numbers come from.">
+            gates · questions · domains
+          </span>
+        }
         right={
           <>
             {summaryQ.isFetching && (
@@ -375,7 +396,7 @@ export default function Portfolio() {
             <SectionHead
               icon="heroicons:question-mark-circle"
               title="What this building has to answer"
-              desc="Five questions. Each one carries either a measured number or what is in the way of it."
+              hint="Five questions. Each one carries either a measured number or what is in the way of it."
             />
             <KpiStrip className="mt-2">
               <Kpi
@@ -408,7 +429,7 @@ export default function Portfolio() {
                 sub={
                   scoredSites.length
                     ? `CCEI 0-100 · mean over ${scoredSites.length} scored site(s)`
-                    : "CCEI blocked on every site — the rows name which components are missing"
+                    : "CCEI blocked — the rows name what is missing"
                 }
                 title="CCEI v2 = 0.35 × EEI + 0.25 × OPI + 0.20 × CPI + 0.20 × CCI — the NEUBIT CCEI Methodology Specification v1.0, evaluated by the metric registry per site over four sub-indices and fourteen component metrics. A composite of a refusal is a refusal: the dash names every component the estate cannot yet measure, at its spec weight, and what is in the way — never an invented number."
               />
@@ -416,7 +437,8 @@ export default function Portfolio() {
                 icon="heroicons:bell-alert"
                 label="What is failing now?"
                 value={critTotal}
-                sub={`critical alerts · ${alertHours}h, raised by the gateway, nothing inferred`}
+                sub={`critical · ${alertHours} h`}
+                title={`Alerts the gateway raised in the last ${alertHours} hours. The severity and the wording are its own; nothing here is inferred.`}
                 tone={critTotal ? "crit" : "good"}
               />
               <Kpi
@@ -431,22 +453,19 @@ export default function Portfolio() {
                 label="What is it made of?"
                 value={s.total_devices}
                 sub={`devices · ${s.total_points} points across ${s.categories.length} domains`}
+                title="Devices and points the store holds, counted from the rows a reading created. Gate 1 above says how many of those rows are later generations of a register already counted."
               />
             </KpiStrip>
           </section>
 
-          {/* ── CORRELATIONS LANE GOES HERE ───────────────────────────────────
-              RESERVED SLOT, RENDERING NOTHING. `GET /api/v1/bi/correlations` is
-              being built right now; the lane that reads it belongs at exactly
-              this point in the stack — ABOVE the domains — because a cross-domain
-              answer ("the chiller's draw tracks the outside air, the pump's does
-              not") is the product, and a per-domain count is table stakes.
-
-              It is a slot in the SOURCE and not a placeholder on the SCREEN, and
-              that is deliberate: a card reading "correlations, coming soon" is a
-              control with no consumer and a destination this console cannot yet
-              honour, which is the one thing every screen here refuses to ship.
-              Drop the lane in here, between the questions and the domains. */}
+          {/* ── THE CORRELATIONS LANE ─ what one domain cannot answer ────────
+              ABOVE the domains, deliberately. A per-domain count is table
+              stakes — every BMS ships one, because every BMS owns a domain. A
+              cross-domain answer is the thing a competitor structurally cannot
+              produce, so it reads first and the domain cards below it are the
+              inventory it is drawn from. See components/Correlations.tsx, which
+              owns the tri-state rule the headline rests on. */}
+          <Correlations />
 
           {/* ── THE DOMAINS ─ where the numbers come from ─────────────────────
               These are DOMAINS OF ONE ESTATE, not three products, which is why
@@ -461,7 +480,7 @@ export default function Portfolio() {
             <SectionHead
               icon="heroicons:squares-2x2"
               title="Domains"
-              desc="Every category the gateway has classified and reported. A domain is a scope of this estate — open one for the same gates over its own equipment."
+              hint="Every category the gateway has classified and reported. A domain is a scope of this estate — open one for the same gates over its own equipment."
             />
             <div className="mt-2 flex gap-3 overflow-x-auto pb-0.5">
               {s.categories.map((row: any) => (
@@ -480,7 +499,7 @@ export default function Portfolio() {
               <SectionHead
                 icon="heroicons:trophy"
                 title="Site leaderboard"
-                desc="Sites the store has been told about, plus the points no site owns. A dash is a blocked score — its reasons sit on the row."
+                hint="Sites the store has been told about, plus the points no site owns. A dash is a blocked score — its reasons sit on the row."
               />
               <Leaderboard>
                 {sites.map((site: any) => (
