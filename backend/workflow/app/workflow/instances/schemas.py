@@ -27,10 +27,19 @@ SourceKey = Annotated[
 
 
 class CreateInstanceRequest(BaseModel):
+    """What a caller may ask for when raising an incident.
+
+    `name` and `description` carry the COLUMN's width (512 / 2048). They had no
+    limit, so a longer string reached Postgres and came back as a 500 — an error
+    that names nothing and blames the server for a request the API could have
+    refused by field. Findings already trim to fit; a hand-written escalation or
+    an importer did not, and neither was told why.
+    """
+
     model_config = ConfigDict(extra="ignore")
     sop_id: str
-    name: Optional[str] = None
-    description: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=512)
+    description: Optional[str] = Field(default=None, max_length=2048)
     priority: Optional[InstancePriority] = None
     site_id: Optional[str] = None
     tags: list[str] = Field(default_factory=list)

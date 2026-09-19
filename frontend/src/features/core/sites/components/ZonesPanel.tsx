@@ -13,6 +13,9 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { RowAction } from "@/components/console";
+import { useAuth } from "@/lib/auth";
+
+import { sitePermits } from "../permits";
 import { ConfirmDialog, Spinner, type ConfirmState } from "@/components/ui/kit";
 import { apiError } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
@@ -39,6 +42,9 @@ export default function ZonesPanel({ site }: Readonly<{ site: SitePublic }>) {
   const floors = floorsQ.data?.items || [];
 
   const [floorFilter, setFloorFilter] = useState("");
+  // Same rule as the floors list: core gates each write on its own key.
+  const may = sitePermits(useAuth().can);
+
   const [editing, setEditing] = useState<ZonePublic | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const zonesQ = useQuery({
@@ -143,7 +149,10 @@ export default function ZonesPanel({ site }: Readonly<{ site: SitePublic }>) {
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <RowAction icon="heroicons-outline:pencil-square" title="Edit" onClick={() => setEditing(z)} />
+                  {may.editZone && (
+                    <RowAction icon="heroicons-outline:pencil-square" title="Edit" onClick={() => setEditing(z)} />
+                  )}
+                  {may.deleteZone && (
                   <RowAction
                     icon="heroicons-outline:trash"
                     title="Delete"
@@ -160,6 +169,7 @@ export default function ZonesPanel({ site }: Readonly<{ site: SitePublic }>) {
                       })
                     }
                   />
+                  )}
                 </div>
               </li>
             );

@@ -9,6 +9,9 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import { ActionButton, RowAction } from "@/components/console";
+import { useAuth } from "@/lib/auth";
+
+import { sitePermits } from "../permits";
 import { ConfirmDialog, Spinner, type ConfirmState } from "@/components/ui/kit";
 import { apiError, fileUrl } from "@/lib/api";
 import { sites as sitesApi } from "@/lib/api/sites";
@@ -24,6 +27,10 @@ export default function FloorsPanel({ site }: Readonly<{ site: SitePublic }>) {
   });
 
   const items = floorsQ.data?.items || [];
+  // Core refuses each of these on its own key; the screen stops offering the
+  // press it cannot keep.
+  const may = sitePermits(useAuth().can);
+
   const [editing, setEditing] = useState<FloorPublic | null>(null);
   const [creating, setCreating] = useState(false);
   const [editorFloor, setEditorFloor] = useState<FloorPublic | null>(null);
@@ -47,7 +54,7 @@ export default function FloorsPanel({ site }: Readonly<{ site: SitePublic }>) {
             {items.length} floor(s) in <span className="font-medium">{site.name}</span>.
           </p>
         </div>
-        {!creating && !editing && (
+        {may.addFloor && !creating && !editing && (
           <ActionButton icon="heroicons-outline:plus" onClick={() => setCreating(true)} className="!px-3 !py-1.5 !text-xs">
             Add floor
           </ActionButton>
@@ -110,8 +117,15 @@ export default function FloorsPanel({ site }: Readonly<{ site: SitePublic }>) {
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <RowAction icon="heroicons-outline:map" title="Open floor plan editor" onClick={() => setEditorFloor(f)} />
-                  <RowAction icon="heroicons-outline:pencil-square" title="Edit" onClick={() => setEditing(f)} />
+                  {/* The editor writes the floor's plan and its zones, so it is
+                      a write however it looks. */}
+                  {may.editFloor && (
+                    <RowAction icon="heroicons-outline:map" title="Open floor plan editor" onClick={() => setEditorFloor(f)} />
+                  )}
+                  {may.editFloor && (
+                    <RowAction icon="heroicons-outline:pencil-square" title="Edit" onClick={() => setEditing(f)} />
+                  )}
+                  {may.deleteFloor && (
                   <RowAction
                     icon="heroicons-outline:trash"
                     title="Delete"
@@ -128,6 +142,7 @@ export default function FloorsPanel({ site }: Readonly<{ site: SitePublic }>) {
                       })
                     }
                   />
+                  )}
                 </div>
               </li>
             ))}

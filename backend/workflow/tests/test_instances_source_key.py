@@ -312,3 +312,27 @@ async def test_the_lookup_needs_the_read_key(app):
                          headers=auth(tenant_id=TENANT_A,
                                       permissions=["workflow.instance.create"]))
     assert r.status_code == 403
+
+
+# ── the request refuses what the column cannot hold ──────────────────────────
+
+
+async def test_a_name_longer_than_the_column_is_a_422_not_a_500(app, http_sessionmaker):
+    """`name` is String(512) and `description` String(2048). With no limit on the
+    request they reached Postgres, which is a 500 — an error that names no field
+    and reads as the server's fault for a request the API could have refused."""
+    sop = await _general_sop(http_sessionmaker, TENANT_A)
+    hdr = auth(tenant_id=TENANT_A, permissions=RAISE)
+    async with client(app) as c:
+        long_name = await c.post(URL, headers=hdr,
+                                 json=_body(sop, source_key=None, name="x" * 513))
+        long_desc = await c.post(URL, headers=hdr,
+                                 json=_body(sop, source_key=None, description="y" * 2049))
+        # The edge itself still fits: the limit is the column's, not one under it.
+        edge = await c.post(URL, headers=hdr,
+                            json=_body(sop, source_key=None,
+                                       name="x" * 512, description="y" * 2048))
+    assert long_name.status_code == 422, long_name.text
+    assert long_desc.status_code == 422, long_desc.text
+    assert edge.status_code == 201, edge.text
+    assert await _count(http_sessionmaker) == 1, "neither refusal wrote a row"

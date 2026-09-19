@@ -21,6 +21,11 @@ import type { SitePublic } from "@/lib/types";
 
 import SiteDetail from "./SiteDetail";
 
+// Every write in this header is gated on core's own key for it, so the pane
+// needs a caller. `perms` is what each test says that caller may do.
+const perms = { can: (_p: string) => true };
+vi.mock("@/lib/auth", () => ({ useAuth: () => ({ can: (p: string) => perms.can(p) }) }));
+
 // The tab bodies each fetch; this test is about which TABS exist.
 vi.mock("./SiteInfoPanel", () => ({ default: () => <div>site info body</div> }));
 vi.mock("./FloorsPanel", () => ({ default: () => <div>floors body</div> }));
@@ -103,5 +108,42 @@ describe("the tabs a site has", () => {
   it("fall back to Site info for a remembered Equipment tab too", () => {
     renderDetail("equipment");
     expect(screen.getByText("site info body")).toBeInTheDocument();
+  });
+});
+
+
+describe("a caller who may not change this building", () => {
+  // None of this is a security boundary — core refuses each write on its own key
+  // whatever the header shows. It is a promise the product cannot keep: a press
+  // that can only ever end in a 403.
+  it("is offered no edit, no deactivate and no threat picker", () => {
+    perms.can = () => false;
+    renderDetail();
+
+    expect(screen.queryByRole("button", { name: /Edit/ })).not.toBeInTheDocument();
+    expect(screen.queryByTitle("Deactivate site")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("Set threat level")).not.toBeInTheDocument();
+    // The level is still STATED. Hiding the fact along with the control would
+    // tell a reader less than the screen knows.
+    expect(screen.getByText("Normal")).toBeInTheDocument();
+    perms.can = () => true;
+  });
+
+  it("is offered no Restore on a deactivated one either", () => {
+    perms.can = (p: string) => p !== "sites.update";
+    renderDetail("info", { ...SITE, is_active: false } as never);
+
+    expect(screen.queryByRole("button", { name: /Restore/ })).not.toBeInTheDocument();
+    perms.can = () => true;
+  });
+
+  it("keeps Deactivate for a caller who holds sites.delete and not sites.update", () => {
+    // The two keys are separate on the server, so they are separate here.
+    perms.can = (p: string) => p === "sites.delete";
+    renderDetail();
+
+    expect(screen.getByTitle("Deactivate site")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Edit/ })).not.toBeInTheDocument();
+    perms.can = () => true;
   });
 });
