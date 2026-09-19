@@ -485,6 +485,61 @@ async def _candidates(
     )
 
 
+# The LAST KNOWN value per point, for the catalogue's "does this look like a
+# volt" check. Off `readings_1h`, not raw `readings`: a unit is judged on what
+# the point reads when it reads, and on this estate many points have been quiet
+# for hours — the one-hour raw lookback `/bi/points` uses would show most of them
+# blank, which is the question left unanswered. Bounded to a month so a point
+# silent since spring is not dressed up with a stale value.
+LAST_KNOWN_DAYS = 30
+
+_LAST_KNOWN_SQL = text(
+    """
+    SELECT DISTINCT ON (r.point_id)
+           r.point_id, r.bucket AS at, r.num_last AS value
+      FROM readings_1h r
+     WHERE r.point_id = ANY(CAST(:pids AS uuid[]))
+       AND (CAST(:tenant AS uuid) IS NULL OR r.tenant_id = CAST(:tenant AS uuid))
+       AND r.bucket >= now() - make_interval(days => :days)
+       AND r.num_last IS NOT NULL
+     ORDER BY r.point_id, r.bucket DESC
+    """
+)
+
+
+async def _last_known(
+    db: AsyncSession, tenant: uuid.UUID | None, point_ids: list
+) -> dict:
+    """point_id -> {value, at}. A point with no reading in the window is ABSENT,
+    never 0: "has not read anything lately" and "reads zero" are different facts,
+    and the range check below must not treat the first as the second."""
+    if not point_ids:
+        return {}
+    rows = _rows(
+        await db.execute(
+            _LAST_KNOWN_SQL,
+            {
+                "pids": [str(p) for p in point_ids],
+                "tenant": str(tenant) if tenant else None,
+                "days": LAST_KNOWN_DAYS,
+            },
+        )
+    )
+    return {r["point_id"]: {"value": r["value"], "at": r["at"]} for r in rows}
+
+
+def _point_view(row: dict, known: dict) -> dict:
+    """One eligible point as the walk shows it: which point, and what it reads."""
+    k = known.get(row["point_id"])
+    return {
+        "point_id": row["point_id"],
+        "point_tag": row.get("point_tag"),
+        "device_tag": row.get("device_tag"),
+        "value": k["value"] if k else None,
+        "at": k["at"] if k else None,
+    }
+
+
 def _classify(rows: list[dict]) -> dict[str, list[dict]]:
     """Every candidate row filed under the one pattern it matches."""
     by_key: dict[str, list[dict]] = {p.key: [] for p in PATTERNS}
@@ -495,7 +550,7 @@ def _classify(rows: list[dict]) -> dict[str, list[dict]]:
     return by_key
 
 
-def _pattern_summary(pattern: UnitPattern, rows: list[dict]) -> dict:
+def _pattern_summary(pattern: UnitPattern, rows: list[dict], known: dict | None = None) -> dict:
     """One catalogue entry, with the two numbers that decide whether it is work.
 
     `eligible` and `already_confirmed` are reported SEPARATELY and never summed.
@@ -528,6 +583,11 @@ def _pattern_summary(pattern: UnitPattern, rows: list[dict]) -> dict:
         "already_confirmed": len(confirmed),
         "sample_tags": seen,
         "categories": sorted({r["category"] for r in rows if r.get("category")}),
+        # EVERY eligible point, with what it reads — not a sample. The console
+        # checks each reading against the unit's plausible range, and a check run
+        # on three of sixty-four would let the sixty-first hide a mis-scaled
+        # meter behind a green tick.
+        "points": [_point_view(r, known or {}) for r in eligible],
     }
 
 
@@ -545,8 +605,10 @@ async def pattern_catalogue(
     """
     rows = await _candidates(db, tenant, category, site_id)
     by_key = _classify(rows)
-    items = [_pattern_summary(p, by_key[p.key]) for p in PATTERNS]
     unmatched = [r for r in rows if match_pattern(r.get("point_tag"), r.get("type")) is None]
+    open_rows = [r for r in rows if not is_confirmed(r)]
+    known = await _last_known(db, tenant, [r["point_id"] for r in open_rows])
+    items = [_pattern_summary(p, by_key[p.key], known) for p in PATTERNS]
     return {
         "patterns": items,
         "totals": {
@@ -561,6 +623,12 @@ async def pattern_catalogue(
         },
         "unmatched_sample": [
             r["point_tag"] for r in unmatched[:SAMPLE_TAGS] if r.get("point_tag")
+        ],
+        # The names no convention claims, as points: they are still one-by-one
+        # work, and the walk asks about them one by one rather than sending the
+        # operator to a second screen.
+        "unmatched_points": [
+            _point_view(r, known) for r in unmatched if not is_confirmed(r)
         ],
     }
 

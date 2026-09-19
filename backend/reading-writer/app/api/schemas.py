@@ -562,6 +562,21 @@ class UnitListResponse(BaseModel):
     items: list[UnitRow]
 
 
+class UnitPointView(BaseModel):
+    """One point still without a unit, and what it last read.
+
+    `value` is NULL when the point read nothing in the last month — never 0,
+    because "reads zero" is a claim about the sensor and "has not read lately"
+    is a claim about the data.
+    """
+
+    point_id: uuid.UUID
+    point_tag: str | None = None
+    device_tag: str | None = None
+    value: float | None = None
+    at: dt.datetime | None = None
+
+
 class UnitPatternRow(BaseModel):
     """One catalogued convention, and how much of this estate it is holding.
 
@@ -586,6 +601,11 @@ class UnitPatternRow(BaseModel):
     already_confirmed: int
     sample_tags: list[str] = Field(default_factory=list)
     categories: list[str] = Field(default_factory=list)
+    # EVERY eligible point with its last reading. Declared here, not only
+    # returned by the service: a field the response model does not name is
+    # dropped on the way out, and the Units screen then had no readings, built
+    # no questions and told an operator every number had a unit.
+    points: list[UnitPointView] = Field(default_factory=list)
 
 
 class UnitPatternTotals(BaseModel):
@@ -603,6 +623,7 @@ class UnitPatternsResponse(BaseModel):
     patterns: list[UnitPatternRow]
     totals: UnitPatternTotals
     unmatched_sample: list[str] = Field(default_factory=list)
+    unmatched_points: list[UnitPointView] = Field(default_factory=list)
 
 
 class ConfirmUnitsRequest(BaseModel):

@@ -256,6 +256,7 @@ class _Result:
 # so a renamed query fails loudly here rather than quietly answering with the
 # wrong table's rows.
 FRAGMENTS = {
+    "last_known": "FROM readings_1h r",
     "confirm": "UPDATE points p",
     "candidates": "AND p.type = 'num'",
     "visible": "SELECT p.point_id, p.point_tag, p.device_tag, p.category, p.unit, p.unit_source",
@@ -290,8 +291,10 @@ class FakeDb:
     what the scope tests assert against.
     """
 
-    def __init__(self, rows):
+    def __init__(self, rows, values=None):
         self.rows = rows
+        self.values = values or {}
+        self.asked_values: list[list[str]] = []
         self.updates: list[dict] = []
         self.committed = 0
 
@@ -306,6 +309,18 @@ class FakeDb:
         for name, frag in FRAGMENTS.items():
             if " ".join(frag.split()) not in sql:
                 continue
+            if name == "last_known":
+                # A reading per point only where a test put one — `self.values`
+                # maps point_id -> value. Absent means nothing read lately.
+                self.asked_values.append(sorted(str(p) for p in params["pids"]))
+                want = {str(p) for p in params["pids"]}
+                return _Result(
+                    [
+                        {"point_id": pid, "value": v, "at": dt.datetime(2026, 9, 20, tzinfo=UTC)}
+                        for pid, v in self.values.items()
+                        if str(pid) in want
+                    ]
+                )
             if name == "candidates":
                 rows = [r for r in self._scoped(sql, params) if r["type"] == "num"]
                 if "p.category = :category" in sql:
@@ -406,6 +421,39 @@ def test_the_catalogue_counts_eligible_and_already_confirmed_apart():
     # And the tag nobody can read is counted as unmatched, not as done.
     assert out["totals"]["unmatched"] == 1
     assert out["unmatched_sample"] == ["Point1"]
+
+
+def test_the_catalogue_carries_every_eligible_point_with_what_it_reads():
+    """The console checks EVERY reading against the unit's plausible range, and
+    a check run on a sample would let the sixty-first meter hide behind a green
+    tick. So every eligible point comes back, each with its last known value —
+    and a point that read nothing lately comes back with NONE, never 0."""
+    live, quiet = point("1FYC1_IWT"), point("1FYC1_OWT")
+    done = point("4FKC2_IWT", unit="degC", unit_source="operator")
+    db = FakeDb([live, quiet, done], values={live["point_id"]: 6.8})
+    out = run(un.pattern_catalogue(db, T1))
+    water = {p["key"]: p for p in out["patterns"]}["chilled_water_temp"]
+    got = {p["point_tag"]: p["value"] for p in water["points"]}
+    assert got == {"1FYC1_IWT": 6.8, "1FYC1_OWT": None}
+    # A confirmed point is not work, is not listed, and is not even read for.
+    assert str(done["point_id"]) not in db.asked_values[0]
+
+
+def test_names_no_convention_claims_come_back_as_points_to_ask_about():
+    odd = point("Point1")
+    db = FakeDb([odd, point("Load", unit="kW", unit_source="operator")], values={odd["point_id"]: 3.2})
+    out = run(un.pattern_catalogue(db, T1))
+    assert [(p["point_tag"], p["value"]) for p in out["unmatched_points"]] == [("Point1", 3.2)]
+
+
+def test_the_values_are_read_off_the_hourly_aggregate_within_a_month():
+    """Raw `readings` is compressed; the one-hour lookback `/bi/points` uses
+    would leave most of this estate's quiet points blank, which is the question
+    left unanswered."""
+    sql = " ".join(str(un._LAST_KNOWN_SQL).split())
+    assert "FROM readings_1h r" in sql
+    assert "make_interval(days => :days)" in sql
+    assert un.LAST_KNOWN_DAYS == 30
 
 
 def test_the_catalogue_writes_nothing():
@@ -704,3 +752,30 @@ def test_a_building_confirm_writes_only_what_that_building_previewed(wired):
     assert r.json()["updated"] == 1
     written = {row["point_tag"] for row in db.rows if row["unit_source"] == "operator"}
     assert written == {"1FYC1_IWT"}
+
+
+def test_the_route_does_not_drop_the_readings_on_the_way_out():
+    """The service returned every point with its reading and the route's
+    response model, which did not name them, dropped them. The Units screen got
+    no readings, built no questions, and told an operator who had pressed
+    nothing that every number had a unit. This asserts at the RESPONSE MODEL,
+    which is where they were lost."""
+    import app.api.schemas as S
+
+    pid = uuid.uuid4()
+    row = {
+        "key": "voltage_v", "label": "Voltage", "kind": "unit", "unit": "V",
+        "proposes_unit": True, "basis": "b", "matched": 1, "eligible": 1,
+        "already_confirmed": 0, "sample_tags": [], "categories": [],
+        "points": [{"point_id": pid, "point_tag": "VoltL1_V", "device_tag": "D",
+                    "value": 231.4, "at": None}],
+    }
+    out = S.UnitPatternsResponse(
+        patterns=[row],
+        totals={"points": 1, "matched": 1, "unmatched": 1, "eligible": 1, "already_confirmed": 0},
+        unmatched_points=[{"point_id": pid, "point_tag": "Load", "device_tag": "D", "value": None}],
+    ).model_dump()
+    assert out["patterns"][0]["points"][0]["value"] == 231.4
+    assert out["unmatched_points"][0]["point_tag"] == "Load"
+    # A point that read nothing stays NONE through the model — never 0.
+    assert out["unmatched_points"][0]["value"] is None
