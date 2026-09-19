@@ -109,6 +109,68 @@ class InfrastructureService:
             raise NotFoundError("Equipment not found")
         return row
 
+    #: A chain deeper than this is not a building's power distribution; it is a
+    #: loop that the walk below would otherwise follow for ever.
+    FEED_DEPTH_MAX = 32
+
+    async def _check_feed(self, site_id: str, equipment_id: str | None, fed_by_id: str) -> None:
+        """Refuse a parent that would make the power chain a lie.
+
+        The parent must be equipment on THIS site (another site's incomer does
+        not feed this building's board, and another tenant's is not even
+        visible), must not be the equipment itself, and must not sit BELOW it —
+        A fed by B fed by A is a loop no single-line can draw.
+        """
+        if equipment_id is not None and fed_by_id == equipment_id:
+            raise ValidationError("A piece of equipment cannot feed itself")
+        parent = await self.db.get(SiteEquipment, fed_by_id)
+        if parent is None or parent.site_id != site_id or (
+            self.scope.tenant_id is not None and parent.tenant_id != self.scope.tenant_id
+        ):
+            raise ValidationError("The equipment named as its feed is not on this site")
+        if equipment_id is None:
+            return  # a new row has no children yet, so it cannot close a loop
+        seen: set[str] = set()
+        cur: SiteEquipment | None = parent
+        for _ in range(self.FEED_DEPTH_MAX):
+            if cur is None or cur.fed_by_id is None:
+                return
+            if cur.fed_by_id == equipment_id:
+                raise ValidationError(
+                    f"{parent.tag} is already fed, further up, by this equipment — "
+                    "that would make a loop"
+                )
+            if cur.fed_by_id in seen:
+                return  # an existing loop elsewhere is not this write's to report
+            seen.add(cur.fed_by_id)
+            cur = await self.db.get(SiteEquipment, cur.fed_by_id)
+        raise ValidationError("The feed chain above this equipment is too deep to follow")
+
+    async def _unhook_children(self, parent_ids: list[str]) -> list[SiteEquipment]:
+        """Clear `fed_by_id` on everything fed by these, and return what changed.
+
+        The foreign key would SET NULL on its own, but silently: no event, so the
+        reporting mirror would keep boards pointing at a feeder that no longer
+        exists and the single-line would draw a ghost. Clearing it HERE, in the
+        same transaction, lets the caller publish each board it unhooked.
+        Equipment that is itself being deleted is left out — it is published as
+        deleted, not as unhooked.
+        """
+        if not parent_ids:
+            return []
+        rows = (
+            await self.db.execute(
+                select(SiteEquipment).where(
+                    SiteEquipment.fed_by_id.in_(parent_ids),
+                    SiteEquipment.equipment_id.not_in(parent_ids),
+                )
+            )
+        ).scalars().all()
+        for r in rows:
+            r.fed_by_id = None
+            r.updated_at = _utcnow()
+        return list(rows)
+
     async def _slots(self, equipment_id: str) -> list[EquipmentPointSlot]:
         return list(
             (
@@ -131,6 +193,7 @@ class InfrastructureService:
             tag=row.tag,
             name=row.name,
             equipment_class=row.equipment_class,
+            fed_by_id=row.fed_by_id,
             design=design,
             design_units=vocab.units_of(design),
             slots=[SlotPublic.from_row(s) for s in await self._slots(row.equipment_id)],
@@ -297,6 +360,7 @@ class InfrastructureService:
         ).scalars().all()
         gone = [(e.equipment_id, e.tag) for e in doomed]
         ids = [e for e, _ in gone]
+        orphans = await self._unhook_children(ids)
         if ids:
             await self.db.execute(
                 sa_delete(EquipmentPointSlot).where(EquipmentPointSlot.equipment_id.in_(ids))
@@ -307,6 +371,10 @@ class InfrastructureService:
         tenant_id, name, kind = row.tenant_id, row.name, row.kind
         await self.db.execute(sa_delete(SiteSystem).where(SiteSystem.system_id == system_id))
         await self._commit()
+        # Boards in OTHER systems that hung off something in this one.
+        for child in orphans:
+            await self.db.refresh(child)
+            await self._emit_equipment(actor, "updated", child)
         for equipment_id, tag in gone:
             await emit(
                 tenant_id,
@@ -340,6 +408,8 @@ class InfrastructureService:
         except ValueError as exc:
             raise ValidationError(str(exc)) from exc
         await self._require_free_tag(site_id, body.tag)
+        if body.fed_by_id:
+            await self._check_feed(site_id, None, body.fed_by_id)
 
         who = _actor_id(actor)
         row = SiteEquipment(
@@ -349,6 +419,7 @@ class InfrastructureService:
             tag=body.tag,
             name=body.name,
             equipment_class=body.equipment_class,
+            fed_by_id=body.fed_by_id or None,
             design=body.design,
             created_by=who,
             updated_by=who,
@@ -381,6 +452,13 @@ class InfrastructureService:
         await self.site(site_id, for_write=True)
         row = await self._equipment(site_id, equipment_id)
         update = body.model_dump(exclude_none=True)
+        # `fed_by_id: null` is an instruction ("unhook it"), so it is read from the
+        # fields that were SENT, not from the ones that happen to be non-null.
+        update.pop("fed_by_id", None)
+        if "fed_by_id" in body.model_fields_set:
+            if body.fed_by_id:
+                await self._check_feed(site_id, equipment_id, body.fed_by_id)
+            update["fed_by_id"] = body.fed_by_id or None
         if "tag" in update:
             await self._require_free_tag(site_id, update["tag"], but=equipment_id)
         allow: frozenset[str] = frozenset()
@@ -488,6 +566,7 @@ class InfrastructureService:
         await self.site(site_id, for_write=True)
         row = await self._equipment(site_id, equipment_id)
         tenant_id, system_id, tag = row.tenant_id, row.system_id, row.tag
+        orphans = await self._unhook_children([equipment_id])
         await self.db.execute(
             sa_delete(EquipmentPointSlot).where(EquipmentPointSlot.equipment_id == equipment_id)
         )
@@ -495,6 +574,11 @@ class InfrastructureService:
             sa_delete(SiteEquipment).where(SiteEquipment.equipment_id == equipment_id)
         )
         await self._commit()
+        # Its children first, so a mirror never holds a board fed by a feeder it
+        # has already been told is gone.
+        for child in orphans:
+            await self.db.refresh(child)
+            await self._emit_equipment(actor, "updated", child)
         await emit(
             tenant_id,
             "equipment",
@@ -600,6 +684,7 @@ class InfrastructureService:
             "tag": row.tag,
             "name": row.name,
             "equipment_class": row.equipment_class,
+            "fed_by_id": row.fed_by_id,
             "design": design,
             "design_units": vocab.units_of(design),
             "slots": [

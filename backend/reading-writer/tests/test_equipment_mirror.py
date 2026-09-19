@@ -395,3 +395,20 @@ def test_only_the_system_subject_carries_a_reconcile():
     equipment-subject reconcile would be a second one nobody publishes."""
     r = _apply("equipment", "reconciled", _reconcile())
     assert r.reconciled == [] and r.stats.skipped_other_event == 1
+
+
+# ── what feeds it ────────────────────────────────────────────────────────────
+
+
+def test_the_feeder_travels_with_the_equipment():
+    """The power chain's edges. Core states the parent on every equipment event,
+    so the mirror stores it — and the plant draws a single-line from it."""
+    parent = "55555555-6666-7777-8888-999999999999"
+    r = _apply("equipment", "updated", _equipment(fed_by_id=parent))
+    assert str(r.equipment[0]["values"]["fed_by_id"]) == parent
+
+
+@pytest.mark.parametrize("raw", [None, "", "not-a-uuid"])
+def test_a_missing_or_damaged_feeder_is_an_unhooked_board_never_a_guess(raw):
+    r = _apply("equipment", "updated", _equipment(fed_by_id=raw))
+    assert r.equipment[0]["values"]["fed_by_id"] is None

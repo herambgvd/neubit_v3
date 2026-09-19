@@ -753,6 +753,8 @@ export interface BiPlantEquipment {
   name: string | null;
   equipment_class: string;
   system_id: string;
+  /** Its feeder — the power chain's edges, drawn as a single-line. */
+  fed_by_id?: string | null;
   design: Record<string, InfraDesignValue | null>;
   design_units: Record<string, string>;
   readiness: BiReadiness;
@@ -857,6 +859,8 @@ export interface EquipmentPublic {
   tag: string;
   name: string | null;
   equipment_class: string;
+  /** The equipment upstream of this one on the same site — its feeder. */
+  fed_by_id?: string | null;
   design: Record<string, InfraDesignValue>;
   design_units: Record<string, string>;
   slots: SlotPublic[];
@@ -907,6 +911,7 @@ export interface CreateEquipmentRequest {
   name?: string | null;
   design?: Record<string, InfraDesignValue | null>;
   slots?: SlotInput[];
+  fed_by_id?: string | null;
 }
 
 /** `UpdateEquipmentRequest` — class is absent on purpose (a 422 if sent). */
@@ -914,6 +919,8 @@ export interface UpdateEquipmentRequest {
   tag?: string | null;
   name?: string | null;
   system_id?: string | null;
+  /** Sent as null CLEARS the feeder; left out leaves it. */
+  fed_by_id?: string | null;
 }
 
 /** `DesignUpdate` — the WHOLE set, replaced. A key left out is cleared. */

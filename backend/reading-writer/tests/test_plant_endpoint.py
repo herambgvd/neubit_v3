@@ -291,3 +291,17 @@ async def test_another_tenants_site_is_a_404_like_no_site_at_all(app, wired):
         resp = await c.get(f"{PREFIX}/bi/sites/{SITE}/plant",
                            headers=auth(tenant_id=uuid.uuid4(), permissions=["bi.read"]))
     assert resp.status_code == 404
+
+
+# ── the power chain's edges ──────────────────────────────────────────────────
+
+
+def test_each_equipment_carries_what_feeds_it(metrics):
+    """The single-line is drawn from this: a board names its feeder, and a
+    feeder with none says so as null rather than being left out."""
+    fed = {**_eq(CH2, "CH-02"), "fed_by_id": CH1}
+    body = _plant(FakeDb(**_estate(equipment=[_eq(CH1, "CH-01"), fed])))
+    first, _ = _slots(body, "CH-01")
+    second, _ = _slots(body, "CH-02")
+    assert first["fed_by_id"] is None
+    assert second["fed_by_id"] == str(CH1)

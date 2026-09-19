@@ -558,6 +558,11 @@ class MirroredEquipment(Base):
     tag: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     equipment_class: Mapped[str] = mapped_column(String(32), nullable=False)
+    # The equipment upstream of this one, as core stated it (core migration
+    # 0033). No foreign key, for `system_id`'s reason: the parent's event can
+    # arrive after the child's, and a mirror that refused the child for it would
+    # lose the child. The plant view draws the power chain from this column.
+    fed_by_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     design: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )

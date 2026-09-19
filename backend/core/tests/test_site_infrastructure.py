@@ -1034,3 +1034,155 @@ async def test_another_tenants_site_cannot_be_republished(app, db):
     async with api_client(app) as c:
         r = await c.post(f"{_base()}/republish", headers=bearer(intruder))
     assert r.status_code == 404, r.text
+
+
+# ── the power chain: what feeds what ─────────────────────────────────────────
+
+
+async def _meter(c, user, system_id, tag, site_id="site-1", **extra):
+    body = {"system_id": system_id, "tag": tag, "equipment_class": "energy_meter", **extra}
+    r = await c.post(f"{_base(site_id)}/equipment", json=body, headers=bearer(user))
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+async def test_a_board_is_hung_under_the_feeder_that_feeds_it(app, db, monkeypatch):
+    """A flat list of meters was the only thing the registry could say. A board
+    now names its feeder, the snapshot carries it, and the plant can draw a
+    single-line from it."""
+    seen = _capture(monkeypatch)
+    t = await _tenant(db, "feed-basic")
+    await _site(db, t)
+    user = await _operator(db, t, "feed@x.io")
+    async with api_client(app) as c:
+        power = await _system(c, user, name="LT panel", kind="power")
+        main = await _meter(c, user, power, "B2-MAIN")
+        board = await _meter(c, user, power, "4F-3F-LDB", fed_by_id=main["equipment_id"])
+
+    assert board["fed_by_id"] == main["equipment_id"]
+    created = [p for e, ev, p in seen if e == "equipment" and ev == "created"]
+    assert created[-1]["fed_by_id"] == main["equipment_id"]
+    assert created[0]["fed_by_id"] is None
+
+
+async def test_the_feed_is_changed_and_cleared_only_when_it_is_sent(app, db):
+    t = await _tenant(db, "feed-clear")
+    await _site(db, t)
+    user = await _operator(db, t, "clear@x.io")
+    async with api_client(app) as c:
+        power = await _system(c, user, name="LT panel", kind="power")
+        a = await _meter(c, user, power, "INC-1")
+        b = await _meter(c, user, power, "INC-2")
+        board = await _meter(c, user, power, "DB-1", fed_by_id=a["equipment_id"])
+        url = f"{_base()}/equipment/{board['equipment_id']}"
+
+        moved = await c.patch(url, json={"fed_by_id": b["equipment_id"]}, headers=bearer(user))
+        # A rename says nothing about the feed, so it must not move it.
+        renamed = await c.patch(url, json={"name": "Light DB"}, headers=bearer(user))
+        cleared = await c.patch(url, json={"fed_by_id": None}, headers=bearer(user))
+
+    assert moved.json()["fed_by_id"] == b["equipment_id"]
+    assert renamed.json()["fed_by_id"] == b["equipment_id"]
+    assert cleared.json()["fed_by_id"] is None
+
+
+@pytest.mark.parametrize("case", ["self", "loop"])
+async def test_a_chain_that_cannot_exist_is_refused(app, db, case):
+    """A board cannot feed itself, and A fed by B fed by A is a loop no
+    single-line can draw."""
+    t = await _tenant(db, f"feed-{case}")
+    await _site(db, t)
+    user = await _operator(db, t, f"{case}@x.io")
+    async with api_client(app) as c:
+        power = await _system(c, user, name="LT panel", kind="power")
+        top = await _meter(c, user, power, "TOP")
+        mid = await _meter(c, user, power, "MID", fed_by_id=top["equipment_id"])
+        bottom = await _meter(c, user, power, "BOTTOM", fed_by_id=mid["equipment_id"])
+        target, parent = (
+            (top, top) if case == "self" else (top, bottom)
+        )
+        r = await c.patch(f"{_base()}/equipment/{target['equipment_id']}",
+                          json={"fed_by_id": parent["equipment_id"]}, headers=bearer(user))
+    assert r.status_code == 422, r.text
+    assert ("itself" if case == "self" else "loop") in r.text
+
+
+async def test_a_feeder_on_another_site_is_refused(app, db):
+    """Another building's incomer does not feed this building's board."""
+    t = await _tenant(db, "feed-site")
+    await _site(db, t, "site-1")
+    await _site(db, t, "site-2")
+    user = await _operator(db, t, "site@x.io")
+    async with api_client(app) as c:
+        p1 = await _system(c, user, name="LT 1", kind="power", site_id="site-1")
+        p2 = await _system(c, user, name="LT 2", kind="power", site_id="site-2")
+        there = await _meter(c, user, p2, "OTHER-MAIN", site_id="site-2")
+        r = await c.post(f"{_base('site-1')}/equipment",
+                         json={"system_id": p1, "tag": "DB", "equipment_class": "energy_meter",
+                               "fed_by_id": there["equipment_id"]},
+                         headers=bearer(user))
+    assert r.status_code == 422, r.text
+    assert "not on this site" in r.text
+
+
+async def test_the_new_types_have_a_home(app, db):
+    """A UPS and a water flow meter were found on the live estate with no class
+    to go into — so the plant could not draw them and no metric could name
+    them."""
+    t = await _tenant(db, "feed-types")
+    await _site(db, t)
+    user = await _operator(db, t, "types@x.io")
+    async with api_client(app) as c:
+        power = await _system(c, user, name="LT panel", kind="power")
+        water = await _system(c, user, name="Water", kind="water")
+        ups = await c.post(f"{_base()}/equipment", headers=bearer(user), json={
+            "system_id": power, "tag": "UPS-1", "equipment_class": "ups",
+            "slots": [{"slot": "battery", "device_tag": "4F_UPS01", "point_tag": "Batt_Cap_Rem"}]})
+        flow = await c.post(f"{_base()}/equipment", headers=bearer(user), json={
+            "system_id": water, "tag": "FM-1", "equipment_class": "flow_meter",
+            "slots": [{"slot": "flow_total", "device_tag": "B1_Water_Flow Meter", "point_tag": "Cum_Flow"}]})
+        wrong = await c.post(f"{_base()}/equipment", headers=bearer(user), json={
+            "system_id": water, "tag": "UPS-X", "equipment_class": "ups"})
+    assert ups.status_code == 201, ups.text
+    assert flow.status_code == 201, flow.text
+    # A UPS belongs to the power chain, not to the water system.
+    assert wrong.status_code == 422
+
+
+async def test_deleting_a_feeder_unhooks_its_boards_and_says_so(app, db, monkeypatch):
+    """The foreign key would clear the column silently, and the reporting mirror
+    would go on drawing boards under a feeder that no longer exists. So each
+    board is unhooked in the same transaction and published — BEFORE the
+    feeder's own deletion."""
+    t = await _tenant(db, "feed-del")
+    await _site(db, t)
+    user = await _operator(db, t, "del@x.io")
+    async with api_client(app) as c:
+        power = await _system(c, user, name="LT panel", kind="power")
+        sub = await _meter(c, user, power, "SUB-1")
+        db1 = await _meter(c, user, power, "DB-1", fed_by_id=sub["equipment_id"])
+        seen = _capture(monkeypatch)
+        r = await c.delete(f"{_base()}/equipment/{sub['equipment_id']}", headers=bearer(user))
+        after = await c.get(f"{_base()}/equipment/{db1['equipment_id']}", headers=bearer(user))
+
+    assert r.status_code == 204
+    assert after.json()["fed_by_id"] is None
+    assert [(e, ev) for e, ev, _ in seen] == [("equipment", "updated"), ("equipment", "deleted")]
+    assert seen[0][2]["equipment_id"] == db1["equipment_id"] and seen[0][2]["fed_by_id"] is None
+
+
+async def test_deleting_a_system_unhooks_boards_hung_from_it_elsewhere(app, db, monkeypatch):
+    t = await _tenant(db, "feed-delsys")
+    await _site(db, t)
+    user = await _operator(db, t, "delsys@x.io")
+    async with api_client(app) as c:
+        mains = await _system(c, user, name="Mains", kind="power")
+        floor = await _system(c, user, name="4F", kind="power")
+        inc = await _meter(c, user, mains, "INC")
+        board = await _meter(c, user, floor, "DB", fed_by_id=inc["equipment_id"])
+        seen = _capture(monkeypatch)
+        await c.delete(f"{_base()}/systems/{mains}", headers=bearer(user))
+        after = await c.get(f"{_base()}/equipment/{board['equipment_id']}", headers=bearer(user))
+
+    assert after.json()["fed_by_id"] is None
+    assert ("equipment", "updated") in [(e, ev) for e, ev, _ in seen]

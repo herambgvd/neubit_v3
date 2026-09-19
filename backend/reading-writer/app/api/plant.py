@@ -225,6 +225,8 @@ async def plant(
             "name": e.get("name"),
             "equipment_class": e["equipment_class"],
             "system_id": str(e["system_id"]),
+            # What feeds it — the power chain's edges, drawn as a single-line.
+            "fed_by_id": str(e["fed_by_id"]) if e.get("fed_by_id") else None,
             "design": e["design"],
             "design_units": e["design_units"],
             "readiness": slot_store.rollup(states),

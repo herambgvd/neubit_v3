@@ -439,6 +439,9 @@ class EquipmentSync:
             {"tenant_id": tenant, "equipment_id": equipment_id, "site_id": site_id,
              "system_id": system_id, "tag": tag, "name": _text(payload.get("name"), 100),
              "equipment_class": cls, "design": design, "design_units": units,
+             # What feeds it, as core stated it. A malformed id is NULL — an
+             # unhooked board — never a guess at which one was meant.
+             "fed_by_id": _uuid(payload.get("fed_by_id")),
              "source": _text(payload.get("source"), 32)},
             slots,
             system,

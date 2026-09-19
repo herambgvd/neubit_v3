@@ -118,6 +118,8 @@ class CreateEquipmentRequest(BaseModel):
     name: Optional[str] = None
     design: dict[str, Any] = Field(default_factory=dict)
     slots: list[SlotInput] = Field(default_factory=list)
+    # The equipment upstream of this one — see `SiteEquipment.fed_by_id`.
+    fed_by_id: Optional[str] = None
 
     @field_validator("tag")
     @classmethod
@@ -160,6 +162,10 @@ class UpdateEquipmentRequest(BaseModel):
     tag: Optional[str] = None
     name: Optional[str] = None
     system_id: Optional[str] = None
+    # SENT AS null CLEARS IT; LEFT OUT LEAVES IT. The service reads
+    # `model_fields_set` to tell the two apart — dropping None values, as every
+    # other field here does, would make "unhook this board" impossible to say.
+    fed_by_id: Optional[str] = None
 
     @field_validator("tag")
     @classmethod
@@ -206,6 +212,7 @@ class EquipmentPublic(BaseModel):
     tag: str
     name: Optional[str] = None
     equipment_class: str
+    fed_by_id: Optional[str] = None
     design: dict[str, Any]
     design_units: dict[str, str]
     slots: list[SlotPublic]

@@ -117,6 +117,24 @@ class SiteEquipment(Base):
     name: Mapped[str | None] = mapped_column(String(100))
     equipment_class: Mapped[str] = mapped_column(String(32), nullable=False)
 
+    # WHAT FEEDS IT — the one piece of equipment upstream of this one on the
+    # same site: the sub-incomer a distribution board hangs off, the incomer a
+    # sub-incomer hangs off. It is what turns a list of meters into a power
+    # chain a person can read, and what lets the plant view draw a single-line.
+    #
+    # ONE parent, not many: a board is fed from one breaker. Where a thing
+    # genuinely has several upstream sources (chillers into a header) the
+    # relation is the SYSTEM, not this column. Nothing here is inferred: a name
+    # like "4F-3F Light DB" can SUGGEST its sub-incomer, and a person says so.
+    # SET NULL on delete — a parent that is removed leaves its children
+    # unattached rather than taking them with it.
+    fed_by_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("site_equipment.equipment_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Nameplate facts, validated against vocabulary.DESIGN_FACTS before insert.
     # NOT NULL with `{}` for "nothing recorded" — one spelling of "no facts" where
     # a nullable column would offer three (SQL NULL, JSON null, `{}`).

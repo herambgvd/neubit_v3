@@ -150,6 +150,11 @@ SLOT_DEFS: dict[str, dict] = {
     "room_temp": {"dimension": "temperature", "label": "Room temperature"},
     "room_temp_setpoint": {"dimension": "temperature", "label": "Room temperature setpoint"},
     "fuel_level": {"dimension": "dimensionless", "label": "Fuel level"},
+    "battery": {"dimension": "dimensionless", "label": "Battery charge remaining"},
+    # A volumetric RATE has no dimension in `units.py` yet, so it is drawn and
+    # resolved but no definition may compose it — the same standing as a state.
+    "flow_rate": {"dimension": None, "label": "Flow rate"},
+    "flow_total": {"dimension": "volume", "label": "Cumulative flow"},
 }
 
 #: Core's equipment classes, by name only — which slots and facts each may carry
@@ -157,7 +162,7 @@ SLOT_DEFS: dict[str, dict] = {
 EQUIPMENT_CLASSES: tuple[str, ...] = (
     "chiller", "cooling_tower", "chw_primary_pump", "chw_secondary_pump",
     "condenser_pump", "chw_header", "ahu", "tfa", "fcu", "energy_meter", "dg_set",
-    "pv_inverter", "water_pump",
+    "pv_inverter", "water_pump", "ups", "flow_meter",
 )
 
 #: Numeric design facts, each as the QUANTITY it is. The unit is the one core
@@ -193,7 +198,7 @@ def fact_value(design: dict, fact: str) -> float | None:
 
 _EQUIPMENT_SQL = """
     SELECT e.tenant_id, e.equipment_id, e.site_id, e.system_id, e.tag, e.name,
-           e.equipment_class, e.design, e.design_units
+           e.equipment_class, e.design, e.design_units, e.fed_by_id
       FROM site_equipment e
      WHERE (CAST(:tenant AS uuid) IS NULL OR e.tenant_id = CAST(:tenant AS uuid))
        AND (CAST(:site AS uuid) IS NULL OR e.site_id = CAST(:site AS uuid))

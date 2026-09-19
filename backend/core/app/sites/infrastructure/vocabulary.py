@@ -95,6 +95,13 @@ SLOTS: dict[str, dict[str, Any]] = {
     "room_temp_setpoint": {"dimension": "temperature", "label": "Room temperature setpoint",
                            "role": None},
     "fuel_level": {"dimension": "percent", "label": "Fuel level", "role": None},
+    # A UPS's battery, as the charge it has left. A percentage, like load.
+    "battery": {"dimension": "percent", "label": "Battery charge remaining", "role": None},
+    # Water. A RATE and a RUNNING TOTAL are different quantities and a meter
+    # usually sends both; neither is inferable from the other without the
+    # meter's own interval, so each has its own slot.
+    "flow_rate": {"dimension": "flow", "label": "Flow rate", "role": None},
+    "flow_total": {"dimension": "volume", "label": "Cumulative flow", "role": None},
 }
 
 # ── design facts ─────────────────────────────────────────────────────────────
@@ -207,6 +214,21 @@ EQUIPMENT_CLASSES: dict[str, dict[str, Any]] = {
         "system_kinds": ("water",),
         "slots": _PUMP_SLOTS,
         "facts": _PUMP_FACTS,
+    },
+    # Found on the live estate with nowhere to go: two UPS units in the power
+    # chain and a water flow meter. Without a class each was a device the plant
+    # could not draw and no metric could name.
+    "ups": {
+        "label": "UPS",
+        "system_kinds": ("power",),
+        "slots": ("run_status", "trip", "kw", "load", "battery"),
+        "facts": ("make", "model", "kva_rated"),
+    },
+    "flow_meter": {
+        "label": "Water flow meter",
+        "system_kinds": ("water",),
+        "slots": ("flow_rate", "flow_total"),
+        "facts": ("make", "model"),
     },
 }
 
