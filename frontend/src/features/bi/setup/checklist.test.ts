@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import type { BiSiteFactsRow, EquipmentPublic, InfrastructureTree } from "@/lib/types";
 
-import { deriveChecklist, type ChecklistInput } from "./checklist";
+import { deriveChecklist, openStep, type ChecklistInput, type ChecklistRow } from "./checklist";
 
 const T = "2026-09-01T00:00:00Z";
 const building = (over: Partial<BiSiteFactsRow> = {}): BiSiteFactsRow => ({
@@ -209,5 +209,100 @@ describe("building facts", () => {
     expect(rowOf({ buildings: [building()], slabs: { s1: 0 }, factors: { s1: 0 } }, "facts").stateLabel).toBe(
       "not started",
     );
+  });
+});
+
+
+// ── the step the screen opens ────────────────────────────────────────────────
+
+const rows = (...states: ChecklistRow["state"][]): ChecklistRow[] =>
+  states.map((state) => ({ state }) as ChecklistRow);
+
+describe("which step is open", () => {
+  it("is the first one that is not done", () => {
+    expect(openStep(rows("done", "done", "partly", "todo"))).toBe(2);
+    expect(openStep(rows("todo", "done"))).toBe(0);
+  });
+
+  it("stops on a gate it could not read, rather than skipping past it", () => {
+    // A failed read cannot say the gate is fine, and opening gate 3 would say
+    // exactly that about gate 2 — on top of the order being the point: units
+    // confirmed on gate 1's ghosts is work thrown away.
+    expect(openStep(rows("done", "unknown", "todo"))).toBe(1);
+  });
+
+  it("opens nothing at all when every gate is answered", () => {
+    expect(openStep(rows("done", "done", "done"))).toBe(-1);
+  });
+});
+
+// ── how far along, where the read can measure both ends ──────────────────────
+
+describe("progress", () => {
+  it("measures units against every point, not against what is left", () => {
+    const [, units] = deriveChecklist({ patterns: { totals: { points: 283, already_confirmed: 190 } } });
+    expect(units.progress).toEqual({ done: 190, total: 283 });
+  });
+
+  it("measures placement against placed plus unplaced", () => {
+    const [, , place] = deriveChecklist({ placed: { total: 11 }, unplaced: { total: 38 } });
+    expect(place.progress).toEqual({ done: 11, total: 49 });
+  });
+
+  it("measures roles against every assertion, stranded ones included", () => {
+    const list = deriveChecklist({ roles: { counts: { confirmed: 19 } }, orphans: { orphans: [1, 2] } });
+    expect(list[4].progress).toEqual({ done: 19, total: 21 });
+  });
+
+  it("claims no progress on duplicates, because a settled pair leaves the list", () => {
+    // There is no denominator to measure against: 45 of WHAT is unknowable, and
+    // inventing one would put a bar on the screen that means nothing.
+    const [dup] = deriveChecklist({ ghosts: { total: 45, auto: 1, manual: 44 } });
+    expect(dup.progress).toBeUndefined();
+  });
+
+  it("claims no progress from a read that did not answer", () => {
+    const [, units] = deriveChecklist({ patterns: { totals: { points: 283 } } });
+    expect(units.progress).toBeUndefined();
+    const [, , place] = deriveChecklist({ unplaced: { total: 38 } });
+    expect(place.progress).toBeUndefined();
+  });
+});
+
+// ── what a green tick does not mean ──────────────────────────────────────────
+
+describe("the Equipment caveat", () => {
+  const tree = (equipment: EquipmentPublic[]): InfrastructureTree => ({
+    site_id: "s1",
+    systems: [{
+      system_id: "sys1", site_id: "s1", name: "Plant A", kind: "chw_plant",
+      description: null, equipment, created_at: T, updated_at: T,
+    }],
+  });
+  const bound = [{ slot: "chws", device_tag: "d", point_tag: "p", bound: true }];
+
+  it("says a registry with no chiller in it has nothing to grade", () => {
+    // `done` means every slot on every REGISTERED machine is bound. It is not
+    // a claim that the plant has been described.
+    const [, , , eqRow] = deriveChecklist({
+      buildings: [building()],
+      trees: { s1: tree([eq({ equipment_class: "ahu", slots: bound })]) },
+    });
+    expect(eqRow.state).toBe("done");
+    expect(eqRow.note).toMatch(/no chiller is registered/);
+  });
+
+  it("says nothing of the sort once a chiller is registered", () => {
+    const [, , , eqRow] = deriveChecklist({
+      buildings: [building()],
+      trees: { s1: tree([eq({ design: { design_dt_min: 4.5, design_dt_max: 6 }, slots: bound })]) },
+    });
+    expect(eqRow.note).toBeUndefined();
+  });
+
+  it("says nothing of the sort when no machine is registered at all — the count already does", () => {
+    const [, , , eqRow] = deriveChecklist({ buildings: [building()], trees: { s1: tree([]) } });
+    expect(eqRow.state).toBe("todo");
+    expect(eqRow.note).toBeUndefined();
   });
 });

@@ -39,6 +39,14 @@ export interface ChecklistRow {
   href: string;
   /** The longer reason, for a `title`. */
   why?: string;
+  /** How much of this task is done, when BOTH numbers were read and the
+   *  denominator is real. Absent where it would be invented — a settled
+   *  duplicate LEAVES the worklist, so nothing can say how many there were. */
+  progress?: { done: number; total: number };
+  /** A fact that qualifies the state. `done` on Equipment means every slot on
+   *  every registered machine is bound; it does not mean the plant is
+   *  described, and a registry with no chiller in it has to say so. */
+  note?: string;
 }
 
 export interface ChecklistInput {
@@ -110,8 +118,11 @@ function units({ patterns }: ChecklistInput): ChecklistRow {
     return row("units", "unknown", "—", { why: "The unit catalogue has not answered." });
   }
   const left = Math.max(0, points - confirmed);
-  if (!left) return row("units", "done", `${confirmed} confirmed`);
-  return row("units", confirmed ? "partly" : "todo", `${confirmed} confirmed · ${left} unconfirmed`);
+  const progress = { done: confirmed, total: points };
+  if (!left) return row("units", "done", `${confirmed} confirmed`, { progress });
+  return row("units", confirmed ? "partly" : "todo", `${confirmed} confirmed · ${left} unconfirmed`, {
+    progress,
+  });
 }
 
 // ── Gate 3 · Buildings & devices ─────────────────────────────────────────────
@@ -123,10 +134,14 @@ function placement({ unplaced, placed }: ChecklistInput): ChecklistRow {
       why: "The unplaced-device list has not answered.",
     });
   }
-  if (!left) return row("placement", "done", `${show(done)} placed`);
+  if (!left) return row("placement", "done", `${show(done)} placed`, {
+    progress: done == null ? undefined : { done, total: done },
+  });
   const count = `${show(done)} placed · ${left} unplaced ${plural(left, "device", "devices")}`;
   if (done == null) return row("placement", "todo", count, todoUnmeasured);
-  return row("placement", done ? "partly" : "todo", count);
+  return row("placement", done ? "partly" : "todo", count, {
+    progress: { done, total: done + left },
+  });
 }
 
 // ── Gate 4 · Equipment ───────────────────────────────────────────────────────
@@ -150,8 +165,17 @@ function equipment({ buildings, trees }: ChecklistInput): ChecklistRow {
   if (noBand) parts.push(`${noBand} without ΔT band`);
   const count = parts.join(" · ");
 
+  // `done` here means every slot on every REGISTERED machine is bound. It is
+  // not a claim that the plant has been described, and a registry holding no
+  // chiller says so out loud rather than letting a green tick imply it.
+  const note = all.length && !chillers.length
+    ? "no chiller is registered yet, so ΔT in band and kW/TR have no machine to grade"
+    : undefined;
   if (!all.length) return row("equipment", "todo", count);
-  return row("equipment", noBand || bound < slots.length ? "partly" : "done", count);
+  return row("equipment", noBand || bound < slots.length ? "partly" : "done", count, {
+    note,
+    progress: slots.length ? { done: bound, total: slots.length } : undefined,
+  });
 }
 
 // ── Gate 4 · Metric roles ────────────────────────────────────────────────────
@@ -162,7 +186,12 @@ function roles({ roles: read, orphans }: ChecklistInput): ChecklistRow {
   const bound = num(read?.counts?.confirmed);
   const stranded = orphans ? (orphans.orphans ?? []).length : null;
   const count = `${show(bound)} bound · ${show(stranded)} stranded`;
-  if (stranded) return row("roles", "partly", count, { href: STRANDED_HREF });
+  if (stranded) {
+    return row("roles", "partly", count, {
+      href: STRANDED_HREF,
+      progress: bound == null ? undefined : { done: bound, total: bound + stranded },
+    });
+  }
   if (bound == null || stranded == null) {
     return row("roles", "unknown", count, { why: "The role list or the stranded-role worklist has not answered." });
   }
@@ -218,4 +247,18 @@ function facts({ buildings, slabs, factors }: ChecklistInput): ChecklistRow {
 /** Every Setup task, in pipeline order. Pure. */
 export function deriveChecklist(input: ChecklistInput): ChecklistRow[] {
   return [duplicates(input), units(input), placement(input), equipment(input), roles(input), facts(input)];
+}
+
+/** The step the screen opens — the FIRST that is not done, and nothing cleverer.
+ *
+ * An `unknown` row stops the walk exactly as an unfinished one does. Skipping
+ * past a gate whose read failed would tell an operator the gate is fine, which
+ * is the one thing a failed read cannot say — and the order is the whole point
+ * of the list: gate 2 done on gate 1's ghosts is work thrown away.
+ *
+ * `-1` when every row is done, and the screen then says so instead of opening
+ * a step that has nothing left in it.
+ */
+export function openStep(rows: ChecklistRow[]): number {
+  return rows.findIndex((r) => r.state !== "done");
 }
