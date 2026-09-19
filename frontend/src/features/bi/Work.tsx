@@ -22,21 +22,25 @@ import {
   PanelHeader,
   PanelList,
   ActionButton,
+  QuietButton,
   LoadingBlock,
 } from "@/components/console";
 import { useAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api";
 import { workflow } from "@/features/workflow/api";
+import type { OpenWork } from "@/features/workflow/types";
 
 import { bi } from "./api";
 import { MODULE, PERM_READ } from "./constants";
 import GateStrip from "./components/GateStrip";
 import Reason from "./components/Reason";
 import RaiseWork, { PERM_RAISE } from "./components/RaiseWork";
+import CloseWork, { PERM_CLOSE } from "./components/CloseWork";
 import {
   actionable,
   alertFindings,
   keysOf,
+  settled,
   splitByWork,
   type AlertLike,
   type Finding,
@@ -66,6 +70,8 @@ function WorkInner() {
   const mayWorkRead = can(PERM_WORK_READ) || can(PERM_RAISE);
   const mayRaise = can(PERM_RAISE);
   const [raising, setRaising] = useState<Finding | null>(null);
+  const [closing, setClosing] = useState<{ finding: Finding; work: OpenWork } | null>(null);
+  const mayClose = can(PERM_CLOSE);
 
   // Equipment findings belong to ONE building — the endpoint is per site. Alerts
   // are the gateway's and are estate-wide; the list says so rather than implying
@@ -81,21 +87,31 @@ function WorkInner() {
     enabled: mayBi,
   });
 
-  const found = useMemo(
-    () =>
-      actionable([
-        ...((findingsQ.data?.findings ?? []) as Finding[]),
-        ...alertFindings((alertsQ.data?.items ?? []) as AlertLike[]),
-      ]),
+  const all = useMemo(
+    () => [
+      ...((findingsQ.data?.findings ?? []) as Finding[]),
+      ...alertFindings((alertsQ.data?.items ?? []) as AlertLike[]),
+    ],
     [findingsQ.data, alertsQ.data],
   );
+  const found = useMemo(() => actionable(all), [all]);
+  // A metric that computes again, an alert somebody acknowledged: the READING
+  // changed, which says nothing about whether the job is done. Work still open
+  // about one is in nobody's inbox — the worklist above no longer lists the
+  // finding at all — so it is asked about here and closed by a person.
+  const done = useMemo(() => settled(all), [all]);
 
+  // ONE lookup for both lanes, actionable keys first so the 500-key cap drops
+  // the cleared ones rather than the open ones if a building ever has that many.
+  const asked = useMemo(() => keysOf([...found, ...done]), [found, done]);
   const openWorkQ = useQuery<any>({
-    queryKey: ["bi-open-work", found.map((f) => f.source_key).join(",")],
-    queryFn: () => workflow.instances.openBySource(keysOf(found)),
-    enabled: mayWorkRead && found.length > 0,
+    queryKey: ["bi-open-work", asked.join(",")],
+    queryFn: () => workflow.instances.openBySource(asked),
+    enabled: mayWorkRead && asked.length > 0,
   });
-  const split = splitByWork(found, found.length === 0 ? {} : openWorkQ.data?.with_work);
+  const answered = asked.length === 0 ? {} : openWorkQ.data?.with_work;
+  const split = splitByWork(found, answered);
+  const cleared = splitByWork(done, answered)?.withWork ?? [];
 
   if (!mayBi) {
     return (
@@ -192,6 +208,42 @@ function WorkInner() {
           </div>
         ) : null}
       </ConsolePanel>
+
+      {cleared.length > 0 ? (
+        <ConsolePanel>
+          <PanelHeader
+            icon="heroicons:check-circle"
+            title="Cleared, but the work is still open"
+            count={cleared.length}
+          />
+          <ul>
+            {cleared.map(({ finding, work }) => (
+              <li key={finding.source_key} className="flex items-center gap-3 border-b border-nb-line px-4 py-3 text-sm last:border-b-0">
+                <span className="min-w-0 flex-1 truncate">
+                  {finding.equipment_tag ? `${finding.equipment_tag} · ` : ""}
+                  {finding.title}
+                </span>
+                <Link
+                  className="flex items-center gap-1 whitespace-nowrap text-[12px] text-nb-accent hover:underline"
+                  href={`/workflow/incidents?instance=${work.instance_id}`}
+                >
+                  {work.current_state_name || work.status}
+                  <Icon icon="heroicons:arrow-up-right" className="text-[12px]" />
+                </Link>
+                {mayClose ? (
+                  <QuietButton onClick={() => setClosing({ finding, work })}>Close</QuietButton>
+                ) : (
+                  <span className="whitespace-nowrap text-[11px] text-nb-muted">needs {PERM_CLOSE}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </ConsolePanel>
+      ) : null}
+
+      {closing ? (
+        <CloseWork finding={closing.finding} work={closing.work} open onClose={() => setClosing(null)} />
+      ) : null}
 
       {raising ? (
         <RaiseWork finding={raising} open onClose={() => setRaising(null)} />

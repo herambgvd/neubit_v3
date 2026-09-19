@@ -94,6 +94,11 @@ export function alertFindings(alerts: AlertLike[]): Finding[] {
     }));
 }
 
+/** Findings that are NOT work: a metric that computed, an alert somebody has
+ *  acknowledged. Worth listing only when work is still open about one — the
+ *  finding cleared and the ticket did not, which is nobody's inbox otherwise. */
+export const settled = (findings: Finding[]): Finding[] => findings.filter((f) => !isActionable(f));
+
 export interface WorkSplit {
   withWork: { finding: Finding; work: OpenWork }[];
   withoutWork: Finding[];

@@ -247,3 +247,62 @@ describe("a deployment with no procedures", () => {
     expect(await screen.findByText("No procedures yet")).toBeInTheDocument();
   });
 });
+
+describe("work still open about a finding that cleared", () => {
+  const OPEN = {
+    instance_id: "i1",
+    name: "INC-1",
+    sop_name: "Building sensor fault",
+    status: "active",
+    priority: null,
+    current_state_name: "Investigating",
+    assigned_to: null,
+    created_at: "t",
+  };
+
+  it("asks about the settled findings too, and lists the one with work", async () => {
+    // HEALTHY computed: the worklist above drops it, so an incident raised when
+    // it was refusing is in nobody's inbox unless this lane exists.
+    wire({ open: { [HEALTHY.source_key]: OPEN } });
+    renderWithProviders(<Work />);
+
+    expect(await screen.findByText("Cleared, but the work is still open")).toBeInTheDocument();
+    expect(workflow.instances.openBySource).toHaveBeenCalledWith(
+      expect.arrayContaining([FINDING.source_key, HEALTHY.source_key]),
+    );
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+  });
+
+  it("says nothing when the cleared findings have no work open", async () => {
+    wire();
+    renderWithProviders(<Work />);
+
+    expect(await screen.findByText(/CHW supply has gone quiet/)).toBeInTheDocument();
+    expect(screen.queryByText("Cleared, but the work is still open")).not.toBeInTheDocument();
+  });
+
+  it("closes only with an account of what happened, and only as resolved", async () => {
+    const setStatus = vi.spyOn(workflow.instances, "setStatus").mockResolvedValue({} as never);
+    wire({ open: { [HEALTHY.source_key]: OPEN } });
+    renderWithProviders(<Work />);
+    await userEvent.click(await screen.findByRole("button", { name: "Close" }));
+
+    const dialog = screen.getByRole("dialog");
+    // An incident closed with no note is a row that teaches nobody anything.
+    expect(within(dialog).getByRole("button", { name: "Write what happened" })).toBeDisabled();
+    await userEvent.type(within(dialog).getByRole("textbox"), "Unit confirmed; ΔT computes again.");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Close as resolved" }));
+
+    expect(setStatus).toHaveBeenCalledWith("i1", "resolved", "Unit confirmed; ΔT computes again.");
+  });
+
+  it("offers no close to a caller who may not write, and names the key", async () => {
+    perms.can = (p) => p !== "workflow.instance.update";
+    wire({ open: { [HEALTHY.source_key]: OPEN } });
+    renderWithProviders(<Work />);
+
+    expect(await screen.findByText("Cleared, but the work is still open")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+    expect(screen.getByText(/needs workflow.instance.update/)).toBeInTheDocument();
+  });
+});
