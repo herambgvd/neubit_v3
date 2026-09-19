@@ -14,9 +14,10 @@ Migration 0031 splits the two. What is asserted here is that it splits them
 WITHOUT loosening anything:
 
   * a placement may name a site alone;
-  * a floor with no position is refused BY THE DATABASE, not only by pydantic —
-    a pin at no coordinates is not a partially-filled pin, and the API is one
-    writer among several a database sees over its life;
+  * a position with no floor is refused BY THE DATABASE, not only by pydantic —
+    coordinates on no drawing mean nothing, and the API is one writer among
+    several a database sees over its life. A floor with no position is ALLOWED:
+    "on Level 4, not on any drawing" is a true floor-wise statement;
   * a `zone_id` still needs a floor, because `zones.floor_id` is NOT NULL;
   * the floor-plan editor's own contract is byte-for-byte what it was;
   * `assign` — the device-first surface — never erases a pin it was not told
@@ -651,3 +652,64 @@ async def test_a_bulk_assignment_is_one_audit_row_naming_every_device(app, db):
         meta = _json.loads(meta)
     assert sorted(meta["device_ids"]) == ["m-40", "m-41"]
     assert meta["count"] == 2
+
+
+# ── restating a floor on a device that already has a pin ─────────────────────
+#
+# A floor no longer implies a position (0031). `assign` used to read the item's
+# position unconditionally on this branch, so a floor stated without one was a
+# 500 for the whole batch. What happens to the EXISTING pin depends on whether
+# it is still true.
+
+
+async def _pinned_on(app, db, tenant_slug, *, floor="floor-1"):
+    t = await _tenant(db, tenant_slug)
+    await _estate(db, t)
+    db.add(Floor(floor_id="floor-2", tenant_id=t.id, site_id="site-1",
+                 name="Level floor-2", is_active=True))
+    await db.commit()
+    user = await _operator(db, t, f"{tenant_slug}@x.io")
+    async with api_client(app) as c:
+        r = await c.post(
+            f"{PREFIX}/device-placements/register",
+            json={"device_id": "m-pin", "device_type": "sensor", "service": "iot",
+                  "site_id": "site-1", "floor_id": floor, "floor_position": PIN},
+            headers=bearer(user),
+        )
+    assert r.status_code == 201, r.text
+    return user
+
+
+async def _assign_floor(app, user, floor):
+    async with api_client(app) as c:
+        return await c.post(
+            f"{PREFIX}/device-placements/assign",
+            json={"site_id": "site-1", "device_type": "sensor", "service": "iot",
+                  "devices": [{"device_id": "m-pin", "floor_id": floor}]},
+            headers=bearer(user),
+        )
+
+
+async def _position_is_null(db) -> bool:
+    # bool(): SQLite answers a boolean expression with 0/1, not True/False.
+    return bool((await db.execute(text(
+        "SELECT floor_position IS NULL FROM device_placements WHERE device_id = 'm-pin'"
+    ))).scalar())
+
+
+async def test_restating_the_same_floor_keeps_the_pin(app, db):
+    user = await _pinned_on(app, db, "same-floor")
+    r = await _assign_floor(app, user, "floor-1")
+    assert r.status_code == 200, r.text
+    assert r.json()["items"][0]["pin_cleared"] is False
+    assert await _position_is_null(db) is False
+
+
+async def test_moving_to_another_floor_drops_a_pin_that_is_now_false(app, db):
+    user = await _pinned_on(app, db, "other-floor")
+    r = await _assign_floor(app, user, "floor-2")
+    assert r.status_code == 200, r.text
+    item = r.json()["items"][0]
+    assert item["floor_id"] == "floor-2"
+    assert item["pin_cleared"] is True
+    assert await _position_is_null(db) is True

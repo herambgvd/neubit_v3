@@ -305,8 +305,23 @@ class DevicePlacementService:
                 if service:
                     row.service = service
                 if item.floor_id:
+                    # A floor may now be stated without a position (0031), so the
+                    # position is not implied by the floor. What happens to an
+                    # existing pin depends on whether it is still TRUE:
+                    #   * a position was given — it is the pin;
+                    #   * same floor, no position — the old pin stays. "It is on
+                    #     Level 4" is consistent with a pin on Level 4 and says
+                    #     nothing against it, so dropping it would lose a fact
+                    #     nobody asked to lose;
+                    #   * another floor (or another site), no position — the old
+                    #     pin is coordinates on a different drawing, i.e. false.
+                    #     It goes, and `pin_cleared` says so.
+                    if item.floor_position is not None:
+                        row.floor_position = item.floor_position.model_dump()
+                    elif moved or item.floor_id != row.floor_id:
+                        pin_cleared = row.floor_position is not None
+                        row.floor_position = None
                     row.floor_id = item.floor_id
-                    row.floor_position = item.floor_position.model_dump()
                     row.zone_id = item.zone_id
                 elif moved:
                     # The pin belonged to the site it is leaving.
