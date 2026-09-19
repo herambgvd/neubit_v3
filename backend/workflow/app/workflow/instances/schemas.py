@@ -3,13 +3,27 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Annotated, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from ..core.enums import InstancePriority, InstanceStatus
 
 # ── Workflow instance ──────────────────────────────────────────────────
+
+#: A source key is ``<producer>:<the producer's own id for the thing>``. The
+#: namespace is required so two producers can never mint the same key for
+#: different things; beyond it the key is the producer's and is never parsed here.
+SOURCE_KEY_PATTERN = r"^[a-z][a-z0-9_]*:\S+$"
+SOURCE_KEY_MAX = 255
+#: The most keys one "which have open work" read may ask about. Far above the
+#: findings one site or one alert window produces; a bound so a malformed caller
+#: cannot turn one request into an unbounded IN list.
+SOURCE_LOOKUP_MAX = 500
+
+SourceKey = Annotated[
+    str, StringConstraints(min_length=3, max_length=SOURCE_KEY_MAX, pattern=SOURCE_KEY_PATTERN)
+]
 
 
 class CreateInstanceRequest(BaseModel):
@@ -24,6 +38,10 @@ class CreateInstanceRequest(BaseModel):
     event_id: Optional[str] = None
     event_type: Optional[str] = None
     metadata: Optional[dict] = None
+    # The finding this incident is about. When set, a create while an incident
+    # for the same key is still OPEN returns that incident (200) instead of
+    # raising a second one (201). See InstanceService.create.
+    source_key: Optional[SourceKey] = None
 
 
 class TransitionInstanceRequest(BaseModel):
@@ -87,6 +105,7 @@ class InstancePublic(BaseModel):
     source_event_id: Optional[str] = None
     closed_at: Optional[datetime] = None
     outcome: Optional[str] = None
+    source_key: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -113,7 +132,7 @@ class InstancePublic(BaseModel):
             tags=r.tags or [], timeline=r.timeline or [], metadata=r.extra,
             trigger_data=r.trigger_data, event_id=r.event_id, event_type=r.event_type,
             event_source=event_source, source_event_id=source_event_id,
-            closed_at=r.closed_at, outcome=r.outcome,
+            closed_at=r.closed_at, outcome=r.outcome, source_key=r.source_key,
             created_at=r.created_at, updated_at=r.updated_at,
         )
 
@@ -138,3 +157,44 @@ class InstanceStatsResponse(BaseModel):
     by_status: dict[str, int] = Field(default_factory=dict)
     by_priority: dict[str, int] = Field(default_factory=dict)
     total: int = 0
+
+
+# ── Open work by source key ────────────────────────────────────────────
+
+
+class OpenBySourceRequest(BaseModel):
+    """Which of these findings already have open work."""
+
+    model_config = ConfigDict(extra="ignore")
+    source_keys: list[SourceKey] = Field(min_length=1, max_length=SOURCE_LOOKUP_MAX)
+
+
+class OpenWorkRef(BaseModel):
+    """The open incident a finding already has — enough to draw a link to it."""
+
+    model_config = ConfigDict(extra="ignore")
+    instance_id: str
+    name: Optional[str] = None
+    sop_name: str
+    status: str
+    priority: str
+    current_state_name: Optional[str] = None
+    assigned_to: Optional[str] = None
+    created_at: datetime
+
+    @classmethod
+    def from_row(cls, r) -> "OpenWorkRef":
+        return cls(
+            instance_id=r.instance_id, name=r.name, sop_name=r.sop_name, status=r.status,
+            priority=r.priority, current_state_name=r.current_state_name,
+            assigned_to=r.assigned_to, created_at=r.created_at,
+        )
+
+
+class OpenBySourceResponse(BaseModel):
+    """Every asked key lands in exactly one of the two: a key with open work maps
+    to that incident, a key without is listed. Nothing asked is dropped, so
+    ``len(with_work) + len(without_work)`` is the number of distinct keys asked."""
+
+    with_work: dict[str, OpenWorkRef] = Field(default_factory=dict)
+    without_work: list[str] = Field(default_factory=list)

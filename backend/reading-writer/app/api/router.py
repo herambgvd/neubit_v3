@@ -36,6 +36,7 @@ from . import builder
 from . import context
 from . import correlations as cx
 from . import execute as ex
+from . import findings as fx
 from . import intake as intake_store
 from . import permsync
 from . import plant as plant_view
@@ -189,12 +190,14 @@ async def alerts(
     no category is a real fault and is counted as `category: null`, never folded
     into a neighbouring one.
     """
-    return AlertListResponse(
-        **await q.alerts(
-            db, _tenant(scope), hours=hours, severity=severity,
-            category=category, limit=limit,
-        )
+    body = await q.alerts(
+        db, _tenant(scope), hours=hours, severity=severity,
+        category=category, limit=limit,
     )
+    # Gate 6: each alert is a finding an operator may raise work on, and says so
+    # with its own source key and the work body — see `findings.py`.
+    body["items"] = [{**row, **fx.alert_finding(row)} for row in body["items"]]
+    return AlertListResponse(**body)
 
 
 # ── Devices ──────────────────────────────────────────────────────────────────
@@ -1213,6 +1216,38 @@ async def site_plant(
     tenant = _tenant(scope)
     start_at, end_at = _window(start, end, hours)
     return await plant_view.plant(db, tenant, site_id, start=start_at, end=end_at)
+
+
+@bi_router.get(
+    "/sites/{site_id}/findings",
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def site_findings(
+    db: Db,
+    scope: Caller,
+    site_id: uuid.UUID,
+    start: dt.datetime | None = None,
+    end: dt.datetime | None = None,
+    hours: Annotated[int, Query(ge=1, le=24 * 7)] = 1,
+) -> dict:
+    """Gate 6 at one site: every finding its plant can raise work on.
+
+    One per equipment metric outcome (value or refusal) and one per `silent` or
+    `ambiguous` slot, each with its `source_key`, a title and summary a person
+    can read, the evidence exactly as `/plant` returned it, and `work` — the body
+    to POST to `/workflow/instances` once an operator has picked a procedure.
+    Read-only: listing a finding raises nothing. Same window as `/plant`, because
+    it IS `/plant`, read once and restated.
+    """
+    tenant = _tenant(scope)
+    start_at, end_at = _window(start, end, hours)
+    plant = await plant_view.plant(db, tenant, site_id, start=start_at, end=end_at)
+    return {
+        "site_id": plant["site_id"],
+        "site_name": plant["site_name"],
+        "window": plant["window"],
+        "findings": fx.plant_findings(plant),
+    }
 
 
 # ── Units ────────────────────────────────────────────────────────────────────

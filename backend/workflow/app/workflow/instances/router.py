@@ -67,8 +67,26 @@ async def list_instances(
 
 @instance_router.post("", response_model=S.InstancePublic, status_code=status.HTTP_201_CREATED)
 async def create_instance(body: S.CreateInstanceRequest, svc: Annotated[InstanceService, Depends(_inst_svc)],
-                          actor: Annotated[Principal, Depends(require_permission(perms.INSTANCE_CREATE))]):
-    return S.InstancePublic.from_row(await svc.create(body, actor=actor))
+                          actor: Annotated[Principal, Depends(require_permission(perms.INSTANCE_CREATE))],
+                          response: Response):
+    """201 with the new incident — or, when ``source_key`` names a finding that
+    already has an OPEN incident, 200 with that one and nothing written."""
+    row, created = await svc.create_or_existing(body, actor=actor)
+    if not created:
+        response.status_code = status.HTTP_200_OK
+    return S.InstancePublic.from_row(row)
+
+
+@instance_router.post("/open-by-source", response_model=S.OpenBySourceResponse,
+                      dependencies=[Depends(require_permission(perms.INSTANCE_READ))])
+async def open_by_source(body: S.OpenBySourceRequest, svc: Annotated[InstanceService, Depends(_inst_svc)]):
+    """Which of these findings already have open work. A read, and gated as one;
+    POST only because a site's worth of keys does not fit in a URL."""
+    found = await svc.open_by_source(body.source_keys)
+    return S.OpenBySourceResponse(
+        with_work={k: S.OpenWorkRef.from_row(r) for k, r in found["with_work"].items()},
+        without_work=found["without_work"],
+    )
 
 
 @instance_router.get("/stats", response_model=S.InstanceStatsResponse,

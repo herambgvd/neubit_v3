@@ -94,6 +94,10 @@ export interface CreateInstanceRequest {
   event_id?: string | null;
   event_type?: string | null;
   metadata?: Record<string, unknown> | null;
+  /** What this work is ABOUT, e.g. `bi:equipment:<id>:metric:chw_delta_t_in_band`.
+   *  At most one OPEN incident per key: raising again returns the existing one
+   *  (HTTP 200) instead of creating another (201). */
+  source_key?: string | null;
 }
 
 export interface StatePublic {
@@ -447,6 +451,7 @@ export interface InstancePublic {
   timeline: TimelineEntry[];
   metadata: Record<string, unknown> | null;
   trigger_data: TriggerEnvelope | null;
+  source_key: string | null;
   event_id: string | null;
   event_type: string | null;
   /** EventBus domain tag ("vision" | "access" | "ingest" | …); "manual" when

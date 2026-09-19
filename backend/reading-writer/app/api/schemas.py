@@ -364,6 +364,10 @@ class AlertRow(BaseModel):
     message: str | None
     conn_slug: str | None
     proto: str | None
+    # Gate 6: the finding this alert is (`findings.alert_finding`) — the key the
+    # workflow service dedups open work on, and the body that raises it.
+    source_key: str | None = None
+    work: dict | None = None
 
 
 class AlertSeverityCount(BaseModel):

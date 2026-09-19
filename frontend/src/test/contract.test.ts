@@ -414,7 +414,7 @@ const MAPPING: Record<string, ModelEntry & { subset?: string }> = {
 const EXPECTED_COUNTS = {
   CameraPublic: 26,
   SitePublic: 23,
-  InstancePublic: 30,
+  InstancePublic: 31,
   WebhookPublic: 17,
 };
 
@@ -586,6 +586,39 @@ const DICTS: Record<string, DictEntry> = {
     file: "backend/core/app/sites/infrastructure/schedule_import.py",
     marker: '"counts": {',
   },
+  // ── the L3 plant (reading-writer, a dict built per request) ─────────────────
+  "lib/types.ts:BiPlant": {
+    file: "backend/reading-writer/app/api/plant.py",
+    marker: "async def plant(",
+    open: "return {",
+  },
+  "lib/types.ts:BiPlantSystem": {
+    file: "backend/reading-writer/app/api/plant.py",
+    marker: "system_views.append({",
+  },
+  "lib/types.ts:BiPlantEquipment": {
+    file: "backend/reading-writer/app/api/plant.py",
+    marker: 'views_by_system.setdefault(str(e["system_id"]), []).append({',
+  },
+  "lib/types.ts:BiPlantSlot": {
+    file: "backend/reading-writer/app/api/plant.py",
+    marker: "def slot_view(",
+    open: "return {",
+  },
+  "lib/types.ts:BiPlantPoint": {
+    file: "backend/reading-writer/app/api/plant.py",
+    marker: "def _point_view(",
+    open: "return {",
+  },
+  "lib/types.ts:BiPlantMetricDef": {
+    file: "backend/reading-writer/app/api/plant.py",
+    marker: "metrics.append({",
+  },
+  "lib/types.ts:BiPlantCandidate": {
+    file: "backend/reading-writer/app/metric_registry/slots.py",
+    marker: "def _candidate_view(",
+    open: "return {",
+  },
 };
 
 /** Ours, not the backend's. Each reason says which kind of local shape it is. */
@@ -664,6 +697,7 @@ const PASSTHROUGH: Record<string, string> = {
 
   "lib/types.ts:FederatedCamera": "the remote recorder's own camera dict, tagged and forwarded verbatim",
   "features/access/types.ts:AccessCard": "the controller's card DTO with seven keys renamed; the rest pass through",
+  "lib/types.ts:BiPlantMetricOutcome": "one evaluator item less its series — ok and each refusal status carry different keys (arithmetic, coverage, candidates), so there is no single literal to compare",
   "features/core/types.ts:SettingCatalogItem": "one CATALOG entry in settings/catalog.py — entries carry different optional keys per setting, so there is no single literal to compare",
   "features/core/types.ts:PermissionCatalog": "an envelope around PermissionRegistry.grouped(); the entry shape is checked as PermissionEntry",
   "features/ingest/types.ts:ConditionResult": "a row inside RuleTestResponse.conditions, typed list[dict] on the backend",
