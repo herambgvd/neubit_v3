@@ -11,6 +11,7 @@ import { THREAT_PILL, THREAT_LEVELS, capitalize } from "../constants";
 import SiteInfoPanel from "./SiteInfoPanel";
 import FloorsPanel from "./FloorsPanel";
 import ZonesPanel from "./ZonesPanel";
+import InfraDesigner from "./infrastructure/InfraDesigner";
 import SelectMenu from "@/components/common/SelectMenu";
 
 const TABS: { key: SiteDetailTab; label: string; icon: string }[] = [
@@ -19,9 +20,11 @@ const TABS: { key: SiteDetailTab; label: string; icon: string }[] = [
   { key: "info", label: "Site info", icon: "heroicons:information-circle" },
   { key: "floors", label: "Floors", icon: "heroicons:square-3-stack-3d" },
   { key: "zones", label: "Zones", icon: "heroicons-outline:square-2-stack" },
+  // The building's plant — systems, equipment, the point behind each slot.
+  { key: "equipment", label: "Equipment", icon: "heroicons-outline:cpu-chip" },
 ];
 
-export type SiteDetailTab = "info" | "floors" | "zones";
+export type SiteDetailTab = "info" | "floors" | "zones" | "equipment";
 
 export interface SiteDetailProps {
   site: SitePublic;
@@ -33,9 +36,11 @@ export interface SiteDetailProps {
   /** Reactivate a deactivated site (with its floors and zones). */
   onRestore: () => void;
   onChangeThreat: (level: ThreatLevel) => void;
+  /** Open the Equipment tab on this equipment (a deep link from BI). */
+  equipmentId?: string | null;
 }
 
-export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, onDelete, onRestore, onChangeThreat }: Readonly<SiteDetailProps>) {
+export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, onDelete, onRestore, onChangeThreat, equipmentId }: Readonly<SiteDetailProps>) {
   /**
    * BUILDING FACTS ARE NOT HERE ANY MORE.
    *
@@ -123,6 +128,8 @@ export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, on
           <SiteInfoPanel site={site} />
         ) : activeTab === "floors" ? (
           <FloorsPanel site={site} />
+        ) : activeTab === "equipment" ? (
+          <InfraDesigner key={site.site_id} site={site} initialEquipmentId={equipmentId} />
         ) : (
           <ZonesPanel site={site} />
         )}

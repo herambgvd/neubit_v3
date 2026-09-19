@@ -5,7 +5,8 @@
 // zones tabs). Site create/edit lives in SiteFormModal; the floor-plan editor opens
 // full-screen from the Floors tab. Ported from neubit_v2; the console frame comes
 // from components/console so it stays identical to Users & Roles / Federation.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -48,11 +49,19 @@ export default function SitesConfigPage() {
   const items = useMemo(() => sitesQ.data?.items ?? [], [sitesQ.data]);
   const total = sitesQ.data?.total ?? items.length;
 
+  // `?site=&tab=equipment&equipment=` — the deep link other consoles use
+  // (see ./links.ts). Read once, as the starting selection; after that the
+  // operator's own clicks drive the pane.
+  const params = useSearchParams();
+  const linkedSite = params?.get("site") ?? null;
+  const linkedTab = params?.get("tab") === "equipment" ? "equipment" : null;
+  const linkedEquipment = params?.get("equipment") ?? null;
+
   const [q, setQ] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(linkedSite);
   const [mode, setMode] = useState<PageMode>("view");
   const [closed, setClosed] = useState(false);
-  const [tab, setTab] = useState<SiteDetailTab>("info");
+  const [tab, setTab] = useState<SiteDetailTab>(linkedSite && linkedTab ? linkedTab : "info");
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
   const filtered = useMemo(() => {
@@ -78,7 +87,12 @@ export default function SitesConfigPage() {
     }
   }, [filtered, selected, mode, closed]);
 
+  // A different site opens on its info tab — but the site a deep link opened
+  // with keeps the tab the link named.
+  const shownSite = useRef(selectedId);
   useEffect(() => {
+    if (shownSite.current === selectedId) return;
+    shownSite.current = selectedId;
     setTab("info");
   }, [selectedId]);
 
@@ -204,6 +218,7 @@ export default function SitesConfigPage() {
                 })
               }
               onChangeThreat={(level) => setThreatLevel.mutate({ id: selected.site_id, level })}
+              equipmentId={selected.site_id === linkedSite ? linkedEquipment : null}
             />
           )}
         </ConsolePanel>

@@ -634,6 +634,218 @@ export interface BiDeviceListResponse {
   items: BiDeviceRow[];
 }
 
+/** `PointRow` — one gateway point. The infra designer's point picker reads
+ *  only the address and the reading kind; `latest` and the lifecycle fields
+ *  ride along unmodelled (a declared subset in contract.test.ts). */
+export interface BiPointRow {
+  point_id: string;
+  point_tag: string | null;
+  device_id: string | null;
+  device_tag: string | null;
+  category: string | null;
+  device_type: string | null;
+  /** The reading KIND, `num` or `text` — not the device type. */
+  type: string | null;
+  unit: string | null;
+}
+
+/* --- site infrastructure (backend/core/app/sites/infrastructure/) ---------- */
+
+/** One system kind of the closed vocabulary (`vocabulary.SYSTEM_KINDS`). */
+export interface InfraSystemKind {
+  key: string;
+  label: string;
+  description: string;
+}
+
+/** One equipment class: the system kinds it may sit in, and the ONLY slots and
+ *  design facts it may carry. */
+export interface InfraEquipmentClass {
+  key: string;
+  label: string;
+  system_kinds: string[];
+  slots: string[];
+  facts: string[];
+}
+
+/** A point slot. It has a dimension, never a unit — the unit is the point's. */
+export interface InfraSlotDef {
+  key: string;
+  dimension: string;
+  label: string;
+  /** The reading-writer ROLE_DEFS entry this slot corresponds to, if any. */
+  role: string | null;
+}
+
+/** A design fact. `unit` is the unit the stored number IS in (TR, kW, kVA, K). */
+export interface InfraDesignFactDef {
+  key: string;
+  type: "number" | "text";
+  unit: string | null;
+  label: string;
+}
+
+/** `GET /site-infrastructure/vocabulary` — `vocabulary.as_document()`. */
+export interface InfraVocabulary {
+  system_kinds: InfraSystemKind[];
+  equipment_classes: InfraEquipmentClass[];
+  slots: InfraSlotDef[];
+  design_facts: InfraDesignFactDef[];
+}
+
+/** A design-fact value: a number for numeric facts, text for make/model. */
+export type InfraDesignValue = number | string;
+
+/** `PointBinding` — both tags, or neither (null + null = declared, unbound). */
+export interface PointBinding {
+  device_tag?: string | null;
+  point_tag?: string | null;
+}
+
+/** `SlotInput` — a slot declared at create time. */
+export interface SlotInput extends PointBinding {
+  slot: string;
+}
+
+/** `SlotPublic`. */
+export interface SlotPublic {
+  slot: string;
+  device_tag: string | null;
+  point_tag: string | null;
+  bound: boolean;
+}
+
+/** `EquipmentPublic`. `design` holds only the facts that were RECORDED; a fact
+ *  absent from it is "not recorded", never zero. */
+export interface EquipmentPublic {
+  equipment_id: string;
+  site_id: string;
+  system_id: string;
+  tag: string;
+  name: string | null;
+  equipment_class: string;
+  design: Record<string, InfraDesignValue>;
+  design_units: Record<string, string>;
+  slots: SlotPublic[];
+  created_at: string;
+  updated_at: string;
+}
+
+/** `SystemPublic`. `kind` is fixed at create time. */
+export interface SiteSystemPublic {
+  system_id: string;
+  site_id: string;
+  name: string;
+  kind: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** `SystemWithEquipment`. */
+export interface SiteSystemWithEquipment extends SiteSystemPublic {
+  equipment: EquipmentPublic[];
+}
+
+/** `InfrastructureTree` — `GET /sites/{id}/infrastructure`. */
+export interface InfrastructureTree {
+  site_id: string;
+  systems: SiteSystemWithEquipment[];
+}
+
+/** `CreateSystemRequest`. */
+export interface CreateSystemRequest {
+  name: string;
+  kind: string;
+  description?: string | null;
+}
+
+/** `UpdateSystemRequest` — name and description only; kind cannot change. */
+export interface UpdateSystemRequest {
+  name?: string | null;
+  description?: string | null;
+}
+
+/** `CreateEquipmentRequest`. */
+export interface CreateEquipmentRequest {
+  system_id: string;
+  tag: string;
+  equipment_class: string;
+  name?: string | null;
+  design?: Record<string, InfraDesignValue | null>;
+  slots?: SlotInput[];
+}
+
+/** `UpdateEquipmentRequest` — class is absent on purpose (a 422 if sent). */
+export interface UpdateEquipmentRequest {
+  tag?: string | null;
+  name?: string | null;
+  system_id?: string | null;
+}
+
+/** `DesignUpdate` — the WHOLE set, replaced. A key left out is cleared. */
+export interface DesignUpdate {
+  design: Record<string, InfraDesignValue | null>;
+}
+
+/** One slot of a planned equipment in an import report. */
+export interface InfraImportSlot {
+  slot: string;
+  device_tag: string | null;
+  point_tag: string | null;
+}
+
+/** One system an import would create, or reuse by name + kind. */
+export interface InfraImportSystem {
+  name: string;
+  kind: string;
+  reused: boolean;
+  system_id: string | null;
+}
+
+/** One piece of equipment an import would create. */
+export interface InfraImportEquipment {
+  tag: string;
+  system: string;
+  equipment_class: string;
+  name: string | null;
+  design: Record<string, InfraDesignValue>;
+  design_units: Record<string, string>;
+  slots: InfraImportSlot[];
+  /** The sheet rows it was read from. */
+  rows: number[];
+  /** Null on a dry run; filled in once written. */
+  equipment_id: string | null;
+}
+
+/** A row the import refused, and why. `row` is the SHEET row number. */
+export interface InfraImportSkip {
+  row: number;
+  equipment_tag: string | null;
+  slot: string | null;
+  reason: "invalid" | "ambiguous" | "exists" | "conflict" | "duplicate";
+  message: string;
+}
+
+export interface InfraImportCounts {
+  systems_created: number;
+  equipment_created: number;
+  slots_created: number;
+  rows_skipped: number;
+}
+
+/** `POST /sites/{id}/infrastructure/import` — the plan, or the plan applied. */
+export interface InfraImportReport {
+  dry_run: boolean;
+  sheet: string;
+  rows_read: number;
+  ignored_columns: string[];
+  systems: InfraImportSystem[];
+  equipment: InfraImportEquipment[];
+  skipped: InfraImportSkip[];
+  counts: InfraImportCounts;
+}
+
 /* --- messaging (backend/core/app/messaging/router.py) ---------------------- */
 
 /** `NotificationOut` — one in-app inbox row. */

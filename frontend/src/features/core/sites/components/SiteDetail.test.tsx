@@ -24,6 +24,7 @@ import SiteDetail from "./SiteDetail";
 vi.mock("./SiteInfoPanel", () => ({ default: () => <div>site info body</div> }));
 vi.mock("./FloorsPanel", () => ({ default: () => <div>floors body</div> }));
 vi.mock("./ZonesPanel", () => ({ default: () => <div>zones body</div> }));
+vi.mock("./infrastructure/InfraDesigner", () => ({ default: () => <div>equipment body</div> }));
 
 const SITE = {
   site_id: "s1",
@@ -71,12 +72,20 @@ describe("a deactivated site", () => {
 });
 
 describe("the tabs a site has", () => {
-  it("are the site's own: info, floors, zones", () => {
+  it("are the site's own: info, floors, zones, equipment", () => {
     renderDetail();
 
     expect(screen.getByRole("tab", { name: "Site info" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Floors" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Zones" })).toBeInTheDocument();
+    // The building's plant is part of the building: systems, equipment and
+    // the point behind each slot are recorded beside its floors.
+    expect(screen.getByRole("tab", { name: "Equipment" })).toBeInTheDocument();
+  });
+
+  it("render the equipment designer on the Equipment tab", () => {
+    renderDetail("equipment");
+    expect(screen.getByText("equipment body")).toBeInTheDocument();
   });
 
   it("no longer include Building — those facts are recorded in Building Intelligence", () => {

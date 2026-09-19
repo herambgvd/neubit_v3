@@ -174,6 +174,19 @@ const MAPPING: Record<string, ModelEntry & { subset?: string }> = {
   "lib/types.ts:AuthUser": { src: "CORE", file: "auth/schemas.py", model: "UserOut", subset: "the session user as this console reads them: only the claims the shell renders" },
   "lib/types.ts:BiDeviceListResponse": { src: "RW", file: "schemas.py", model: "DeviceListResponse" },
   "lib/types.ts:BiDeviceRow": { src: "RW", file: "schemas.py", model: "DeviceRow" },
+  "lib/types.ts:BiPointRow": { src: "RW", file: "schemas.py", model: "PointRow", subset: "the infra designer's point picker reads a point's address and reading kind; latest and the lifecycle fields are not rendered" },
+  "lib/types.ts:CreateEquipmentRequest": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "CreateEquipmentRequest" },
+  "lib/types.ts:CreateSystemRequest": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "CreateSystemRequest" },
+  "lib/types.ts:DesignUpdate": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "DesignUpdate" },
+  "lib/types.ts:EquipmentPublic": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "EquipmentPublic" },
+  "lib/types.ts:InfrastructureTree": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "InfrastructureTree" },
+  "lib/types.ts:PointBinding": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "PointBinding" },
+  "lib/types.ts:SiteSystemPublic": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "SystemPublic" },
+  "lib/types.ts:SiteSystemWithEquipment": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "SystemWithEquipment" },
+  "lib/types.ts:SlotInput": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "SlotInput" },
+  "lib/types.ts:SlotPublic": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "SlotPublic" },
+  "lib/types.ts:UpdateEquipmentRequest": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "UpdateEquipmentRequest" },
+  "lib/types.ts:UpdateSystemRequest": { src: "CORE", file: "sites/infrastructure/schemas.py", model: "UpdateSystemRequest" },
   "lib/types.ts:BrandingOut": { src: "CORE", file: "branding/schemas.py", model: "BrandingOut" },
   "lib/types.ts:BuildingFactsUpdate": { src: "CORE", file: "sites/site/schemas.py", model: "BuildingFactsUpdate" },
   "lib/types.ts:CameraPublic": { src: "VISION", file: "cameras/schemas.py", model: "CameraPublic" },
@@ -515,6 +528,61 @@ const DICTS: Record<string, DictEntry> = {
     file: "backend/vision/app/vms/federation/estate.py",
     marker: "async def list_nodes(",
     open: '"items": [',
+  },
+  // ── the infra designer's closed vocabulary ─────────────────────────────────
+  // `as_document()` spreads each entry as `{"key": k, **v}`, so an item's keys
+  // are read off the first ENTRY of its table plus the `key` the spread adds.
+  "lib/types.ts:InfraVocabulary": {
+    file: "backend/core/app/sites/infrastructure/vocabulary.py",
+    marker: "def as_document(",
+    open: "return {",
+  },
+  "lib/types.ts:InfraEquipmentClass": {
+    file: "backend/core/app/sites/infrastructure/vocabulary.py",
+    marker: '"equipment_classes": [',
+  },
+  "lib/types.ts:InfraSystemKind": {
+    file: "backend/core/app/sites/infrastructure/vocabulary.py",
+    marker: '"chw_plant": {',
+    extra: ["key"],
+  },
+  "lib/types.ts:InfraSlotDef": {
+    file: "backend/core/app/sites/infrastructure/vocabulary.py",
+    marker: '"chws": {',
+    extra: ["key"],
+  },
+  "lib/types.ts:InfraDesignFactDef": {
+    file: "backend/core/app/sites/infrastructure/vocabulary.py",
+    marker: '"make": {"type"',
+    extra: ["key"],
+  },
+  // ── the I/O schedule import report ──────────────────────────────────────────
+  "lib/types.ts:InfraImportReport": {
+    file: "backend/core/app/sites/infrastructure/schedule_import.py",
+    marker: "async def plan(",
+    open: "return {",
+    extra: ["dry_run"], // the router adds it around the plan
+  },
+  "lib/types.ts:InfraImportSystem": {
+    file: "backend/core/app/sites/infrastructure/schedule_import.py",
+    marker: '"systems": [',
+  },
+  "lib/types.ts:InfraImportEquipment": {
+    file: "backend/core/app/sites/infrastructure/schedule_import.py",
+    marker: '"equipment": [',
+  },
+  "lib/types.ts:InfraImportSlot": {
+    file: "backend/core/app/sites/infrastructure/schedule_import.py",
+    marker: "planned[r.tag].slots.append(",
+  },
+  "lib/types.ts:InfraImportSkip": {
+    file: "backend/core/app/sites/infrastructure/schedule_import.py",
+    marker: "def as_dict(self) -> dict:",
+    open: "return {",
+  },
+  "lib/types.ts:InfraImportCounts": {
+    file: "backend/core/app/sites/infrastructure/schedule_import.py",
+    marker: '"counts": {',
   },
 };
 
