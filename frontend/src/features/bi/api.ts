@@ -306,6 +306,13 @@ export const bi = {
   // a worklist that empties and fills with ingest timing is not a worklist.
   // `fresh` still comes back per point so the screen can say the estate is
   // between runs; it decides nothing.
+  // Device by device: which of a device's readings something computed needs a
+  // meaning for, what the tag suggests, and what the reading says right now.
+  // Only roles an EFFECTIVE metric definition reads are asked about — the estate
+  // stores hundreds of readings nothing computes with. See role_asks.py.
+  roleAsks: ({ site_id, hours }: { site_id?: string; hours?: number } = {}) =>
+    unwrap(api.get(`${BI}/points/roles/asks${qs({ site_id, hours })}`)),
+
   roleOrphans: ({ role, site_id }: any = {}) =>
     unwrap(api.get(`${BI}/points/roles/orphans${qs({ role, site_id })}`)),
 

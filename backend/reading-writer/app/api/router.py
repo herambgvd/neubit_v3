@@ -40,6 +40,7 @@ from . import findings as fx
 from . import intake as intake_store
 from . import permsync
 from . import nameplate as nameplate_view
+from . import role_asks as role_asks_view
 from . import plant as plant_view
 from . import suggest_equipment
 from . import queries as q
@@ -597,6 +598,32 @@ class ForgetRolesRequest(BaseModel):
     """
 
     point_ids: list[uuid.UUID] = PField(min_length=1, max_length=500)
+
+
+@bi_router.get(
+    "/points/roles/asks",
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def role_asks(
+    db: Db,
+    scope: Caller,
+    site_id: uuid.UUID | None = None,
+    hours: int = Query(role_asks_view.DEFAULT_LOOKBACK_HOURS, ge=1, le=8760),
+) -> dict:
+    """Device by device: which of its readings something computed needs a role
+    for, what the tag suggests, and what the reading says right now.
+
+    The estate stores hundreds of readings that nothing computes with, and a
+    screen that lists all of them cannot be used. So only a point whose
+    confirmed role, or whose tag's suggested role, is read by an EFFECTIVE
+    metric definition appears here — with the metric keys that read it
+    (`needed_by`), and its latest value inside the window, because a role
+    asserted on a reading nobody looked at is the mistake the confirm guard
+    exists for. `reporting: false` says that guard will challenge the press.
+
+    Writes nothing. The write is `POST /bi/metrics/roles/confirm`.
+    """
+    return await role_asks_view.role_asks(db, _tenant(scope), site_id=site_id, hours=hours)
 
 
 @bi_router.get(

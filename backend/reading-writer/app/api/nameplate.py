@@ -81,10 +81,11 @@ _DEMANDS_SQL = """
 """
 
 
-def _effective(rows: list[dict]) -> list[dict]:
+def effective_rows(rows: list[dict]) -> list[dict]:
     """One definition per key: a tenant's own overrides the platform's, and the
-    highest version of whichever wins. A fact an older version wanted is gone
-    with it."""
+    highest version of whichever wins. A fact — or a role — an older version
+    wanted is gone with it. Shared with `role_asks.py`, which asks the same
+    question of the same table for role inputs."""
     best: dict[str, tuple[int, int]] = {}
     for r in rows:
         rank = (1 if r["tenant_id"] is not None else 0, int(r["version"]))
@@ -101,7 +102,7 @@ async def demands(db: AsyncSession, tenant: uuid.UUID | None) -> dict[str, dict[
     read off a plate, and nothing else."""
     rows = _rows(await db.execute(text(_DEMANDS_SQL), {"tenant": str(tenant) if tenant else None}))
     out: dict[str, dict[str, set[str]]] = {}
-    for r in _effective(rows):
+    for r in effective_rows(rows):
         cls, fact = r["cls"], r["fact"]
         if not cls or fact not in slot_store.EQUIPMENT_FACT_DEFS:
             continue
