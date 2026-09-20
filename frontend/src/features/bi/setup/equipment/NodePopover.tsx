@@ -2,11 +2,18 @@
 
 // One node, opened where it sits on the drawing.
 //
-// A PROPOSAL (dashed) opens as a question: what the platform thinks it is, the
-// values each slot read, anything the checks flagged — a flagged slot starts
-// UNTICKED, so the one reading that looked wrong is not saved by default — and,
-// on the power chain, what feeds it. Save writes it through core. "Save all
-// like this" saves every other clean proposal of the same type the same way.
+// A PROPOSAL (dashed) opens as ONE question: is this what the platform thinks
+// it is? The values each slot read are there, anything the checks flagged is
+// there — a flagged slot starts UNTICKED, so the one reading that looked wrong
+// is not saved by default — and, on the power chain, what feeds it. Save writes
+// it through core. "Save all like this" saves every other clean proposal of the
+// same type the same way.
+//
+// NOTHING off the machine's metal plate is asked for here. An operator confirming
+// a device does not have the nameplate in front of them, and a capacity or a ΔT
+// band typed from memory is worse than none. Those are asked later, one at a
+// time, by NameplateWizard — where the band is OBSERVED from the readings and
+// only confirmed.
 //
 // A SAVED node (solid) opens as what it is: its slots and their live values,
 // what feeds it (changeable), and a way to remove it.
@@ -23,20 +30,12 @@ export interface SaveChoice {
   cls: string;
   slots: { slot: string; device_tag: string; point_tag: string }[];
   fedBy: string | null;
-  design: Record<string, number>;
 }
 
 const fmtVal = (v: number | null | undefined) =>
   v == null || !Number.isFinite(v)
     ? "—"
     : v.toLocaleString("en-GB", { maximumFractionDigits: Math.abs(v) >= 100 ? 0 : 2 });
-
-/** The facts a proposal asks for, when its class carries them. */
-const ASKED_FACTS: { key: string; label: string }[] = [
-  { key: "tr", label: "Capacity (TR)" },
-  { key: "design_dt_min", label: "Design ΔT low (K)" },
-  { key: "design_dt_max", label: "Design ΔT high (K)" },
-];
 
 export default function NodePopover({
   node,
@@ -84,26 +83,9 @@ export default function NodePopover({
   );
   const suggestedFeeder = node.parent?.startsWith("eq:") ? node.parent.slice(3) : "";
   const [fedBy, setFedBy] = useState(suggestedFeeder);
-  const [facts, setFacts] = useState<Record<string, string>>({});
   const [confirmRemove, setConfirmRemove] = useState(false);
 
-  const askFacts = ASKED_FACTS.filter((f) => ix.classes.get(cls)?.facts.includes(f.key));
-
-  // Half a ΔT band is not a band: both, or neither.
-  const halfBand =
-    askFacts.some((f) => f.key === "design_dt_min") &&
-    !(facts.design_dt_min ?? "").trim() !== !(facts.design_dt_max ?? "").trim();
-
-  function choice(): SaveChoice | null {
-    if (halfBand) return null;
-    const design: Record<string, number> = {};
-    for (const f of askFacts) {
-      const raw = (facts[f.key] ?? "").trim();
-      if (!raw) continue;
-      const v = Number(raw);
-      if (!Number.isFinite(v)) return null;
-      design[f.key] = v;
-    }
+  function choice(): SaveChoice {
     return {
       node,
       cls,
@@ -111,10 +93,8 @@ export default function NodePopover({
         .filter((s) => !off.has(s.slot) && classSlots.has(s.slot))
         .map((s) => ({ slot: s.slot, device_tag: d?.device_tag ?? "", point_tag: s.point_tag })),
       fedBy: node.kind === "power" ? fedBy || null : null,
-      design,
     };
   }
-  const ready = choice();
 
   const feederNote = (() => {
     if (node.kind !== "power" || !d?.feeder) return null;
@@ -254,30 +234,6 @@ export default function NodePopover({
 
       {node.saved && nameplate ? <div className="mt-3">{nameplate}</div> : null}
 
-      {!node.saved && askFacts.length > 0 && (
-        <div className="mt-3">
-          <div className="grid grid-cols-3 gap-2">
-            {askFacts.map((f) => (
-              <label key={f.key} className="flex flex-col gap-1 text-[11.5px] text-nb-muted">
-                {f.label}
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={facts[f.key] ?? ""}
-                  disabled={!mayWrite}
-                  onChange={(ev) => setFacts((p) => ({ ...p, [f.key]: ev.target.value }))}
-                  placeholder="from nameplate"
-                  className="h-8 rounded-[8px] border border-white/[.12] bg-transparent px-2 font-mono text-[12.5px] text-nb-ink outline-none focus:border-nb-blue/60"
-                />
-              </label>
-            ))}
-          </div>
-          <p className="mt-1.5 text-[11.5px] text-nb-faint">
-            Not known yet? Leave them blank — the metrics that need them will say so.
-          </p>
-        </div>
-      )}
-
       {error && <p className="mt-3 text-[12px] text-nb-crit">{error}</p>}
 
       {mayWrite && (
@@ -286,8 +242,8 @@ export default function NodePopover({
             <>
               <button
                 type="button"
-                disabled={busy || !ready || !cls}
-                onClick={() => ready && onSave(ready)}
+                disabled={busy || !cls}
+                onClick={() => onSave(choice())}
                 className="h-9 rounded-[9px] bg-nb-blue px-4 text-[13px] font-medium text-white transition hover:bg-nb-blueb disabled:opacity-50"
               >
                 {busy ? "Saving…" : "Save"}
@@ -295,17 +251,12 @@ export default function NodePopover({
               {likeCount > 0 && (
                 <button
                   type="button"
-                  disabled={busy || !ready || !cls}
-                  onClick={() => ready && onSaveAllLike(ready)}
+                  disabled={busy || !cls}
+                  onClick={() => onSaveAllLike(choice())}
                   className="h-9 rounded-[9px] border border-white/[.14] px-3.5 text-[13px] text-nb-soft transition hover:border-nb-blue/50 hover:text-nb-ink disabled:opacity-50"
                 >
                   Save all {likeCount + 1} like this
                 </button>
-              )}
-              {!ready && (
-                <span className="text-[11.5px] text-nb-warn">
-                  {halfBand ? "Give both ends of the ΔT band, or neither." : "A nameplate value is not a number."}
-                </span>
               )}
             </>
           ) : confirmRemove ? (

@@ -39,6 +39,7 @@ from . import execute as ex
 from . import findings as fx
 from . import intake as intake_store
 from . import permsync
+from . import nameplate as nameplate_view
 from . import plant as plant_view
 from . import suggest_equipment
 from . import queries as q
@@ -1289,6 +1290,32 @@ async def equipment_suggestions(db: Db, scope: Caller, site_id: uuid.UUID) -> di
     See `suggest_equipment.py`.
     """
     return await suggest_equipment.suggestions(db, _tenant(scope), site_id)
+
+
+@bi_router.get(
+    "/sites/{site_id}/equipment/nameplate",
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def equipment_nameplate(
+    db: Db,
+    scope: Caller,
+    site_id: uuid.UUID,
+    days: int = Query(nameplate_view.DEFAULT_DAYS, ge=1, le=365),
+) -> dict:
+    """The plate facts still missing on this building's machines, and the ΔT band
+    its own readings show.
+
+    Only what a metric actually reads is asked for: a fact is here because some
+    effective metric's input says `source: "equipment_fact"` on this class, and
+    every question carries the metric keys (`blocks`) that stay refused without
+    it. The band comes with an OBSERVATION — the p10–p90 of the hours where both
+    water temperatures reported and the machine was cooling — so nobody has to
+    remember a design sheet; too few such hours and there is no observation
+    rather than a made-up one.
+
+    Writes nothing: the write is core's design PUT. See `nameplate.py`.
+    """
+    return await nameplate_view.nameplate(db, _tenant(scope), site_id, days=days)
 
 
 @bi_router.get(

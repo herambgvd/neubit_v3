@@ -7,7 +7,7 @@
  *   • the system of that kind is created when the building has none;
  *   • "Save all like this" saves the other CLEAN proposals of that type, never
  *     one with a warning;
- *   • half a ΔT band is refused before anything is sent;
+ *   • confirming asks nothing off the machine's plate — NameplateWizard does;
  *   • a saved box changes its feeder, its points and its nameplate in place,
  *     and the nameplate PUT still sends every other fact back unchanged;
  *   • an import is a dry run first; a restate says what it restated or that it
@@ -218,7 +218,7 @@ describe("the drawing", () => {
 });
 
 describe("saving a proposal", () => {
-  it("sends the ticked slots, never a flagged one unless ticked, and the nameplate typed", async () => {
+  it("sends the ticked slots, never a flagged one unless ticked", async () => {
     const user = render();
     await user.click(await screen.findByRole("button", { name: "1F York Chiller01 — suggested" }));
 
@@ -226,7 +226,6 @@ describe("saving a proposal", () => {
     expect(within(pop).getByRole("checkbox", { name: "Save kw" })).not.toBeChecked();
     expect(within(pop).getByRole("checkbox", { name: "Save chwr" })).toBeChecked();
 
-    await user.type(within(pop).getByLabelText("Capacity (TR)"), "350");
     await user.click(within(pop).getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(posts("/equipment")).toHaveLength(1));
@@ -239,20 +238,23 @@ describe("saving a proposal", () => {
         { slot: "chws", device_tag: "1F York Chiller01", point_tag: "1FYC1_OWT" },
       ],
       fed_by_id: null,
-      design: { tr: 350 },
     });
     // The building already had a chilled-water system.
     expect(posts("/systems")).toHaveLength(0);
   });
 
-  it("refuses half a ΔT band before sending anything", async () => {
+  it("asks nothing off the machine's own plate — that is a later question", async () => {
+    // An operator confirming a device is not standing at the machine with its
+    // nameplate in front of them. NameplateWizard asks for those, one at a time.
     const user = render();
     await user.click(await screen.findByRole("button", { name: "2F York Chiller01 — suggested" }));
-    await user.type(screen.getByLabelText("Design ΔT low (K)"), "5");
 
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    expect(screen.getByText("Give both ends of the ΔT band, or neither.")).toBeInTheDocument();
-    expect(posts("/equipment")).toHaveLength(0);
+    const pop = screen.getByRole("dialog", { name: "2F York Chiller01" });
+    expect(within(pop).queryByText(/TR|\u0394T|nameplate|plate/i)).not.toBeInTheDocument();
+    await user.click(within(pop).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(posts("/equipment")).toHaveLength(1));
+    expect(posts("/equipment")[0].body).not.toHaveProperty("design");
   });
 
   it("creates the system of that kind when the building has none, and hangs it under its feeder", async () => {

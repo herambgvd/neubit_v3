@@ -389,6 +389,12 @@ export const bi = {
   equipmentSuggestions: (siteId: string) =>
     unwrap(api.get(`${BI}/sites/${encodeURIComponent(siteId)}/equipment/suggestions`)),
 
+  // The plate facts still missing on a building's machines — and, for the ΔT
+  // band, what its own readings show over the window, so the range is confirmed
+  // rather than remembered. Writes nothing; the write is core's design PUT.
+  equipmentNameplate: (siteId: string, { days }: { days?: number } = {}) =>
+    unwrap(api.get(`${BI}/sites/${encodeURIComponent(siteId)}/equipment/nameplate${qs({ days })}`)),
+
   // ── THE PLANT ─ L3: one building's systems → equipment → slots ─────────
   //
   // Every slot with its DATA READINESS (reporting / silent / unbound /

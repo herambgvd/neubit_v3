@@ -25,6 +25,7 @@ import type { BiPlant, InfraVocabulary, InfrastructureTree } from "@/lib/types";
 import { bi } from "../../api";
 import { taskHref } from "../routes";
 import DesignFacts from "./DesignFacts";
+import NameplateWizard from "./NameplateWizard";
 import NodePopover, { type SaveChoice } from "./NodePopover";
 import ScheduleImport from "./ScheduleImport";
 import SlotList from "./SlotList";
@@ -40,6 +41,7 @@ import {
   type Suggestions,
   type Tree,
 } from "./drawing";
+import type { Nameplate } from "./nameplate";
 import { factsOf, indexVocabulary, slotsOf } from "./vocabulary";
 
 const LIVE_MS = 15_000;
@@ -92,6 +94,13 @@ export default function PlantCanvas({
     queryKey: ["infra-tree", siteId],
     queryFn: () => siteInfrastructure.tree(siteId),
   });
+  // What is still missing off the machines' own plates. Not part of confirming a
+  // machine: asked later, one question at a time (NameplateWizard).
+  const plateQ = useQuery<Nameplate>({
+    queryKey: ["bi-equipment-nameplate", siteId],
+    queryFn: () => bi.equipmentNameplate(siteId),
+  });
+  const [plates, setPlates] = useState(false);
 
   // Devices saved in this session that the reporting mirror has not caught up
   // with yet: drawn solid at once, never offered a second time.
@@ -165,6 +174,7 @@ export default function PlantCanvas({
       qc.invalidateQueries({ queryKey: ["bi-plant-live", siteId] });
       qc.invalidateQueries({ queryKey: ["bi-equipment-suggestions", siteId] });
       qc.invalidateQueries({ queryKey: ["infra-tree", siteId] });
+      qc.invalidateQueries({ queryKey: ["bi-equipment-nameplate", siteId] });
     };
     again();
     // The reporting mirror hears core a moment later.
@@ -189,7 +199,6 @@ export default function PlantCanvas({
           equipment_class: c.cls,
           slots: c.slots,
           fed_by_id: c.fedBy,
-          design: c.design,
         });
         saved += 1;
         setPending((p) => new Set(p).add(c.node.label));
@@ -241,7 +250,6 @@ export default function PlantCanvas({
         .filter((s) => !s.warning && allowed.has(s.slot))
         .map((s) => ({ slot: s.slot, device_tag: o.device?.device_tag ?? "", point_tag: s.point_tag })),
       fedBy: o.kind === "power" && o.parent?.startsWith("eq:") ? o.parent.slice(3) : null,
-      design: {},
     }));
     save.mutate([c, ...rest]);
   };
@@ -338,6 +346,19 @@ export default function PlantCanvas({
         </Link>
       )}
 
+      {mayWrite && (plateQ.data?.totals.asked ?? 0) > 0 && (
+        <button
+          type="button"
+          onClick={() => setPlates(true)}
+          className="mx-5 mt-3 flex items-center gap-2 rounded-[10px] border border-nb-blue/35 bg-nb-blue/[.07] px-3.5 py-2 text-left text-[12.5px] text-nb-soft transition hover:border-nb-blue/60"
+        >
+          <span className="h-1.5 w-1.5 rounded-full bg-nb-blueb" />
+          {plateQ.data!.totals.asked} machine{plateQ.data!.totals.asked === 1 ? "" : "s"} still need what is on their
+          own plate — one question each
+          <span className="ml-auto text-nb-blueb">Answer them →</span>
+        </button>
+      )}
+
       {/* the drawing — the only thing that scrolls */}
       <div className="min-h-0 flex-1 overflow-auto">
         <div ref={wrapRef} className="relative min-h-full px-5 py-5" data-testid="plant-drawing">
@@ -425,6 +446,17 @@ export default function PlantCanvas({
       </div>
 
       {importing && mayWrite && <ScheduleImport siteId={siteId} ix={ix} onClose={() => setImporting(false)} />}
+
+      {plates && mayWrite && plateQ.data && (
+        <NameplateWizard
+          siteId={siteId}
+          data={plateQ.data}
+          designs={Object.fromEntries(
+            (treeQ.data?.systems ?? []).flatMap((s) => s.equipment).map((e) => [e.equipment_id, e.design ?? {}]),
+          )}
+          onClose={() => setPlates(false)}
+        />
+      )}
     </div>
   );
 }
