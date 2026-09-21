@@ -24,6 +24,9 @@ export const PERM_MANAGE = "bi.manage";
 // them); a floor is optional and is offered only with `floors.read`.
 export const PERM_ASSIGN = "devices.create";
 export const PERM_SITES_READ = "sites.read";
+// The building FACTS (area, tariff, the grid's carbon factor) are stored on the
+// site, so recording one is core's write under core's key — never `bi.manage`.
+export const PERM_SITES_UPDATE = "sites.update";
 export const PERM_FLOORS_READ = "floors.read";
 
 // Module the routes are gated by — "Dashboards & Reports" in the core module

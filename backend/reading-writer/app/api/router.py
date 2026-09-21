@@ -39,6 +39,7 @@ from . import execute as ex
 from . import findings as fx
 from . import intake as intake_store
 from . import permsync
+from . import building_facts as building_facts_view
 from . import nameplate as nameplate_view
 from . import role_asks as role_asks_view
 from . import plant as plant_view
@@ -1317,6 +1318,26 @@ async def equipment_suggestions(db: Db, scope: Caller, site_id: uuid.UUID) -> di
     See `suggest_equipment.py`.
     """
     return await suggest_equipment.suggestions(db, _tenant(scope), site_id)
+
+
+@bi_router.get(
+    "/sites/{site_id}/facts",
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def building_facts(db: Db, scope: Caller, site_id: uuid.UUID) -> dict:
+    """One building's facts record: what is on file, with its source and when it
+    was recorded, and what is still missing with the figure it holds up.
+
+    Only facts an EFFECTIVE metric definition reads are here, plus the benchmark
+    inputs the version of the standard in force reads — `occupancy` and `city`
+    are in the mirror and are not asked for, because nothing reads them. Nothing
+    is derived: a city is not a climate zone and a floor plan is not an AC share.
+
+    Writes nothing. The area, the tariff and the emission factors are core's
+    (`PATCH /sites/{id}`, `PUT /sites/{id}/emission-factors`); the benchmark
+    inputs are `PUT /bi/rating/benchmark-config`. See `building_facts.py`.
+    """
+    return await building_facts_view.building_facts(db, _tenant(scope), site_id)
 
 
 @bi_router.get(

@@ -310,6 +310,23 @@ export const bi = {
   // meaning for, what the tag suggests, and what the reading says right now.
   // Only roles an EFFECTIVE metric definition reads are asked about — the estate
   // stores hundreds of readings nothing computes with. See role_asks.py.
+  // One building's facts record: what is on file with its source and date, and
+  // what is missing with the figure it holds up. Only facts an effective metric
+  // definition reads, plus the benchmark inputs the standard in force reads.
+  // Writes nothing — see building_facts.py for where each write lives.
+  buildingFacts: (siteId: string) =>
+    unwrap(api.get(`${BI}/sites/${encodeURIComponent(siteId)}/facts`)),
+
+  /** Record the site's climate zone / AC share for the star bands. `null`
+   *  CLEARS; a zone the standard does not publish is refused by name. */
+  setBenchmarkConfig: (body: {
+    site_id: string;
+    standard_key?: string;
+    climate_zone?: string | null;
+    ac_category?: string | null;
+    ac_share_percent?: number | null;
+  }) => unwrap(api.put(`${BI}/rating/benchmark-config`, body)),
+
   roleAsks: ({ site_id, hours }: { site_id?: string; hours?: number } = {}) =>
     unwrap(api.get(`${BI}/points/roles/asks${qs({ site_id, hours })}`)),
 
