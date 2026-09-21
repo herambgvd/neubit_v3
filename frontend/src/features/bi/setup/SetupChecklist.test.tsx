@@ -30,8 +30,6 @@ beforeEach(() => {
   perms.granted = new Set(["bi.read", "sites.read"]);
   perms.modules = new Set(["analytics"]);
   stub = stubApi({
-    "GET /bi/points/ghosts": { total: 3, auto: 2, manual: 1, groups: [], resurrected: [] },
-    "GET /bi/units/patterns": { totals: { points: 283, already_confirmed: 190 }, patterns: [] },
     "GET /bi/devices": (req: Recorded) => ({ total: req.search.get("placement") === "placed" ? 12 : 40, items: [] }),
     "GET /bi/metrics/roles": { counts: { points: 400, confirmed: 20, unconfirmed: 380 }, items: [] },
     "GET /bi/points/roles/orphans": { orphans: [] },
@@ -58,8 +56,6 @@ describe("the checklist", () => {
     const list = await screen.findByRole("list", { name: "Setup checklist" });
 
     expect(within(list).getAllByRole("listitem").map((li) => li.getAttribute("aria-label"))).toEqual([
-      "Duplicates",
-      "Units",
       "Buildings & devices",
       "Equipment",
       "Metric roles",
@@ -69,13 +65,13 @@ describe("the checklist", () => {
 
   it("opens the FIRST task that is not done, and only that one", async () => {
     renderWithProviders(<SetupChecklist />);
-    const first = await screen.findByRole("listitem", { name: "Duplicates" });
+    const first = await screen.findByRole("listitem", { name: "Buildings & devices" });
 
     expect(first).toHaveAttribute("aria-current", "step");
-    expect(within(first).getByText("which row is the live sensor?", { exact: false })).toBeInTheDocument();
-    expect(within(first).getByRole("link", { name: /Settle the duplicates/ })).toHaveAttribute(
+    expect(within(first).getByText("which building is this device in?", { exact: false })).toBeInTheDocument();
+    expect(within(first).getByRole("link", { name: /Place the devices/ })).toHaveAttribute(
       "href",
-      "/bi/setup/duplicates",
+      "/bi/setup/placement",
     );
     // One step at a time: a second open card would be a second instruction.
     expect(screen.getAllByRole("listitem").filter((li) => li.getAttribute("aria-current"))).toHaveLength(1);
@@ -83,11 +79,9 @@ describe("the checklist", () => {
 
   it("keeps every other task to one line, with its state and its page", async () => {
     renderWithProviders(<SetupChecklist />);
-    await screen.findByText("1 of 6 answered");
+    await screen.findByText("1 of 4 answered");
 
     const expected: [string, string, string][] = [
-      ["Units", "partly", "/bi/setup/units"],
-      ["Buildings & devices", "partly", "/bi/setup/placement"],
       ["Equipment", "not started", "/bi/setup/equipment"],
       ["Metric roles", "done", "/bi/setup/roles"],
       ["Building facts", "partly", "/bi/setup/facts"],
@@ -98,17 +92,17 @@ describe("the checklist", () => {
       expect(within(li).getByText(state), name).toBeInTheDocument();
       expect(within(li).getByRole("link", { name: "Open →" }), name).toHaveAttribute("href", href);
     }
-    expect(screen.getByText("1 of 6 answered")).toBeInTheDocument();
+    expect(screen.getByText("1 of 4 answered")).toBeInTheDocument();
   });
 
   it("shows a measured task as how far along it is, not only what is left", async () => {
     renderWithProviders(<SetupChecklist />);
-    await screen.findByText("1 of 6 answered");
-    const units = screen.getByRole("listitem", { name: "Units" });
+    await screen.findByText("1 of 4 answered");
+    const place = screen.getByRole("listitem", { name: "Buildings & devices" });
 
-    // 190 of 283 confirmed. A count of what is LEFT never says how big the job was.
-    expect(within(units).getByRole("img", { name: "190 of 283" })).toBeInTheDocument();
-    expect(within(units).getByText("190 / 283")).toBeInTheDocument();
+    // 12 of 52 placed. A count of what is LEFT never says how big the job was.
+    expect(within(place).getByRole("img", { name: "12 of 52" })).toBeInTheDocument();
+    expect(within(place).getByText("12 / 52")).toBeInTheDocument();
   });
 
   it("says what a green tick on Equipment does not mean", async () => {
@@ -135,40 +129,36 @@ describe("the checklist", () => {
   });
 
   it("prints a read that failed as unknown, never as a zero", async () => {
-    stub.set({ "GET /bi/units/patterns": () => httpError(502, "down") });
+    // A quiet row, not the open one: the open step spells its own state out
+    // ("cannot be read"), and what is under test here is the one-line form.
+    stub.set({ "GET /bi/metrics/roles": () => httpError(502, "down") });
     renderWithProviders(<SetupChecklist />);
 
-    const units = await screen.findByRole("listitem", { name: "Units" });
-    expect(await within(units).findByText("unknown")).toBeInTheDocument();
-    expect(within(units).getByText("—")).toBeInTheDocument();
+    const roles = await screen.findByRole("listitem", { name: "Metric roles" });
+    expect(await within(roles).findByText("unknown")).toBeInTheDocument();
+    // The figure it could not read prints as a dash, never as 0 bound.
+    expect(within(roles).getByText(/— bound/)).toBeInTheDocument();
   });
 
   it("stops the walk on a gate it cannot read rather than implying it is fine", async () => {
-    // Duplicates answers "none left"; Units is the one that failed. The walk
-    // must open Units and say so — not skip to gate 3.
-    stub.set({
-      "GET /bi/points/ghosts": { total: 0, auto: 0, manual: 0, groups: [], resurrected: [] },
-      "GET /bi/units/patterns": () => httpError(502, "down"),
-    });
+    // Buildings & devices is the one that failed. The walk must open it and
+    // say so — not skip past to Equipment.
+    stub.set({ "GET /bi/devices": () => httpError(502, "down") });
     renderWithProviders(<SetupChecklist />);
     await waitFor(() =>
-      expect(screen.getByRole("listitem", { name: "Units" })).toHaveAttribute("aria-current", "step"),
+      expect(screen.getByRole("listitem", { name: "Buildings & devices" })).toHaveAttribute("aria-current", "step"),
     );
 
-    const units = screen.getByRole("listitem", { name: "Units" });
-    expect(within(units).getByText("cannot be read")).toBeInTheDocument();
-    expect(within(units).getByText(/has not answered/)).toBeInTheDocument();
-    // Neither the gate behind it nor the one after it is open — a step that is
-    // done is not an instruction, and one further on is not reachable yet.
+    const place = screen.getByRole("listitem", { name: "Buildings & devices" });
+    expect(within(place).getByText("cannot be read")).toBeInTheDocument();
+    expect(within(place).getByText(/has not answered/)).toBeInTheDocument();
+    // The gate after it is not open — one further on is not reachable yet.
     expect(screen.getAllByRole("listitem").filter((li) => li.getAttribute("aria-current"))).toHaveLength(1);
-    expect(screen.getByRole("listitem", { name: "Duplicates" })).not.toHaveAttribute("aria-current");
-    expect(screen.getByRole("listitem", { name: "Buildings & devices" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("listitem", { name: "Equipment" })).not.toHaveAttribute("aria-current");
   });
 
   it("opens no step at all once every gate is answered", async () => {
     stub.set({
-      "GET /bi/points/ghosts": { total: 0, auto: 0, manual: 0, groups: [], resurrected: [] },
-      "GET /bi/units/patterns": { totals: { points: 283, already_confirmed: 283 }, patterns: [] },
       "GET /bi/devices": () => ({ total: 0, items: [] }),
       "GET /sites/s1/infrastructure": {
         site_id: "s1",
@@ -189,7 +179,7 @@ describe("the checklist", () => {
     renderWithProviders(<SetupChecklist />);
 
     expect(await screen.findByText(/Every gate is answered/)).toBeInTheDocument();
-    expect(screen.getByText("6 of 6 answered")).toBeInTheDocument();
+    expect(screen.getByText("4 of 4 answered")).toBeInTheDocument();
     expect(screen.queryAllByRole("listitem").filter((li) => li.getAttribute("aria-current"))).toEqual([]);
   });
 });
@@ -223,7 +213,7 @@ describe("what it may ask", () => {
 
   it("offers no control that writes — every action is a link", async () => {
     renderWithProviders(<SetupChecklist />);
-    await screen.findByRole("listitem", { name: "Duplicates" });
+    await screen.findByRole("listitem", { name: "Buildings & devices" });
     expect(screen.queryAllByRole("button")).toEqual([]);
   });
 });

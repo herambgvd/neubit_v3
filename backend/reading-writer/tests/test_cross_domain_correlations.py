@@ -423,21 +423,22 @@ class TestTheGapKindsAreDistinguished:
     """Each kind is a different sentence with a different price. If two of them
     collapse into one, the screen's whole argument collapses with them."""
 
-    def test_a_measurement_arriving_with_no_confirmed_unit_is_unit_unconfirmed(self):
+    def test_a_measurement_arriving_with_no_unit_at_all_is_unit_unconfirmed(self):
         verdict = cx.resolve_point_unit([point("1FYC1_AmbTemp")], "temperature")
         assert verdict["gap"] == "unit_unconfirmed"
         assert cx.GAP_KINDS[verdict["gap"]].needs_new_hardware is False
-        assert "none with an operator-confirmed unit" in verdict["gate"]
+        assert "none with a unit on record" in verdict["gate"]
 
-    def test_a_unit_that_only_the_wire_ever_said_is_not_a_confirmation(self):
-        """`unit_source` is the whole point of that column. A unit that arrived on
-        the wire is what the gateway happened to send, not an assertion anybody
-        made, and `app/api/rating.py` refuses to divide by one."""
+    def test_a_unit_the_gateway_recorded_is_an_assertion_somebody_made(self):
+        """This used to refuse: a unit off the wire was "what the gateway
+        happened to send". The gateway is where a person describes a signal
+        now — beside its live value and its address — so the wire IS the
+        assertion, and demanding a second one here refused every correlation on
+        an estate whose units all arrived that way."""
         verdict = cx.resolve_point_unit(
-            [point("1FYC1_AmbTemp", unit="degC", unit_source="wire")], "temperature"
+            [point("1FYC1_AmbTemp", unit="degC", unit_source="reading")], "temperature"
         )
-        assert verdict["satisfied"] is False
-        assert verdict["gap"] == "unit_unconfirmed"
+        assert verdict["satisfied"] is True
 
     def test_a_unit_confirmed_as_the_wrong_quantity_is_its_own_kind(self):
         """Worse than a missing unit, and a different remedy: the assertion has
@@ -449,14 +450,16 @@ class TestTheGapKindsAreDistinguished:
         assert verdict["evidence"]["confirmed_units"] == ["kWh"]
         assert cx.GAP_KINDS[verdict["gap"]].needs_new_hardware is False
 
-    def test_a_signal_with_no_declared_dimension_takes_any_confirmed_unit(self):
+    def test_a_signal_with_no_declared_dimension_still_needs_A_unit(self):
         """System load is a percentage and `%` is deliberately not in the
-        dimension table. The need is weaker and exactly stated: a human has said
-        what the number is."""
-        verdict = cx.resolve_point_unit(
+        dimension table, so nothing checks WHICH unit it is. Something still has
+        to have said what the number is, and `""` has not."""
+        assert cx.resolve_point_unit(
             [point("1FYC1_SysLoad", unit="", unit_source="operator")], None
-        )
-        assert verdict["satisfied"] is True
+        )["satisfied"] is False
+        assert cx.resolve_point_unit(
+            [point("1FYC1_SysLoad", unit="%", unit_source="reading")], None
+        )["satisfied"] is True
 
     def test_a_role_with_candidates_reporting_is_unbound_and_costs_nothing(self):
         verdict = cx.resolve_point_role([], [point("1FYC1_IWT")], "inlet_water_temp")
@@ -843,7 +846,7 @@ class TestWhatCountsAsASignal:
             ],
             points=[
                 point("1FYC1_AmbTemp", unit="degC", unit_source="operator", retired=True),
-                point("1FYC1_SysLoad", unit="", unit_source="operator"),
+                point("1FYC1_SysLoad", unit="%", unit_source="operator"),
             ],
         )
         (out,) = run(_resolve(db))
@@ -981,7 +984,7 @@ class TestTenantScope:
             ],
             points=[
                 point("1FYC1_AmbTemp", tenant=T2, unit="degC", unit_source="operator"),
-                point("1FYC1_SysLoad", tenant=T1, unit="", unit_source="operator"),
+                point("1FYC1_SysLoad", tenant=T1, unit="%", unit_source="operator"),
             ],
         )
         (out,) = run(_resolve(db, tenant=T1))

@@ -55,7 +55,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..metric_registry import evaluator, registry
 from ..metric_registry import slots as slot_store
 from .queries import _rows
-from .units import is_confirmed
+from ..metric_registry.units import unit_known
 
 _SITE_SQL = """
     SELECT f.site_name
@@ -91,7 +91,7 @@ def _point_view(point: dict | None) -> dict | None:
         # A number with no operator-confirmed unit is drawn, but it is not a
         # quantity, and a metric will not compute on it. Said per point so the
         # schematic can mark it rather than implying the metric's refusal.
-        "unit_confirmed": is_confirmed(point),
+        "unit_confirmed": unit_known(point),
         "last_seen_at": point.get("last_seen_at"),
     }
 

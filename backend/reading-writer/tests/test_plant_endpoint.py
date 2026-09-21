@@ -154,7 +154,10 @@ def test_a_silent_slot_names_its_point_but_draws_no_latest_value(metrics):
     chwr = slots["chwr"]
     assert chwr["point"]["point_id"] == pid(2)
     assert chwr["latest"] is None
-    assert chwr["point"]["unit_confirmed"] is False
+    # Its unit came off the wire and nobody typed one here. That used to read
+    # as unconfirmed; the gateway is where a signal is described now, so a unit
+    # that arrived IS the answer — and silence is a separate fact from it.
+    assert chwr["point"]["unit_confirmed"] is True
     assert "no reading in the window" in chwr["reason"]
 
 

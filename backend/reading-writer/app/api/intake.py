@@ -3,7 +3,7 @@
 THE TREADMILL NOBODY WAS STANDING ON
 ------------------------------------
 This platform refuses to measure anything a human has not asserted: a point has
-no meaning until an operator confirms its UNIT (`app/api/units.py`) and, for a
+no meaning until its UNIT is on record (the gateway describes it) and, for a
 metric, its ROLE (`app/metric_registry/roles.py`). That is correct and is not
 what this module changes.
 
@@ -59,7 +59,7 @@ THE FOUR STATES, AND WHY THE GRACE WINDOW EXISTS
                             the answer: an address that does not exist
 
 Splitting the last two from the first is the point. "Pending confirmation" and
-"there is nothing at this address" look identical on a units screen and are
+"there is nothing at this address" look identical in a unit column and are
 completely different problems, and only one of them is fixed by an operator
 picking a unit from a dropdown.
 
@@ -68,7 +68,7 @@ WHAT THIS MODULE DELIBERATELY DOES NOT DO
 * It confirms NOTHING. There is no write path in this file at all.
 * It expands no pattern. `siblings` on a refusal are the points on the SAME
   device that are actually reporting, listed so the operator can see the
-  spelling they may have meant — the same discipline as `units.suggest()`: read
+  spelling they may have meant — the same discipline the gateway's suggester uses: read
   time, labelled, never stored, never chosen on their behalf.
 * It retires nothing, and now that is a choice rather than a constraint. It used
   to be impossible — `store.py` cleared `retired_at` for any message, so retiring
@@ -199,11 +199,11 @@ _COUNTS_SQL = """
     SELECT count(*)                                                           AS points,
            count(*) FILTER (WHERE p.first_seen_at >= now() - make_interval(days => :days))
                                                                               AS arrived,
-           count(*) FILTER (WHERE p.unit_source IS DISTINCT FROM 'operator')   AS unit_unconfirmed,
+           count(*) FILTER (WHERE coalesce(btrim(p.unit), '') = '')           AS unit_unconfirmed,
            count(*) FILTER (WHERE r.point_id IS NULL)                          AS role_unbound,
            count(*) FILTER (
                WHERE p.first_seen_at >= now() - make_interval(days => :days)
-                 AND p.unit_source IS DISTINCT FROM 'operator'
+                 AND coalesce(btrim(p.unit), '') = ''
            )                                                                   AS arrived_unit_unconfirmed,
            count(*) FILTER (
                WHERE lr.last_reading_at >= now() - make_interval(hours => :silent_hours)
@@ -234,7 +234,7 @@ _DEVICES_SQL = """
            min(p.device_type)                                             AS device_type,
            min(p.first_seen_at)                                           AS first_seen_at,
            count(*)                                                       AS points,
-           count(*) FILTER (WHERE p.unit_source = 'operator')             AS unit_confirmed,
+           count(*) FILTER (WHERE coalesce(btrim(p.unit), '') <> '')      AS unit_confirmed,
            count(r.point_id)                                              AS role_bound,
            count(*) FILTER (
                WHERE lr.last_reading_at >= now() - make_interval(hours => :silent_hours)
@@ -257,7 +257,7 @@ def _filters(state: str | None, pending: bool, new_only: bool, search: str | Non
         # without. A missing ROLE is shown per row but is NOT a backlog: most
         # points are not an input to any metric and never will be, and counting
         # them as outstanding work would make the number meaningless.
-        where += " AND p.unit_source IS DISTINCT FROM 'operator'"
+        where += " AND coalesce(btrim(p.unit), '') = ''"
     if new_only:
         where += " AND p.first_seen_at >= now() - make_interval(days => :days)"
     if search:
@@ -320,7 +320,7 @@ async def intake(
     for r in rows:
         # Computed here from `max(readings.ts)` at read time, stored nowhere.
         r["state"] = classify(r["first_seen_at"], r["last_reading_at"], now)
-        r["unit_confirmed"] = r["unit_source"] == "operator"
+        r["unit_confirmed"] = bool((r["unit"] or "").strip())
     return {
         "window_days": days,
         "generated_at": now,

@@ -67,8 +67,6 @@ describe("on a Setup route", () => {
     const setup = screen.getByLabelText("Setup");
     expect(within(setup).getAllByRole("link").map((a) => (a.textContent || "").trim())).toEqual([
       "CHECKLIST",
-      "DUPLICATES",
-      "UNITS",
       "BUILDINGS",
       "EQUIPMENT",
       "ROLES",
@@ -98,8 +96,6 @@ describe("on a Setup route", () => {
   it("renders on every Setup route", () => {
     for (const p of [
       "/bi/setup",
-      "/bi/setup/duplicates",
-      "/bi/setup/units",
       "/bi/setup/placement",
       "/bi/setup/equipment",
       "/bi/setup/roles",

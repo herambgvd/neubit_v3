@@ -5,7 +5,7 @@ point tag: the tag is a naming convention on one estate's gateway, and the
 whole reason the registry generalises is that the next estate spells it
 differently. The binding tag → role is therefore an OPERATOR'S assertion,
 stored per point in `point_roles` with the same provenance shape as
-`points.unit_source` — and this module follows `app/api/units.py` exactly:
+`points.unit_source` — and this module follows the same rule:
 
 * `suggest()` is PURE, computed from the tag at read time, labelled with the
   matched pattern in words, and never called from a write path.

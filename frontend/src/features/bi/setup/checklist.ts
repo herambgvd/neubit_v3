@@ -50,10 +50,6 @@ export interface ChecklistRow {
 }
 
 export interface ChecklistInput {
-  /** GET /bi/points/ghosts — `{ total, auto, manual }` */
-  ghosts?: { total?: number; auto?: number; manual?: number } | null;
-  /** GET /bi/units/patterns — `{ totals: { points, already_confirmed } }` */
-  patterns?: { totals?: { points?: number; already_confirmed?: number } } | null;
   /** GET /bi/devices?placement=unplaced — `{ total }` */
   unplaced?: { total?: number } | null;
   /** GET /bi/devices?placement=placed — `{ total }` */
@@ -93,37 +89,6 @@ function row(id: SetupTaskId, state: ChecklistState, count: string, extra: Parti
 /** Work is left and nothing measures how much is done: say "to do", not
  *  "not started" — the second is a claim about the past this read cannot make. */
 const todoUnmeasured = { stateLabel: "to do" };
-
-// ── Gate 1 · Duplicates ──────────────────────────────────────────────────────
-function duplicates({ ghosts }: ChecklistInput): ChecklistRow {
-  const total = num(ghosts?.total);
-  if (total == null) {
-    return row("duplicates", "unknown", "—", { why: "The duplicate worklist has not answered." });
-  }
-  if (!total) return row("duplicates", "done", "no duplicated registers");
-  const auto = num(ghosts?.auto);
-  const manual = num(ghosts?.manual);
-  return row("duplicates", "todo", `${show(auto)} no choice needed · ${show(manual)} need your choice`, {
-    ...todoUnmeasured,
-    why: `${total} duplicated ${plural(total, "register", "registers")} left. A settled pair leaves the worklist, so the read cannot say how many were settled before.`,
-  });
-}
-
-// ── Gate 2 · Units ───────────────────────────────────────────────────────────
-// The same arithmetic as gate 2 in gates.ts: unconfirmed = points − confirmed.
-function units({ patterns }: ChecklistInput): ChecklistRow {
-  const points = num(patterns?.totals?.points);
-  const confirmed = num(patterns?.totals?.already_confirmed);
-  if (points == null || confirmed == null) {
-    return row("units", "unknown", "—", { why: "The unit catalogue has not answered." });
-  }
-  const left = Math.max(0, points - confirmed);
-  const progress = { done: confirmed, total: points };
-  if (!left) return row("units", "done", `${confirmed} confirmed`, { progress });
-  return row("units", confirmed ? "partly" : "todo", `${confirmed} confirmed · ${left} unconfirmed`, {
-    progress,
-  });
-}
 
 // ── Gate 3 · Buildings & devices ─────────────────────────────────────────────
 function placement({ unplaced, placed }: ChecklistInput): ChecklistRow {
@@ -246,7 +211,7 @@ function facts({ buildings, slabs, factors }: ChecklistInput): ChecklistRow {
 
 /** Every Setup task, in pipeline order. Pure. */
 export function deriveChecklist(input: ChecklistInput): ChecklistRow[] {
-  return [duplicates(input), units(input), placement(input), equipment(input), roles(input), facts(input)];
+  return [placement(input), equipment(input), roles(input), facts(input)];
 }
 
 /** The step the screen opens — the FIRST that is not done, and nothing cleverer.
@@ -254,7 +219,7 @@ export function deriveChecklist(input: ChecklistInput): ChecklistRow[] {
  * An `unknown` row stops the walk exactly as an unfinished one does. Skipping
  * past a gate whose read failed would tell an operator the gate is fine, which
  * is the one thing a failed read cannot say — and the order is the whole point
- * of the list: gate 2 done on gate 1's ghosts is work thrown away.
+ * of the list: a role bound on a device no building owns is work thrown away.
  *
  * `-1` when every row is done, and the screen then says so instead of opening
  * a step that has nothing left in it.

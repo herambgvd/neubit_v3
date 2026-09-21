@@ -37,10 +37,10 @@ vi.mock("@/lib/auth", () => ({
 const unitGap = {
   kind: "unit_unconfirmed",
   needs_new_hardware: false,
-  summary: "The measurement is arriving; nobody has said what it is in.",
-  remedy: "Confirm the unit on the points listed. The platform will not infer one from the tag.",
-  where: "Building Intelligence → Units",
-  gate: "3 points match and none carries a confirmed unit.",
+  summary: "The measurement is arriving; nothing has said what it is in.",
+  remedy: "Record the unit on the gateway, beside the point's live value.",
+  where: "the gateway that sends these points",
+  gate: "3 points are reporting inside the window, none with a unit on record.",
 };
 
 const visionGap = {
@@ -235,10 +235,10 @@ describe("a card", () => {
     const card = await screen.findByRole("article", { name: "Ambient ↔ chiller load" });
     // The signal an operator would recognise, not the key the gap names it by.
     expect(within(card).getByText(/Ambient temperature — unit unconfirmed/)).toBeInTheDocument();
-    expect(within(card).getByRole("link", { name: /Building Intelligence → Units/ })).toHaveAttribute(
-      "href",
-      "/bi/setup/units",
-    );
+    // The room is NAMED, not linked: the unit is recorded on the gateway and
+    // this app has no route to it, so printing the name is the honest form.
+    expect(within(card).getByText(/the gateway that sends these points/)).toBeInTheDocument();
+    expect(within(card).queryByRole("link", { name: /gateway/ })).not.toBeInTheDocument();
   });
 
   it("shows which half of the question the estate already supplies", async () => {
@@ -253,7 +253,7 @@ describe("a card", () => {
     expect(within(card).getByTitle(/Chiller power — supplied by this estate/)).toHaveTextContent(
       "Chiller power",
     );
-    const gapped = within(card).getAllByTitle(/nobody has said what it is in/);
+    const gapped = within(card).getAllByTitle(/nothing has said what it is in/);
     expect(gapped.some((el) => el.textContent === "Ambient temperature")).toBe(true);
   });
 
@@ -336,9 +336,9 @@ describe("a card", () => {
     const short = within(card).getByText(/Ambient temperature — unit unconfirmed/);
     expect(short).toHaveAttribute(
       "title",
-      expect.stringContaining("3 points match and none carries a confirmed unit."),
+      expect.stringContaining("3 points are reporting inside the window, none with a unit on record."),
     );
-    expect(short).toHaveAttribute("title", expect.stringContaining("nobody has said what it is in"));
+    expect(short).toHaveAttribute("title", expect.stringContaining("nothing has said what it is in"));
     // And the paragraph itself is not on the screen.
     expect(screen.queryByText(/The platform will not infer one from the tag/)).toBeNull();
   });

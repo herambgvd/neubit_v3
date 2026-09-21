@@ -48,6 +48,10 @@ class CategoryRow(BaseModel):
     # Points whose last_seen_at is inside the freshness window. The gap between
     # this and `points` is the honest "how much of the building is quiet" figure.
     points_reporting: int
+    # Points whose unit is on record. The gateway records it and it rides every
+    # envelope; a number with no unit cannot be graded, and the console says so
+    # rather than rating it anyway.
+    points_with_unit: int = 0
     last_seen_at: dt.datetime | None
     device_types: list[DeviceTypeCount] = Field(default_factory=list)
 
@@ -103,6 +107,7 @@ class SiteCategoryCount(BaseModel):
     """One category's device/point counts within a site (or the unplaced row)."""
 
     category: str | None
+    points_with_unit: int = 0
     devices: int
     points: int
 
@@ -162,6 +167,10 @@ class SiteRow(BaseModel):
     devices: int
     points: int
     points_reporting: int
+    # Points whose unit is on record. The gateway records it and it rides every
+    # envelope; a number with no unit cannot be graded, and the console says so
+    # rather than rating it anyway.
+    points_with_unit: int = 0
     last_seen_at: dt.datetime | None = None
     categories: list[SiteCategoryCount] = Field(default_factory=list)
     alerts: SiteAlerts
@@ -185,13 +194,16 @@ class SummaryResponse(BaseModel):
     # its points under new ones, so the difference between the two is the number
     # of rows that are later generations of something already counted.
     #
-    # It is here rather than subtracted on a screen because the only other source
-    # for it — the ghost worklist — is computed over a different row set (it does
-    # not apply the retirement horizon, deliberately), so subtracting one from the
-    # other under-counts whenever a generation is old enough to be past the
-    # horizon. Both numbers here come from one SELECT over one predicate.
+    # It is computed in the same SELECT as `total_points` so the two share one
+    # predicate by construction, rather than by two places agreeing about which
+    # rows are live.
     total_registers: int = 0
     total_points_reporting: int
+    # How many points say what they MEASURE. The gateway records the unit and
+    # it rides every envelope; this store no longer asks anybody to type one,
+    # so this is a status rather than a worklist. A number with no unit still
+    # cannot be graded, and the console says so rather than rating it anyway.
+    total_points_with_unit: int = 0
     # Points EXCLUDED from every count above: retired explicitly, or last seen
     # longer ago than `retire_after_days`. Their readings are untouched — this is
     # a count of what stopped being counted, not of what was deleted.
@@ -503,211 +515,13 @@ class CorrelationResponse(BaseModel):
     samples_truncated: bool = False
 
 
-# ── Units, and the rating built on them ──────────────────────────────────────
+# ── The rating, and the units it divides by ──────────────────────────────────
 #
-# `points.unit` is NULL for every point on this deployment (contract §11/§12) and
-# a rating is the one surface where that stops being harmless: `kWh / m² / year`
-# is a statement about units. These shapes carry the unit AND ITS PROVENANCE,
-# because "the operator says this is kWh" and "the wire once sent the string kWh"
-# are different claims and only the first one is worth dividing by.
-#
-# `suggestion` is computed from the TAG at read time and is never stored. See
-# `app/api/units.py` for why that line is the whole point of this feature.
-
-
-class UnitSuggestion(BaseModel):
-    """What the tag APPEARS to say. An offer, not a fact."""
-
-    # The catalogued pattern that matched, by its stable key. Named so the
-    # operator confirming in bulk and the operator reading one row are looking at
-    # the same rule, and so a screen can group by it.
-    pattern: str
-    # `null` when the matched pattern proposes NOTHING — a state (`OnOff STS`) or
-    # an ambiguity (`KWL1_A`, which names power and ends in the amps suffix). The
-    # `basis` says which. An empty string is the opposite: a real assertion that
-    # the quantity is dimensionless (power factor).
-    unit: str | None = None
-    proposes_unit: bool = True
-    # Shown to the operator verbatim, so they confirm a stated reason rather than
-    # a value that appeared from nowhere.
-    basis: str
-
-
-class UnitRow(BaseModel):
-    point_id: uuid.UUID
-    point_tag: str | None
-    device_id: uuid.UUID | None
-    device_tag: str | None
-    category: str | None
-    device_type: str | None
-    type: str | None
-    # As STORED. Null = nobody has said. An empty string is a real assertion:
-    # "this is a ratio and has no unit" (power factor).
-    unit: str | None
-    # NULL = unconfirmed · "reading" = it arrived in env.u · "operator" = a human
-    # asserted it. Only "operator" is accepted as a rating input.
-    unit_source: str | None
-    unit_confirmed_at: dt.datetime | None = None
-    unit_confirmed_by: str | None = None
-    site_id: uuid.UUID | None = None
-    site_name: str | None = None
-    last_seen_at: dt.datetime | None = None
-    suggestion: UnitSuggestion | None = None
-
-
-class UnitCounts(BaseModel):
-    points: int
-    confirmed: int
-    unconfirmed: int
-
-
-class UnitListResponse(BaseModel):
-    counts: UnitCounts
-    items: list[UnitRow]
-
-
-class UnitPointView(BaseModel):
-    """One point still without a unit, and what it last read.
-
-    `value` is NULL when the point read nothing in the last month — never 0,
-    because "reads zero" is a claim about the sensor and "has not read lately"
-    is a claim about the data.
-    """
-
-    point_id: uuid.UUID
-    point_tag: str | None = None
-    device_tag: str | None = None
-    value: float | None = None
-    at: dt.datetime | None = None
-
-
-class UnitPatternRow(BaseModel):
-    """One catalogued convention, and how much of this estate it is holding.
-
-    `matched` is every live numeric point the pattern claims. `eligible` and
-    `already_confirmed` split it, and they are never summed into one figure: a
-    pattern at 40 matched / 40 confirmed is finished work, one at 40 / 0 is forty
-    points of backlog, and a single number cannot tell an operator which they are
-    looking at.
-    """
-
-    key: str
-    label: str
-    # "unit" · "state" · "ambiguous". Only "unit" can be confirmed in bulk.
-    kind: str
-    # `null` for a state or an ambiguity — nothing is proposed. `""` is power
-    # factor's real assertion that the quantity is dimensionless.
-    unit: str | None = None
-    proposes_unit: bool = True
-    basis: str
-    matched: int
-    eligible: int
-    already_confirmed: int
-    sample_tags: list[str] = Field(default_factory=list)
-    categories: list[str] = Field(default_factory=list)
-    # EVERY eligible point with its last reading. Declared here, not only
-    # returned by the service: a field the response model does not name is
-    # dropped on the way out, and the Units screen then had no readings, built
-    # no questions and told an operator every number had a unit.
-    points: list[UnitPointView] = Field(default_factory=list)
-
-
-class UnitPatternTotals(BaseModel):
-    points: int
-    matched: int
-    # Points no pattern claims. Not a defect in the catalogue: `Batt_Time_Rem`,
-    # `Load` and `Point1` are tags nobody can read, and saying so is the honest
-    # report that they remain one-by-one work.
-    unmatched: int
-    eligible: int
-    already_confirmed: int
-
-
-class UnitPatternsResponse(BaseModel):
-    patterns: list[UnitPatternRow]
-    totals: UnitPatternTotals
-    unmatched_sample: list[str] = Field(default_factory=list)
-    unmatched_points: list[UnitPointView] = Field(default_factory=list)
-
-
-class ConfirmUnitsRequest(BaseModel):
-    """Record that a HUMAN says these points are in this unit.
-
-    EXACTLY ONE of `point_ids` and `pattern` says WHICH points. Both name a set
-    the operator has seen: `point_ids` is the rows in front of them, and
-    `pattern` is a catalogued convention whose count, sample and full membership
-    they can read from `GET /units/patterns` and `dry_run` before they act. What
-    neither of them is, ever, is a decision the server took: nothing is
-    auto-applied, and there is no confidence score anywhere in this feature above
-    which it would be.
-
-    `pattern` DOES NOT take a unit. The unit a pattern writes is the one the
-    catalogue proposed and the operator was shown — aiming a pattern at an
-    arbitrary unit would make the shown proposal decorative. A point that needs a
-    different unit from its pattern's is confirmed by id, which stays open.
-
-    A pattern NEVER touches a point whose unit a human already confirmed, and it
-    cannot be used at all with a `state` or `ambiguous` pattern: `OnOff STS` is
-    not a measurement, and `KWL1_A` names power while ending in the amps suffix.
-    Those need a human per point, and the per-id path is how they get one.
-
-    `dry_run` resolves everything and writes nothing — the counts, the point ids,
-    the already-confirmed rows it would skip, and the not-reporting points it
-    would challenge.
-
-    `unit = null` CLEARS — unit, source and provenance all go back to NULL and
-    the point is unconfirmed again. A mis-typed unit an operator cannot take back
-    would silently corrupt every rating computed from it.
-
-    `acknowledge_not_reporting` is the answer to a REFUSAL, never a default. A
-    unit confirmed on a point that has never carried a reading — or has carried
-    none for a day — is a fact no rating can use, and the confirmation quietly
-    succeeding is what makes it invisible for days. So the server refuses, names
-    the points and the device's reporting siblings, and this flag is how an
-    operator who has read that says "the address is right, the device is offline".
-    It lives on the REQUEST so it cannot be switched on once and forgotten.
-    """
-
-    point_ids: list[uuid.UUID] = Field(default_factory=list, max_length=1000)
-    pattern: str | None = Field(default=None, max_length=64)
-    # Narrows a PATTERN to one BI category, and exists so that the set previewed
-    # on `GET /units/patterns?category=hvac` and the set written here are the
-    # same set. Meaningless with `point_ids` — those already name their rows —
-    # and ignored there rather than refused, because a client sending both is
-    # being redundant, not ambiguous.
-    category: str | None = Field(default=None, max_length=64)
-    # Narrows a PATTERN to one building, for the same reason `category` exists:
-    # the set previewed on `GET /units/patterns?site_id=…` and the set written
-    # here are one set only if both carry the same scope.
-    site_id: uuid.UUID | None = None
-    unit: str | None = Field(default=None, max_length=64)
-    acknowledge_not_reporting: bool = False
-    dry_run: bool = False
-
-    @model_validator(mode="after")
-    def _one_selector(self) -> ConfirmUnitsRequest:
-        """One selector, and — in pattern mode — no unit.
-
-        Enforced HERE rather than in the route so the refusal is part of the
-        request's published shape. A request that named both would have to be
-        resolved by a precedence rule, and a precedence rule between "the rows I
-        selected" and "everything matching this convention" is exactly the kind
-        of silent widening this feature must not have.
-
-        `unit` is rejected alongside `pattern` by whether it was SENT, not by
-        whether it is null: `unit: null` means CLEAR, and a bulk clear aimed at a
-        pattern is either a no-op (a pattern's set is unconfirmed by definition)
-        or, if that ever changed, a mass retraction nobody reviewed.
-        """
-        if bool(self.point_ids) == bool(self.pattern):
-            raise ValueError("send exactly one of `point_ids` or `pattern`")
-        if self.pattern and "unit" in self.model_fields_set:
-            raise ValueError(
-                "`pattern` applies the unit the catalogue proposed and the operator was "
-                "shown; it does not take a `unit`. Confirm by `point_ids` to assert a "
-                "different one."
-            )
-        return self
+# `kWh / m² / year` is a statement about units, so a rating is the one surface
+# where a missing unit stops being harmless. The unit is the GATEWAY'S now: a
+# person describes a signal there, beside its live value and its address, and
+# the answer rides every envelope as `env.u`. This store records it and its
+# provenance; it no longer asks anybody to type it a second time.
 
 
 class SiteFactsRow(BaseModel):

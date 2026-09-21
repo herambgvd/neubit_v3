@@ -38,15 +38,11 @@ beforeEach(() => {
   vi.spyOn(bi, "summary").mockResolvedValue({
     total_points: 4,
     total_registers: 4,
+    total_points_with_unit: 4,
     total_points_reporting: 4,
     fresh_minutes: 15,
     sites: [{ site_id: "s1", score: 60, points: 4, categories: [] }],
-    categories: [{ category: "hvac", devices: 2, points: 4, points_reporting: 4 }],
-  });
-  vi.spyOn(bi, "ghosts").mockResolvedValue({ groups: [], resurrected: [], fresh_minutes: 15 });
-  vi.spyOn(bi, "unitPatterns").mockResolvedValue({
-    patterns: [],
-    totals: { points: 4, matched: 4, unmatched: 0, eligible: 0, already_confirmed: 4 },
+    categories: [{ category: "hvac", devices: 2, points: 4, points_reporting: 4, points_with_unit: 4 }],
   });
   vi.spyOn(bi, "roleOrphans").mockResolvedValue({ orphans: [], total: 0 });
   vi.spyOn(bi, "alerts").mockResolvedValue({ available: true, items: [] });
@@ -237,14 +233,14 @@ describe("what the console will not invent", () => {
  * question about the building with counts about everything.
  */
 describe("the L2 gate strip", () => {
-  it("reads the worklists scoped to its own category", async () => {
+  it("reads the worklist scoped to its own category", async () => {
     devicesReturn([CH1]);
     vi.spyOn(bi, "points").mockResolvedValue({ items: [] });
 
     renderWithProviders(<CategoryConsole category="hvac" />);
 
-    await waitFor(() => expect(bi.ghosts).toHaveBeenCalledWith({ category: "hvac" }));
-    expect(bi.unitPatterns).toHaveBeenCalledWith({ category: "hvac" });
+    await waitFor(() => expect(bi.devices).toHaveBeenCalled());
+    expect(bi.roleOrphans).toHaveBeenCalled();
   });
 
   it("recedes to one line when this domain's gates are all open", async () => {
@@ -275,20 +271,25 @@ describe("the L2 gate strip", () => {
 const twoScopeSummary = {
   total_points: 176,
   total_registers: 176,
+  total_points_with_unit: 176,
   total_points_reporting: 176,
   fresh_minutes: 15,
-  categories: [{ category: "hvac", devices: 12, points: 176, points_reporting: 176 }],
+  categories: [{ category: "hvac", devices: 12, points: 176, points_reporting: 176, points_with_unit: 176 }],
   sites: [
     {
       site_id: "aeon-1",
       site_name: "Aeon Tower",
       score: 61,
       points: 83,
-      categories: [{ category: "hvac", devices: 7, points: 83 }],
+      points_with_unit: 83,
+      categories: [{ category: "hvac", devices: 7, points: 83, points_with_unit: 83 }],
     },
     // The unplaced pseudo-row. It is a real state, it is the biggest fact on the
     // estate screen, and it is reachable from nowhere else.
-    { site_id: null, site_name: null, score: null, points: 93, categories: [{ category: "hvac", devices: 5, points: 93 }] },
+    {
+      site_id: null, site_name: null, score: null, points: 93, points_with_unit: 93,
+      categories: [{ category: "hvac", devices: 5, points: 93, points_with_unit: 93 }],
+    },
   ],
 };
 

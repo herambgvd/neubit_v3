@@ -50,7 +50,7 @@ import { apiError } from "@/lib/api";
 import { fmtRelative } from "@/lib/format";
 
 import { bi } from "./api";
-import { buildingFactsHref, taskHref } from "./setup/routes";
+import { buildingFactsHref } from "./setup/routes";
 
 const RANGES = [
   { value: 30, label: "30D" },
@@ -85,12 +85,14 @@ export default function Ratings() {
 
   const site = sites.find((s: any) => s.site_id === effectiveSiteId) || null;
 
-  // Candidate meters: points AT THIS SITE that an operator has confirmed are
-  // kWh registers. Read from the units surface — same source of truth, so a unit
-  // confirmed on the other tab shows up here without a second concept.
+  // Candidate meters: points AT THIS SITE whose unit says they are kWh
+  // registers. It used to read the Units surface, which existed because only an
+  // operator here could set a unit; the gateway records it now and it arrives
+  // on every reading, so this reads the points themselves.
   const confirmedQ = useQuery<any>({
-    queryKey: ["bi-units", "confirmed", "all"],
-    queryFn: () => bi.units({ confirmed: "confirmed", limit: 1000 }),
+    queryKey: ["bi-points", "kwh-candidates", effectiveSiteId ?? ""],
+    queryFn: () => bi.points({ site_id: effectiveSiteId, type: "num", limit: 1000 }),
+    enabled: !!effectiveSiteId,
   });
   const candidates = useMemo(
     () =>
@@ -240,13 +242,9 @@ export default function Ratings() {
                     ) : !candidates.length ? (
                       <p
                         className="flex flex-wrap items-center gap-2 text-[11.5px] text-nb-faint"
-                        title="A rating counts only registers somebody has confirmed are kilowatt-hours — the source sends no unit, so nothing can be added up until then."
+                        title="A rating counts registers whose unit is kilowatt-hours. The unit is recorded on the gateway, beside the point's live value, and travels here on every reading."
                       >
-                        No confirmed kWh register at this site
-                        <Link href={taskHref("units")} className={linkCls}>
-                          <Icon icon="heroicons:arrow-right-circle" className="text-[14px]" />
-                          Confirm units in Setup
-                        </Link>
+                        No kWh register at this site
                       </p>
                     ) : (
                       <>

@@ -286,42 +286,27 @@ async def write_batch(
                 "device_id": stmt.excluded.device_id,
                 "device_tag": stmt.excluded.device_tag,
                 "point_tag": stmt.excluded.point_tag,
-                # `unit` is COALESCEd for exactly the reason `category` is, and
-                # this was the "known, left alone" note at the end of contract
-                # §12: it used to be assigned unconditionally, so a message with
-                # no `env.u` wrote NULL over a stored unit. Harmless while the
-                # gateway is the only source of units and all 313 aeon points
-                # report none — and the same clobber the COALESCE rule exists to
-                # prevent the moment anything else can set one. Nothing is
-                # inferred here either way: an absent unit stays absent (contract
-                # §11, and a fabricated `kW` on an axis is worse than a blank).
-                # …and STRONGER than a COALESCE once an operator can set one.
-                # COALESCE only stops a message that says NOTHING from blanking
-                # a stored unit. It does not stop a message that says something
-                # DIFFERENT from overwriting an operator's assertion — and an
+                # `unit` is COALESCEd for exactly the reason `category` is: a
+                # message with no `env.u` must not write NULL over a stored
+                # unit. Nothing is inferred either way — an absent unit stays
+                # absent (contract §11, and a fabricated `kW` on an axis is
+                # worse than a blank).
+                #
+                # There used to be a second rule here: a unit marked
+                # `unit_source = 'operator'` was never touched, because an
                 # operator's assertion being erased by the next reading is the
-                # worst outcome the Ratings feature can have, because a wrong
-                # unit renders as a real EPI. So a unit marked `unit_source =
-                # 'operator'` is not touched at all; everything else keeps the
-                # COALESCE it had.
-                "unit": case(
-                    (
-                        Point.__table__.c.unit_source == literal("operator"),
-                        Point.__table__.c.unit,
-                    ),
-                    else_=func.coalesce(stmt.excluded.unit, Point.__table__.c.unit),
-                ),
-                # Provenance follows the same order of precedence: an operator's
-                # word stands, a wire value that actually arrived claims
-                # "reading", and silence changes nothing. NOTHING here reads the
-                # point TAG — `KWH_kwh` is a naming convention, and turning a
-                # convention into a stored fact is the fabrication the contract
-                # forbids (§17, the floor-prefix case).
+                # worst outcome Ratings can have. That rule protected a source
+                # that no longer exists. The gateway is where a signal is
+                # described — beside its live value and its address — and this
+                # store has no screen that writes a unit any more, so the wire
+                # is the only writer and there is nothing here to defend
+                # against it. NOTHING reads the point TAG: `KWH_kwh` is a naming
+                # convention, and turning a convention into a stored fact is the
+                # fabrication the contract forbids (§17, the floor-prefix case).
+                "unit": func.coalesce(stmt.excluded.unit, Point.__table__.c.unit),
+                # Provenance follows the value: a wire value that actually
+                # arrived claims "reading", and silence changes nothing.
                 "unit_source": case(
-                    (
-                        Point.__table__.c.unit_source == literal("operator"),
-                        Point.__table__.c.unit_source,
-                    ),
                     (stmt.excluded.unit.isnot(None), literal("reading")),
                     else_=Point.__table__.c.unit_source,
                 ),

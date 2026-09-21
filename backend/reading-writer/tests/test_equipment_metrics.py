@@ -301,10 +301,19 @@ def test_kw_per_tr_is_input_power_over_the_cooling_the_load_signal_says_was_deli
     assert "180 ÷ ((300 × 60) ÷ 100)" in item["arithmetic"]
 
 
-def test_kw_per_tr_refuses_a_kw_point_nobody_confirmed():
-    (item,) = evaluate(kw_db(kw_source="inferred"), "chiller_kw_per_tr")
-    assert item["status"] == "unit_unconfirmed"
+def test_kw_per_tr_refuses_a_kw_point_with_no_unit_at_all():
+    """It used to refuse a unit the GATEWAY had recorded, demanding one typed
+    here. The gateway is where a signal is described now; what still refuses is
+    a point whose unit nobody has stated anywhere."""
+    (item,) = evaluate(kw_db(kw_unit=None), "chiller_kw_per_tr")
+    assert item["status"] == "unit_unknown"
     assert "CH1_KW" in item["reason"]
+
+
+def test_kw_per_tr_computes_on_a_unit_the_gateway_recorded():
+    (item,) = evaluate(kw_db(kw_source="reading"), "chiller_kw_per_tr")
+    assert item["status"] == "ok", item.get("reason")
+    assert item["value"] == pytest.approx(1.0)
 
 
 def test_kw_per_tr_refuses_a_watt_meter_rather_than_scoring_it_a_thousand_times_worse():
@@ -313,10 +322,16 @@ def test_kw_per_tr_refuses_a_watt_meter_rather_than_scoring_it_a_thousand_times_
     assert "`kW`" in item["reason"]
 
 
-def test_kw_per_tr_refuses_a_load_confirmed_as_a_fraction_rather_than_a_percent():
-    (item,) = evaluate(kw_db(load_unit=""), "chiller_kw_per_tr")
+def test_kw_per_tr_refuses_a_load_that_is_not_a_percent():
+    """A load in a unit this metric does not take is a mismatch; a load with no
+    unit is unknown. `""` is the second — it is what an unstated unit looks
+    like, not an assertion that the quantity is dimensionless."""
+    (item,) = evaluate(kw_db(load_unit="fraction"), "chiller_kw_per_tr")
     assert item["status"] == "unit_mismatch"
     assert "`%`" in item["reason"]
+
+    (blank,) = evaluate(kw_db(load_unit=""), "chiller_kw_per_tr")
+    assert blank["status"] == "unit_unknown"
 
 
 def test_kw_per_tr_refuses_a_chiller_with_no_rated_tr():

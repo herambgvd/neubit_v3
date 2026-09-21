@@ -91,7 +91,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..api.queries import LIVE_POINT, RETIRE_AFTER_DAYS, _rows
 from . import expr, registry
 from . import slots as slot_store
-from .units import UNIT_DIMENSION, DimensionError, Qty, compatible, qty_of_unit
+from .units import UNIT_DIMENSION, DimensionError, Qty, compatible, qty_of_unit, unit_known
 
 # Mirrors the read API: 1m up to this many hours, 1h beyond.
 _FINE_MAX_HOURS = 3
@@ -562,15 +562,15 @@ async def _bind_roles_on_device(
 
 
 def _unconfirmed_units_refusal(bound: dict[str, dict]) -> dict | None:
-    """Which bound points still carry a unit nobody confirmed."""
-    bad = [n for n, p in bound.items() if p["unit_source"] != "operator"]
+    """Which bound points carry no unit at all."""
+    bad = [n for n, p in bound.items() if not unit_known(p)]
     if not bad:
         return None
     named = ", ".join(f"`{bound[n]['point_tag']}` ({n})" for n in bad)
     return _refusal(
-        "unit_unconfirmed",
-        f"no operator has confirmed a unit for {named} — the metric does "
-        f"not compute on an assumed unit; confirm it on the Units tab",
+        "unit_unknown",
+        f"no unit is recorded for {named} — the metric does not compute on an "
+        f"assumed unit; set it on the gateway, where the signal is described",
     )
 
 
@@ -1477,13 +1477,13 @@ def _unit_guard_refusal(
     are why this evaluator refuses instead of converting.
     """
     if "units_confirmed" in guards:
-        bad = [c for c in candidates if c["unit_source"] != "operator"]
+        bad = [c for c in candidates if not unit_known(c)]
         if bad:
             named = ", ".join(f"`{c['point_tag']}`" for c in bad)
             return _refusal(
-                "unit_unconfirmed",
-                f"input `{name}`: no operator has confirmed a unit for {named} "
-                f"— the metric does not compute on an assumed unit",
+                "unit_unknown",
+                f"input `{name}`: no unit is recorded for {named} — the metric "
+                f"does not compute on an assumed unit",
             )
     if want_unit is not None:
         off = [c for c in candidates if c["unit"] != want_unit]

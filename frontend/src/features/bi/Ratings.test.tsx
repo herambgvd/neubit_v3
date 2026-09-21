@@ -87,12 +87,12 @@ describe("a site that cannot be rated", () => {
     expect(fix).toHaveAttribute("href", "/bi/setup/facts?site=s1");
   });
 
-  it("with no confirmed kWh register is sent to Setup → Units", async () => {
+  it("with no kWh register says so, and offers no door that cannot open", async () => {
+    // The unit is recorded on the gateway and travels here on every reading;
+    // there is no screen on this platform to send anybody to.
     renderWithProviders(<Ratings />);
 
-    expect(await screen.findByRole("link", { name: /confirm units in setup/i })).toHaveAttribute(
-      "href",
-      "/bi/setup/units",
-    );
+    expect(await screen.findByText(/No kWh register at this site/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /confirm units/i })).not.toBeInTheDocument();
   });
 });

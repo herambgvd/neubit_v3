@@ -8,7 +8,8 @@ owners, and until this change the platform could state none of them:
 1. **kWh** — a MEASUREMENT, but only once somebody says the register is in
    kilowatt-hours. `points.unit` is NULL for every point because the wire carries
    no `env.u` (contract §11/§12). It becomes a fact when an OPERATOR confirms it
-   (`app/api/units.py`), never when a tag looks like it says so.
+   (the gateway records it and it rides every envelope), never when a tag
+   looks like it says so.
 2. **Area** — a fact about the BUILDING. It lives in `neubit_control.sites`
    (core, migration 0018), typed beside the address, and reaches this store as
    `site_facts` through the site-facts event mirror. NULL means NOT RECORDED.
@@ -109,7 +110,6 @@ _SITES_SQL = """
              WHERE p.site_id = f.site_id
                AND p.tenant_id = f.tenant_id
                AND p.retired_at IS NULL
-               AND p.unit_source = 'operator'
                AND lower(btrim(p.unit)) = 'kwh')                AS kwh_points
       FROM site_facts f
      WHERE (CAST(:tenant AS uuid) IS NULL OR f.tenant_id = CAST(:tenant AS uuid))
@@ -140,7 +140,6 @@ _METERS_SQL = """
        AND p.site_id = CAST(:site AS uuid)
        AND {live}
        AND p.type = 'num'
-       AND p.unit_source = 'operator'
        AND lower(btrim(p.unit)) = 'kwh'
      ORDER BY p.device_tag NULLS LAST, p.point_tag NULLS LAST
 """
@@ -149,11 +148,17 @@ _METERS_SQL = """
 async def candidate_meters(
     db: AsyncSession, tenant: uuid.UUID | None, site_id: uuid.UUID
 ) -> list[dict]:
-    """Points at this site an operator has CONFIRMED are kilowatt-hour registers.
+    """Points at this site whose unit says they are kilowatt-hour registers.
 
-    The filter is on `unit_source = 'operator'`, not on the unit alone: a value
-    the wire happened to send is not somebody standing behind it, and a rating is
-    the one place that distinction has to be load-bearing.
+    The filter used to be `unit_source = 'operator'`, on the argument that a
+    unit the wire happened to send is not somebody standing behind it. The wire
+    is not happening to send it any more: the gateway is where a person
+    describes a signal, beside its live value and its address, and that answer
+    rides every envelope. Asking for it again here refused every rating on this
+    estate — 298 units arrived from the gateway and none were ever typed in.
+
+    `unit_source` is still carried through so a reader can see WHERE the answer
+    came from; it just no longer decides whether the answer counts.
     """
     return _rows(
         await db.execute(

@@ -449,8 +449,10 @@ describe("the gates", () => {
   it("scopes the gate strip to this building", async () => {
     renderWithProviders(<Plant />);
 
-    await waitFor(() => expect(stub.matching("GET /bi/points/ghosts")).toHaveLength(1));
-    expect(stub.matching("GET /bi/points/ghosts")[0]!.search.get("site_id")).toBe("site-1");
+    // The one worklist the strip still reads is the stranded roles, and it is
+    // asked for THIS building.
+    await waitFor(() => expect(stub.matching("GET /bi/points/roles/orphans")).toHaveLength(1));
+    expect(stub.matching("GET /bi/points/roles/orphans")[0]!.search.get("site_id")).toBe("site-1");
   });
 });
 

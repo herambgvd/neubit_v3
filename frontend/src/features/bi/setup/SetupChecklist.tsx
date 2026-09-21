@@ -3,16 +3,14 @@
 // Building Intelligence → SETUP. The checklist every Setup page hangs off.
 //
 // The gates of the pipeline ARE the to-do list, and they are a PATH, not a
-// menu: gate 2 answered on gate 1's ghosts is work thrown away. So the screen
+// menu: a role bound on a device no building owns is work thrown away. So the screen
 // opens ONE step — the first that is not done — with the question that gate
 // asks, why it is worth answering and what answering it frees; the rest stay
 // one quiet line each. `ChecklistSteps.tsx` draws them.
 //
 // The words and the arithmetic are features/bi/setup/checklist.ts and
 // setup/routes.ts; this file only asks the reads and lays the answers out.
-import Link from "next/link";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { Icon } from "@iconify/react";
 
 import { EstateHeader } from "@/components/console";
 import { useAuth } from "@/lib/auth";
@@ -42,16 +40,6 @@ export default function SetupChecklist() {
   const mayReadSites = can(PERM_SITES_READ);
 
   // The same keys the gate strip asks under, so both share one answer.
-  const ghostsQ = useQuery<any>({
-    queryKey: ["bi-ghosts", "", ""],
-    queryFn: () => bi.ghosts(undefined),
-    enabled: mayRead,
-  });
-  const patternsQ = useQuery<any>({
-    queryKey: ["bi-unit-patterns", null, null],
-    queryFn: () => bi.unitPatterns({ category: undefined, site_id: undefined }),
-    enabled: mayRead,
-  });
   const unplacedQ = useQuery<any>({
     queryKey: ["bi-devices", "setup", "unplaced"],
     queryFn: () => bi.devices({ placement: "unplaced", limit: 1 }),
@@ -111,8 +99,6 @@ export default function SetupChecklist() {
   }
 
   const rows = deriveChecklist({
-    ghosts: ghostsQ.data,
-    patterns: patternsQ.data,
     unplaced: unplacedQ.data,
     placed: placedQ.data,
     buildings: buildingsQ.data ? buildings : undefined,

@@ -13,10 +13,9 @@ const shut = deriveGates({
   summary: {
     total_points: 10,
     total_registers: 8,
+    total_points_with_unit: 4,
     sites: [{ site_id: null, points: 4, categories: [] }],
   },
-  ghosts: { groups: [{ device_tag: "D", point_tag: "P", mode: "auto", members: [] }] },
-  patterns: { totals: { points: 10, already_confirmed: 2, eligible: 5, unmatched: 3 }, patterns: [] },
   orphans: { orphans: [{ role: "r", point_id: "p", category: null, candidates: [] }] },
   unplaced: { total: 2, items: [] },
   alerts: { available: true },
@@ -25,12 +24,25 @@ const shut = deriveGates({
 const action = (id: string) => shut.find((g) => g.id === id)!.action?.href;
 
 describe("a shut gate's action", () => {
-  it("gate 1 lands on Setup → Duplicates", () => {
-    expect(action("arrives")).toBe("/bi/setup/duplicates");
+  it("gates 1 and 2 offer no action here — the gateway is where they are opened", () => {
+    // Identity and unit are the GATEWAY's: it keeps its point ids across a
+    // rebuild and carries the unit on every envelope. A link to a screen on
+    // this platform would be a door onto work that cannot be done behind it.
+    expect(action("arrives")).toBeUndefined();
+    expect(action("means")).toBeUndefined();
   });
 
-  it("gate 2 lands on Setup → Units", () => {
-    expect(action("means")).toBe("/bi/setup/units");
+  it("gate 1 still states the inflation left by rows that predate that", () => {
+    const one = shut.find((g) => g.id === "arrives")!;
+    expect(one.state).toBe("shut");
+    expect(one.blocking).toContain("2 of the 10 rows");
+  });
+
+  it("gate 2 counts the points carrying no unit at all", () => {
+    const two = shut.find((g) => g.id === "means")!;
+    expect(two.state).toBe("shut");
+    expect(two.count).toBe(6);
+    expect(two.blocking).toContain("gateway");
   });
 
   it("gate 3 lands on Setup → Buildings & devices, scoped for a domain", () => {
@@ -74,8 +86,6 @@ const acts = (input: Record<string, unknown>) =>
   deriveGates({
     subject: { kind: "site", siteId: "s1", label: "Aeon Tower" },
     summary: { total_points: 10, sites: [{ site_id: "s1", points: 10, score: 61, categories: [] }] },
-    ghosts: { groups: [] },
-    patterns: { totals: { points: 10, already_confirmed: 10, eligible: 0, unmatched: 0 }, patterns: [] },
     orphans: { orphans: [] },
     alerts: { available: true },
     may: { bi: true, work: true },

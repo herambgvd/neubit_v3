@@ -126,14 +126,15 @@ def _breakdown(db) -> list[dict]:
 # ── the kWh slot: blocked, no data, or measured — never a zero ───────────────
 
 
-def test_a_site_with_no_confirmed_register_is_blocked_and_says_what_to_confirm():
-    """ZERO confirmed registers is the state this deployment is in. Rendering it
-    as `0 kWh` would be a measurement nobody made, sitting on a leaderboard
-    beside sites that really did measure zero."""
+def test_a_site_with_no_kwh_register_is_blocked_and_says_where_the_unit_is_set():
+    """Rendering it as `0 kWh` would be a measurement nobody made, sitting on a
+    leaderboard beside sites that really did measure zero. The unit is recorded
+    on the gateway, so the reason says that rather than naming a screen here
+    that no longer exists."""
     out = q._site_kwh(0, None)
     assert out["status"] == "blocked"
     assert out["consumption_kwh"] is None
-    assert "Ratings" in out["reason"]
+    assert "gateway" in out["reason"]
 
 
 def test_a_site_with_registers_but_no_usable_delta_is_no_data_and_distinguishes_itself():
@@ -167,12 +168,15 @@ def test_a_measured_zero_is_reported_as_measured_and_not_as_missing():
 
 def test_categories_are_grouped_under_their_own_site_including_the_unplaced_one():
     out = q._categories_by_site([
-        {"site_id": SITE_A, "category": "energy", "devices": 2, "points": 9},
-        {"site_id": SITE_A, "category": "hvac", "devices": 1, "points": 3},
-        {"site_id": None, "category": "energy", "devices": 4, "points": 40},
+        {"site_id": SITE_A, "category": "energy", "devices": 2, "points": 9, "points_with_unit": 9},
+        {"site_id": SITE_A, "category": "hvac", "devices": 1, "points": 3, "points_with_unit": 1},
+        {"site_id": None, "category": "energy", "devices": 4, "points": 40, "points_with_unit": 0},
     ])
     assert [c["category"] for c in out[SITE_A]] == ["energy", "hvac"]
     assert out[None][0]["points"] == 40
+    # How many of them say what they measure travels with the count, so a
+    # domain strip does not have to ask the estate.
+    assert [c["points_with_unit"] for c in out[SITE_A]] == [9, 1]
 
 
 def test_alert_counts_keep_their_severity_split_as_well_as_the_total():

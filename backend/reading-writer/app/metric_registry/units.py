@@ -225,3 +225,23 @@ def compatible(declared: Qty, inferred: Qty) -> bool:
     if declared.unit is not None and inferred.unit is not None:
         return declared.unit == inferred.unit
     return True
+
+
+def unit_known(point: dict) -> bool:
+    """Whether this point's unit is on record at all.
+
+    It used to mean `unit_source = 'operator'`: the unit had to be confirmed by
+    a person HERE, because the wire carried none and a unit guessed from a tag
+    is the fabrication the contract forbids.
+
+    The wire carries one now. The gateway owns what a signal IS — a person
+    confirms the unit there, beside the live value and the address, and it
+    travels on every envelope as `env.u`. Demanding a second confirmation in
+    this store asked the same person the same question twice and refused every
+    metric until they answered it in the second place; 298 of this estate's 341
+    units came from the gateway and NONE were ever entered here.
+
+    What has not changed is that an absent unit still refuses. A number with no
+    unit cannot be graded, whoever failed to say.
+    """
+    return bool((point.get("unit") or "").strip())

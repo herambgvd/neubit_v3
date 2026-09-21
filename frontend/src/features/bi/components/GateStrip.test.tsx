@@ -23,7 +23,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -47,39 +47,20 @@ const healthySummary = {
   total_points: 475,
   total_registers: 475,
   total_points_reporting: 475,
+  // Every point carries a unit: the gateway records it and it rides every
+  // envelope, so gate 2 is a status here rather than a worklist.
+  total_points_with_unit: 475,
   site_alert_hours: 24,
-  sites: [{ site_id: "s1", site_name: "HQ", score: 62, points: 475, categories: [] }],
+  sites: [{ site_id: "s1", site_name: "HQ", score: 62, points: 475, points_with_unit: 475, categories: [] }],
   categories: [
-    { category: "energy", devices: 18, points: 260, points_reporting: 260, device_types: [], last_seen_at: null },
-    { category: "hvac", devices: 7, points: 36, points_reporting: 36, device_types: [], last_seen_at: null },
+    { category: "energy", devices: 18, points: 260, points_reporting: 260, points_with_unit: 260, device_types: [], last_seen_at: null },
+    { category: "hvac", devices: 7, points: 36, points_reporting: 36, points_with_unit: 36, device_types: [], last_seen_at: null },
   ],
 };
 
-const healthyPatterns = {
-  patterns: [],
-  totals: { points: 475, matched: 475, unmatched: 0, eligible: 0, already_confirmed: 475 },
-};
 
 /** Two duplicated registers — one the server can settle on its own, one that is
  *  a question about the building. */
-const ghostGroups = [
-  {
-    device_tag: "1F-DB",
-    point_tag: "KWH",
-    category: "energy",
-    mode: "auto",
-    survivor_point_id: "p-new",
-    members: [{ point_id: "p-new" }, { point_id: "p-old" }],
-  },
-  {
-    device_tag: "4FKC2",
-    point_tag: "IWT",
-    category: "hvac",
-    mode: "manual",
-    survivor_point_id: null,
-    members: [{ point_id: "m-a" }, { point_id: "m-b" }],
-  },
-];
 
 /** One stranded assertion, on the hvac chiller the succession console is built
  *  around. */
@@ -96,8 +77,6 @@ const orphanRows = [
 
 function store(over: Record<string, any> = {}) {
   vi.spyOn(bi, "summary").mockResolvedValue(over.summary ?? healthySummary);
-  vi.spyOn(bi, "ghosts").mockResolvedValue(over.ghosts ?? { groups: [], resurrected: [], fresh_minutes: 15 });
-  vi.spyOn(bi, "unitPatterns").mockResolvedValue(over.patterns ?? healthyPatterns);
   vi.spyOn(bi, "roleOrphans").mockResolvedValue(
     over.orphans ?? { orphans: [], total: 0, with_candidates: 0, without_candidates: 0 },
   );
@@ -136,7 +115,7 @@ describe("healthy — the strip recedes", () => {
 
     // Every gate's own phrase, in pipeline order, on one line. This is what a
     // prospect reads on a working estate.
-    await screen.findByText("475 points · units confirmed · all placed · all bound · rated · alarms live");
+    await screen.findByText("475 points · units on record · all placed · all bound · rated · alarms live");
     expect(screen.getByText("· six gates, all open")).toBeInTheDocument();
 
     // Nothing to press, and — the part that matters — no gate panel at all.
@@ -171,7 +150,6 @@ describe("shut — one gate expands, and it is the earliest", () => {
   beforeEach(() => {
     store({
       summary: { ...healthySummary, total_registers: 472 },
-      ghosts: { groups: ghostGroups, resurrected: [], fresh_minutes: 15 },
       orphans: { orphans: orphanRows, total: 1, with_candidates: 1, without_candidates: 0 },
     });
   });
@@ -189,35 +167,19 @@ describe("shut — one gate expands, and it is the earliest", () => {
     expect(screen.queryByText(/^Gate 4 · BINDS/)).not.toBeInTheDocument();
   });
 
-  it("opens gate 1's worklist in context — the pairs themselves, and the link that settles them", async () => {
+  it("states gate 1's inflation and offers no door, because nothing here settles it", async () => {
     renderWithProviders(estate);
     await screen.findByText(/^Gate 1 · ARRIVES/);
 
-    // THE LEAD IS WHAT RENDERS, THE WHOLE REASON IS STILL HERE. `gates.ts`
-    // writes two sentences: the inflation and its two figures, then the worklist
-    // waiting behind them. Only the first costs a line of the screen; the second
-    // is on the paragraph's `title` and one press away. Neither was dropped —
-    // see components/Reason.tsx.
-    const blockage = screen.getByText(
-      /3 of the 475 rows counted here are later generations of a register already counted — 472 distinct registers\./,
-    );
-    expect(blockage).toHaveAttribute(
-      "title",
-      expect.stringContaining("2 duplicated pairs are waiting to be settled"),
-    );
-    expect(screen.queryByText(/2 duplicated pairs are waiting to be settled/)).toBeNull();
-    await userEvent.click(within(blockage).getByRole("button", { name: "why" }));
-    expect(screen.getByText(/2 duplicated pairs are waiting to be settled/)).toBeInTheDocument();
-    // The evidence, not a count of it.
-    expect(screen.getByText("1F-DB · KWH")).toBeInTheDocument();
-    expect(screen.getByText("2 generations · no choice needed")).toBeInTheDocument();
-    expect(screen.getByText("4FKC2 · IWT")).toBeInTheDocument();
-    expect(screen.getByText("2 generations · needs your choice")).toBeInTheDocument();
-
-    expect(screen.getByRole("link", { name: /Settle the duplicated registers/ })).toHaveAttribute(
-      "href",
-      "/bi/setup/duplicates",
-    );
+    expect(
+      screen.getByText(
+        /3 of the 475 rows counted here are later generations of a register already counted — 472 distinct registers\./,
+      ),
+    ).toBeInTheDocument();
+    // The gateway keeps its point ids across a rebuild, so no new generation
+    // appears and the screen that used to collapse them is gone. A link onto
+    // work that cannot be done behind it is worse than none.
+    expect(screen.queryByRole("link", { name: /Settle/ })).not.toBeInTheDocument();
   });
 
   it("moves the panel to another shut gate when it is pressed, and never opens two", async () => {
@@ -239,12 +201,13 @@ describe("shut — one gate expands, and it is the earliest", () => {
     renderWithProviders(estate);
     await screen.findByRole("button", { name: /1 ARRIVES/ });
 
-    // Gates 2 and 3 pass on this fixture. Neither is pressable and neither is an
-    // anchor; the only link on screen is the shut gate's action.
+    // Gates 2 and 3 pass on this fixture. Neither is pressable and neither is
+    // an anchor — and gate 1, which is shut, offers no link either, because
+    // the gateway is where identity is kept now.
     expect(screen.queryByRole("button", { name: /2 MEANS/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /3 BELONGS/ })).not.toBeInTheDocument();
     expect(screen.getByText("MEANS")).toBeInTheDocument();
-    expect(screen.getAllByRole("link")).toHaveLength(1);
+    expect(screen.queryAllByRole("link")).toHaveLength(0);
   });
 
   it("says a downstream gate is WAITING rather than dressing it as a fault", async () => {
@@ -256,7 +219,6 @@ describe("shut — one gate expands, and it is the earliest", () => {
         total_registers: 472,
         sites: [{ site_id: "s1", site_name: "HQ", score: null, points: 475, categories: [] }],
       },
-      ghosts: { groups: ghostGroups, resurrected: [], fresh_minutes: 15 },
     });
     renderWithProviders(estate);
     const five = await screen.findByText("RATES");
@@ -331,20 +293,20 @@ describe("gate 3 · BELONGS — opens the unplaced-device worklist in context", 
 });
 
 describe("scope — the same strip, one domain down", () => {
-  it("counts only its own category's duplicates and its own stranded roles", async () => {
+  it("counts only its own category's stranded roles", async () => {
     store({
-      ghosts: { groups: [ghostGroups[1]], resurrected: [], fresh_minutes: 15 },
       orphans: { orphans: orphanRows, total: 1, with_candidates: 1, without_candidates: 0 },
     });
     renderWithProviders(
       <GateStrip subject={{ kind: "domain", category: "hvac", label: "HVAC & Assets" }} />,
     );
 
-    // The worklist read is asked for THIS category, not the estate's.
-    await waitFor(() => expect(bi.ghosts).toHaveBeenCalledWith({ category: "hvac" }));
-    expect(bi.unitPatterns).toHaveBeenCalledWith({ category: "hvac" });
+    // The orphan worklist is estate-wide — it takes a site, not a category —
+    // and the MODEL narrows its rows to this domain. The strip says so rather
+    // than printing the estate's figure under a domain's name.
+    await waitFor(() => expect(bi.roleOrphans).toHaveBeenCalled());
 
-    await screen.findByText(/^Gate 1 · ARRIVES/);
+    await screen.findByText(/^Gate 4 · BINDS/);
     expect(screen.getByText("Scoped to HVAC & Assets. The estate-wide count is on Building.")).toBeInTheDocument();
   });
 
@@ -367,14 +329,11 @@ describe("a caller who may not open a worklist", () => {
     auth.can = (p: string) => p !== "bi.read";
     store({
       summary: { ...healthySummary, total_registers: 472 },
-      ghosts: { groups: ghostGroups, resurrected: [], fresh_minutes: 15 },
     });
     renderWithProviders(estate);
 
     await screen.findByText("ARRIVES");
-    expect(screen.queryByRole("link", { name: /Settle the duplicated registers/ })).not.toBeInTheDocument();
     expect(bi.summary).not.toHaveBeenCalled();
-    expect(bi.ghosts).not.toHaveBeenCalled();
     expect(bi.roleOrphans).not.toHaveBeenCalled();
     expect(bi.alerts).not.toHaveBeenCalled();
   });
@@ -383,7 +342,6 @@ describe("a caller who may not open a worklist", () => {
     auth.can = (p: string) => p !== "bi.manage";
     store({
       summary: { ...healthySummary, total_registers: 472 },
-      ghosts: { groups: ghostGroups, resurrected: [], fresh_minutes: 15 },
     });
     renderWithProviders(estate);
     await screen.findByText(/^Gate 1 · ARRIVES/);
@@ -436,21 +394,27 @@ const scopedSummary = {
   ...healthySummary,
   total_points: 176,
   total_registers: 176,
-  categories: [{ category: "hvac", devices: 12, points: 176, points_reporting: 176, device_types: [], last_seen_at: null }],
+  total_points_with_unit: 176,
+  categories: [{
+    category: "hvac", devices: 12, points: 176, points_reporting: 176,
+    points_with_unit: 176, device_types: [], last_seen_at: null,
+  }],
   sites: [
     {
       site_id: "aeon-1",
       site_name: "Aeon Tower",
       score: 61,
       points: 83,
-      categories: [{ category: "hvac", devices: 7, points: 83 }],
+      points_with_unit: 83,
+      categories: [{ category: "hvac", devices: 7, points: 83, points_with_unit: 83 }],
     },
     {
       site_id: null,
       site_name: null,
       score: null,
       points: 93,
-      categories: [{ category: "hvac", devices: 5, points: 93 }],
+      points_with_unit: 93,
+      categories: [{ category: "hvac", devices: 5, points: 93, points_with_unit: 93 }],
     },
   ],
 };
@@ -465,28 +429,12 @@ describe("scope — the same strip, inside one building", () => {
   // estate, which left every building permanently in diagnostic mode.
 
   /** One duplicated pair with a generation at Aeon — the server already scoped it. */
-  const aeonGhosts = {
-    groups: [
-      {
-        device_tag: "YC-1",
-        point_tag: "IWT",
-        category: "hvac",
-        mode: "auto",
-        survivor_point_id: "p2",
-        members: [{ point_id: "p1" }, { point_id: "p2" }],
-      },
-    ],
-    resurrected: [],
-    fresh_minutes: 15,
-  };
 
   it("asks every worklist for this building, and not the unplaced list", async () => {
     store({ summary: scopedSummary });
     renderWithProviders(atAeon);
 
     await screen.findByText("· six gates, all open");
-    expect(bi.ghosts).toHaveBeenCalledWith({ category: "hvac", site_id: "aeon-1" });
-    expect(bi.unitPatterns).toHaveBeenCalledWith({ category: "hvac", site_id: "aeon-1" });
     expect(bi.roleOrphans).toHaveBeenCalledWith({ site_id: "aeon-1" });
     // A device placed at this building is by definition not unplaced.
     expect(bi.devices).not.toHaveBeenCalled();
@@ -501,7 +449,12 @@ describe("scope — the same strip, inside one building", () => {
   });
 
   it("passes gate 3 where the estate's strip is shut on it", async () => {
-    store({ summary: scopedSummary, ghosts: aeonGhosts });
+    // Gate 4 is shut here only to keep the strip expanded: a strip with every
+    // gate open recedes to one line, and this is a test about gate 3's cell.
+    store({
+      summary: scopedSummary,
+      orphans: { orphans: orphanRows, total: 1, with_candidates: 1, without_candidates: 0 },
+    });
     renderWithProviders(atAeon);
 
     const belongs = await screen.findByText("BELONGS");
@@ -522,15 +475,14 @@ describe("scope — the same strip, inside one building", () => {
     expect(screen.getByText(/93 of 176 points belong to no site/)).toBeInTheDocument();
   });
 
-  it("answers gate 1 for the building from its own duplicated pairs", async () => {
-    store({ summary: scopedSummary, ghosts: aeonGhosts });
+  it("passes gate 1 for a building whose rows and registers agree", async () => {
+    // `total_registers` is an estate figure, so a building's gate 1 rests on
+    // its point count alone — and says nothing it cannot support.
+    store({ summary: scopedSummary });
     renderWithProviders(atAeon);
 
-    // Shut, so it opens itself — the earliest shut gate — with the building's pair.
-    expect(await screen.findByText(/^Gate 1 · ARRIVES/)).toBeInTheDocument();
-    expect(screen.getByText("YC-1 · IWT")).toBeInTheDocument();
-    // No deferral door any more: the answer is this building's.
-    expect(screen.queryByRole("link", { name: /Answer it across the whole estate/ })).not.toBeInTheDocument();
+    await screen.findByText("· six gates, all open");
+    expect(screen.queryByText(/^Gate 1 · ARRIVES/)).not.toBeInTheDocument();
   });
 
   it("rates the building on its OWN score, and prints the registry's refusal when it has none", async () => {

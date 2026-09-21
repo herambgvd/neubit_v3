@@ -181,13 +181,14 @@ export const LAUNCHER_MODES: LauncherMode[] = [
     // was not to give up but to build the PATH by which an operator supplies
     // what the wire cannot. That path now exists end to end —
     //
-    //   • UNIT      /bi/setup/units lets an operator confirm what a point
-    //               measures, suggested from the tag (`_kwh`, `_Hz`, `_V`) with
-    //               the pattern shown, and bulk-applied over rows they can see.
-    //               `points.unit_source = 'operator'` records who said it, and
-    //               the writer now refuses to overwrite such a unit at all —
-    //               COALESCE alone only stopped a message that says NOTHING.
-    //               Deriving a unit from a tag silently is still forbidden.
+    //   • UNIT      the GATEWAY records it. A person describes a signal there,
+    //               beside its live value and its address, and the unit rides
+    //               every envelope as `env.u`. This store keeps it and its
+    //               provenance (`points.unit_source`) and asks nobody to type
+    //               it a second time — the screen that did was deleted after
+    //               298 of 341 units had arrived from the gateway and none had
+    //               ever been entered here. Deriving a unit from a tag silently
+    //               is still forbidden, on either side.
     //   • AREA      `sites.gross_floor_area_sqm` (+ tariff, occupancy), typed in
     //               BI → Setup → Building facts and stored on the site.
     //               Mirrored into `neubit_reporting.site_facts` over the sites

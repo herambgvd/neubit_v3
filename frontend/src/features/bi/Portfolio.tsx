@@ -244,7 +244,7 @@ function SiteRow({ site, alertHours }: any) {
   const kwhTitle =
     site.kwh?.status === "measured"
       ? site.kwh.reason
-      : site.kwh?.reason ?? "no kWh register confirmed — confirm units in Setup";
+      : site.kwh?.reason ?? "no point here carries the unit kWh — it is recorded on the gateway";
   const row = (
     <LeaderRow
       icon={unplaced ? "heroicons:map-pin" : "heroicons:building-office-2"}
@@ -427,21 +427,15 @@ export default function Portfolio() {
                 sub={
                   measuredTotal != null
                     ? `kWh · ${measured.length} site(s), operator-confirmed registers, ${alertHours}h`
-                    : "no kWh register confirmed — confirm units in Setup"
+                    : "no point here carries the unit kWh — it is recorded on the gateway"
                 }
                 tone="good"
                 title={
                   measuredTotal != null
                     ? undefined
-                    : "Consumption is last − first over a confirmed kWh register. Zero registers are confirmed, so there is nothing measured to show — confirming them happens in Setup → Units, by a human."
+                    : "Consumption is last − first over a kWh register. No point here carries the unit kWh, so there is nothing measured to show — a unit is recorded on the gateway and travels here on every reading."
                 }
-                action={
-                  measuredTotal != null ? null : (
-                    <Link href={taskHref("units")} className="text-nb-blueb hover:underline">
-                      Confirm a kWh register →
-                    </Link>
-                  )
-                }
+                action={null}
               />
               <Kpi
                 icon="heroicons:star"

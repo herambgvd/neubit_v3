@@ -15,7 +15,7 @@ import type { BiPlant, BiPlantEquipment, BiPlantMetricDef, BiPlantSlot } from "@
 
 import Reason from "../components/Reason";
 import { fmtReading } from "../constants";
-import { infraDesignerHref, taskHref } from "../setup/routes";
+import { infraDesignerHref } from "../setup/routes";
 import {
   classLabel,
   isMissingFact,
@@ -83,11 +83,15 @@ function MetricFix({ view, eq, siteId }: Readonly<{ view: MetricView; eq: BiPlan
       </Link>
     );
   }
-  if (view.kind === "refused" && (view.status === "unit_unconfirmed" || view.status === "unit_mismatch")) {
+  if (view.kind === "refused" && (view.status === "unit_unknown" || view.status === "unit_mismatch")) {
+    // The unit is set on the GATEWAY, beside the point's live value, and it
+    // travels here on every reading. There is no screen on this platform to
+    // send anybody to, so the refusal says where instead of offering a link
+    // that would land on a page that cannot change it.
     return (
-      <Link href={taskHref("units")} className={linkCls} data-fix="unit">
-        Confirm the unit <Icon icon="heroicons:arrow-up-right" className="text-[11px]" />
-      </Link>
+      <span className="text-nb-faint" data-fix="unit">
+        set the unit on the gateway
+      </span>
     );
   }
   return null;
@@ -171,9 +175,9 @@ function SlotRow({ slot }: Readonly<{ slot: BiPlantSlot }>) {
           <span>not bound</span>
         )}
         {slot.point && !slot.point.unit_confirmed && (
-          <Link href={taskHref("units")} className="text-nb-warn hover:underline">
-            unit unconfirmed
-          </Link>
+          <span className="text-nb-warn" title="A unit is recorded on the gateway and travels here on every reading.">
+            no unit
+          </span>
         )}
       </div>
       {slot.readiness !== "reporting" && slot.reason && (

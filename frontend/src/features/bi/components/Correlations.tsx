@@ -83,7 +83,6 @@ export const kindLabel = (kind: string) => KIND_LABEL[kind] || kind;
 /** `where` is a console named in words. It becomes a link only where this app
  *  has the route; everything else prints as the room's name. */
 const WHERE_HREF: Record<string, string> = {
-  "Building Intelligence → Units": taskHref("units"),
   "Building Intelligence → Roles": taskHref("roles"),
   "Building Intelligence → Setup → Building facts": taskHref("facts"),
 };

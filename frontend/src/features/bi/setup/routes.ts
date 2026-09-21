@@ -5,12 +5,19 @@
 // must never meet chillers, TR or ΔT bands. Configurations → Sites stays the
 // shared list of buildings; BI reads it and writes nothing there.
 //
-// The tasks ARE the pipeline's gates, in the order they have to be done. This
-// file is the one list of them — the checklist, the console strip and every
+// The tasks ARE the pipeline's gates that a PERSON HERE opens, in the order
+// they have to be done. Two of them left: the gateway is where a signal is
+// described, so "which row is the live sensor?" (it keeps its ids across a
+// rebuild now) and "is this number °C, kW or kWh?" (it carries the unit on
+// every envelope) are answered before a reading ever reaches this store. What
+// is left is what only this store can know: where the device is, what the
+// machine is, what a point plays in a formula, and the building's own facts.
+//
+// This file is the one list of them — the checklist, the console strip and every
 // link into Setup read it, so a task cannot be renamed in one place and not
 // another.
 
-export type SetupTaskId = "duplicates" | "units" | "placement" | "equipment" | "roles" | "facts";
+export type SetupTaskId = "placement" | "equipment" | "roles" | "facts";
 
 export interface SetupTask {
   id: SetupTaskId;
@@ -40,24 +47,6 @@ export interface SetupTask {
 export const SETUP_HREF = "/bi/setup";
 
 export const SETUP_TASKS: SetupTask[] = [
-  {
-    id: "duplicates", gate: 1, label: "Duplicates", short: "DUPLICATES",
-    href: `${SETUP_HREF}/duplicates`, icon: "heroicons-outline:document-duplicate",
-    asks: "which row is the live sensor?",
-    explains:
-      "One sensor is answering to several rows: the gateway mints a new point id every time it rebuilds a connection. Until you say which row is the live one, every count above it is inflated — and a unit confirmed on a dead row is work thrown away.",
-    unlocks: ["Units", "Metric roles"],
-    cta: "Settle the duplicates",
-  },
-  {
-    id: "units", gate: 2, label: "Units", short: "UNITS",
-    href: `${SETUP_HREF}/units`, icon: "heroicons-outline:tag",
-    asks: "is this number °C, kW or kWh?",
-    explains:
-      "A number with no unit cannot be graded — 5.5 is a healthy ΔT or a trivial power, and nothing here decides which from a tag. An operator confirms it, in bulk where a tag pattern makes that safe.",
-    unlocks: ["every metric that reads those points"],
-    cta: "Confirm the units",
-  },
   {
     id: "placement", gate: 3, label: "Buildings & devices", short: "BUILDINGS",
     href: `${SETUP_HREF}/placement`, icon: "heroicons-outline:map-pin",
@@ -132,7 +121,13 @@ export const buildingFactsHref = (siteId: string): string =>
 /** The worklist routes that predate Setup, and where each lives now. They
  *  REDIRECT rather than render: one screen, one URL, one strip. */
 export const LEGACY_SETUP_ROUTES: Record<string, string> = {
-  "/bi/duplicates": taskHref("duplicates"),
+  // Duplicates and Units were gates of their own until the gateway became the
+  // place a signal is described. Their URLs land on the checklist rather than
+  // 404-ing a bookmark.
+  "/bi/duplicates": SETUP_HREF,
+  "/bi/setup/duplicates": SETUP_HREF,
+  "/bi/setup/units": SETUP_HREF,
+  "/bi/units": SETUP_HREF,
   "/bi/placement": taskHref("placement"),
   "/bi/succession": taskHref("roles"),
   [STRANDED_HREF]: taskHref("roles"),

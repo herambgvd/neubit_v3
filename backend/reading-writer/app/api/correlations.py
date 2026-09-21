@@ -129,24 +129,25 @@ GAP_KINDS: dict[str, GapKind] = {
     "unit_unconfirmed": GapKind(
         key="unit_unconfirmed",
         needs_new_hardware=False,
-        summary="The measurement is arriving; nobody has said what it is in.",
+        summary="The measurement is arriving; nothing has said what it is in.",
         remedy=(
-            "Confirm the unit on the points listed. The platform will not infer "
-            "one from the tag — a naming convention is evidence of nothing — so "
-            "this is one human assertion, once."
+            "Record the unit on the gateway, beside the point's live value — it "
+            "travels here on every reading. Neither side infers one from the tag: "
+            "a naming convention is evidence of nothing."
         ),
-        where="Building Intelligence → Units",
+        where="the gateway that sends these points",
     ),
     "unit_wrong_dimension": GapKind(
         key="unit_wrong_dimension",
         needs_new_hardware=False,
-        summary="A unit is confirmed, but it is not the kind of quantity this signal needs.",
+        summary="A unit is recorded, but it is not the kind of quantity this signal needs.",
         remedy=(
-            "Re-confirm the unit. A confirmed unit of the wrong dimension is a "
-            "human error that has already been made, and it is worse than a "
-            "missing one: everything downstream would type-check and be wrong."
+            "Correct the unit on the gateway. A recorded unit of the wrong "
+            "dimension is an error that has already been made, and it is worse "
+            "than a missing one: everything downstream would type-check and be "
+            "wrong."
         ),
-        where="Building Intelligence → Units",
+        where="the gateway that sends these points",
     ),
     "role_unbound": GapKind(
         key="role_unbound",
@@ -646,9 +647,11 @@ def resolve_point_unit(matched: list[dict], dimension: str | None) -> dict:
       * arriving, confirmed as the wrong quantity → somebody said, and said
         something that is not the kind of quantity this correlation needs.
 
-    Only `unit_source = 'operator'` counts. A unit that arrived on the wire is
-    what the gateway happened to send and is not an assertion anybody made — the
-    same rule `app/api/rating.py` refuses to divide by.
+    A point counts as described when it HAS a unit, whoever recorded it. That
+    used to mean `unit_source = 'operator'`, on the argument that a unit off the
+    wire is not an assertion anybody made; the gateway is where a person makes
+    that assertion now, and it rides every envelope — the same rule
+    `app/api/rating.py` follows.
     """
     if not matched:
         return {
@@ -663,13 +666,11 @@ def resolve_point_unit(matched: list[dict], dimension: str | None) -> dict:
         verdict = _silent(matched, "point(s) match this signal's shape")
         # Said explicitly, because it is the reassuring half and an operator who
         # cannot see it will go and re-do configuration that was never wrong.
-        confirmed_but_dead = [
-            r for r in matched if r["unit"] is not None and r["unit_source"] == "operator"
-        ]
+        confirmed_but_dead = [r for r in matched if (r["unit"] or "").strip()]
         verdict["evidence"]["points_with_confirmed_unit"] = len(confirmed_but_dead)
         return verdict
 
-    confirmed = [r for r in live if r["unit"] is not None and r["unit_source"] == "operator"]
+    confirmed = [r for r in live if (r["unit"] or "").strip()]
     evidence = {
         "points_matched": len(matched),
         "points_reporting_in_window": len(live),
@@ -702,8 +703,8 @@ def resolve_point_unit(matched: list[dict], dimension: str | None) -> dict:
         "satisfied": False,
         "gap": "unit_unconfirmed",
         "gate": (
-            f"{len(live)} point(s) are reporting inside the window, none with an "
-            f"operator-confirmed unit"
+            f"{len(live)} point(s) are reporting inside the window, none with a "
+            f"unit on record"
         ),
         "evidence": evidence,
     }

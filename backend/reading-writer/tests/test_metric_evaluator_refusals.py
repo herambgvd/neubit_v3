@@ -108,26 +108,53 @@ def _bound(*points_, names=("a", "b")):
     return {n: p for n, p in zip(names, points_)}
 
 
-def test_an_unconfirmed_unit_refuses_and_names_the_point_and_the_tab():
-    """`unit_source != operator` means the unit was inferred from a tag or a
-    driver. Computing on it is how a Wh register becomes a kWh one on a report."""
+def test_a_missing_unit_refuses_and_names_the_point_and_where_to_set_it():
+    """A number with no unit cannot be graded — 5.5 is a healthy ΔT or a
+    trivial power, and nothing here decides which.
+
+    The guard used to demand `unit_source == "operator"`: the unit had to be
+    confirmed in THIS store. The gateway describes the signal now and the unit
+    rides every envelope, so a unit that arrived is a unit somebody stated —
+    just not here. What still refuses is an ABSENT one."""
     out = ev._unit_guards_refusal(
         ["units_confirmed"],
         {"a": {"role": "energy_total"}},
-        _bound(point(1, role="energy_total", tag="MAIN", unit_source="inferred"), names=("a",)),
+        _bound(point(1, role="energy_total", tag="MAIN", unit=None), names=("a",)),
     )
-    assert out["status"] == "unit_unconfirmed"
+    assert out["status"] == "unit_unknown"
     assert "`MAIN` (a)" in out["reason"]
-    assert "Units tab" in out["reason"]
+    assert "gateway" in out["reason"]
 
 
-def test_without_the_guard_an_unconfirmed_unit_is_allowed_to_compute():
+def test_a_unit_the_gateway_recorded_computes():
+    """The whole point of the change: 298 of this estate's 341 units came from
+    the gateway and NONE were ever entered here, so demanding a second
+    confirmation refused every metric on the estate forever."""
+    assert ev._unit_guards_refusal(
+        ["units_confirmed"],
+        {"a": {"role": "energy_total"}},
+        _bound(point(1, role="energy_total", unit="kWh", unit_source="reading"), names=("a",)),
+    ) is None
+
+
+def test_a_blank_unit_is_as_absent_as_a_missing_one():
+    """`""` is what an unstated unit looks like coming off the wire, and it is
+    not an assertion that the quantity is dimensionless."""
+    out = ev._unit_guards_refusal(
+        ["units_confirmed"],
+        {"a": {"role": "energy_total"}},
+        _bound(point(1, role="energy_total", unit="   ", unit_source="reading"), names=("a",)),
+    )
+    assert out["status"] == "unit_unknown"
+
+
+def test_without_the_guard_a_point_with_no_unit_is_allowed_to_compute():
     """The guard is opt-in per definition. If it fired unconditionally, every
     definition that deliberately runs unit-open would refuse forever."""
     assert ev._unit_guards_refusal(
         [],
         {"a": {"role": "energy_total"}},
-        _bound(point(1, role="energy_total", unit_source="inferred"), names=("a",)),
+        _bound(point(1, role="energy_total", unit=None), names=("a",)),
     ) is None
 
 
@@ -183,16 +210,16 @@ def test_same_unit_passes_when_both_sides_agree():
     ) is None
 
 
-def test_an_unconfirmed_unit_is_reported_before_a_wrong_one():
+def test_a_missing_unit_is_reported_before_a_wrong_one():
     """Both are true of this point; only one is actionable. Telling an operator
-    the unit is wrong when nobody has confirmed a unit at all sends them to
-    correct a value that was never asserted."""
+    the unit is wrong when there is no unit at all sends them to correct a value
+    that was never asserted."""
     out = ev._unit_guards_refusal(
         ["units_confirmed"],
         {"a": {"role": "energy_total", "unit": "kWh"}},
-        _bound(point(1, role="energy_total", unit="Wh", unit_source="inferred"), names=("a",)),
+        _bound(point(1, role="energy_total", unit=None), names=("a",)),
     )
-    assert out["status"] == "unit_unconfirmed"
+    assert out["status"] == "unit_unknown"
 
 
 # ── absence, and the flat input that is not absence ──────────────────────────

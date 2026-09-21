@@ -47,13 +47,12 @@ import { STRANDED_HREF, taskHref } from "./setup/routes";
  *
  *  WHAT A SITE SUBJECT CAN AND CANNOT BE TOLD, because this is the whole reason
  *  the site gates read the way they do: `/bi/devices` and `/bi/points` take a
- *  `site_id`; the three WORKLIST reads — `/bi/points/ghosts`,
- *  `/bi/units/patterns`, `/bi/points/roles/orphans` — take a `category` and
- *  nothing else. So a duplicated register, an unconfirmed unit and a stranded
- *  role are facts about a DOMAIN on this deployment, not about a place. A site
- *  strip says exactly that and links to where the domain-wide answer is; it
- *  does not print the estate's figure under a building's name, and it does not
- *  print a zero it has no read for. */
+ *  `site_id`; the WORKLIST read that is left — `/bi/points/roles/orphans` —
+ *  takes a `category` and nothing else. So a stranded role is a fact about a
+ *  DOMAIN on this deployment, not about a place. A site strip says exactly
+ *  that and links to where the domain-wide answer is; it does not print the
+ *  estate's figure under a building's name, and it does not print a zero it
+ *  has no read for. */
 export interface GateSubject {
   kind: "estate" | "domain" | "site";
   /** The gateway's own category key. Domain and site subjects only. */
@@ -129,10 +128,6 @@ export interface GateInput {
   subject: GateSubject;
   /** GET /bi/summary */
   summary?: any;
-  /** GET /bi/points/ghosts, scoped to the subject */
-  ghosts?: any;
-  /** GET /bi/units/patterns, scoped to the subject */
-  patterns?: any;
   /** GET /bi/points/roles/orphans — estate-wide; scoped here by category */
   orphans?: any;
   /** GET /bi/devices?placement=unplaced, scoped to the subject — the head of
@@ -182,6 +177,27 @@ const siteRow = (summary: any, subject: GateSubject) =>
 
 /** How many points the subject covers, at whichever scope it is.
  *  `null` means the read that would say has not answered — never a zero. */
+/** The same walk as `subjectPoints`, for the points that carry a unit. Every
+ *  scope answers from the SAME row it took its point count from, so "301 of
+ *  341" is one statement about one row set rather than two reads agreeing. */
+function subjectPointsWithUnit(summary: any, subject: GateSubject): number | null {
+  const n = (v: unknown) => (typeof v === "number" ? v : null);
+  if (subject.kind === "site") {
+    const row = siteRow(summary, subject);
+    if (!row) return null;
+    if (!subject.category) return n(row.points_with_unit);
+    const cat = (row.categories || []).find((c: any) => c.category === subject.category);
+    // A building with no row for this domain has none of it placed here — the
+    // summary stated that by omission, so zero of zero is not an invention.
+    return cat ? n(cat.points_with_unit) : 0;
+  }
+  if (subject.kind === "domain") {
+    const row = categoryRow(summary, subject);
+    return row ? n(row.points_with_unit) : null;
+  }
+  return n(summary?.total_points_with_unit);
+}
+
 function subjectPoints(summary: any, subject: GateSubject): number | null {
   if (subject.kind === "site") {
     const row = siteRow(summary, subject);
@@ -214,18 +230,19 @@ const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 // ── Gate 1 ─ ARRIVES ────────────────────────────────────────────────────────
 //
-// A conflux connection that is deleted and re-created mints a NEW point id for
-// every point behind it, so one physical register accumulates a generation per
-// rebuild — all unretired, all counted in every figure above this gate.
+// It used to be a WORKLIST: a gateway connection that was deleted and re-created
+// minted a new point id for every point behind it, so one physical register
+// accumulated a generation per rebuild and somebody here had to say which row
+// was the live sensor. The gateway keeps its ids across a rebuild now, so no new
+// generations appear and there is nothing here to settle.
 //
-// TWO FIGURES, TWO SOURCES, AND THEY ARE NOT MIXED. `total_points` and
+// What remains is a STATEMENT: are readings arriving, and do the rows still
+// describe as many registers as there are rows. `total_points` and
 // `total_registers` come out of the SAME summary statement under the same
 // retirement horizon, so their difference is a subtraction the server vouched
-// for; it is only available at estate scope. The PAIR COUNT is the worklist's
-// own, over a row set that deliberately ignores that horizon. Whichever is
-// present is stated; neither is derived from the other.
+// for; it is estate-only, and a gate with no figure says so rather than passing.
 function arrives(input: GateInput): GateView {
-  const { summary, ghosts, subject, may } = input;
+  const { summary, subject } = input;
   const base = gate("arrives");
   const points: number | null = subjectPoints(summary, subject);
   const registers: number | null =
@@ -233,7 +250,6 @@ function arrives(input: GateInput): GateView {
       ? summary.total_registers
       : null;
   const repeats = registers == null || points == null ? null : points - registers;
-  const groups: any[] = scoped(ghosts?.groups ?? [], subject);
 
   if (points == null) {
     return {
@@ -250,12 +266,7 @@ function arrives(input: GateInput): GateView {
     };
   }
 
-  // ONE BUILDING answers from the duplicate worklist asked with `site_id`, which
-  // keeps a pair when ANY generation is here. `total_registers` is estate-only,
-  // so a building's verdict rests on the pairs alone.
-
-  const shut = groups.length > 0 || !!repeats;
-  if (!shut) {
+  if (!repeats) {
     return {
       ...base,
       state: "pass",
@@ -267,87 +278,67 @@ function arrives(input: GateInput): GateView {
     };
   }
 
-  // TWO SENTENCES, TWO SOURCES, AND NEITHER IS DERIVED FROM THE OTHER. The
-  // register figures come out of the summary; the pair count is the worklist's
-  // own, over a row set that ignores the retirement horizon. Whichever answered
-  // speaks; a worklist that failed cannot take the register line away, and a
-  // summary that does not carry `total_registers` has NOT said the estate is
-  // clean.
-  const said: string[] = [];
-  if (repeats) {
-    said.push(
-      `${repeats} of the ${points} rows counted here are later generations of a register already counted — ${registers} distinct registers. Every figure past this gate is inflated until they are settled.`,
-    );
-  }
-  if (groups.length) {
-    said.push(
-      `${groups.length} duplicated ${plural(groups.length, "pair is", "pairs are")} waiting to be settled. Collapsing one deletes no reading and can be undone.`,
-    );
-  }
+  // Rows that predate the gateway's identity fix. Nothing on THIS platform
+  // settles them any more, so the gate states the inflation and offers no
+  // action rather than linking to a screen that no longer exists.
   return {
     ...base,
     state: "shut",
-    count: groups.length || repeats,
-    quiet: `${registers ?? points} points`,
-    blocking: said.join(" "),
-    action: may.bi ? { href: taskHref("duplicates"), label: "Settle the duplicated registers" } : null,
-    rows: groups.slice(0, 6).map((g: any) => ({
-      key: `${g.device_tag} ${g.point_tag}`,
-      title: `${g.device_tag} · ${g.point_tag}`,
-      meta: `${(g.members || []).length} generations · ${
-        g.mode === "auto" ? "no choice needed" : "needs your choice"
-      }`,
-    })),
+    count: repeats,
+    quiet: `${registers} registers`,
+    blocking:
+      `${repeats} of the ${points} rows counted here are later generations of a register already counted — ` +
+      `${registers} distinct registers. They predate the gateway keeping its ids across a rebuild; no new ones appear, ` +
+      `and every figure past this gate stays inflated by these until they are retired.`,
+    action: null,
+    rows: [],
   };
 }
 
 // ── Gate 2 ─ MEANS ──────────────────────────────────────────────────────────
 //
-// `points.unit` is null for every point on this deployment because the source
-// payloads carry none (contract §11/§12). A trend chart survives that; a rating
-// cannot — kWh/m²/yr is a statement about units.
+// This was a worklist too — a catalogue of tag conventions and a bulk confirm,
+// because `points.unit` was NULL for every point and only a person here could
+// change that. The gateway carries the unit on every envelope now: a person
+// describes the signal THERE, beside its live value and its address, and 301 of
+// this estate's 341 units arrived that way while none were ever typed in here.
 //
-// `eligible` and `unmatched` are NEVER summed. A point a catalogued convention
-// claims is one decision shared with its siblings; a point no pattern reads
-// (`Batt_Time_Rem`, `Point1`) is one-by-one work, and a single backlog figure
-// cannot tell an operator which of the two they are looking at.
+// So the gate states what is known and offers no action. A number with no unit
+// still cannot be graded — 5.5 is a healthy ΔT or a trivial power — and the
+// sentence says where the answer is given, which is not on this platform.
 function means(input: GateInput): GateView {
-  const { patterns, may } = input;
+  const { summary, subject } = input;
   const base = gate("means");
-  const totals = patterns?.totals;
-  if (!totals) {
+  const points: number | null = subjectPoints(summary, subject);
+  const withUnit: number | null = subjectPointsWithUnit(summary, subject);
+
+  if (points == null || withUnit == null) {
     return {
       ...base,
       state: "unknown",
       quiet: "",
       count: null,
-      blocking: "The unit catalogue has not answered, so nothing here knows what these numbers measure.",
+      blocking:
+        "The summary has not said how many points carry a unit, so nothing here knows what these numbers measure.",
       action: null,
       rows: [],
     };
   }
-  const unconfirmed = Math.max(0, (totals.points ?? 0) - (totals.already_confirmed ?? 0));
-  if (!unconfirmed) {
-    return { ...base, state: "pass", quiet: "units confirmed", count: null, blocking: "", action: null, rows: [] };
+
+  const without = Math.max(0, points - withUnit);
+  if (!without) {
+    return { ...base, state: "pass", quiet: "units on record", count: null, blocking: "", action: null, rows: [] };
   }
   return {
     ...base,
     state: "shut",
-    count: unconfirmed,
-    quiet: "units confirmed",
+    count: without,
+    quiet: "units on record",
     blocking:
-      `${unconfirmed} of ${totals.points} points carry no confirmed unit, so nothing above this gate can say what they measure. ` +
-      `${totals.eligible} match a catalogued tag convention and can be confirmed together once a dry run has shown the rows; ` +
-      `${totals.unmatched} match none and stay one-by-one work.`,
-    action: may.bi ? { href: taskHref("units"), label: "Confirm the units" } : null,
-    rows: (patterns.patterns || [])
-      .filter((p: any) => p.kind === "unit" && p.eligible > 0)
-      .slice(0, 6)
-      .map((p: any) => ({
-        key: p.key,
-        title: p.label,
-        meta: `${p.eligible} points waiting · proposes ${p.unit === "" ? "dimensionless" : p.unit}`,
-      })),
+      `${without} of ${points} points carry no unit, so nothing above this gate can say what they measure. ` +
+      `A unit is recorded on the gateway, beside the point's live value — it travels here on every reading.`,
+    action: null,
+    rows: [],
   };
 }
 

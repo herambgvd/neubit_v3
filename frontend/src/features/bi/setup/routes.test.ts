@@ -62,8 +62,14 @@ async function landsOn(mod: Promise<{ default: (p: any) => Promise<unknown> }>, 
 }
 
 describe("the routes Setup replaced", () => {
-  it("/bi/duplicates lands on Setup → Duplicates", async () => {
-    expect(await landsOn(import("@/app/(app)/bi/duplicates/page"))).toBe("/bi/setup/duplicates");
+  it("/bi/duplicates lands on the checklist — the gate it opened is gone", async () => {
+    // The gateway keeps its point ids across a rebuild, so nothing duplicates
+    // and there is no worklist to land on. The URL still resolves.
+    expect(await landsOn(import("@/app/(app)/bi/duplicates/page"))).toBe("/bi/setup");
+  });
+
+  it("/bi/setup/units lands there too — the gateway records the unit now", async () => {
+    expect(await landsOn(import("@/app/(app)/bi/setup/units/page"))).toBe("/bi/setup");
   });
 
   it("/bi/placement lands on Setup → Buildings & devices, still scoped", async () => {

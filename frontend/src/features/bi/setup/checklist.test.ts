@@ -48,11 +48,12 @@ const tree = (equipment: EquipmentPublic[], site = "s1"): InfrastructureTree => 
 const rowOf = (input: ChecklistInput, id: string) => deriveChecklist(input).find((r) => r.task.id === id)!;
 
 describe("the rows", () => {
-  it("are the six tasks, in pipeline order, each with the page that works it", () => {
+  it("are the tasks a person here can do, in pipeline order, with the page that works each", () => {
+    // Duplicates and Units are not among them: the gateway keeps its point ids
+    // across a rebuild and carries the unit on every envelope, so both are
+    // answered before a reading reaches this store.
     const rows = deriveChecklist({});
     expect(rows.map((r) => [r.task.label, r.href])).toEqual([
-      ["Duplicates", "/bi/setup/duplicates"],
-      ["Units", "/bi/setup/units"],
       ["Buildings & devices", "/bi/setup/placement"],
       ["Equipment", "/bi/setup/equipment"],
       ["Metric roles", "/bi/setup/roles"],
@@ -65,32 +66,6 @@ describe("the rows", () => {
       expect(r.state, r.task.id).toBe("unknown");
       expect(r.count, r.task.id).not.toMatch(/\b0\b/);
     }
-  });
-});
-
-describe("duplicates", () => {
-  it("says what is left and cannot claim how much was settled", () => {
-    const r = rowOf({ ghosts: { total: 3, auto: 2, manual: 1 } }, "duplicates");
-    expect(r.state).toBe("todo");
-    expect(r.stateLabel).toBe("to do");
-    expect(r.count).toBe("2 no choice needed · 1 need your choice");
-  });
-
-  it("is done when nothing is duplicated", () => {
-    expect(rowOf({ ghosts: { total: 0, auto: 0, manual: 0 } }, "duplicates").state).toBe("done");
-  });
-});
-
-describe("units", () => {
-  it("counts confirmed against the rest, the way gate 2 does", () => {
-    const r = rowOf({ patterns: { totals: { points: 283, already_confirmed: 190 } } }, "units");
-    expect(r.state).toBe("partly");
-    expect(r.count).toBe("190 confirmed · 93 unconfirmed");
-  });
-
-  it("is not started when none is confirmed, and done when none is left", () => {
-    expect(rowOf({ patterns: { totals: { points: 5, already_confirmed: 0 } } }, "units").stateLabel).toBe("not started");
-    expect(rowOf({ patterns: { totals: { points: 5, already_confirmed: 5 } } }, "units").state).toBe("done");
   });
 });
 
@@ -225,9 +200,9 @@ describe("which step is open", () => {
   });
 
   it("stops on a gate it could not read, rather than skipping past it", () => {
-    // A failed read cannot say the gate is fine, and opening gate 3 would say
-    // exactly that about gate 2 — on top of the order being the point: units
-    // confirmed on gate 1's ghosts is work thrown away.
+    // A failed read cannot say the gate is fine, and opening the next step
+    // would say exactly that about this one — on top of the order being the
+    // point: a role bound on a device no building owns is work thrown away.
     expect(openStep(rows("done", "unknown", "todo"))).toBe(1);
   });
 
@@ -239,32 +214,18 @@ describe("which step is open", () => {
 // ── how far along, where the read can measure both ends ──────────────────────
 
 describe("progress", () => {
-  it("measures units against every point, not against what is left", () => {
-    const [, units] = deriveChecklist({ patterns: { totals: { points: 283, already_confirmed: 190 } } });
-    expect(units.progress).toEqual({ done: 190, total: 283 });
-  });
-
   it("measures placement against placed plus unplaced", () => {
-    const [, , place] = deriveChecklist({ placed: { total: 11 }, unplaced: { total: 38 } });
+    const [place] = deriveChecklist({ placed: { total: 11 }, unplaced: { total: 38 } });
     expect(place.progress).toEqual({ done: 11, total: 49 });
   });
 
   it("measures roles against every assertion, stranded ones included", () => {
     const list = deriveChecklist({ roles: { counts: { confirmed: 19 } }, orphans: { orphans: [1, 2] } });
-    expect(list[4].progress).toEqual({ done: 19, total: 21 });
-  });
-
-  it("claims no progress on duplicates, because a settled pair leaves the list", () => {
-    // There is no denominator to measure against: 45 of WHAT is unknowable, and
-    // inventing one would put a bar on the screen that means nothing.
-    const [dup] = deriveChecklist({ ghosts: { total: 45, auto: 1, manual: 44 } });
-    expect(dup.progress).toBeUndefined();
+    expect(list[2].progress).toEqual({ done: 19, total: 21 });
   });
 
   it("claims no progress from a read that did not answer", () => {
-    const [, units] = deriveChecklist({ patterns: { totals: { points: 283 } } });
-    expect(units.progress).toBeUndefined();
-    const [, , place] = deriveChecklist({ unplaced: { total: 38 } });
+    const [place] = deriveChecklist({ unplaced: { total: 38 } });
     expect(place.progress).toBeUndefined();
   });
 });
@@ -284,7 +245,7 @@ describe("the Equipment caveat", () => {
   it("says a registry with no chiller in it has nothing to grade", () => {
     // `done` means every slot on every REGISTERED machine is bound. It is not
     // a claim that the plant has been described.
-    const [, , , eqRow] = deriveChecklist({
+    const [, eqRow] = deriveChecklist({
       buildings: [building()],
       trees: { s1: tree([eq({ equipment_class: "ahu", slots: bound })]) },
     });
@@ -293,7 +254,7 @@ describe("the Equipment caveat", () => {
   });
 
   it("says nothing of the sort once a chiller is registered", () => {
-    const [, , , eqRow] = deriveChecklist({
+    const [, eqRow] = deriveChecklist({
       buildings: [building()],
       trees: { s1: tree([eq({ design: { design_dt_min: 4.5, design_dt_max: 6 }, slots: bound })]) },
     });
@@ -301,7 +262,7 @@ describe("the Equipment caveat", () => {
   });
 
   it("says nothing of the sort when no machine is registered at all — the count already does", () => {
-    const [, , , eqRow] = deriveChecklist({ buildings: [building()], trees: { s1: tree([]) } });
+    const [, eqRow] = deriveChecklist({ buildings: [building()], trees: { s1: tree([]) } });
     expect(eqRow.state).toBe("todo");
     expect(eqRow.note).toBeUndefined();
   });

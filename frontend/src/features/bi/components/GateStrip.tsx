@@ -145,16 +145,6 @@ export default function GateStrip({ subject, className = "" }: Readonly<GateStri
     refetchInterval: 30_000,
     enabled: mayBi,
   });
-  const ghostsQ = useQuery<any>({
-    queryKey: ["bi-ghosts", category ?? "", siteId ?? ""],
-    queryFn: () => bi.ghosts(category || siteId ? { category, site_id: siteId } : undefined),
-    enabled: wantsWorklists,
-  });
-  const patternsQ = useQuery<any>({
-    queryKey: ["bi-unit-patterns", category ?? null, siteId ?? null],
-    queryFn: () => bi.unitPatterns({ category, site_id: siteId }),
-    enabled: wantsWorklists,
-  });
   // Gate 3's rows: the devices no building owns, scoped like every other
   // worklist. The gate's COUNT stays the summary's; this is the evidence under it.
   // Not at site scope: a device placed at this building is by definition not
@@ -204,8 +194,6 @@ export default function GateStrip({ subject, className = "" }: Readonly<GateStri
   const gates = deriveGates({
     subject,
     summary: summaryQ.data,
-    ghosts: ghostsQ.data,
-    patterns: patternsQ.data,
     orphans: orphansQ.data,
     unplaced: unplacedQ.data,
     alerts: alertsQ.data,

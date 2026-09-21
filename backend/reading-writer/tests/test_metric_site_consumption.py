@@ -204,18 +204,18 @@ def test_no_point_at_the_site_in_the_role_refuses_naming_the_site_scope():
     assert "at this site" in out["reason"]
 
 
-def test_an_unconfirmed_unit_on_any_register_in_the_role_refuses_the_input():
-    """One of three registers on an assumed unit is enough to make the SUM
-    wrong, so the guard is over the whole role, not over a chosen point."""
+def test_a_register_with_no_unit_anywhere_in_the_role_refuses_the_input():
+    """One of three registers with no unit is enough to make the SUM wrong, so
+    the guard is over the whole role, not over a chosen point."""
     out = run(ev._role_points_input(
         FakeDb(), None, "kwh", _KWH_SPEC, ["units_confirmed"],
         {"energy_total": [
             point(1, role="energy_total", tag="M1"),
-            point(2, role="energy_total", tag="M2", unit_source="inferred"),
+            point(2, role="energy_total", tag="M2", unit=None),
         ]},
         at(1), at(31), "readings_1h",
     ))
-    assert out["status"] == "unit_unconfirmed"
+    assert out["status"] == "unit_unknown"
     assert "`M2`" in out["reason"]
     assert "M1" not in out["reason"]
 

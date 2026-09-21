@@ -56,6 +56,9 @@ const summary = {
   // of those ten rows are later generations of a register already counted.
   total_registers: 7,
   total_points_reporting: 8,
+  // Every point says what it measures — the gateway records the unit and it
+  // rides every envelope, so gate 2 is a status here rather than a worklist.
+  total_points_with_unit: 10,
   site_alert_hours: 24,
   sites: [],
   categories: [],
@@ -63,24 +66,6 @@ const summary = {
 
 // Three rows too many across two registers: a pair rebuilt twice, and a pair
 // rebuilt once. 10 rows − 3 repeats = 7 registers.
-const groups = [
-  {
-    device_tag: "1F-DB",
-    point_tag: "KWH",
-    category: "energy",
-    mode: "auto",
-    survivor_point_id: "p-new",
-    members: [{ point_id: "p-new" }, { point_id: "p-old" }, { point_id: "p-older" }],
-  },
-  {
-    device_tag: "4FKC2",
-    point_tag: "IWT",
-    category: "hvac",
-    mode: "manual",
-    survivor_point_id: null,
-    members: [{ point_id: "m-a" }, { point_id: "m-b" }],
-  },
-];
 
 function estate(over: Record<string, unknown> = {}) {
   vi.spyOn(bi, "summary").mockResolvedValue({ ...summary, ...over });
@@ -93,12 +78,8 @@ function estate(over: Record<string, unknown> = {}) {
     by_severity: [],
     total: 0,
   });
-  // The other two gate reads the strip makes. Clean unless a test says
-  // otherwise, so a test about gate 1 is not quietly also about gate 2.
-  vi.spyOn(bi, "unitPatterns").mockResolvedValue({
-    patterns: [],
-    totals: { points: 10, matched: 10, unmatched: 0, eligible: 0, already_confirmed: 10 },
-  });
+  // The other gate read the strip makes. Clean unless a test says otherwise,
+  // so a test about gate 1 is not quietly also about gate 4.
   vi.spyOn(bi, "roleOrphans").mockResolvedValue({
     orphans: [],
     total: 0,
@@ -164,17 +145,6 @@ const correlation = {
   },
 };
 
-const worklist = (over: Record<string, unknown> = {}) =>
-  vi.spyOn(bi, "ghosts").mockResolvedValue({
-    groups,
-    total: groups.length,
-    auto: 1,
-    manual: 1,
-    fresh_minutes: 15,
-    resurrected: [],
-    ...over,
-  });
-
 beforeEach(() => {
   auth.can = () => true;
   auth.hasModule = () => true;
@@ -183,7 +153,6 @@ beforeEach(() => {
 describe("the layer", () => {
   it("leads with the questions this building has to answer, not with a leaderboard", async () => {
     estate();
-    worklist();
 
     renderWithProviders(<Portfolio />);
 
@@ -205,7 +174,6 @@ describe("the layer", () => {
     estate({
       sites: [{ site_id: null, site_name: null, score: null, points: 75, categories: [] }],
     });
-    worklist();
     renderWithProviders(<Portfolio />);
     const meta = await screen.findByText("no site owns these points — assign their devices to a building");
     expect(meta.closest("a")).toHaveAttribute("href", "/bi/setup/placement");
@@ -218,7 +186,6 @@ describe("the layer", () => {
         { site_id: null, site_name: null, score: null, points: 75, categories: [] },
       ],
     });
-    worklist();
     renderWithProviders(<Portfolio />);
 
     const plants = await screen.findAllByRole("link", { name: /PLANT/ });
@@ -229,24 +196,20 @@ describe("the layer", () => {
 
   it("prints a blocked answer as its blockage plus the action that changes it", async () => {
     estate();
-    worklist();
 
     renderWithProviders(<Portfolio />);
 
-    // No site has a confirmed kWh register, so consumption cannot be measured.
+    // No site has a point whose unit is kWh, so consumption cannot be measured.
     expect(
-      await screen.findByText("no kWh register confirmed — confirm units in Setup"),
+      await screen.findByText("no point here carries the unit kWh — it is recorded on the gateway"),
     ).toBeInTheDocument();
-    // Units are confirmed in Setup now; Ratings only displays what it divides by.
-    expect(screen.getByRole("link", { name: /Confirm a kWh register/ })).toHaveAttribute(
-      "href",
-      "/bi/setup/units",
-    );
+    // And no link, because the unit is set on the gateway: a door onto work
+    // that cannot be done behind it is worse than none.
+    expect(screen.queryByRole("link", { name: /Confirm a kWh register/ })).not.toBeInTheDocument();
   });
 
   it("counts the quiet points against the rows they were counted from", async () => {
     estate();
-    worklist();
 
     renderWithProviders(<Portfolio />);
 
@@ -267,7 +230,6 @@ describe("the layer", () => {
     // stakes, a cross-domain answer is not, and the one a competitor cannot
     // produce does not get filed underneath the one every competitor has.
     estate();
-    worklist();
 
     renderWithProviders(<Portfolio />);
 
@@ -280,7 +242,6 @@ describe("the layer", () => {
 
   it("carries the pitch on the lane — the tri-state, all three buckets", async () => {
     estate();
-    worklist();
 
     renderWithProviders(<Portfolio />);
 
@@ -294,7 +255,6 @@ describe("the layer", () => {
 
   it("costs a viewer without bi.read no correlations request and shows no lane", async () => {
     estate();
-    worklist();
     auth.can = (p: string) => p !== "bi.read";
 
     renderWithProviders(<Portfolio />);
@@ -308,7 +268,6 @@ describe("the layer", () => {
 describe("the point count, now gate 1 of the strip", () => {
   it("prints the registers the estate really has beside the rows it counted", async () => {
     estate();
-    worklist();
 
     renderWithProviders(<Portfolio />);
 
@@ -319,116 +278,48 @@ describe("the point count, now gate 1 of the strip", () => {
     ).toBeInTheDocument();
   });
 
-  it("reads both figures off the summary rather than subtracting the worklist", async () => {
-    // The worklist is handed a population the summary does not agree with: six
-    // excess rows across its groups against the summary's three. A page still
-    // doing the subtraction would print `4 registers`; the summary says 7 and 3,
-    // and the summary is the one that counted under the same horizon.
+  it("reads both figures off ONE summary statement", async () => {
+    // They used to come from two places — the summary and a duplicate worklist
+    // counted over a different row set — and subtracting one from the other
+    // under-counted whenever a generation was past the retirement horizon.
     estate();
-    worklist({
-      groups: [
-        {
-          ...groups[0],
-          members: [
-            { point_id: "p-new" },
-            { point_id: "p-old" },
-            { point_id: "p-older" },
-            { point_id: "p-oldest" },
-          ],
-        },
-        { ...groups[1], members: [{ point_id: "m-a" }, { point_id: "m-b" }, { point_id: "m-c" }] },
-      ],
-    });
 
     renderWithProviders(<Portfolio />);
 
-    expect(await screen.findByText(/3 of the 10 rows.*7 distinct registers/)).toBeInTheDocument();
-    expect(screen.queryByText(/6 of the 10 rows/)).toBeNull();
+    await screen.findByText(/7 distinct registers/);
+    expect(bi.summary).toHaveBeenCalled();
   });
 
   it("says nothing about registers when the store did not report them", async () => {
     // Absent is not zero and not clean: a store that never said how many
     // registers there are has not said the estate has none repeated.
     estate({ total_registers: undefined });
-    worklist();
 
     renderWithProviders(<Portfolio />);
 
-    await waitFor(() => expect(bi.ghosts).toHaveBeenCalled());
-    expect(await screen.findByText(/2 duplicated pairs are waiting/)).toBeInTheDocument();
+    await waitFor(() => expect(bi.summary).toHaveBeenCalled());
     expect(screen.queryByText(/distinct registers/)).toBeNull();
   });
 
-  it("hands the operator to the screen that settles them", async () => {
+  it("offers no trip, because nothing on this platform settles them", async () => {
+    // The gateway keeps its point ids across a rebuild, so no new generation
+    // appears and the screen that used to collapse them is gone. The rows that
+    // predate that are stated, not linked — a link onto work that cannot be
+    // done behind it is worse than silence.
     estate();
-    worklist();
-
-    renderWithProviders(<Portfolio />);
-
-    const link = await screen.findByRole("link", { name: /Settle the duplicated registers/ });
-    expect(link).toHaveAttribute("href", "/bi/setup/duplicates");
-  });
-
-  it("offers no trip to a viewer who cannot open the duplicates console", async () => {
-    estate();
-    const ghosts = worklist();
-    auth.can = (p: string) => p !== "bi.read";
 
     renderWithProviders(<Portfolio />);
 
     expect(await screen.findByText(/7 distinct registers/)).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Settle/ })).not.toBeInTheDocument();
-    // Not merely hidden: a caller who may not read it is never charged for it.
-    expect(ghosts).not.toHaveBeenCalled();
   });
 
-  it("offers no trip when the analytics module is not entitled", async () => {
-    estate();
-    const ghosts = worklist();
-    auth.hasModule = (m: string) => m !== "analytics";
-
-    renderWithProviders(<Portfolio />);
-
-    expect(await screen.findByText(/7 distinct registers/)).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /Settle/ })).not.toBeInTheDocument();
-    expect(ghosts).not.toHaveBeenCalled();
-  });
-
-  it("keeps the register line when the worklist cannot be read, and offers no link", async () => {
-    estate();
-    const ghosts = vi.spyOn(bi, "ghosts").mockRejectedValue(new Error("boom"));
-
-    renderWithProviders(<Portfolio />);
-
-    await waitFor(() => expect(ghosts).toHaveBeenCalled());
-    // The register figures came out of the summary, which loaded, so a worklist
-    // this line never read cannot take it away.
-    expect(await screen.findByText(/7 distinct registers/)).toBeInTheDocument();
-    // The pair count did come from the worklist, so nothing is claimed about it.
-    expect(screen.queryByText(/duplicated pairs are waiting/)).toBeNull();
-    // The LINK is still offered, and this is a change from the old annotation:
-    // it used to carry the pair count in its own label ("Settle 2 duplicated
-    // pairs"), so a failed worklist had to withdraw it. It carries no count now,
-    // the inflation it answers for came from the summary, and a count that is
-    // wrong must ship with the thing that changes it.
-    expect(screen.getByRole("link", { name: /Settle the duplicated registers/ })).toHaveAttribute(
-      "href",
-      "/bi/setup/duplicates",
-    );
-  });
-
-  it("says nothing extra about an estate with no duplicated pair", async () => {
-    // A clean estate has as many registers as it has rows, so there is nothing
-    // to annotate, no pair to settle — and with every other gate open the strip
-    // recedes to one line, which is the whole point of it.
+  it("says nothing extra about an estate whose rows and registers agree", async () => {
     estate({ total_registers: 10, sites: [{ site_id: "s1", site_name: "HQ", score: 61, points: 10, categories: [] }] });
-    worklist({ groups: [], total: 0, auto: 0, manual: 0 });
 
     renderWithProviders(<Portfolio />);
 
-    await waitFor(() => expect(bi.ghosts).toHaveBeenCalled());
     expect(await screen.findByText(/six gates, all open/)).toBeInTheDocument();
     expect(screen.queryByText(/^Gate \d/)).toBeNull();
-    expect(screen.queryByRole("link", { name: /Settle/ })).not.toBeInTheDocument();
   });
 });

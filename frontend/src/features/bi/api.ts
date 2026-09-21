@@ -15,8 +15,6 @@
 //   GET /bi/series    ?point_id(xN)&start&end&hours&resolution=auto|1m|1h|raw
 //   GET /bi/correlation ?point_id(x2..12)&hours&resolution=auto|1m|1h
 //   GET /bi/correlations ?hours&start&end            the cross-domain REGISTRY
-//   GET /bi/units     ?category&search&confirmed=all|confirmed|unconfirmed
-//   POST /bi/units/confirm  {point_ids, unit}      (bi.manage)
 //   GET /bi/rating/sites                            site facts + rating inputs
 //   GET /bi/rating    ?site_id&point_id(xN)&days
 //
@@ -174,125 +172,11 @@ export const bi = {
   correlations: ({ hours, start, end }: any = {}) =>
     unwrap(api.get(`${BI}/correlations${qs({ hours, start, end })}`)),
 
-  // ── UNITS ─ the one thing that turns a number into a quantity ──────────
+  // ── STRANDED ROLES ─ what a gateway rename leaves behind ────────────────
   //
-  // `points.unit` is null for every point because the wire carries none
-  // (contract §11/§12). That costs a trend chart nothing and it is fatal for a
-  // RATING: kWh/m²/yr is a statement about units.
-  //
-  // `units()` returns each point with its unit, WHO said so (`unit_source`:
-  // null = nobody, "reading" = the wire, "operator" = a human), and a
-  // `suggestion` derived from the point TAG — computed at read time and NEVER
-  // stored. That distinction is the whole feature: `KWH_kwh` looks like it
-  // carries its unit, offering that reading for confirmation is honest, and
-  // writing it silently is the naming-convention fabrication the contract
-  // forbids (`4F-3F AC DB` names two floors).
-  //
-  // `confirmUnits()` writes an OPERATOR's assertion over an explicit list of
-  // point ids — the ones the screen showed before the button was pressed. There
-  // is no server-side pattern expansion, deliberately. `unit: null` clears back
-  // to unconfirmed, which must stay reachable: a mis-typed unit nobody can take
-  // back would corrupt every rating computed from it. Needs `bi.manage`.
-  units: ({ category, search, confirmed, limit, offset }: any = {}) =>
-    unwrap(api.get(`${BI}/units${qs({ category, search, confirmed, limit, offset })}`)),
-
-  // `acknowledge_not_reporting` is only ever sent in ANSWER to a 422
-  // POINT_NOT_REPORTING — never by default. The server refuses a unit asserted
-  // on a point carrying no readings, because kWh on an address that has produced
-  // no number is a fact no rating can use and the silent success is what hides
-  // it. Passing it unconditionally from here would delete the guard.
-  // `dry_run` writes nothing and reports, under `confirmed_not_reporting`, the
-  // points the real call would refuse for having stopped reporting — so a
-  // multi-part save can ask ONCE, before any part of it is written.
-  confirmUnits: ({ point_ids, unit, acknowledge_not_reporting, dry_run }: any) =>
-    unwrap(
-      api.post(`${BI}/units/confirm`, {
-        point_ids,
-        unit,
-        ...(acknowledge_not_reporting ? { acknowledge_not_reporting: true } : {}),
-        ...(dry_run ? { dry_run: true } : {}),
-      }),
-    ),
-
-  // The CATALOGUE of tag conventions, each with the set it is holding right now.
-  // A read, and nothing here is ever applied by reading it: 576 unconfirmed
-  // points are not 576 decisions, and this is how an operator sees the handful
-  // of conventions behind them.
-  //
-  // Three kinds come back and the screen must not flatten them: `unit` proposes
-  // one and can be applied; `state` (`OnOff STS`) is not a measurement; and
-  // `ambiguous` (`KWL1_A` — a power tag ending in the amps suffix) names one
-  // quantity while carrying another's suffix. The last two propose nothing, and
-  // that refusal is the feature.
-  // `site_id` narrows to one building. The confirm must carry the SAME scope
-  // (`confirmUnitPattern`) or the set previewed and the set written differ.
-  unitPatterns: ({ category, site_id }: any = {}) =>
-    unwrap(api.get(`${BI}/units/patterns${qs({ category, site_id })}`)),
-
-  // The bulk path, and the ONE rule that makes it sound: a pattern is confirmed
-  // only after a DRY RUN has shown the operator the rows. `units.py` used to
-  // forbid server-side expansion outright, because "apply to everything matching
-  // `_kw`" evaluated on the server is a guess wearing a human's authority. What
-  // repeals that is the preview — the actual rows, before the button — so this
-  // client offers no way to call it without `dry_run` first.
-  //
-  // `unit` is NEVER sent beside `pattern`: the server applies the unit the
-  // catalogue proposed and the operator was shown, and rejects a request that
-  // names both by whether the key was SENT. So the key is absent here, not null.
-  confirmUnitPattern: ({ pattern, category, site_id, dry_run, acknowledge_not_reporting }: any) =>
-    unwrap(
-      api.post(`${BI}/units/confirm`, {
-        pattern,
-        ...(category ? { category } : {}),
-        ...(site_id ? { site_id } : {}),
-        dry_run: !!dry_run,
-        ...(acknowledge_not_reporting ? { acknowledge_not_reporting: true } : {}),
-      }),
-    ),
-
-  // ── GHOST POINTS ─ the duplicates that make every estate count wrong ─────
-  //
-  // A conflux connection that is deleted and re-created mints a NEW point_id for
-  // every point behind it, so one physical register accumulates a generation per
-  // rebuild — all unretired, all counted. `ghosts()` is the worklist: one entry
-  // per duplicated `(device_tag, point_tag)`, its members with their last-seen
-  // times, and a VERDICT that is a proposal rather than a decision.
-  //
-  //   auto    exactly one member reported inside `fresh_minutes`, so the others
-  //           are provably superseded and `survivor_point_id` names the one.
-  //   manual  zero fresh members, or more than one. Which generation is real is
-  //           then a question about the building; `survivor_point_id` is null
-  //           and nothing is ever auto-applied to it.
-  //
-  // `resurrected` is the other half: points the collapse superseded that have
-  // started reporting again. Two generations of one register are both talking,
-  // which is a real signal and must not be papered over.
-  // `site_id` keeps a duplicated pair when ANY of its generations is at that
-  // building, with every generation still in it — see `ghost_groups`.
-  ghosts: ({ category, mode, site_id }: any = {}) =>
-    unwrap(api.get(`${BI}/points/ghosts${qs({ category, mode, site_id })}`)),
-
-  // Either "collapse every group the classifier called AUTO", or an explicit
-  // list of groups whose survivor the operator named. Never both, and there is
-  // no bulk mode for MANUAL — a bulk answer to a question nobody read is the
-  // thing this feature exists not to do.
-  collapseGhosts: ({ mode, groups }: any) =>
-    unwrap(api.post(`${BI}/points/ghosts/collapse`, mode ? { mode } : { groups })),
-
-  // The undo, and it reaches a row only when the collapse retired it
-  // (`retire_reason = 'ghost'`). A point an operator decommissioned by hand is
-  // untouched however loudly it is named, and comes back under `refused` rather
-  // than being counted as a success. Roles are NOT put back.
-  restoreGhosts: ({ point_ids }: any) =>
-    unwrap(api.post(`${BI}/points/ghosts/restore`, { point_ids })),
-
-  // ── STRANDED ROLES ─ the other half of a gateway rebuild ────────────────
-  //
-  // A collapse groups on `(device_tag, point_tag)`, so it settles a connection
-  // rebuilt under the SAME tags. When the rebuild RENAMES the tag as well, the
-  // generations are not duplicates of anything and the operator's role binding
-  // is simply stranded on a point that stopped reporting — which is the state
-  // every `point_roles` row on this deployment is in.
+  // When a rebuild RENAMES a point's tag, the operator's role binding is
+  // stranded on a point that stopped reporting — which is the state every
+  // `point_roles` row on this deployment is in.
   //
   // `roleOrphans()` is the worklist: each stranded role with who asserted it, why
   // it is stranded (`orphan_reason`), how many points on its device were LOOKED
