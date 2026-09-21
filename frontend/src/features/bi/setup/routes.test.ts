@@ -72,8 +72,12 @@ describe("the routes Setup replaced", () => {
     );
   });
 
-  it("/bi/succession lands on the stranded-role worklist", async () => {
-    expect(await landsOn(import("@/app/(app)/bi/succession/page"))).toBe("/bi/setup/stranded");
+  it("/bi/succession lands on Metric roles, where stranded answers are settled now", async () => {
+    expect(await landsOn(import("@/app/(app)/bi/succession/page"))).toBe("/bi/setup/roles");
+  });
+
+  it("the old stranded worklist lands there too, rather than 404ing a bookmark", async () => {
+    expect(await landsOn(import("@/app/(app)/bi/setup/stranded/page"))).toBe("/bi/setup/roles");
   });
 
   it("/bi/metrics lands on Setup → Metric roles", async () => {

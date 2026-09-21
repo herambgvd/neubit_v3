@@ -42,11 +42,19 @@ beforeEach(() => {
             },
           ],
           answered: [],
+          stranded: [
+            {
+              point_id: "o1", point_tag: "OWT", role: "outlet_water_temp",
+              role_label: "Leaving water temperature", reason: "superseded", last_seen_at: null,
+              confirmed_by: "ops@x.io", candidates_considered: 6, successors: [],
+              needed_by: ["chiller_delta_t"],
+            },
+          ],
         },
       ],
-      totals: { points: 494, devices: 1, asks: 1, answered: 0 },
+      unreachable: [],
+      totals: { points: 494, devices: 1, asks: 1, answered: 0, stranded: 1 },
     },
-    "GET /bi/points/roles/orphans": { orphans: [{ role: "a" }, { role: "b" }] },
   });
 });
 
@@ -59,10 +67,13 @@ describe("Setup → what each reading means", () => {
     expect(stub.matching("GET /bi/metrics/roles")).toHaveLength(0);
   });
 
-  it("carries the stranded count on the link to the worklist that settles it", async () => {
+  it("settles the answers stranded on a dead reading HERE, not on a screen of its own", async () => {
     renderWithProviders(<RolesSetup />);
-    const link = await screen.findByRole("link", { name: /2 answers point at a dead reading/ });
-    expect(link).toHaveAttribute("href", "/bi/setup/stranded");
+
+    expect(await screen.findByRole("button", { name: /1 answers? point at a dead reading/ })).toBeInTheDocument();
+    expect(screen.getByText(/Answered on a reading that stopped coming/)).toBeInTheDocument();
+    // No worklist anywhere else to send anyone to.
+    expect(screen.queryByRole("link", { name: /stranded/i })).not.toBeInTheDocument();
   });
 
   it("offers a viewer without bi.manage no control that stores a meaning", async () => {

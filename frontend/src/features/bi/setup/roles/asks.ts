@@ -30,6 +30,36 @@ export interface RoleAsk {
   confirmed_at?: string | null;
 }
 
+/** One signal that ranked a successor. The server wrote the sentence; the label
+ *  here is only what to call it, and an unrecognised kind prints its own key. */
+export interface Evidence {
+  kind: string;
+  weight: number;
+  detail: string;
+}
+
+export interface Successor {
+  point_id: string;
+  point_tag: string | null;
+  score: number;
+  evidence: Evidence[];
+  conflicting_role?: string | null;
+}
+
+/** An answer a person made that now names a reading nobody sends. */
+export interface StrandedAnswer {
+  point_id: string;
+  point_tag: string | null;
+  role: string;
+  role_label: string;
+  reason: string;
+  last_seen_at: string | null;
+  confirmed_by: string | null;
+  candidates_considered: number;
+  successors: Successor[];
+  needed_by: string[];
+}
+
 export interface RoleAskDevice {
   device_id: string | null;
   device_tag: string | null;
@@ -37,13 +67,18 @@ export interface RoleAskDevice {
   site_name: string | null;
   asks: RoleAsk[];
   answered: RoleAsk[];
+  /** Optional so a console talking to a store that has not caught up yet still
+   *  renders: a screen that throws is worse than one that shows less. */
+  stranded?: StrandedAnswer[];
 }
 
 export interface RoleAsks {
   lookback_hours: number;
   roles_read: { role: string; label: string; needed_by: string[] }[];
   devices: RoleAskDevice[];
-  totals: { points: number; devices: number; asks: number; answered: number };
+  /** Answers with no device left to read — nothing to move onto. */
+  unreachable?: StrandedAnswer[];
+  totals: { points: number; devices: number; asks: number; answered: number; stranded?: number };
 }
 
 /** What a role IS, in the words of the machine room. A role with no entry keeps
@@ -88,6 +123,35 @@ export function neededByText(keys: string[]): string | null {
   if (!keys.length) return null;
   const words = [...new Set(keys.map((k) => METRIC_WORDS[k] ?? k))];
   return words.length === 1 ? words[0] : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;
+}
+
+/** Why an answer is stranded, in words. An unrecognised reason is printed as
+ *  itself rather than as a guess about what the server meant. */
+const STRANDED_WHY: Record<string, string> = {
+  superseded: "the device still reports, but under a different tag — this one was renamed away",
+  retired: "the reading was retired, so nothing selects it any more",
+  point_missing: "this reading no longer exists at all",
+};
+export const strandedWhy = (a: StrandedAnswer): string => STRANDED_WHY[a.reason] ?? a.reason;
+
+/** The signal names, as a heading for the sentence the server already wrote. */
+const EVIDENCE_LABEL: Record<string, string> = {
+  identical_tag: "The tag did not change",
+  measurement_tail: "Same measurement at the tail",
+  role_convention: "This estate's own role convention",
+  shared_token: "A shared token that is not the device's name",
+  unit_match: "The same confirmed unit",
+  dimension_match: "At least the right dimension",
+};
+export const evidenceLabel = (kind: string): string => EVIDENCE_LABEL[kind] ?? kind;
+
+/** What an empty successor list is SAYING. "Nothing was found" and "there was
+ *  nothing to look at" are different answers, and the count tells them apart. */
+export function noSuccessorText(a: StrandedAnswer): string {
+  if (!a.candidates_considered) {
+    return "No reading on this device is at its leading edge, so there was nothing to look at.";
+  }
+  return `${a.candidates_considered} reading${a.candidates_considered === 1 ? "" : "s"} on this device were looked at, and none carried evidence strong enough to offer. A shared unit is not evidence.`;
 }
 
 /** A question the platform would rather a person looked at twice: no reading in

@@ -11,7 +11,10 @@ rules that make this answer small enough to act on:
   * every question carries the metrics that read it and the reading's own latest
     value, and says when there is no value — that press will be challenged;
   * devices with something to answer come first; a device whose readings nothing
-    computes with is not listed at all.
+    computes with is not listed at all;
+  * a device also carries its STRANDED answers — an assertion left on a reading
+    that was renamed away — with the successors the scorer proposes, and one
+    whose point row is gone entirely has no device to sit under at all.
 """
 
 from __future__ import annotations
@@ -19,6 +22,8 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import uuid
+
+import pytest
 
 from app.api import role_asks as ra
 
@@ -90,6 +95,28 @@ def point(tag, device, *, role=None, kind="num", pid=None, unit="degC"):
 
 def reading(pid, num):
     return {"point_id": pid, "ts": NOW, "num": num}
+
+
+@pytest.fixture(autouse=True)
+def orphans(monkeypatch):
+    """`orphan_roles` is succession's; this fixture scripts what it found."""
+    rows = {"value": []}
+
+    async def fake(db, tenant, *, role=None, site_id=None):
+        return {"orphans": rows["value"]}
+
+    from app.api import succession
+
+    monkeypatch.setattr(succession, "orphan_roles", fake)
+    return rows
+
+
+def stranded(device, tag, role="inlet_water_temp", successors=None, reason="superseded"):
+    return {
+        "point_id": uuid.uuid4(), "device_tag": device, "point_tag": tag, "role": role,
+        "orphan_reason": reason, "last_seen_at": NOW, "confirmed_by": "ops@x.io",
+        "candidates_considered": 9, "candidates": successors or [],
+    }
 
 
 def run(**script):
@@ -171,7 +198,7 @@ def test_devices_with_something_to_answer_come_first():
     ask = point("IWT", "4F Khem Chiller02")
     out = run(demands=DEMANDS, points=[ans, ask], latest=[])
     assert [d["device_tag"] for d in out["devices"]] == ["4F Khem Chiller02", "1F York Chiller01"]
-    assert out["totals"] == {"points": 2, "devices": 2, "asks": 1, "answered": 1}
+    assert out["totals"] == {"points": 2, "devices": 2, "asks": 1, "answered": 1, "stranded": 0}
 
 
 def test_a_device_carries_its_own_asks_and_its_own_answers():
@@ -231,7 +258,68 @@ def test_the_roles_something_reads_are_said_with_the_answer():
     ]
 
 
+# ── answers left on a reading that stopped coming ────────────────────────────
+
+
+def test_a_stranded_answer_sits_under_its_own_device(orphans):
+    # The live rename: the answer is on `IWT`, the chiller now sends
+    # `4FKC2_IWT`, and no screen used to say so.
+    orphans["value"] = [stranded("4F Khem Chiller02", "IWT")]
+    out = run(demands=DEMANDS, points=[point("OWT", "4F Khem Chiller02")], latest=[])
+
+    [d] = out["devices"]
+    assert [s["point_tag"] for s in d["stranded"]] == ["IWT"]
+    assert d["stranded"][0]["reason"] == "superseded"
+    assert out["totals"]["stranded"] == 1
+
+
+def test_a_device_whose_only_work_is_stranded_is_still_on_the_worklist(orphans):
+    orphans["value"] = [stranded("1F York Chiller01", "IWT")]
+    out = run(demands=DEMANDS, points=[], latest=[])
+
+    assert [d["device_tag"] for d in out["devices"]] == ["1F York Chiller01"]
+    assert out["devices"][0]["asks"] == []
+
+
+def test_the_successors_the_scorer_proposed_travel_with_it(orphans):
+    orphans["value"] = [
+        stranded("CH1", "IWT", successors=[{"point_tag": "1FYC1_IWT", "score": 4, "evidence": ["same unit"]}])
+    ]
+    out = run(demands=DEMANDS, points=[], latest=[])
+    [s] = out["devices"][0]["stranded"]
+    assert s["successors"][0]["point_tag"] == "1FYC1_IWT"
+    assert s["candidates_considered"] == 9
+
+
+def test_an_answer_with_no_device_left_has_nothing_to_move_onto(orphans):
+    # A successor is a point on the same device; with no device there is none,
+    # so it is listed apart and can only be forgotten.
+    orphans["value"] = [stranded(None, None, reason="point_missing")]
+    out = run(demands=DEMANDS, points=[], latest=[])
+
+    assert out["devices"] == []
+    assert [u["reason"] for u in out["unreachable"]] == ["point_missing"]
+    assert out["totals"]["stranded"] == 1
+
+
+def test_a_device_with_questions_leads_one_with_only_stranded_answers(orphans):
+    # Named so the alphabet would put them the other way round: what decides the
+    # order is the WORK, not the name.
+    orphans["value"] = [stranded("Z Board", "KWH", role="energy_register")]
+    out = run(
+        demands=DEMANDS,
+        points=[
+            point("IWT", "M Chiller"),                                   # a question
+            point("1FYC1_IWT", "A Chiller", role="inlet_water_temp"),    # nothing to do
+        ],
+        latest=[],
+    )
+    # Questions first, then the dead answer to settle, and only then the device
+    # with nothing to do — even though the alphabet would put it first.
+    assert [d["device_tag"] for d in out["devices"]] == ["M Chiller", "Z Board", "A Chiller"]
+
+
 def test_no_metric_reading_a_role_asks_nothing_and_says_so():
     out = run(demands=[])
-    assert (out["devices"], out["roles_read"]) == ([], [])
+    assert (out["devices"], out["roles_read"], out["unreachable"]) == ([], [], [])
     assert out["totals"]["asks"] == 0

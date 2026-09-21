@@ -16,10 +16,20 @@ definition is every tenant's, a tenant's own overrides it for that key, and only
 the highest version of the winner counts. A metric retired tomorrow stops being
 asked about, and one seeded tomorrow starts, with no edit here.
 
-Nothing is written. The write is the existing `POST /bi/metrics/roles/confirm`,
-with its guard against binding a role to a point that carries no readings — which
-is exactly why the live value travels with every question here: an operator can
-see the number before they say what it means.
+A device also carries its STRANDED answers: an assertion a person made on a
+reading that has since been renamed away or retired, which no screen used to
+mention while the metric above it refused `no_data` for a machine that was
+running. They belong here, beside that device's other answers, rather than on a
+worklist of their own — the person who says what a reading means is the person
+who moves an answer onto the reading that replaced it. Each one carries the
+successors the scorer proposes WITH the evidence that ranked them; nothing is
+ever moved automatically, and a role whose point row is gone entirely can only
+be forgotten.
+
+Nothing is written. The writes are the existing `POST /bi/metrics/roles/confirm`
+(with its guard against binding a role to a point that carries no readings — which
+is exactly why the live value travels with every question here), and
+`/bi/points/roles/repoint`, `/repoint/undo` and `/forget` for the stranded ones.
 """
 
 from __future__ import annotations
@@ -30,6 +40,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..metric_registry.roles import ROLE_DEFS, suggest
+from . import succession as sx
 from .nameplate import effective_rows
 from .queries import LIVE_POINT, RETIRE_AFTER_DAYS, _rows
 
@@ -140,13 +151,14 @@ async def role_asks(
     site_id: uuid.UUID | None = None,
     hours: int = DEFAULT_LOOKBACK_HOURS,
 ) -> dict:
-    """Every device with something to answer, and what it already answered."""
+    """Every device with something to answer, what it already answered, and the
+    answers of its that are stranded on a reading that stopped coming."""
     wanted = await demands(db, tenant)
     if not wanted:
         # No effective metric reads a role at all: there is nothing to ask, and
         # saying so is the honest answer, not an empty table.
-        return {"lookback_hours": hours, "roles_read": [], "devices": [],
-                "totals": {"points": 0, "devices": 0, "asks": 0, "answered": 0}}
+        return {"lookback_hours": hours, "roles_read": [], "devices": [], "unreachable": [],
+                "totals": {"points": 0, "devices": 0, "asks": 0, "answered": 0, "stranded": 0}}
 
     points = _rows(
         await db.execute(
@@ -177,6 +189,8 @@ async def role_asks(
             )
         }
 
+    stranded_rows = (await sx.orphan_roles(db, tenant, site_id=site_id)).get("orphans", [])
+
     by_device: dict[str, dict] = {}
     asks = answered = 0
     for p in of_interest:
@@ -193,6 +207,7 @@ async def role_asks(
                 "site_name": p["site_name"],
                 "asks": [],
                 "answered": [],
+                "stranded": [],
             },
         )
         if q["answered"]:
@@ -201,6 +216,43 @@ async def role_asks(
         else:
             d["asks"].append(q)
             asks += 1
+
+    # An answer of this device's that now names a reading nobody sends. A device
+    # whose ONLY work is stranded still belongs on the worklist, so the row is
+    # created here when it does not exist yet.
+    unreachable: list[dict] = []
+    for o in stranded_rows:
+        row = {
+            "point_id": str(o["point_id"]),
+            "point_tag": o.get("point_tag"),
+            "role": o["role"],
+            "role_label": _label(o["role"]),
+            "reason": o.get("orphan_reason"),
+            "last_seen_at": o.get("last_seen_at"),
+            "confirmed_by": o.get("confirmed_by"),
+            "candidates_considered": o.get("candidates_considered", 0),
+            "successors": o.get("candidates") or [],
+            "needed_by": sorted(wanted.get(o["role"], set())),
+        }
+        tag = o.get("device_tag")
+        if not tag:
+            # No device means no candidate set: there is nothing to move onto,
+            # and forgetting the assertion is the only honest action left.
+            unreachable.append(row)
+            continue
+        d = by_device.setdefault(
+            tag,
+            {
+                "device_id": None,
+                "device_tag": tag,
+                "site_id": None,
+                "site_name": None,
+                "asks": [],
+                "answered": [],
+                "stranded": [],
+            },
+        )
+        d["stranded"].append(row)
 
     # Two traps the live estate walked into, said on the question itself.
     for d in by_device.values():
@@ -225,7 +277,7 @@ async def role_asks(
         by_device.values(),
         # Devices with something to answer first, then by name — the rail is a
         # worklist, not an inventory.
-        key=lambda d: (not d["asks"], (d["device_tag"] or "").lower()),
+        key=lambda d: (not (d["asks"] or d["stranded"]), not d["asks"], (d["device_tag"] or "").lower()),
     )
     return {
         "lookback_hours": hours,
@@ -233,10 +285,14 @@ async def role_asks(
             {"role": r, "label": _label(r), "needed_by": sorted(m)} for r, m in sorted(wanted.items())
         ],
         "devices": devices,
+        # Answers with no device left to read: nothing can be moved onto, so the
+        # screen offers only forgetting them.
+        "unreachable": unreachable,
         "totals": {
             "points": len(points),
             "devices": len(devices),
             "asks": asks,
             "answered": answered,
+            "stranded": sum(len(d["stranded"]) for d in devices) + len(unreachable),
         },
     }

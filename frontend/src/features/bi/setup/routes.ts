@@ -96,8 +96,9 @@ export const SETUP_TASKS: SetupTask[] = [
   },
 ];
 
-/** Gate 4's worklist — roles left on a point that stopped reporting. It is part
- *  of Metric roles, not a seventh task, so the strip lights ROLES on it. */
+/** Answers stranded on a reading that stopped coming used to be a screen of
+ *  their own. They are settled where the other answers about a device are — on
+ *  Metric roles — so the old path REDIRECTS there rather than rendering. */
 export const STRANDED_HREF = `${SETUP_HREF}/stranded`;
 
 export const taskHref = (id: SetupTaskId): string => SETUP_TASKS.find((t) => t.id === id)!.href;
@@ -133,7 +134,8 @@ export const buildingFactsHref = (siteId: string): string =>
 export const LEGACY_SETUP_ROUTES: Record<string, string> = {
   "/bi/duplicates": taskHref("duplicates"),
   "/bi/placement": taskHref("placement"),
-  "/bi/succession": STRANDED_HREF,
+  "/bi/succession": taskHref("roles"),
+  [STRANDED_HREF]: taskHref("roles"),
   "/bi/metrics": taskHref("roles"),
 };
 

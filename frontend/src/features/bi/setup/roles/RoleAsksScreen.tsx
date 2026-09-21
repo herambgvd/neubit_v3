@@ -17,7 +17,14 @@
 //
 // Retraction is here too: a stored answer can be taken back, because a wrong
 // one computes silently where a refusal would have been visible.
-import Link from "next/link";
+//
+// AND A DEVICE CARRIES ITS STRANDED ANSWERS. A gateway rebuild renames the tag
+// an assertion was made on, and the assertion is left naming a reading nobody
+// sends — the metric above it then refuses `no_data` for a machine that is
+// running, and until now no screen said so. They sit under the device they
+// belong to, with the successors the scorer proposed and the EVIDENCE that
+// ranked them; nothing auto-applies, and an answer whose reading no longer
+// exists at all can only be forgotten.
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -30,16 +37,19 @@ import NotReportingChallenge, { notReportingDetail, type NotReportingDetail } fr
 import { bi } from "../../api";
 import { MODULE, PERM_MANAGE, PERM_READ } from "../../constants";
 import { metrics } from "../../metricsApi";
-import { STRANDED_HREF } from "../routes";
 import {
   bulkOf,
   cautionOf,
+  evidenceLabel,
   fmtValue,
   neededByText,
+  noSuccessorText,
   roleLong,
   roleShort,
+  strandedWhy,
   type RoleAsk,
   type RoleAsks,
+  type StrandedAnswer,
 } from "./asks";
 
 interface Press {
@@ -59,18 +69,14 @@ export default function RoleAsksScreen() {
     queryFn: () => bi.roleAsks(),
     enabled: mayRead,
   });
-  const orphansQ = useQuery<{ orphans?: unknown[] }>({
-    queryKey: ["bi-role-orphans", ""],
-    queryFn: () => bi.roleOrphans(),
-    enabled: mayRead,
-  });
-  const stranded = orphansQ.data ? (orphansQ.data.orphans ?? []).length : null;
 
   const [picked, setPicked] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // A press the server refused because the reading carries nothing. Asserting
   // anyway is a SECOND, deliberate act — the `4FKC2_IWT` mistake in one line.
   const [challenge, setChallenge] = useState<{ detail: NotReportingDetail; message: string; presses: Press[] } | null>(null);
+  // The move just made, so it can be put back where the mistake is noticed.
+  const [undoable, setUndoable] = useState<{ role: string; from_point_id: string; to_point_id: string } | null>(null);
   const [skipped, setSkipped] = useState<Set<string>>(() => new Set());
 
   const devices = useMemo(
@@ -78,6 +84,10 @@ export default function RoleAsksScreen() {
     [q.data, skipped],
   );
   const device = devices.find((d) => (d.device_tag ?? "") === picked) ?? devices[0] ?? null;
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["bi-role-asks"] });
+  };
 
   const confirm = useMutation({
     mutationFn: async ({ presses, anyway }: { presses: Press[]; anyway?: boolean }) => {
@@ -92,8 +102,7 @@ export default function RoleAsksScreen() {
     onSuccess: () => {
       setError(null);
       setChallenge(null);
-      qc.invalidateQueries({ queryKey: ["bi-role-asks"] });
-      qc.invalidateQueries({ queryKey: ["bi-role-orphans", ""] });
+      refresh();
     },
     onError: (e, vars) => {
       const detail = notReportingDetail(e);
@@ -104,12 +113,43 @@ export default function RoleAsksScreen() {
       setError(apiError(e, "Could not store it"));
     },
   });
+  const repoint = useMutation({
+    mutationFn: (moves: { role: string; from_point_id: string; to_point_id: string }[]) =>
+      bi.repointRoles({ moves }),
+    onSuccess: (res: { results?: { status?: string; reason?: string }[] }, moves) => {
+      const refused = (res.results ?? []).filter((r) => r.status !== "moved");
+      setError(refused.length ? (refused[0].reason ?? "The move was refused") : null);
+      // Offered where the mistake is noticed: right after the move.
+      if (!refused.length) setUndoable(moves[0]);
+      refresh();
+    },
+    onError: (e) => setError(apiError(e, "Could not move it")),
+  });
+  const undo = useMutation({
+    mutationFn: (moves: { role: string; from_point_id: string; to_point_id: string }[]) =>
+      bi.undoRepoints({ moves }),
+    onSuccess: () => {
+      setUndoable(null);
+      refresh();
+    },
+    onError: (e) => setError(apiError(e, "Could not put it back")),
+  });
+  const forget = useMutation({
+    mutationFn: (pointId: string) => bi.forgetRoles({ point_ids: [pointId] }),
+    onSuccess: (res: { results?: { status?: string; reason?: string }[] }) => {
+      const refused = (res.results ?? []).filter((r) => r.status !== "forgotten");
+      setError(refused.length ? (refused[0].reason ?? "It was not forgotten") : null);
+      refresh();
+    },
+    onError: (e) => setError(apiError(e, "Could not forget it")),
+  });
+
   const press = (presses: Press[]) => {
     setError(null);
     setChallenge(null);
     confirm.mutate({ presses });
   };
-  const busy = confirm.isPending;
+  const busy = confirm.isPending || repoint.isPending || forget.isPending || undo.isPending;
 
   if (!mayRead) {
     return (
@@ -148,16 +188,43 @@ export default function RoleAsksScreen() {
               {totals.answered} answered
             </span>
           ) : null}
-          {stranded ? (
-            <Link
-              href={STRANDED_HREF}
+          {(totals?.stranded ?? 0) > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                const first = devices.find((d) => (d.stranded ?? []).length);
+                if (first) setPicked(first.device_tag ?? "");
+              }}
               className="flex items-center gap-1.5 rounded-[7px] border border-nb-warn/35 px-2 py-0.5 text-nb-warn transition hover:border-nb-warn/70"
             >
-              <span className="font-mono">{stranded}</span> answers point at a dead reading
-            </Link>
-          ) : null}
+              <span className="font-mono">{totals!.stranded}</span> answers point at a dead reading
+            </button>
+          )}
         </div>
       </div>
+
+      {(q.data?.unreachable ?? []).length > 0 && mayWrite && (
+        <div className="mt-3 rounded-[11px] border border-nb-warn/30 bg-nb-warn/[.04] px-4 py-3">
+          <p className="text-[12.5px] text-nb-soft">
+            {q.data!.unreachable!.length} answer{q.data!.unreachable!.length === 1 ? "" : "s"} name a reading that no
+            longer exists at all — there is no device left to move them onto, so forgetting is the only thing left.
+          </p>
+          <div className="mt-2 space-y-2.5">
+            {q.data!.unreachable!.map((a) => (
+              <Stranded
+                key={a.point_id}
+                answer={a}
+                mayWrite={mayWrite}
+                busy={busy}
+                undoable={undoable}
+                onMove={() => undefined}
+                onUndo={() => undoable && undo.mutate([undoable])}
+                onForget={() => forget.mutate(a.point_id)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {done ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-center">
@@ -204,10 +271,16 @@ export default function RoleAsksScreen() {
                     <span className="block truncate text-[11px] text-nb-faint">
                       {d.asks.length
                         ? `${d.asks.length} reading${d.asks.length === 1 ? "" : "s"} to answer`
-                        : "all answered"}
+                        : (d.stranded ?? []).length
+                          ? `${d.stranded!.length} answer${d.stranded!.length === 1 ? "" : "s"} on a dead reading`
+                          : "all answered"}
                     </span>
                   </span>
-                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${d.asks.length ? "bg-nb-warn" : "bg-nb-ok"}`} />
+                  <span
+                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                      d.asks.length || (d.stranded ?? []).length ? "bg-nb-warn" : "bg-nb-ok"
+                    }`}
+                  />
                 </button>
               );
             })}
@@ -268,6 +341,30 @@ export default function RoleAsksScreen() {
                             </button>
                           )}
                         </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {(device.stranded ?? []).length > 0 && (
+                  <div className="mt-5">
+                    <p className="text-[10.5px] uppercase tracking-[1.2px] text-nb-warn">
+                      Answered on a reading that stopped coming
+                    </p>
+                    <div className="mt-2 space-y-2.5">
+                      {device.stranded!.map((a) => (
+                        <Stranded
+                          key={a.point_id}
+                          answer={a}
+                          mayWrite={mayWrite}
+                          busy={busy}
+                          undoable={undoable}
+                          onMove={(to) =>
+                            repoint.mutate([{ role: a.role, from_point_id: a.point_id, to_point_id: to }])
+                          }
+                          onUndo={() => undoable && undo.mutate([undoable])}
+                          onForget={() => forget.mutate(a.point_id)}
+                        />
                       ))}
                     </div>
                   </div>
@@ -378,6 +475,133 @@ function Question({
           Then leave it. Nothing is stored, and the one thing that reads it stays off and says why — better than a
           meaning nobody could stand behind.
         </p>
+      )}
+    </div>
+  );
+}
+
+// ── one answer left on a reading nobody sends ──────────────────────────────
+
+function Stranded({
+  answer,
+  mayWrite,
+  busy,
+  undoable,
+  onMove,
+  onUndo,
+  onForget,
+}: Readonly<{
+  answer: StrandedAnswer;
+  mayWrite: boolean;
+  busy: boolean;
+  undoable: { role: string; from_point_id: string; to_point_id: string } | null;
+  onMove: (toPointId: string) => void;
+  onUndo: () => void;
+  onForget: () => void;
+}>) {
+  const [confirming, setConfirming] = useState(false);
+  const [open, setOpen] = useState<string | null>(null);
+  const justMoved = undoable?.from_point_id === answer.point_id;
+  const reads = neededByText(answer.needed_by);
+
+  return (
+    <div className="rounded-[11px] border border-nb-warn/30 bg-nb-warn/[.04] px-4 py-3">
+      <div className="flex flex-wrap items-baseline gap-x-2.5">
+        <span className="font-mono text-[13.5px] text-nb-ink">{answer.point_tag ?? "(no reading)"}</span>
+        <span className="text-[12.5px] text-nb-soft">answered as {answer.role_label.toLowerCase()}</span>
+      </div>
+      <p className="mt-1.5 text-[12.5px] leading-relaxed text-nb-soft">
+        Nothing has come from it — {strandedWhy(answer)}.
+        {reads ? ` Until it is settled, ${reads} reads an answer that selects nothing.` : ""}
+      </p>
+
+      {justMoved ? (
+        <div className="mt-2.5 flex items-center gap-3">
+          <span className="text-[12.5px] text-nb-ok">Moved.</span>
+          <button type="button" disabled={busy} onClick={onUndo} className="text-[12.5px] text-nb-blueb hover:underline disabled:opacity-50">
+            Undo
+          </button>
+        </div>
+      ) : answer.successors.length > 0 ? (
+        <div className="mt-2.5 space-y-2">
+          <p className="text-[11.5px] text-nb-faint">
+            {answer.successors.length} of {answer.candidates_considered} readings looked at could be the same
+            measurement. Read the tag before you move it — nothing is chosen for you.
+          </p>
+          {answer.successors.map((c) => (
+            <div key={c.point_id} className="rounded-[9px] border border-white/[.1] px-3 py-2">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <span className="font-mono text-[12.5px] text-nb-blueb">{c.point_tag}</span>
+                <button
+                  type="button"
+                  onClick={() => setOpen(open === c.point_id ? null : c.point_id)}
+                  className="text-[11.5px] text-nb-muted hover:text-nb-ink"
+                >
+                  {open === c.point_id ? "hide why" : "why this one"}
+                </button>
+                {c.conflicting_role && (
+                  <span className="text-[11.5px] text-nb-warn">already answered as {c.conflicting_role}</span>
+                )}
+                {mayWrite && !c.conflicting_role && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onMove(c.point_id)}
+                    className="ml-auto h-8 rounded-[8px] bg-nb-blue px-3.5 text-[12.5px] font-medium text-white transition hover:bg-nb-blueb disabled:opacity-50"
+                  >
+                    Move the answer here
+                  </button>
+                )}
+              </div>
+              {open === c.point_id && (
+                <ul className="mt-2 space-y-1.5">
+                  {c.evidence.map((e) => (
+                    <li key={`${c.point_id}:${e.kind}`} className="rounded-[8px] border border-white/[.08] px-2.5 py-1.5">
+                      <span className="text-[10.5px] font-semibold uppercase tracking-[1px] text-nb-muted">
+                        {evidenceLabel(e.kind)}
+                      </span>
+                      <p className="mt-0.5 text-[11.5px] leading-relaxed text-nb-soft">{e.detail}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 text-[11.5px] text-nb-faint">{noSuccessorText(answer)}</p>
+      )}
+
+      {mayWrite && !justMoved && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {confirming ? (
+            <>
+              <span className="text-[12.5px] text-nb-soft">
+                Forget that {answer.point_tag ?? "this reading"} was {answer.role_label.toLowerCase()}? It is deleted,
+                and nothing puts it back.
+              </span>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={onForget}
+                className="h-8 rounded-[8px] bg-[#b91c1c] px-3.5 text-[12.5px] font-medium text-white hover:bg-[#dc2626] disabled:opacity-50"
+              >
+                Forget it
+              </button>
+              <button type="button" onClick={() => setConfirming(false)} className="h-8 px-2.5 text-[12.5px] text-nb-muted hover:text-nb-ink">
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirming(true)}
+              className="text-[12px] text-nb-faint transition hover:text-nb-crit"
+            >
+              Forget this answer
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

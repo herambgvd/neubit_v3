@@ -11,7 +11,7 @@
  *     anyway is a second, deliberate press that sends the acknowledgement;
  *   • a viewer without bi.manage sees the questions and no control that writes.
  */
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -51,6 +51,20 @@ const ASKS = {
         q({ point_id: "p1", point_tag: "IWT" }),
         q({ point_id: "p2", point_tag: "OWT", role: "outlet_water_temp", role_label: "Leaving water temperature", value: 25.8 }),
       ],
+      stranded: [
+        {
+          point_id: "o1", point_tag: "IWT", role: "inlet_water_temp",
+          role_label: "Entering water temperature", reason: "superseded", last_seen_at: null,
+          confirmed_by: "ops@geniusvision.in", candidates_considered: 9,
+          successors: [
+            {
+              point_id: "p7", point_tag: "4FKC2_IWT", score: 4,
+              evidence: [{ kind: "measurement_tail", weight: 3, detail: "the same readings at the tail" }],
+            },
+          ],
+          needed_by: ["chiller_delta_t"],
+        },
+      ],
       answered: [
         q({ point_id: "p9", point_tag: "4FKC2_kWh", answered: true, role: "energy_register",
             role_label: "Energy register", needed_by: ["carbon_intensity"], value: 5538.8, unit: "kWh",
@@ -63,9 +77,18 @@ const ASKS = {
                  needed_by: ["carbon_intensity"], value: 25009, unit: "kWh",
                  basis: "the tag names a kWh register" })],
       answered: [],
+      stranded: [],
     },
   ],
-  totals: { points: 494, devices: 2, asks: 3, answered: 1 },
+  unreachable: [
+    {
+      point_id: "u1", point_tag: null, role: "outlet_water_temp",
+      role_label: "Leaving water temperature", reason: "point_missing", last_seen_at: null,
+      confirmed_by: "ops@geniusvision.in", candidates_considered: 0, successors: [],
+      needed_by: ["chiller_delta_t"],
+    },
+  ],
+  totals: { points: 494, devices: 2, asks: 3, answered: 1, stranded: 2 },
 };
 
 let stub: ApiStub;
@@ -75,8 +98,10 @@ beforeEach(() => {
   perms.modules = new Set(["analytics"]);
   stub = stubApi({
     "GET /bi/points/roles/asks": ASKS,
-    "GET /bi/points/roles/orphans": { total: 8, orphans: Array.from({ length: 8 }, (_, i) => ({ point_id: `o${i}` })) },
     "POST /bi/metrics/roles/confirm": { updated: 1 },
+    "POST /bi/points/roles/repoint": { results: [{ status: "moved" }] },
+    "POST /bi/points/roles/repoint/undo": { results: [{ status: "undone" }] },
+    "POST /bi/points/roles/forget": { results: [{ status: "forgotten" }] },
   });
 });
 
@@ -97,9 +122,10 @@ describe("the worklist", () => {
     expect(screen.queryByText(/494/)).not.toBeInTheDocument();
   });
 
-  it("keeps the stranded worklist one press away", async () => {
+  it("counts the answers stranded on a dead reading, and they are settled here", async () => {
     render();
-    expect(await screen.findByRole("link", { name: /8 answers point at a dead reading/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /2 answers point at a dead reading/ })).toBeInTheDocument();
+    expect(screen.getByText(/Answered on a reading that stopped coming/)).toBeInTheDocument();
   });
 
   it("moves to another device when it is picked", async () => {
@@ -113,7 +139,9 @@ describe("the worklist", () => {
 describe("a question", () => {
   it("shows the reading, what it looks like, and which number reads it", async () => {
     render();
-    const card = (await screen.findByText("IWT")).closest("div")!.parentElement!.parentElement!;
+    // `IWT` is a question here AND a stranded answer, and the device has two
+    // questions, so the card is found through this question's own value.
+    const card = (await screen.findByText("28.4 degC")).closest("div")!.parentElement!;
     expect(card).toHaveTextContent("28.4 degC");
     expect(card).toHaveTextContent("the water going in");
     expect(card).toHaveTextContent("how hard this chiller is working");
@@ -209,6 +237,50 @@ describe("a reading carrying nothing", () => {
   });
 });
 
+describe("an answer left on a reading that stopped coming", () => {
+  it("says why, offers the successor with the evidence, and moves only on a press", async () => {
+    const user = render();
+    await screen.findByText(/Answered on a reading that stopped coming/);
+    expect(screen.getByText(/renamed away/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "why this one" }));
+    expect(screen.getByText("the same readings at the tail")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Move the answer here" }));
+    await waitFor(() =>
+      expect(stub.body("POST /bi/points/roles/repoint")).toEqual({
+        moves: [{ role: "inlet_water_temp", from_point_id: "o1", to_point_id: "p7" }],
+      }),
+    );
+    // Offered where the mistake is noticed.
+    expect(await screen.findByRole("button", { name: "Undo" })).toBeInTheDocument();
+  });
+
+  it("offers only forgetting when the reading no longer exists at all", async () => {
+    const user = render();
+    // No device left to read means no candidate set: a move cannot be offered.
+    const card = (await screen.findByText(/there is no device left to move them onto/)).closest("div")!;
+    expect(within(card).queryByRole("button", { name: "Move the answer here" })).not.toBeInTheDocument();
+
+    await user.click(within(card).getAllByRole("button", { name: "Forget this answer" })[0]);
+    await user.click(within(card).getByRole("button", { name: "Forget it" }));
+    await waitFor(() => expect(stub.body("POST /bi/points/roles/forget")).toEqual({ point_ids: ["u1"] }));
+  });
+
+  it("is forgotten only after a second press that names what it destroys", async () => {
+    const user = render();
+    // The one on the device, not the one with no device left.
+    const onDevice = (await screen.findByText(/renamed away/)).closest("div")!;
+    await user.click(within(onDevice).getByRole("button", { name: "Forget this answer" }));
+
+    expect(within(onDevice).getByText(/It is deleted, and nothing puts it back/)).toBeInTheDocument();
+    expect(stub.matching("POST /bi/points/roles/forget")).toHaveLength(0);
+
+    await user.click(within(onDevice).getByRole("button", { name: "Forget it" }));
+    await waitFor(() => expect(stub.body("POST /bi/points/roles/forget")).toEqual({ point_ids: ["o1"] }));
+  });
+});
+
 describe("the gate", () => {
   it("reads nothing without bi.read and the analytics module", async () => {
     perms.granted = new Set(["sites.read"]);
@@ -221,8 +293,8 @@ describe("the gate", () => {
     perms.granted = new Set(["bi.read"]);
     render();
 
-    expect(await screen.findByText("IWT")).toBeInTheDocument();
-    for (const name of ["Yes", /^Yes to/, "Take it back", "Skip this device"]) {
+    expect(await screen.findByText("28.4 degC")).toBeInTheDocument();
+    for (const name of ["Yes", /^Yes to/, "Take it back", "Skip this device", "Forget this answer", "Move the answer here"]) {
       expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
     }
   });

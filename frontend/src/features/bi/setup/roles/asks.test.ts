@@ -12,7 +12,18 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { bulkOf, cautionOf, fmtValue, neededByText, roleLong, roleShort, type RoleAsk } from "./asks";
+import {
+  bulkOf,
+  cautionOf,
+  evidenceLabel,
+  fmtValue,
+  neededByText,
+  noSuccessorText,
+  roleLong,
+  roleShort,
+  strandedWhy,
+  type RoleAsk,
+} from "./asks";
 
 const ask = (over: Partial<RoleAsk> = {}): RoleAsk => ({
   point_id: over.point_id ?? "p1",
@@ -86,6 +97,33 @@ describe("the cautions", () => {
   });
 });
 
+describe("a stranded answer", () => {
+  const stranded = (over: object = {}) => ({
+    point_id: "o1", point_tag: "IWT", role: "inlet_water_temp",
+    role_label: "Entering water temperature", reason: "superseded", last_seen_at: null,
+    confirmed_by: "ops@x.io", candidates_considered: 9, successors: [], needed_by: ["chiller_delta_t"],
+    ...over,
+  });
+
+  it("says why it is stranded in words, and prints an unknown reason as itself", () => {
+    expect(strandedWhy(stranded())).toMatch(/renamed away/);
+    expect(strandedWhy(stranded({ reason: "point_missing" }))).toMatch(/no longer exists/);
+    expect(strandedWhy(stranded({ reason: "something_new" }))).toBe("something_new");
+  });
+
+  it("tells 'nothing was found' apart from 'there was nothing to look at'", () => {
+    expect(noSuccessorText(stranded({ candidates_considered: 0 }))).toMatch(/nothing to look at/);
+    expect(noSuccessorText(stranded({ candidates_considered: 9 }))).toMatch(/9 readings on this device were looked at/);
+    // A shared unit is never offered as evidence.
+    expect(noSuccessorText(stranded())).toMatch(/A shared unit is not evidence/);
+  });
+
+  it("labels a signal, and prints one nobody has words for as its own key", () => {
+    expect(evidenceLabel("identical_tag")).toBe("The tag did not change");
+    expect(evidenceLabel("brand_new_signal")).toBe("brand_new_signal");
+  });
+});
+
 describe("bulkOf", () => {
   const device = (asks: RoleAsk[]) => ({
     device_id: "d1",
@@ -94,6 +132,7 @@ describe("bulkOf", () => {
     site_name: "Aeon Tower",
     asks,
     answered: [],
+    stranded: [],
   });
 
   it("presses once per role, with the ids of the questions it covers", () => {
