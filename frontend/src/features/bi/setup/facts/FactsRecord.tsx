@@ -97,11 +97,14 @@ export default function FactsRecord({
   });
   const busy = facts.isPending || factor.isPending || benchmark.isPending;
 
-  if (q.isLoading) return <LoadingBlock label="Reading the building's record…" />;
   if (q.error) {
     return <p className="pt-4 text-[12.5px] text-nb-crit">{apiError(q.error, "Could not read the record")}</p>;
   }
-  const rec = q.data!;
+  // Not `isLoading`: a query can be pending with no data outside its first fetch
+  // (a refetch after an invalidate, a remount off a cold cache), and reading the
+  // record then threw on a live screen. The guard is on the DATA, not the flag.
+  if (!q.data) return <LoadingBlock label="Reading the building's record…" />;
+  const rec = q.data;
   if (!rec.known) {
     return (
       <p className="pt-6 text-[12.5px] text-nb-faint">
