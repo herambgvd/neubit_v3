@@ -174,7 +174,7 @@ def _used_channels_from_status(payload: dict) -> int | None:
 
 
 async def probe_node(api_url: str, *, timeout: float | None = None) -> tuple[bool, dict]:
-    """Ping ``<api_url>/api/v1/nvr/status``. Returns ``(reachable, payload)``.
+    """Ping ``<api_url>/health``. Returns ``(reachable, payload)``.
 
     Never raises — an unreachable recorder / a non-2xx / a non-JSON body all yield
     ``(False, {})``. This is the shared reachability primitive used by both the CREATE
@@ -184,19 +184,39 @@ async def probe_node(api_url: str, *, timeout: float | None = None) -> tuple[boo
     t = timeout if timeout is not None else heartbeat_timeout_sec()
     url = _health_url(api_url)
     try:
-        async with httpx.AsyncClient(timeout=t) as client:
+        async with httpx.AsyncClient(timeout=t, follow_redirects=False) as client:
             resp = await client.get(url)
     except httpx.HTTPError as exc:
         log.debug("media-node probe unreachable (%s): %s", url, exc)
         return False, {}
-    if resp.status_code >= 400:
+    # Online means a RECORDER answered, not merely that something did (SCRUM-302). A
+    # web console's login redirect (307), an HTML page or another service's /health
+    # used to read as "online" while every federated call 404'd behind it.
+    if resp.status_code // 100 != 2:
         log.debug("media-node probe %s → %s", url, resp.status_code)
         return False, {}
     try:
         payload = resp.json()
     except ValueError:
-        return True, {}
-    return True, payload if isinstance(payload, dict) else {}
+        log.debug("media-node probe %s → 2xx but not JSON", url)
+        return False, {}
+    if not isinstance(payload, dict) or not _is_recorder_health(payload):
+        log.debug("media-node probe %s → not a recorder's /health", url)
+        return False, {}
+    return True, payload
+
+
+def _is_recorder_health(payload: dict) -> bool:
+    """The Go recorder's /health body: ``{"status": "ok", "service": "nvr", ...}``.
+
+    A body naming another service (this VMS's own core, say) is not a recorder. One
+    without a ``service`` key is accepted on ``status`` alone, so a recorder build
+    that predates the key is not marked offline by an upgrade of this VMS.
+    """
+    service = payload.get("service")
+    if service is not None:
+        return service == "nvr"
+    return payload.get("status") == "ok"
 
 
 class MediaNodeService:

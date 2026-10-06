@@ -18,6 +18,7 @@ import { Button, Modal } from "@/components/ui/kit";
 import { Field } from "@/components/common";
 import { apiError } from "@/lib/api";
 import { vms } from "../api";
+import { normalizeApiUrl } from "../recorderUrl";
 import type { MediaNodeCreate, MediaNodePublic } from "../types";
 
 /** The flat form; every field binds to a text input (capacity is coerced on save). */
@@ -67,7 +68,7 @@ export default function AddRecorderModal({ node, onClose, onSuccess }: Readonly<
     mutationFn: () => {
       const body: MediaNodeCreate = {
         name: form.name.trim(),
-        api_url: form.api_url.trim(),
+        api_url: normalizeApiUrl(form.api_url) ?? form.api_url.trim(),
         hls_base: form.hls_base.trim() || undefined,
         webrtc_base: form.webrtc_base.trim() || undefined,
         rtsp_base: form.rtsp_base.trim() || undefined,
@@ -93,6 +94,7 @@ export default function AddRecorderModal({ node, onClose, onSuccess }: Readonly<
     const errs: Record<string, string> = {};
     if (!form.name.trim() || form.name.trim().length < 2) errs.name = "Required (min 2 chars)";
     if (!form.api_url.trim()) errs.api_url = "Required";
+    else if (!normalizeApiUrl(form.api_url)) errs.api_url = "Enter a full address, e.g. http://10.0.0.20:8080";
     setErrors(errs);
     if (Object.keys(errs).length) return;
     save.mutate();
@@ -137,9 +139,9 @@ export default function AddRecorderModal({ node, onClose, onSuccess }: Readonly<
           required
           value={form.api_url}
           onChange={(e) => set({ api_url: e.target.value })}
-          placeholder="https://10.0.0.20:8000"
+          placeholder="e.g. http://10.0.0.20:8080"
           error={errors.api_url}
-          hint="The recorder's node API (port 8000 by default) — NOT its operator console on 8080, which serves the browser and does not forward federation credentials. Saved even if unreachable now."
+          hint="The address you open the recorder's console at (port 8080 by default) — it also carries the recorder's API. Saved even if unreachable now."
         />
 
         <Field

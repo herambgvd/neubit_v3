@@ -315,6 +315,20 @@ async def test_a_refused_pairing_code_is_the_operators_to_fix_not_the_networks(r
     assert not isinstance(e.value, fed.NodeUnavailable)
 
 
+@pytest.mark.parametrize("status", [404, 405, 307])
+async def test_a_url_with_no_pairing_route_names_the_url_not_the_network(recorder, status):
+    # SCRUM-302: a URL that answers without a pairing route (a recorder's console
+    # before SCRUM-301, a console page that redirects to its login, any other web
+    # server) used to read "404: 404 page not found". The code was never spent, so
+    # it stays retryable, and the operator is told which address to use.
+    recorder.answers(status, text="404 page not found", headers={"location": "/login"})
+    with pytest.raises(fed.NodeUnavailable) as e:
+        await fed.pair_node(API, "123456")
+    assert "not a Neubit recorder API" in str(e.value)
+    assert API in str(e.value)
+    assert not isinstance(e.value, fed.NodePairingRejected)
+
+
 async def test_a_pairing_that_returns_no_credential_is_not_reported_as_success(recorder):
     # The credential is surfaced exactly once. A 201 without one would otherwise
     # store a node row with an empty key that fails on every later call instead.

@@ -254,6 +254,17 @@ async def pair_node(api_url: str, code: str, *, label: str | None = None) -> dic
         raise NodePairingRejected(
             _node_error_message(r, "the recorder refused this pairing code")
         )
+    if r.status_code in (404, 405) or 300 <= r.status_code < 400:
+        # Something answered, and it has no pairing route: the URL is not a Neubit
+        # recorder's API (another web server, a console page path that redirects to
+        # its login, or a recorder too old to serve federation on its console port).
+        # Unavailable, not rejected — the code was never spent, so it still pairs
+        # once the URL is corrected.
+        raise NodeUnavailable(
+            f"{r.status_code}: {api_url} answered but is not a Neubit recorder API — "
+            f"use the recorder console's address (http://<recorder>:8080) and check the "
+            f"recorder is up to date"
+        )
     _raise_for_node(r)
     payload = r.json() or {}
     if not payload.get("credential"):
