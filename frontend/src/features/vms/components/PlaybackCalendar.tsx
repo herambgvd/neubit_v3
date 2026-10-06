@@ -39,6 +39,8 @@ export interface PlaybackCalendarProps {
   selected?: string | null;
   /** Days-of-month with footage in the view month. */
   footageDays?: Set<number> | null;
+  /** Days-of-month whose footage includes motion / alarm / event recording. */
+  eventDays?: Set<number> | null;
   /** (YYYY-MM-DD) => void */
   onSelectDay: (day: string) => void;
   onPrevMonth?: () => void;
@@ -50,6 +52,7 @@ export default function PlaybackCalendar({
   viewMonth,
   selected,
   footageDays,
+  eventDays,
   onSelectDay,
   onPrevMonth,
   onNextMonth,
@@ -113,6 +116,7 @@ export default function PlaybackCalendar({
           const ds = dayStr(viewYear, viewMonth, d);
           const isSelected = selected === ds;
           const hasFootage = footageDays?.has(d);
+          const hasEvents = eventDays?.has(d);
           const isToday =
             viewYear === todayY && viewMonth === todayM && d === todayD;
           const isFuture =
@@ -125,15 +129,17 @@ export default function PlaybackCalendar({
               type="button"
               disabled={isFuture}
               onClick={() => onSelectDay(ds)}
+              title={[hasFootage && "footage", hasEvents && "events"].filter(Boolean).join(" · ") || undefined}
               className={`relative flex h-7 items-center justify-center rounded-md text-[12px] tabular-nums transition ${dayCellSkin({ isSelected, isFuture, isToday })}`}
             >
               {d}
-              {/* footage mark — an accent dot under the number (echoes the
-                  reference's red-marked recording days). Hidden on the selected
-                  cell (the fill already reads as "chosen"). */}
-              {hasFootage && !isSelected && (
-                <span className="absolute bottom-0.5 h-1 w-1 rounded-full bg-red-400" />
+              {/* footage mark — a bar under the number for a day with footage, and
+                  an amber dot when that footage includes motion / alarm / event
+                  recording (the recorder console marks days the same way). */}
+              {hasFootage && (
+                <span className="absolute bottom-0.5 left-1/2 h-0.5 w-3 -translate-x-1/2 rounded-full bg-emerald-400" />
               )}
+              {hasEvents && <span className="absolute right-1 top-1 h-1 w-1 rounded-full bg-amber-400" />}
             </button>
           );
         })}

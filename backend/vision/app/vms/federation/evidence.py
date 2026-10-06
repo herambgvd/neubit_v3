@@ -21,6 +21,8 @@ from kernel.auth import Scope, get_scope, require_permission
 from app.db import get_db
 from app.vms.federation import client as fed
 from app.vms.federation._common import (
+    PERM_BOOKMARK_READ,
+    PERM_BOOKMARK_WRITE,
     PERM_CAMERA_REBOOT,
     PERM_DEVICE_TUNE,
     PERM_EVIDENCE_HOLD,
@@ -409,3 +411,84 @@ async def federated_evidence_list(
 # of the federated reads (timeline/recordings/playback) use, and the one /vms/storage/*
 # reads on locally (no vms.storage.read perm exists). Node lookup + credential +
 # NodeUnavailable→503 handling exactly mirror the federated read routes above.
+
+
+# ── bookmarks, on the recorder (SCRUM-307) ────────────────────────────────────
+# A mark made while investigating lives beside the footage it marks, on the recorder
+# that owns it, so the recorder's console and every VMS read one set of marks. The
+# recorder checks the label and note and records who made it (the federation
+# credential); this layer passes the operator's request through and tags the node.
+
+
+def _bookmark_body(body: dict | None) -> dict:
+    b = body or {}
+    out = {"at": str(b.get("at") or "").strip(), "label": str(b.get("label") or "").strip()}
+    note = str(b.get("note") or "").strip()
+    if note:
+        out["note"] = note
+    return out
+
+
+@router.get(
+    "/nodes/{node_id}/cameras/{camera_id}/bookmarks",
+    dependencies=[Depends(require_permission(PERM_BOOKMARK_READ))],
+)
+async def federated_bookmarks(
+    node_id: str,
+    camera_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+    from_: Annotated[Optional[str], Query(alias="from")] = None,
+    to: Optional[str] = None,
+) -> dict:
+    """A federated camera's bookmarks in an optional window, from its recorder."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        result = await fed.list_node_bookmarks(
+            node.api_url, camera_id, from_=from_, to=to, credential=node.credential
+        )
+    except fed.NodeUnavailable as e:
+        raise _unreachable(e)
+    return _tag(node, result)
+
+
+@router.post(
+    "/nodes/{node_id}/cameras/{camera_id}/bookmarks",
+    dependencies=[Depends(require_permission(PERM_BOOKMARK_WRITE))],
+)
+async def federated_bookmark_create(
+    node_id: str,
+    camera_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+    body: Annotated[dict, Body(...)],
+) -> dict:
+    """Bookmark an instant on a federated camera, stored on its recorder. ``body`` =
+    { at, label, note? }."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        result = await fed.create_node_bookmark(
+            node.api_url, camera_id, _bookmark_body(body), credential=node.credential
+        )
+    except fed.NodeUnavailable as e:
+        raise _unreachable(e)
+    return _tag(node, result)
+
+
+@router.delete(
+    "/nodes/{node_id}/bookmarks/{bookmark_id}",
+    dependencies=[Depends(require_permission(PERM_BOOKMARK_WRITE))],
+)
+async def federated_bookmark_delete(
+    node_id: str,
+    bookmark_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> dict:
+    """Delete a bookmark on a recorder."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        await fed.delete_node_bookmark(node.api_url, bookmark_id, credential=node.credential)
+    except fed.NodeUnavailable as e:
+        raise _unreachable(e)
+    return {"deleted": bookmark_id, "node_id": str(node.id)}

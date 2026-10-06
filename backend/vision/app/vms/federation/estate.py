@@ -269,6 +269,35 @@ async def federated_timeline(
 
 
 @router.get(
+    "/nodes/{node_id}/cameras/{camera_id}/recording-days",
+    dependencies=[Depends(require_permission(PERM_PLAYBACK))],
+)
+async def federated_recording_days(
+    node_id: str,
+    camera_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+    from_: Annotated[str, Query(alias="from", pattern=r"^\d{4}-\d{2}-\d{2}$")],
+    to: Annotated[str, Query(pattern=r"^\d{4}-\d{2}-\d{2}$")],
+    tz: Annotated[str, Query(min_length=1, max_length=64)],
+) -> dict:
+    """The playback calendar's marks for a federated camera, from its recorder: which
+    of the operator's local days hold footage, and which hold motion/alarm/event
+    footage. The recorder answers from its own segment index, so a month is one call
+    instead of a month-wide timeline folded into days here."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        payload = await fed.get_node_recording_days(
+            node.api_url, camera_id, from_=from_, to=to, tz=tz, credential=node.credential
+        )
+    except fed.NodeUnavailable as e:
+        raise _unreachable(e)
+    payload["node_id"] = str(node.id)
+    payload["node_name"] = node.name
+    return payload
+
+
+@router.get(
     "/nodes/{node_id}/cameras/{camera_id}/recordings",
     dependencies=[Depends(require_permission(PERM_PLAYBACK))],
 )
@@ -315,14 +344,17 @@ async def federated_playback(
     scope: Annotated[Scope, Depends(get_scope)],
     from_: Annotated[Optional[str], Query(alias="from")] = None,
     to: Optional[str] = None,
+    stream: Annotated[Optional[str], Query(pattern="^(auto|main|sub)$")] = None,
 ) -> dict:
     """Mint a playback session for a federated camera THROUGH its recorder node. Returns
     the node-issued { session_id, playback_url, token, start, ranges, expires_at, ... }.
-    200 with an empty playback_url means no footage in the window (not an error)."""
+    200 with an empty playback_url means no footage in the window (not an error).
+    ``stream`` picks the recorded stream (auto | main | sub); omitted = the node's auto."""
     node = await _resolve_node(db, scope, node_id)
     try:
         payload = await fed.mint_node_playback(
-            node.api_url, camera_id, from_=from_, to=to, credential=node.credential
+            node.api_url, camera_id, from_=from_, to=to, stream=stream,
+            credential=node.credential,
         )
     except fed.NodeUnavailable as e:
         raise _unreachable(e)

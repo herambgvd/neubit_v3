@@ -41,9 +41,6 @@ const ALLOWED = new Set([
   // Recorders shows a recorder's own cameras beside the VMS-owned ones for the
   // same reason.
   "vms/Recorders.tsx",
-  // Playback's picker is an explicit two-tab choice between the two stores, and
-  // its tabs name which is which.
-  "vms/components/UnifiedPlayback.tsx",
   // Home counts both halves — it fetches the federated list separately, right
   // below, so the Live tile's count is the whole estate.
   "core/system/Home.tsx",

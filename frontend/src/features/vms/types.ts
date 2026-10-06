@@ -931,6 +931,33 @@ export interface FederatedRecordingList extends NodeTagged {
   [k: string]: unknown;
 }
 
+/** A bookmark stored on the recorder (`…/bookmarks`). */
+export interface FederatedBookmark {
+  id: string;
+  camera_id?: string;
+  at: string;
+  label: string;
+  note?: string | null;
+  created_by?: string | null;
+  created_at?: string | null;
+  [k: string]: unknown;
+}
+
+export interface FederatedBookmarkList extends NodeTagged {
+  items?: FederatedBookmark[] | null;
+  [k: string]: unknown;
+}
+
+/** Which recorded stream a playback session plays. */
+export type PlaybackStream = "auto" | "main" | "sub";
+
+/** `GET …/cameras/{id}/recording-days` — the recorder's calendar marks. */
+export interface FederatedRecordingDays extends NodeTagged {
+  camera_id?: string;
+  days?: { date: string; recorded: boolean; event: boolean }[] | null;
+  [k: string]: unknown;
+}
+
 /** `POST …/cameras/{id}/playback` — EITHER `hls_url`/`webrtc_url` (mediamtx
  *  proxy channels) OR `playback_url` (locally-recorded fmp4). An empty
  *  `playback_url` = no footage in the window (200, not an error). */

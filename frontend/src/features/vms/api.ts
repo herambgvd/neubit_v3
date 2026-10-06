@@ -55,6 +55,8 @@ import type {
   EvidenceLockListResponse,
   EvidenceLockPublic,
   FederatedBackchannel,
+  FederatedBookmark,
+  FederatedBookmarkList,
   FederatedExportJob,
   FederatedExportList,
   FederatedExportPublicKey,
@@ -72,9 +74,11 @@ import type {
   FederatedPreset,
   FederatedPresetList,
   FederatedPtzBody,
+  FederatedRecordingDays,
   FederatedRecordingList,
   FederatedTimeline,
   FederationNodeList,
+  PlaybackStream,
   ItemList,
   LinkageFireListResponse,
   LinkageRuleCreate,
@@ -205,10 +209,23 @@ export const vms = {
         ),
       ),
     // Mint a playback session (tokenized fmp4 URL + t=0 start) through the node.
-    playback: (nodeId: string, cameraId: string, { from, to }: WindowOpt = {}) =>
+    // `stream` picks the recorded stream: auto (the node decides) | main | sub.
+    playback: (
+      nodeId: string,
+      cameraId: string,
+      { from, to, stream }: WindowOpt & { stream?: PlaybackStream | null } = {},
+    ) =>
       unwrap(
         api.post<FederatedPlaybackSession>(
-          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/playback${qs({ from, to })}`,
+          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/playback${qs({ from, to, stream })}`,
+        ),
+      ),
+    // The playback calendar's marks, from the recorder's own segment index: which of
+    // the operator's local days hold footage, and which hold event footage.
+    recordingDays: (nodeId: string, cameraId: string, { from, to, tz }: { from: string; to: string; tz: string }) =>
+      unwrap(
+        api.get<FederatedRecordingDays>(
+          `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/recording-days${qs({ from, to, tz })}`,
         ),
       ),
     // ── operate-THROUGH-node — the operator command surface on a node-owned camera
@@ -293,6 +310,20 @@ export const vms = {
     motionSearch: (nodeId: string, cameraId: string, body: FederatedMotionSearchBody) =>
       unwrap(api.post<FederatedMotionSearch>(
         `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/motion-search`, body)),
+    // Bookmarks, stored on the RECORDER beside the footage they mark, so its console
+    // and every VMS read one set of marks (SCRUM-307).
+    bookmarks: {
+      list: (nodeId: string, cameraId: string, { from, to }: WindowOpt = {}) =>
+        unwrap(
+          api.get<FederatedBookmarkList>(
+            `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/bookmarks${qs({ from, to })}`,
+          ),
+        ),
+      create: (nodeId: string, cameraId: string, body: { at: string; label: string; note?: string }) =>
+        unwrap(api.post<FederatedBookmark>(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/bookmarks`, body)),
+      remove: (nodeId: string, bookmarkId: string) =>
+        unwrap(api.delete<FederatedOpResult>(`/vms/federation/nodes/${nodeId}/bookmarks/${bookmarkId}`)),
+    },
     // Snapshot URL for a federated camera (relative path — fetched as an authed
     // blob, same as cameras.snapshotUrl, since the endpoint needs the Bearer header).
     snapshotUrl: (nodeId: string, cameraId: string) =>

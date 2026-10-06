@@ -335,3 +335,117 @@ async def test_a_pairing_that_returns_no_credential_is_not_reported_as_success(r
     recorder.answers(201, json={"id": "cred-1", "label": "Neubit VMS"})
     with pytest.raises(fed.NodePairingRejected):
         await fed.pair_node(API, "123456")
+
+
+# ── playback session + calendar marks (SCRUM-304/305) ────────────────────────
+
+
+@pytest.mark.parametrize("stream", ["auto", "main", "sub"])
+async def test_a_playback_session_asks_for_the_stream_the_grid_wants(recorder, stream):
+    # A synced grid plays the tile being watched on main and the rest on sub, as the
+    # recorder's own console does. The choice has to reach the recorder.
+    import json
+
+    recorder.answers(200, json={"playback_url": "/get?x", "start": "2026-10-06T10:00:00Z"})
+    await fed.mint_node_playback(API, "cam-1", from_="2026-10-06T10:00:00Z", stream=stream, credential=CRED)
+    assert json.loads(recorder.calls[-1].content)["stream"] == stream
+
+
+async def test_an_unknown_stream_is_left_to_the_recorder(recorder):
+    import json
+
+    recorder.answers(200, json={"playback_url": ""})
+    await fed.mint_node_playback(API, "cam-1", stream="4k", credential=CRED)
+    assert "stream" not in json.loads(recorder.calls[-1].content)
+
+
+async def test_recording_days_asks_the_recorder_in_the_operators_zone(recorder):
+    # "A day" is the operator's day: the recorder buckets its segments in the zone it
+    # is told, so the calendar marks the days the operator means.
+    recorder.answers(200, json={"camera_id": "cam-1", "days": [{"date": "2026-10-06", "recorded": True, "event": True}]})
+    out = await fed.get_node_recording_days(
+        API, "cam-1", from_="2026-10-01", to="2026-10-31", tz="Asia/Kolkata", credential=CRED
+    )
+    req = recorder.calls[-1]
+    assert req.url.path.endswith("/api/v1/nvr/estate/recordings/days")
+    assert dict(req.url.params) == {
+        "camera_id": "cam-1", "from": "2026-10-01", "to": "2026-10-31", "tz": "Asia/Kolkata",
+    }
+    assert out["days"][0]["event"] is True
+
+
+async def test_a_converted_playback_url_points_at_the_recorder_not_the_vms(recorder):
+    # The recorder hands an H.265 camera's converter back relative to ITSELF. In the
+    # VMS's browser that resolved against the VMS and the tile said "Playback failed"
+    # while the H.264 camera next to it played (SCRUM-304).
+    recorder.answers(200, json={
+        "playback_url": "/api/media/playback.mp4?path=cameras%2Fx%2Fmain&token=t",
+        "playback_transcode_url": "/api/media/playback.mp4?path=cameras%2Fx%2Fmain&token=t",
+        "start": "2026-10-06T10:00:00Z",
+        "codec": "H265",
+    })
+    out = await fed.mint_node_playback("http://192.168.1.11:8080/", "cam-1", credential=CRED)
+    assert out["playback_url"] == (
+        "http://192.168.1.11:8080/api/v1/nvr/media/playback.mp4?path=cameras%2Fx%2Fmain&token=t"
+    )
+    # The same converter through the console's own path: the fallback for a recorder
+    # console that predates the native route.
+    assert out["playback_transcode_url"] == (
+        "http://192.168.1.11:8080/api/media/playback.mp4?path=cameras%2Fx%2Fmain&token=t"
+    )
+
+
+async def test_an_h264_session_keeps_the_native_converter_as_its_fallback(recorder):
+    recorder.answers(200, json={
+        "playback_url": "http://192.168.1.11:9996/get?path=cameras%2Fx%2Fmain&token=t",
+        "playback_transcode_url": "/api/media/playback.mp4?path=cameras%2Fx%2Fmain&token=t",
+    })
+    out = await fed.mint_node_playback("http://192.168.1.11:8080", "cam-1", credential=CRED)
+    assert out["playback_transcode_url"] == (
+        "http://192.168.1.11:8080/api/v1/nvr/media/playback.mp4?path=cameras%2Fx%2Fmain&token=t"
+    )
+
+
+async def test_an_absolute_playback_url_is_left_alone(recorder):
+    url = "http://192.168.1.11:9996/get?path=cameras%2Fx%2Fmain&token=t"
+    recorder.answers(200, json={"playback_url": url, "hls_url": "//cdn.example/x.m3u8"})
+    out = await fed.mint_node_playback("http://192.168.1.11:8080", "cam-1", credential=CRED)
+    assert out["playback_url"] == url
+    assert out["hls_url"] == "//cdn.example/x.m3u8"
+
+
+def test_a_relative_url_outside_the_media_prefix_keeps_its_path():
+    out = fed.rebase_node_urls("http://10.0.0.20:8000", {"export_url": "/get?x=1", "codec": "H264"})
+    assert out == {"export_url": "http://10.0.0.20:8000/get?x=1", "codec": "H264"}
+
+
+# ── bookmarks live on the recorder (SCRUM-307) ───────────────────────────────
+
+
+async def test_a_bookmark_is_written_to_the_recorder_that_owns_the_footage(recorder):
+    import json
+
+    recorder.answers(201, json={"id": "b1", "at": "2026-10-06T10:00:00Z", "label": "Gate opened"})
+    out = await fed.create_node_bookmark(
+        API, "cam-1", {"at": "2026-10-06T10:00:00Z", "label": "Gate opened"}, credential=CRED
+    )
+    req = recorder.calls[-1]
+    assert req.method == "POST"
+    assert req.url.path.endswith("/api/v1/nvr/estate/cameras/cam-1/bookmarks")
+    assert json.loads(req.content) == {"at": "2026-10-06T10:00:00Z", "label": "Gate opened"}
+    assert out["id"] == "b1"
+
+
+async def test_a_bookmark_the_recorder_refuses_says_why(recorder):
+    # A recorder paired before bookmarks joined the grant set answers 403 naming the
+    # permission; the operator is told to re-pair, not that the recorder is down.
+    recorder.answers(403, json={"error": {"code": "FORBIDDEN", "message": "missing permission: vms.bookmark.write"}})
+    with pytest.raises(fed.NodeRefused) as e:
+        await fed.create_node_bookmark(API, "cam-1", {"at": "x", "label": "y"}, credential=CRED)
+    assert "vms.bookmark.write" in str(e.value)
+
+
+async def test_bookmarks_are_listed_for_the_window(recorder):
+    recorder.answers(200, json={"items": []})
+    await fed.list_node_bookmarks(API, "cam-1", from_="2026-10-06T00:00:00Z", to="2026-10-07T00:00:00Z", credential=CRED)
+    assert dict(recorder.calls[-1].url.params) == {"from": "2026-10-06T00:00:00Z", "to": "2026-10-07T00:00:00Z"}

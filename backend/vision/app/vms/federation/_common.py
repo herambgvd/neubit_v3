@@ -53,6 +53,10 @@ PERM_CAMERA_REBOOT = "vms.config.manage"  # the real device-maintenance/reboot r
 _REACHABLE = ("online", "unknown", "draining")
 PERM_DEVICE_TUNE = "vms.camera.tune"
 PERM_MOTION_SEARCH = PERM_PLAYBACK        # forensic search reads recorded footage
+# Investigation marks on the recorder (SCRUM-307/308): read and write ride the
+# playback right, as this service's own bookmarks always have.
+PERM_BOOKMARK_READ = PERM_PLAYBACK
+PERM_BOOKMARK_WRITE = PERM_PLAYBACK
 
 
 def _nodes_query(scope: Scope):

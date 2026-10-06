@@ -189,6 +189,8 @@ SURFACE = [
     ("POST", "/talk", {}, "vms.camera.tune"),
     ("POST", "/motion-search", {"from": "2026-01-01T00:00:00Z", "to": "2026-01-01T01:00:00Z"},
      "vms.playback.view"),
+    ("GET", "/bookmarks", None, "vms.playback.view"),
+    ("POST", "/bookmarks", {"at": "2026-01-01T00:00:00Z", "label": "Gate opened"}, "vms.playback.view"),
 ]
 
 IDS = [f"{m} {p}" for m, p, _, _ in SURFACE]
@@ -247,6 +249,7 @@ def test_the_surface_table_covers_every_phase4_route():
         ("GET", "/recordings"), ("POST", "/recording/start"), ("POST", "/recording/stop"),
         ("POST", "/reboot"), ("POST", "/exports"), ("GET", "/exports"),
         ("POST", "/holds"), ("DELETE", "/holds"), ("GET", "/holds"), ("POST", "/playback"),
+        ("GET", "/recording-days"),
         # Streams a request body; exercised by its own test rather than the table walk.
         ("POST", "/talk/uplink"),
     }
@@ -488,6 +491,7 @@ _EARLY = [
     ("GET", "/snapshot", None),
     ("GET", "/timeline", None),
     ("GET", "/recordings", None),
+    ("GET", "/recording-days?from=2026-10-01&to=2026-10-31&tz=Asia/Kolkata", None),
     ("POST", "/playback", {}),
     ("POST", "/ptz", {"action": "stop"}),
 ]

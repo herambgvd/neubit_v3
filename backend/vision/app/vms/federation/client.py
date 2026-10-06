@@ -346,12 +346,67 @@ async def list_node_recordings(
     return r.json() or {}
 
 
+#: Media URLs a recorder may hand back RELATIVE to itself. The recorder writes them
+#: for its own console, whose browser shares its origin; a VMS's browser does not,
+#: so a relative URL there resolves against the VMS and fetches nothing.
+_NODE_MEDIA_URL_KEYS = (
+    "playback_url",
+    "playback_transcode_url",
+    "hls_url",
+    "webrtc_url",
+    "export_url",
+)
+#: The console's media prefix, and the recorder's own. The console forwards the
+#: recorder's prefix too (SCRUM-304), so the native path works whether the node's
+#: api_url is the console port or the recorder API port.
+_CONSOLE_MEDIA_PREFIX = "/api/media/"
+_NODE_MEDIA_PREFIX = "/api/v1/nvr/media/"
+
+
+def rebase_node_urls(api_url: str, payload: dict) -> dict:
+    """Make the recorder's relative media URLs absolute on the recorder itself.
+
+    An H.265 camera's playback comes back as the recorder's converter,
+    ``/api/media/playback.mp4?...`` — fine in the recorder's console, a request to
+    the VMS's own origin anywhere else (the tile showed "Playback failed" while an
+    H.264 camera beside it, served from MediaMTX at an absolute URL, played).
+    Absolute URLs and protocol-relative ones are left alone.
+
+    When the session is ALREADY the converter (``playback_url`` and
+    ``playback_transcode_url`` are the same relative URL), the fallback becomes the
+    console's own path to it: a recorder console older than SCRUM-304 does not
+    forward the native path, and the tile tries the fallback when the first URL
+    fails."""
+    base = api_url.rstrip("/")
+    primary = payload.get("playback_url")
+    if (
+        isinstance(primary, str)
+        and primary.startswith(_CONSOLE_MEDIA_PREFIX)
+        and payload.get("playback_transcode_url") == primary
+    ):
+        payload["playback_transcode_url"] = base + primary
+    for key in _NODE_MEDIA_URL_KEYS:
+        url = payload.get(key)
+        if not isinstance(url, str) or not url.startswith("/") or url.startswith("//"):
+            continue
+        if url.startswith(_CONSOLE_MEDIA_PREFIX):
+            url = _NODE_MEDIA_PREFIX + url[len(_CONSOLE_MEDIA_PREFIX):]
+        payload[key] = base + url
+    return payload
+
+
+#: The recorded streams a playback session may ask for. ``auto`` lets the node pick
+#: main when the viewer can decode it, else the recorded sub, else a conversion.
+PLAYBACK_STREAMS = ("auto", "main", "sub")
+
+
 async def mint_node_playback(
     api_url: str,
     camera_id: str,
     *,
     from_: str | None = None,
     to: str | None = None,
+    stream: str | None = None,
     credential: str | None = None,
 ) -> dict:
     """POST {api_url}/api/v1/nvr/estate/cameras/{id}/playback → node-issued playback
@@ -364,7 +419,63 @@ async def mint_node_playback(
         body["from"] = from_
     if to:
         body["to"] = to
+    # Which recorded stream: a synced grid asks for sub on the tiles nobody is
+    # watching closely and main on the one they are, as the recorder's console does.
+    if stream in PLAYBACK_STREAMS:
+        body["stream"] = stream
     r = await _send("POST", url, headers=_headers(credential), json=body)
+    _raise_for_node(r)
+    return rebase_node_urls(api_url, r.json() or {})
+
+
+async def list_node_bookmarks(
+    api_url: str,
+    camera_id: str,
+    *,
+    from_: str | None = None,
+    to: str | None = None,
+    credential: str | None = None,
+) -> dict:
+    """GET {api_url}/…/estate/cameras/{id}/bookmarks?from&to → the recorder's bookmarks
+    on a camera: {items:[{id, camera_id, at, label, note, created_by, created_at}]}.
+    They live on the recorder so its own console and every VMS see the same marks."""
+    params = {k: v for k, v in (("from", from_), ("to", to)) if v}
+    return await _node_json(
+        "GET", api_url, f"/cameras/{camera_id}/bookmarks", credential=credential, params=params or None
+    )
+
+
+async def create_node_bookmark(
+    api_url: str, camera_id: str, body: dict, *, credential: str | None = None
+) -> dict:
+    """POST {api_url}/…/estate/cameras/{id}/bookmarks {at, label, note} → the bookmark."""
+    return await _node_json(
+        "POST", api_url, f"/cameras/{camera_id}/bookmarks", credential=credential, json_body=body
+    )
+
+
+async def delete_node_bookmark(api_url: str, bookmark_id: str, *, credential: str | None = None) -> dict:
+    """DELETE {api_url}/…/estate/bookmarks/{id}."""
+    return await _node_json("DELETE", api_url, f"/bookmarks/{bookmark_id}", credential=credential)
+
+
+async def get_node_recording_days(
+    api_url: str,
+    camera_id: str,
+    *,
+    from_: str,
+    to: str,
+    tz: str,
+    credential: str | None = None,
+) -> dict:
+    """GET {api_url}/api/v1/nvr/estate/recordings/days → which LOCAL calendar days hold
+    footage, and which of those hold motion/alarm/event footage, for one camera.
+    ``from_``/``to`` are YYYY-MM-DD (the node caps the span at 62 days); ``tz`` is the
+    operator's IANA zone, because "a day" is the operator's day, not the recorder's.
+    Returns {camera_id, days:[{date, recorded, event}]}."""
+    url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/recordings/days"
+    params = {"camera_id": camera_id, "from": from_, "to": to, "tz": tz}
+    r = await _send("GET", url, headers=_headers(credential), params=params)
     _raise_for_node(r)
     return r.json() or {}
 

@@ -50,7 +50,7 @@ import { randomInt } from "@/lib/random";
 import { vms } from "../api";
 import type { WallClock } from "../hooks/useWallPlayback";
 import { acquireSlot, type ConnectSlot } from "../lib/connectGate";
-import type { EstateCamera } from "../types";
+import type { EstateCamera, PlaybackStream } from "../types";
 
 // ── keeping step WITHOUT seeking ───────────────────────────────────────────
 // A seek is not free on a progressive fMP4: the browser tears down and refills
@@ -101,7 +101,9 @@ const LEAD_MAX_MS = 8_000;
 const SKEW_WARN_S = 1.5;
 // The decoder ceiling. playbackRate does not skip work: at 8x a 1080p25 stream is
 // 200fps of decode per tile, and Sync applies the rate to every visible tile at
-// once. Above this the transport steps the clock instead (see PlayoutBar).
+// once. Above this the transport steps the clock instead (see PlayoutBar). The
+// Playback workspace raises it for a small grid (`rateMax`), where there are only
+// a few decoders to feed.
 const RATE_MAX = 4;
 
 // ── how much footage to ask for at a time ──────────────────────────────────
@@ -174,15 +176,18 @@ function bufferedAhead(v: HTMLVideoElement | null): number {
   }
 }
 
-// The furthest instant this element could seek to without fetching anything new.
+// The furthest instant this element can seek to without starting over.
+//
+// SEEKABLE, not buffered. The recorder's progressive fMP4 reports `seekable` 0–0:
+// the browser answers any seek with a ranged refetch, the recorder answers that
+// from the window's start, and the element lands back at t=0 with its buffer gone
+// — measured on a 4MP camera, a seek to 15.8 s inside 19 s of buffer went to 0.0.
+// Trusting `buffered` here sent a follower's correction (and a frame step) back to
+// the start of its window; with seekable 0–0 they re-open at the instant instead.
 function reachableEnd(v: HTMLVideoElement | null): number {
   try {
     const sk = v?.seekable;
-    const bf = v?.buffered;
-    return Math.max(
-      sk?.length ? sk.end(sk.length - 1) : 0,
-      bf?.length ? bf.end(bf.length - 1) : 0,
-    );
+    return sk?.length ? sk.end(sk.length - 1) : 0;
   } catch {
     return 0;
   }
@@ -214,6 +219,15 @@ export interface TilePlaybackProps {
   muted?: boolean;
   /** Dense grid tile: smaller type in the status overlays. */
   compact?: boolean;
+  /** Which recorded stream to ask the recorder for; omitted = the recorder's auto. */
+  stream?: PlaybackStream;
+  /** The fastest native playbackRate this tile may run (default RATE_MAX). */
+  rateMax?: number;
+  /** An instant to show NOW without re-anchoring the wall: frame step and reverse
+   *  play. `scrubSeq` makes a repeat of the same instant a real request. Seeks inside
+   *  what the tile already holds; re-opens around the instant otherwise. */
+  scrubMs?: number | null;
+  scrubSeq?: number;
   /** The master calls this when it finds NO footage at all, so the wall can skip
    *  the gap instead of sitting on a still frame with a clock that has stopped. */
   onReachedEnd?: (atMs: number) => void;
@@ -235,6 +249,10 @@ function TilePlayback({
   clock,
   muted = true,
   compact = false,
+  stream,
+  rateMax = RATE_MAX,
+  scrubMs = null,
+  scrubSeq = 0,
   onReachedEnd,
 }: Readonly<TilePlaybackProps>) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -280,6 +298,7 @@ function TilePlayback({
   // play/pause toggle.
   const playingRef = useRef(playing);
   const speedRef = useRef(speed);
+  const rateMaxRef = useRef(rateMax);
 
   // Corrections are suppressed until this instant after every open.
   const settleUntilRef = useRef(0);
@@ -303,6 +322,9 @@ function TilePlayback({
   const leadMs = () => Math.min(LEAD_MAX_MS, Math.max(LEAD_MIN_MS, openLatencyRef.current));
   // Consecutive degenerate windows while stepping over a span boundary.
   const thinRef = useRef(0);
+  // An instant to seek to once the window now opening has data (a scrub that had to
+  // re-open: reverse past the window's start, a frame step outside it).
+  const pendingSeekRef = useRef<number | null>(null);
   // openAt calls itself when it steps over a boundary; through a ref so the
   // callback never has to reference its own binding.
   const openAtRef = useRef<((atMs: number | null) => Promise<void>) | null>(null);
@@ -431,6 +453,7 @@ function TilePlayback({
         const s = await vms.federation.playback(nodeId, realId, {
           from: new Date(atMs).toISOString(),
           to: new Date(to).toISOString(),
+          stream,
         });
         if (mint !== mintRef.current) return;
         const url = s?.playback_url || "";
@@ -496,7 +519,7 @@ function TilePlayback({
       // fires. `loading` stays true for the same reason: the tile is not open
       // until it shows a picture.
     },
-    [federated, nodeId, realId, freeze, takeGate, dropGate, markProgress],
+    [federated, nodeId, realId, stream, freeze, takeGate, dropGate, markProgress],
   );
   // The one place the listener-facing refs are refreshed: after every commit,
   // so a listener that outlives this render still reads current values.
@@ -509,14 +532,51 @@ function TilePlayback({
     windowToRef.current = windowToMs;
     playingRef.current = playing;
     speedRef.current = speed;
+    rateMaxRef.current = rateMax;
     openAtRef.current = openAt;
   });
 
   // Re-anchor whenever the wall seeks (anchorSeq), or the camera changes.
   useEffect(() => {
+    pendingSeekRef.current = null;
     openAt(anchorMs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anchorSeq, camera?.id, openAt]);
+
+  // Land a scrub: a seek where the element can seek (see reachableEnd), else a window
+  // opened at the instant.
+  const applyPendingSeek = useCallback(() => {
+    const want = pendingSeekRef.current;
+    if (want == null) return;
+    const s = sessionRef.current;
+    const v = videoRef.current;
+    if (!s || !v) {
+      // Nothing open here (a gap, a failure): the scrub is the way back in.
+      pendingSeekRef.current = null;
+      openAtRef.current?.(want);
+      return;
+    }
+    const off = (want - s.startMs) / 1000;
+    pendingSeekRef.current = null;
+    if (off >= 0 && off <= reachableEnd(v)) {
+      v.currentTime = off;
+      return;
+    }
+    // Not reachable in this window: open one AT the instant. A scrub that moved on
+    // while this window was opening lands where it is now, not where it started.
+    if (Math.abs(off) > 0.4) openAtRef.current?.(want);
+  }, []);
+
+  // A scrub (frame step, reverse step): show `scrubMs` now. A seek where the element
+  // can seek, else a window opened at the instant. While one is opening, later steps
+  // only move the target; the open lands on the newest one (applyPendingSeek).
+  useEffect(() => {
+    if (!scrubSeq || scrubMs == null) return;
+    pendingSeekRef.current = scrubMs;
+    if (openingRef.current || loadingRef.current) return;
+    applyPendingSeek();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrubSeq]);
 
   // Mirror the wall's play/pause and speed onto this element. playbackRate is
   // reset by the element on every load, so it is re-applied on loadeddata too.
@@ -530,21 +590,27 @@ function TilePlayback({
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return undefined;
-    const rate = Math.min(speed, RATE_MAX);
+    const rate = Math.min(speed, rateMax);
     const apply = () => {
       if (v.playbackRate !== rate) v.playbackRate = rate;
     };
     apply();
     v.addEventListener("loadeddata", apply);
     return () => v.removeEventListener("loadeddata", apply);
-  }, [speed, src]);
+  }, [speed, rateMax, src]);
 
   // ── master: publish the clock ────────────────────────────────────────────
   useEffect(() => {
     if (!master || !clock) return undefined;
     const v = videoRef.current;
     if (!v || !session) return undefined;
-    const onTime = () => clock.set(session.startMs + v.currentTime * 1000);
+    const onTime = () => {
+      // Only a PLAYING picture drives the clock. A paused one is showing where a
+      // seek or a scrub put it, and the controller already holds that instant —
+      // publishing the frame of a window still landing would drag the clock back.
+      if (v.paused || pendingSeekRef.current != null) return;
+      clock.set(session.startMs + v.currentTime * 1000);
+    };
     v.addEventListener("timeupdate", onTime);
     return () => v.removeEventListener("timeupdate", onTime);
   }, [master, clock, session, src]);
@@ -600,7 +666,7 @@ function TilePlayback({
       setWaiting(false);
       if (playingRef.current && v.paused) v.play().catch(() => {});
 
-      const base = Math.min(speedRef.current, RATE_MAX);
+      const base = Math.min(speedRef.current, rateMaxRef.current);
       const drift = target - v.currentTime; // + = we are behind the wall
 
       // Say so when this tile is not where the wall is. A silently desynced wall
@@ -699,6 +765,7 @@ function TilePlayback({
           }}
           onProgress={() => {
             markProgress();
+            applyPendingSeek();
             // Comfortable — stop being a load on the link and let the next tile
             // on the wall open. Rule 2.
             if (bufferedAhead(videoRef.current) >= READY_AHEAD_S) dropGate();
@@ -714,6 +781,8 @@ function TilePlayback({
             setLoading(false);
             setFrozen(false);
             markProgress();
+            // A scrub that had to re-open lands on its instant, not on t=0.
+            applyPendingSeek();
             // What this open actually cost, folded into the lead a catch-up mint
             // will allow for.
             const dt = Date.now() - openStartedRef.current;
