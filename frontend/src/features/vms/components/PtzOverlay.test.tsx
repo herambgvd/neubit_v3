@@ -255,6 +255,15 @@ describe("the preset bar", () => {
     await waitFor(() => expect(presetSave).toHaveBeenCalledWith("rec-a", "cam-1", "Loading bay"));
   });
 
+  it("leaves out presets with no token, which the device cannot recall (SCRUM-303)", async () => {
+    // Some firmwares list unset slots as presets with an empty token. They rendered
+    // as blank chips under one duplicate React key.
+    presetsList.mockResolvedValue({ items: [{ token: "office", name: "office" }, { token: "" }, { token: "  " }, {}] });
+    const { findByText, container } = overlay();
+    expect(await findByText("office")).toBeInTheDocument();
+    expect(container.querySelectorAll('[title="Go to preset"]')).toHaveLength(1);
+  });
+
   it("saves nothing when the name prompt is dismissed or left blank", async () => {
     // An unnamed preset is a row nobody can recognise in the bar afterwards.
     presetsList.mockResolvedValue({ items: [] });

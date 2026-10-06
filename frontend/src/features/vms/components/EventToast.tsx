@@ -130,11 +130,13 @@ export default function EventToast({
               <p className="mt-1 line-clamp-2 text-[11.5px] text-muted">{event.description}</p>
             )}
 
-            <div className="mt-2 flex items-center gap-1.5">
+            {/* Wraps as a row, never inside a button: with "Clear all (N)" on the front
+                toast the three no longer fit, and shrinking split "Acknowledge" mid-word. */}
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
                 onClick={onView}
-                className="inline-flex items-center gap-1 rounded-md border border-blue-500/40 bg-blue-500/10 px-2 py-1 text-[11.5px] font-medium text-blue-200 transition hover:bg-blue-500/20"
+                className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-blue-500/40 bg-blue-500/10 px-2 py-1 text-[11.5px] font-medium text-blue-200 transition hover:bg-blue-500/20"
               >
                 <Icon icon="heroicons:play-circle" className="text-xs" /> View video
               </button>
@@ -143,7 +145,7 @@ export default function EventToast({
                   type="button"
                   onClick={onAck}
                   disabled={ackPending}
-                  className="inline-flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11.5px] text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50"
+                  className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11.5px] text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50"
                 >
                   <Icon icon="heroicons-outline:check" className="text-xs" /> Acknowledge
                 </button>
@@ -157,7 +159,7 @@ export default function EventToast({
                   <button
                     type="button"
                     onClick={onClearAll}
-                    className="rounded-md px-1.5 py-1 text-[11.5px] text-muted transition hover:bg-hover hover:text-foreground"
+                    className="whitespace-nowrap rounded-md px-1.5 py-1 text-[11.5px] text-muted transition hover:bg-hover hover:text-foreground"
                   >
                     Clear all ({clearAllCount})
                   </button>

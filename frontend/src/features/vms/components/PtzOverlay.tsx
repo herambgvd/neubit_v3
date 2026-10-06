@@ -94,7 +94,10 @@ export default function PtzOverlay({ nodeId, cameraId, canControl }: Readonly<Pt
   // Presets come back straight off the camera, so `supported:false` (no preset
   // service on this head) is a different state from an empty list, and the bar
   // says so rather than showing "None saved" for a head that cannot store any.
-  const presets: FederatedPreset[] = asItems(presetsQ.data);
+  // A preset is addressed only by its token; some firmwares list unset slots with an
+  // empty one, and a recorder older than SCRUM-303 still passes them on. They cannot
+  // be recalled, and an empty token as a React key collides with the next.
+  const presets: FederatedPreset[] = asItems(presetsQ.data).filter(hasToken);
   const presetsSupported = presetsQ.data?.supported !== false;
   const patrol: FederatedPatrol | undefined = patrolQ.data;
   const patrolRunning = !!patrol?.enabled;
@@ -110,7 +113,7 @@ export default function PtzOverlay({ nodeId, cameraId, canControl }: Readonly<Pt
     queryFn: () => vms.federation.tours.list(nodeId, cameraId),
     retry: false,
   });
-  const tours: FederatedTour[] = asItems(toursQ.data);
+  const tours: FederatedTour[] = asItems(toursQ.data).filter(hasToken);
   const touring = tours.some((t) => isTouring(t));
 
   // ── hold-to-move plumbing ───────────────────────────────────────────────
@@ -416,6 +419,11 @@ interface PanTiltPadProps {
   holdProps: HoldPropsFn;
   startPanTilt: (dir: PadDir) => void;
   onCenterStop: () => void;
+}
+
+/** True for a preset or tour the device can be told to act on: it has a token. */
+function hasToken(item: { token?: string | null }): boolean {
+  return !!item.token?.trim();
 }
 
 // 3×3 direction pad; the center is a stop button.
