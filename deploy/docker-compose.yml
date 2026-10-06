@@ -778,7 +778,10 @@ services:
     depends_on:
       redis: { condition: service_healthy }
       workflow: { condition: service_healthy }
-    command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=info"]
+    # The schedule file goes to /tmp: the image runs as `neubit`, and celery's
+    # default (./celerybeat-schedule) lands in /app, which root owns — beat then
+    # dies on start with `Permission denied: 'celerybeat-schedule'`.
+    command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=info", "--schedule", "/tmp/celerybeat-schedule"]
     # Same server, the other half of the pair: beat's /readyz reds when nothing has
     # been PUBLISHED within VE_WORKFLOW_BEAT_SILENCE_SEC. Two separate probes
     # rather than one because a silent worker and a silent beat need different
