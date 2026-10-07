@@ -42,14 +42,22 @@ export interface EventToastProps {
   /** Stop the corner interrupting — the operator's own preference. */
   onMute?: () => void;
   onDismiss: () => void;
-  /** Dismiss every live alarm toast, not just this one. Passed only to the toast
-   *  at the front of the stack, and only while more than one is up. */
-  onClearAll?: () => void;
-  /** How many alarms that would clear — the QUEUED ones included, which is the
-   *  number the operator cannot see and is trying to get rid of. */
-  clearAllCount?: number;
+  /** Where this alarm sits in the corner card's queue. Present only while the
+   *  card holds more than one: a burst is ONE card paged ‹ 1 of N ›, not a stack
+   *  (SCRUM-312). */
+  pager?: AlarmPager;
   /** Injectable for tests; defaults to the moment the toast was raised. */
   now?: number;
+}
+
+export interface AlarmPager {
+  /** 0-based, newest first. */
+  index: number;
+  total: number;
+  onPrev: () => void;
+  onNext: () => void;
+  /** Close the card and everything queued in it. */
+  onClearAll: () => void;
 }
 
 /** "just now" / "4m ago" / "2h ago". An alarm's age changes what it means. */
@@ -73,8 +81,7 @@ export default function EventToast({
   ackPending = false,
   onMute,
   onDismiss,
-  onClearAll,
-  clearAllCount = 0,
+  pager,
   now,
 }: Readonly<EventToastProps>) {
   // Lazily, once: a Date.now() in the render body is a different answer every
@@ -130,8 +137,6 @@ export default function EventToast({
               <p className="mt-1 line-clamp-2 text-[11.5px] text-muted">{event.description}</p>
             )}
 
-            {/* Wraps as a row, never inside a button: with "Clear all (N)" on the front
-                toast the three no longer fit, and shrinking split "Acknowledge" mid-word. */}
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
@@ -151,19 +156,6 @@ export default function EventToast({
                 </button>
               )}
               <div className="ml-auto flex shrink-0 items-center gap-1">
-                {/* A burst raises one of these per camera and sonner shows three
-                    at a time, so dismissing what is visible just promotes the
-                    queue. One control empties it — on the front toast only, or
-                    every toast in the stack would carry the same button. */}
-                {onClearAll && clearAllCount > 1 && (
-                  <button
-                    type="button"
-                    onClick={onClearAll}
-                    className="whitespace-nowrap rounded-md px-1.5 py-1 text-[11.5px] text-muted transition hover:bg-hover hover:text-foreground"
-                  >
-                    Clear all ({clearAllCount})
-                  </button>
-                )}
                 {onMute && (
                   <button
                     type="button"
@@ -177,6 +169,39 @@ export default function EventToast({
                 )}
               </div>
             </div>
+
+            {pager && pager.total > 1 && (
+              <div className="mt-2 flex items-center gap-1 border-t border-card-border pt-1.5 text-[11px] text-muted">
+                <button
+                  type="button"
+                  onClick={pager.onPrev}
+                  disabled={pager.index === 0}
+                  aria-label="Newer alarm"
+                  className="inline-flex h-5 w-5 items-center justify-center rounded hover:bg-hover hover:text-foreground disabled:opacity-30"
+                >
+                  <Icon icon="heroicons-outline:chevron-left" className="text-xs" />
+                </button>
+                <span className="tabular-nums">
+                  {pager.index + 1} of {pager.total}
+                </span>
+                <button
+                  type="button"
+                  onClick={pager.onNext}
+                  disabled={pager.index >= pager.total - 1}
+                  aria-label="Older alarm"
+                  className="inline-flex h-5 w-5 items-center justify-center rounded hover:bg-hover hover:text-foreground disabled:opacity-30"
+                >
+                  <Icon icon="heroicons-outline:chevron-right" className="text-xs" />
+                </button>
+                <button
+                  type="button"
+                  onClick={pager.onClearAll}
+                  className="ml-auto whitespace-nowrap rounded-md px-1.5 py-0.5 hover:bg-hover hover:text-foreground"
+                >
+                  Clear all ({pager.total})
+                </button>
+              </div>
+            )}
           </div>
 
           <button

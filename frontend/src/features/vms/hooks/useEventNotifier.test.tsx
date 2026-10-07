@@ -56,7 +56,8 @@ vi.mock("../api", () => ({ vms: { events: { ack: (id: string) => ack(id) } } }))
 
 import { toast as toastImport } from "sonner";
 
-import { setEventsMuted, useEventNotifier } from "./useEventNotifier";
+import { clearAlarms } from "../alarmQueue";
+import { resetAlarmCard, setEventsMuted, useEventNotifier } from "./useEventNotifier";
 
 const toast = toastImport as unknown as ReturnType<typeof vi.fn> & {
   custom: ReturnType<typeof vi.fn>;
@@ -98,6 +99,9 @@ beforeEach(() => {
   frames = [];
   pathname = "/streaming";
   setEventsMuted(false);
+  // Module state outlives a test: the queue and whether the card is up.
+  clearAlarms();
+  resetAlarmCard();
 });
 
 describe("off the Events page", () => {
@@ -137,8 +141,18 @@ describe("off the Events page", () => {
     expect(ack).toHaveBeenCalledWith("row-7");
   });
 
-  it("a critical waits for a decision instead of expiring", () => {
-    frames = [frame({ severity: "critical" })];
+  it("raises ONE card for a burst, not a toast per alarm (SCRUM-312)", () => {
+    // A stack of toasts left gaps and could stop every timer in it. The card
+    // pages the burst and keeps its own clock (see AlarmNotification.test).
+    frames = [frame(), frame(), frame({ severity: "critical" })];
+    run();
+    expect(toast.custom).toHaveBeenCalledTimes(1);
+    renderToast();
+    expect(screen.getByText("1 of 3")).toBeInTheDocument();
+  });
+
+  it("leaves the clock to the card — sonner's pauses on hover and can stay paused", () => {
+    frames = [frame()];
     run();
     const opts = toast.custom.mock.calls[0][1] as { duration: number };
     expect(opts.duration).toBe(Infinity);

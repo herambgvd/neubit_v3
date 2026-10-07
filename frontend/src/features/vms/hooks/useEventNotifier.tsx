@@ -21,19 +21,25 @@
 // the one failure mode that makes the whole mechanism worthless.
 import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { isAttentionSeverity } from "../constants";
 import { normalizeVmsEvent } from "../eventLib";
 import { vms } from "../api";
-import LiveEventToast, { clearAllEventToasts } from "../components/LiveEventToast";
-import { registerToast, unregisterToast } from "../liveToasts";
+import AlarmNotification from "../components/AlarmNotification";
+import { clearAlarms, pushAlarm, removeAlarm, type QueuedAlarm } from "../alarmQueue";
 import { useEstateCameras } from "./useEstateCameras";
 import { useVmsEventStream } from "./useVmsEventStream";
 
 /** The monitoring surface: on it, video replaces the toast. */
 export const EVENTS_ROUTE = "/events";
+
+/** The one corner card's sonner id while it is up; null while it is not. A fresh
+ *  id per card, because sonner keeps a dismissed id around for its exit and a new
+ *  burst must not be folded into a card that is on its way out. */
+let cardId: string | null = null;
+let cardSeq = 0;
 
 /** Remembered per browser, because whether the corner is allowed to interrupt is
  *  an operator's preference, not a session's. */
@@ -54,6 +60,73 @@ export function setEventsMuted(muted: boolean): void {
   } catch {
     /* storage blocked — the preference simply does not persist */
   }
+}
+
+/** Put the corner card up. It reads the queue itself; this only wires what its
+ *  buttons do. */
+function raiseAlarmCard(router: { push: (href: string) => void }, qc: QueryClient): void {
+  const id = `vms-alarms:${++cardSeq}`;
+  cardId = id;
+  const close = () => {
+    if (cardId === id) cardId = null;
+    toast.dismiss(id);
+  };
+  const ack = (alarm: QueuedAlarm) => {
+    // Optimistic on purpose: the card lets go before the round trip, and a
+    // failure says so in its own toast.
+    removeAlarm(alarm.key);
+    if (!alarm.ackId) return;
+    vms.events
+      .ack(alarm.ackId)
+      .then(() => qc.invalidateQueries({ queryKey: ["vms-events"] }))
+      .catch(() => toast.error(`Could not acknowledge ${alarm.cameraName}`));
+  };
+  const mute = () => {
+    setEventsMuted(true);
+    // Mute means stop interrupting me — the whole card goes.
+    clearAlarms();
+    toast("Event alerts muted", {
+      description: "The Events page keeps its own live feed.",
+      action: { label: "Undo", onClick: () => setEventsMuted(false) },
+    });
+  };
+
+  toast.custom(
+    () => (
+      <AlarmNotification
+        onView={(alarm) => {
+          // Off to the monitoring surface, where every one of these is listed.
+          clearAlarms();
+          router.push(`${EVENTS_ROUTE}?event=${encodeURIComponent(alarm.key)}`);
+        }}
+        onAck={ack}
+        onDismiss={(alarm) => removeAlarm(alarm.key)}
+        onMute={mute}
+        onEmpty={close}
+      />
+    ),
+    {
+      id,
+      // The card keeps its own clock (AlarmNotification): sonner's pauses on
+      // hover and could stay paused after a dismissal under the cursor.
+      duration: Infinity,
+      // Swiped away while it was the live card: the queue goes with it, or the
+      // next alarm would open a card that already holds the old ones. A card
+      // that already emptied itself may only be dismissed much later (sonner
+      // waits for an animation frame, which a background tab does not run) —
+      // by then the queue belongs to its successor and must be left alone.
+      onDismiss: () => {
+        if (cardId !== id) return;
+        cardId = null;
+        clearAlarms();
+      },
+    },
+  );
+}
+
+/** Test-only: forget the card, as a page load would. */
+export function resetAlarmCard(): void {
+  cardId = null;
 }
 
 export interface UseEventNotifierOptions {
@@ -98,67 +171,17 @@ export function useEventNotifier({ enabled = true }: UseEventNotifierOptions = {
         : undefined;
       const where = cam?.name || e.camera_name || e.title || "an unnamed camera";
       const recorder = (cam as { node_name?: string } | undefined)?.node_name ?? null;
-      const ackId = e.id;
-
-      // A CUSTOM toast, not a title + description: an alarm has a severity, an
-      // age, a state and two actions, and none of that survives one line of text.
-      // The sonner id is minted here rather than left to sonner, because the
-      // registry has to know about this toast BEFORE it renders — a toast that
-      // registers itself on mount makes the first one of a burst briefly think it
-      // is alone.
-      const toastId = `vms-event:${key}`;
-      registerToast(toastId);
-
-      toast.custom(
-        (id) => (
-          <LiveEventToast
-            toastId={toastId}
-            event={e}
-            cameraName={where}
-            recorderName={recorder}
-            onView={() => {
-              toast.dismiss(id);
-              router.push(`${EVENTS_ROUTE}?event=${encodeURIComponent(key)}`);
-            }}
-            onAck={
-              ackId
-                ? () => {
-                    // Optimistic on purpose: the toast is gone before the round
-                    // trip either way, and a failure says so in its own toast.
-                    toast.dismiss(id);
-                    vms.events
-                      .ack(ackId)
-                      .then(() => qc.invalidateQueries({ queryKey: ["vms-events"] }))
-                      .catch(() => toast.error(`Could not acknowledge ${where}`));
-                  }
-                : undefined
-            }
-            onMute={() => {
-              setEventsMuted(true);
-              // Mute means stop interrupting me — leaving the rest of the burst
-              // on screen would be the console ignoring what was just asked.
-              clearAllEventToasts();
-              toast.dismiss(id);
-              toast("Event alerts muted", {
-                description: "The Events page keeps its own live feed.",
-                action: { label: "Undo", onClick: () => setEventsMuted(false) },
-              });
-            }}
-            onDismiss={() => toast.dismiss(id)}
-          />
-        ),
-        {
-          id: toastId,
-          // Long enough to read six fields and decide; a critical waits for a
-          // decision rather than expiring on its own.
-          duration: e.severity === "critical" ? Infinity : 10_000,
-          // Both, or the count drifts: a toast the operator clicked away and one
-          // that timed out are equally gone, and "Clear all (3)" with one on
-          // screen is worse than no button at all.
-          onDismiss: () => unregisterToast(toastId),
-          onAutoClose: () => unregisterToast(toastId),
-        },
-      );
+      // ONE card for the whole burst, not a toast per alarm (SCRUM-312): the
+      // alarm joins the queue, and the card is raised only if it is not up.
+      pushAlarm({
+        key,
+        event: e,
+        cameraName: where,
+        recorderName: recorder,
+        ackId: e.id || undefined,
+        raisedAt: Date.now(),
+      });
+      if (!cardId) raiseAlarmCard(router, qc);
     }
   }, [events, onEventsPage, router, qc, cameras]);
 }
