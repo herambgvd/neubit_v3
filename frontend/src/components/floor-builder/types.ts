@@ -61,6 +61,9 @@ export interface EditorPlacement
   name?: string;
   label?: string;
   is_draft?: boolean;
+  /** Set when the operator confirmed moving this device here from another floor
+   *  or site; the save sends `move: true` (SCRUM-309). */
+  move?: boolean;
 }
 
 /** An entry in the palette — one device the operator can drag onto the plan. */
@@ -86,4 +89,7 @@ export interface DevicePayload {
   service: ServiceType;
   name?: string;
   metadata?: Record<string, unknown> | null;
+  /** Where the device is placed now, when that is another floor or site. A drop
+   *  then asks before moving it (SCRUM-309). */
+  elsewhere?: string | null;
 }

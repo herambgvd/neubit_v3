@@ -380,6 +380,10 @@ export interface RegisterDeviceRequest {
   zone_id?: string | null;
   floor_position?: FloorPosition | null;
   metadata?: Record<string, unknown> | null;
+  /** The operator confirmed taking the device off where it is now. Without it,
+   *  registering a device that is on another floor or site answers 409
+   *  `PLACEMENT_ELSEWHERE` (SCRUM-309) — a device has one location. */
+  move?: boolean;
 }
 
 export interface UpdateDeviceRequest {
@@ -442,7 +446,10 @@ export interface DevicePlacementIndexRow {
   device_id: string;
   device_type: string;
   site_id: string;
-  floor_id: string;
+  /** Null for a device assigned to a site and on no floor. */
+  floor_id: string | null;
+  site_name?: string | null;
+  floor_name?: string | null;
 }
 
 export interface DevicePlacementIndexResponse {

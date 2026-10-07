@@ -21,13 +21,14 @@
 // inherits its placement. Nothing is written twice and nothing is inferred here.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { randomId } from "@/lib/random";
 
-import { Button } from "@/components/ui/kit";
+import { Button, ConfirmDialog, type ConfirmState } from "@/components/ui/kit";
 import { CanvasToolControls } from "@/components/floor-builder/CanvasToolControls";
 import { EDITOR_MODES, TOOL_TYPES } from "@/components/floor-builder/constants";
-import { DeviceManagementSidebar } from "@/components/floor-builder/DeviceManagementSidebar";
+import { DeviceManagementSidebar, PLACEMENT_INDEX_KEY } from "@/components/floor-builder/DeviceManagementSidebar";
 import { drawCameraPlacement } from "@/components/floor-builder/cameraRenderer";
 import { FloorPlanCanvas, type FloorPlanCanvasHandle } from "@/components/floor-builder/FloorPlanCanvas";
 import { FloorPlanToolbar } from "@/components/floor-builder/FloorPlanToolbar";
@@ -155,6 +156,9 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }: Reado
   const [_saving, setSaving] = useState(false);
   const savedPlacementsRef = useRef<EditorPlacement[]>([]);
   const [deletedDeviceIds, setDeletedDeviceIds] = useState(() => new Set<string>());
+  // The "move it here?" question for a device placed on another floor or site.
+  const [moveConfirm, setMoveConfirm] = useState<ConfirmState | null>(null);
+  const queryClient = useQueryClient();
 
   // ── Sync `floor` when parent passes a different one (render-phase reset) ──
   const lastFloorIdRef = useRef(initialFloor?.floor_id);
@@ -387,6 +391,9 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }: Reado
             zone_id,
             floor_position,
             metadata,
+            // Only a drop the operator confirmed as a move may take a device off
+            // another floor or site; anything else gets 409 PLACEMENT_ELSEWHERE.
+            ...(placement.move ? { move: true } : {}),
           });
         } else if (needsUpdate) {
           await sites.devicePlacements.update(placement.device_id, {
@@ -407,6 +414,9 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }: Reado
       setPlacements(syncedPlacements);
       savedPlacementsRef.current = syncedPlacements;
       setDeletedDeviceIds(new Set<string>());
+      // Where devices are has changed — the "placed elsewhere" list, the map
+      // and the camera-site lookups all read the index.
+      void queryClient.invalidateQueries({ queryKey: PLACEMENT_INDEX_KEY });
       setZones(updated);
       setUnsaved(false);
       setLastSavedAt(new Date().toISOString());
@@ -417,7 +427,7 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }: Reado
     } finally {
       setSaving(false);
     }
-  }, [floor, zones, placements, deletedDeviceIds, onSaved]);
+  }, [floor, zones, placements, deletedDeviceIds, onSaved, queryClient]);
 
   // ── Mode/tool sync (render-phase) ──────────────────────────────────
   // This is React's documented "adjusting state when a prop changes" pattern:
@@ -445,32 +455,57 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }: Reado
         return;
       }
       const zone_id = getZoneIdForPoint(point, zones);
-      setPlacements((p): EditorPlacement[] => [
-        ...p,
-        {
-          device_id: deviceId,
-          device_type: payload.device_type || "other",
-          service: payload.service || "access_control",
-          site_id: floor.site_id,
-          floor_id: floor.floor_id,
-          zone_id,
-          floor_position: { x: point.x, y: point.y, rotation: 0 },
-          x: point.x,
-          y: point.y,
-          rotation: 0,
-          metadata: payload.metadata ?? null,
-          name: payload.name || deviceId,
-          is_draft: true,
-        },
-      ]);
-      setDeletedDeviceIds((prev) => {
-        const next = new Set<string>(prev);
-        next.delete(deviceId);
-        return next;
-      });
-      setSelectedDeviceId(deviceId);
-      setUnsaved(true);
-      toast.success(`Placed ${payload.name || deviceId} on the floor`);
+      const place = (move: boolean) => {
+        setPlacements((p): EditorPlacement[] => [
+          ...p,
+          {
+            device_id: deviceId,
+            device_type: payload.device_type || "other",
+            service: payload.service || "access_control",
+            site_id: floor.site_id,
+            floor_id: floor.floor_id,
+            zone_id,
+            floor_position: { x: point.x, y: point.y, rotation: 0 },
+            x: point.x,
+            y: point.y,
+            rotation: 0,
+            metadata: payload.metadata ?? null,
+            name: payload.name || deviceId,
+            is_draft: true,
+            move,
+          },
+        ]);
+        setDeletedDeviceIds((prev) => {
+          const next = new Set<string>(prev);
+          next.delete(deviceId);
+          return next;
+        });
+        setSelectedDeviceId(deviceId);
+        setUnsaved(true);
+        toast.success(
+          move
+            ? `${payload.name || deviceId} will move here when you save`
+            : `Placed ${payload.name || deviceId} on the floor`,
+        );
+      };
+
+      // A device has one location (SCRUM-309). One already placed on another
+      // floor or site is moved only on the operator's word, never by a drop alone.
+      if (payload.elsewhere) {
+        setMoveConfirm({
+          title: "Move device?",
+          message: `${payload.name || deviceId} is placed at ${payload.elsewhere}. A device has one location: moving it here removes it from there when you save.`,
+          confirmLabel: "Move here",
+          danger: false,
+          icon: "heroicons-outline:arrows-right-left",
+          onConfirm: () => {
+            place(true);
+            setMoveConfirm(null);
+          },
+        });
+        return;
+      }
+      place(false);
     },
     [floor, zones],
   );
@@ -654,6 +689,8 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }: Reado
 
         {editorMode === EDITOR_MODES.DEVICE_PLACE ? (
           <DeviceManagementSidebar
+            siteId={floor?.site_id ?? ""}
+            floorId={floor?.floor_id ?? ""}
             placements={displayPlacements}
             selectedDeviceId={selectedDeviceId}
             onSelectDevice={(p) => setSelectedDeviceId(p.device_id)}
@@ -677,6 +714,8 @@ export function FloorPlanEditor({ floor: initialFloor, onClose, onSaved }: Reado
           />
         )}
       </div>
+
+      <ConfirmDialog state={moveConfirm} onClose={() => setMoveConfirm(null)} />
 
       <FloorUploadModal
         open={uploadOpen}

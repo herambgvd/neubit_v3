@@ -6,16 +6,44 @@
 //   • Available — the placeable-device inventory (drag onto the canvas to place).
 //   • On floor  — devices already placed (click to select, trash to remove).
 //
+// ONE LOCATION PER DEVICE (SCRUM-309). A camera hangs in one place, so a device
+// already placed on another floor or site is NOT available here: it is listed
+// under "Placed elsewhere" with where it is, and dropping one asks before moving
+// it (the editor's confirm, then `register` with `move: true`). Industry does the
+// same — Milestone's smart map keeps one position per device.
+//
 // INVENTORY SOURCE: see useDeviceInventory — vms (cameras/NVRs), access-control
 // (controllers/doors) and iot (the reading store's reporting devices). The editor
 // shares that hook so canvas labels resolve the same names this list shows. The
 // type filter keeps `panel` (fire) for when it lands.
 import { useMemo, useState } from "react";
 import { Icon } from "@iconify/react";
+import { useQuery } from "@tanstack/react-query";
 
 import { ConfirmDialog, Input, type ConfirmState } from "@/components/ui/kit";
 import { useDeviceInventory } from "@/components/floor-builder/useDeviceInventory";
 import type { EditorPlacement, PlaceableDevice } from "@/components/floor-builder/types";
+import { sites as sitesApi } from "@/lib/api/sites";
+import type { DevicePlacementIndexRow } from "@/lib/types";
+
+/** The estate-wide placement index's query key — shared with the map and the
+ *  camera-site hooks, and invalidated by the editor after a save. */
+export const PLACEMENT_INDEX_KEY = ["device-placements-index"] as const;
+
+/** "Tower A › Level 4", or the site alone for a device on no floor. */
+export function placementWhere(row: DevicePlacementIndexRow): string {
+  const site = row.site_name || row.site_id;
+  const floor = row.floor_id ? row.floor_name || row.floor_id : null;
+  return floor ? `${site} › ${floor}` : site;
+}
+
+/** Is this placement somewhere a drop on (siteId, floorId) would take it AWAY
+ *  from? Mirrors the backend's `_is_move`: another site, or another floor of this
+ *  one. A site-only device of THIS site is not — placing it refines the fact. */
+export function isElsewhere(row: DevicePlacementIndexRow, siteId: string, floorId: string): boolean {
+  if (row.site_id !== siteId) return true;
+  return row.floor_id != null && row.floor_id !== floorId;
+}
 
 // Device-type → icon (heroicons via iconify).
 //
@@ -78,12 +106,14 @@ const EMPTY_DRAG_IMAGE =
 
 interface PaletteRowProps {
   device: PlaceableDevice;
+  /** Where it is placed now, for a device on another floor or site. */
+  elsewhere?: string | null;
   isDragging: boolean;
   onDragStart?: (device: PlaceableDevice) => void;
   onDragEnd?: () => void;
 }
 
-function PaletteRow({ device, isDragging, onDragStart, onDragEnd }: Readonly<PaletteRowProps>) {
+function PaletteRow({ device, elsewhere = null, isDragging, onDragStart, onDragEnd }: Readonly<PaletteRowProps>) {
   return (
     <div
       draggable
@@ -100,6 +130,7 @@ function PaletteRow({ device, isDragging, onDragStart, onDragEnd }: Readonly<Pal
             // this inventory. Never a floor and never a name — just what the
             // device is.
             metadata: device.metadata ?? null,
+            elsewhere,
           }),
         );
         e.dataTransfer.effectAllowed = "copy";
@@ -115,7 +146,16 @@ function PaletteRow({ device, isDragging, onDragStart, onDragEnd }: Readonly<Pal
         icon={iconForType(device.device_type, device)}
         className="shrink-0 text-sm text-muted"
       />
-      <span className="flex-1 truncate text-foreground">{device.name}</span>
+      {elsewhere ? (
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-foreground">{device.name}</span>
+          <span className="block truncate text-[10px] text-amber-500" title={`Placed at ${elsewhere}`}>
+            {elsewhere}
+          </span>
+        </span>
+      ) : (
+        <span className="flex-1 truncate text-foreground">{device.name}</span>
+      )}
       {device.device_type === "sensor" && device.points ? (
         // How much of the estate this one pin speaks for. A placement is a fact
         // about a box and its points follow it, so the count is the consequence
@@ -169,6 +209,9 @@ function PlacedRow({ placement, inventory, isSelected, onSelect, onDelete }: Rea
 }
 
 export interface DeviceManagementSidebarProps {
+  /** The open floor and its site — what "placed elsewhere" is measured against. */
+  siteId: string;
+  floorId: string;
   placements?: EditorPlacement[];
   selectedDeviceId?: string | null;
   onSelectDevice?: (placement: EditorPlacement) => void;
@@ -179,6 +222,8 @@ export interface DeviceManagementSidebarProps {
 }
 
 export function DeviceManagementSidebar({
+  siteId,
+  floorId,
   placements = [],
   selectedDeviceId,
   onSelectDevice,
@@ -195,21 +240,41 @@ export function DeviceManagementSidebar({
   // ── Inventory sources (vms + access-control + iot) ───────────────────
   const { inventory, inventoryById, loading } = useDeviceInventory();
 
+  // Where every device in the tenant is placed, so one placed on another floor
+  // or site is not offered as Available here.
+  const indexQ = useQuery({
+    queryKey: PLACEMENT_INDEX_KEY,
+    queryFn: () => sitesApi.devicePlacements.index(),
+    staleTime: 30_000,
+    retry: false,
+  });
+  const elsewhereById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const row of indexQ.data?.items ?? []) {
+      if (isElsewhere(row, siteId, floorId)) m.set(row.device_id, placementWhere(row));
+    }
+    return m;
+  }, [indexQ.data, siteId, floorId]);
+
   const placedIds = useMemo(() => {
     const set = new Set<string>();
     for (const p of placements) if (p.device_id) set.add(p.device_id);
     return set;
   }, [placements]);
 
-  const available = useMemo(() => {
+  const matches = useMemo(() => {
     const q = search.trim().toLowerCase();
     return inventory.filter((d) => {
+      // On this floor in the editor (saved or just dropped) wins over the index,
+      // which still says where it was before this session's save.
       if (placedIds.has(d.device_id)) return false;
       if (deviceTypeFilter !== "all" && d.device_type !== deviceTypeFilter) return false;
       if (!q) return true;
       return d.name?.toLowerCase().includes(q) || d.search_ip?.toLowerCase().includes(q);
     });
   }, [inventory, placedIds, search, deviceTypeFilter]);
+  const available = matches.filter((d) => !elsewhereById.has(d.device_id));
+  const elsewhere = matches.filter((d) => elsewhereById.has(d.device_id));
 
   const placedFiltered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -294,35 +359,60 @@ export function DeviceManagementSidebar({
 
       {/* Body */}
       <div className="flex-1 space-y-2 overflow-y-auto px-3 pb-3">
-        {tab === "available" ? (
-          loading ? (
-            <div className="px-2 py-6 text-center text-xs text-muted">Loading…</div>
-          ) : available.length === 0 ? (
-            <div className="rounded-md border border-dashed border-card-border bg-hover/40 px-3 py-4 text-center text-xs text-muted">
-              No matching devices available.
-            </div>
-          ) : (
-            <>
-              <div className="px-1 pb-1 text-[10px] uppercase tracking-wider text-muted">
-                Drag onto canvas to place
+        {tab === "available" && loading && (
+          <div className="px-2 py-6 text-center text-xs text-muted">Loading…</div>
+        )}
+        {tab === "available" && !loading && (
+          <>
+            {available.length === 0 ? (
+              <div className="rounded-md border border-dashed border-card-border bg-hover/40 px-3 py-4 text-center text-xs text-muted">
+                No unplaced devices match.
               </div>
-              {available.map((d) => (
-                <PaletteRow
-                  key={d.device_id}
-                  device={d}
-                  isDragging={draggingDeviceId === d.device_id}
-                  onDragStart={onPaletteDragStart}
-                  onDragEnd={onPaletteDragEnd}
-                />
-              ))}
-            </>
-          )
-        ) : placements.length === 0 ? (
+            ) : (
+              <>
+                <div className="px-1 pb-1 text-[10px] uppercase tracking-wider text-muted">
+                  Drag onto canvas to place
+                </div>
+                {available.map((d) => (
+                  <PaletteRow
+                    key={d.device_id}
+                    device={d}
+                    isDragging={draggingDeviceId === d.device_id}
+                    onDragStart={onPaletteDragStart}
+                    onDragEnd={onPaletteDragEnd}
+                  />
+                ))}
+              </>
+            )}
+            {elsewhere.length > 0 && (
+              <>
+                <div
+                  className="px-1 pb-1 pt-3 text-[10px] uppercase tracking-wider text-muted"
+                  title="A device has one location. Dropping one of these here asks before moving it."
+                >
+                  Placed elsewhere ({elsewhere.length}) · drop to move
+                </div>
+                {elsewhere.map((d) => (
+                  <PaletteRow
+                    key={d.device_id}
+                    device={d}
+                    elsewhere={elsewhereById.get(d.device_id)}
+                    isDragging={draggingDeviceId === d.device_id}
+                    onDragStart={onPaletteDragStart}
+                    onDragEnd={onPaletteDragEnd}
+                  />
+                ))}
+              </>
+            )}
+          </>
+        )}
+        {tab === "placed" && placements.length === 0 && (
           <div className="rounded-md border border-dashed border-card-border bg-hover/40 px-3 py-4 text-center text-xs text-muted">
             No devices placed yet — switch to <strong>Available</strong> and drag a device
             onto the canvas.
           </div>
-        ) : (
+        )}
+        {tab === "placed" &&
           placedFiltered.map((p) => (
             <PlacedRow
               key={p.device_id}
@@ -342,8 +432,7 @@ export function DeviceManagementSidebar({
                 })
               }
             />
-          ))
-        )}
+          ))}
       </div>
 
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />

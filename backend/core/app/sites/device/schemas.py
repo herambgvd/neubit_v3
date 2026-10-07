@@ -70,6 +70,11 @@ class RegisterDeviceRequest(BaseModel):
     zone_id: Optional[str] = None
     floor_position: Optional[FloorPosition] = None
     metadata: Optional[dict[str, Any]] = None
+    # The operator has seen where the device is now and chose to move it here. A
+    # device has ONE location, so registering it on another floor or site takes it
+    # off the old one; without this flag that is refused with 409
+    # PLACEMENT_ELSEWHERE naming where it is, rather than done silently (SCRUM-309).
+    move: bool = False
 
     @model_validator(mode="after")
     def _pin(self) -> "RegisterDeviceRequest":

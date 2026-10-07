@@ -3,7 +3,8 @@
 ``register`` checks that the referenced floor is visible to the caller (same
 tenant, active) and that ``site_id`` matches the floor's site; a supplied
 ``zone_id`` must belong to that site and floor. Registering an already placed
-``device_id`` within the tenant updates it in place.
+``device_id`` within the tenant updates it in place — on the same floor. Taking it
+to another floor or site is a MOVE and needs ``move: true`` (SCRUM-309).
 
 TWO SURFACES, ONE WRITER
 ------------------------
@@ -58,6 +59,34 @@ def _utcnow() -> datetime:
 SOURCE_FLOOR_PLAN = "floor_plan"
 SOURCE_DEVICE_ASSIGNMENT = "device_assignment"
 SOURCE_BULK_ASSIGNMENT = "bulk_assignment"
+
+#: The 409 code `register` answers with when the device is already on another
+#: floor or site and the caller did not confirm the move. Clients switch on it to
+#: ask the operator instead of showing an error.
+PLACEMENT_ELSEWHERE = "PLACEMENT_ELSEWHERE"
+
+
+def _is_move(existing: DevicePlacement, body: RegisterDeviceRequest) -> bool:
+    """Would this registration take the device OFF where it is now?
+
+    A device has one physical location (Milestone's smart map keeps one position
+    per device; even its multi-level cameras stay inside one building). So:
+      * another site — a move;
+      * another floor of the same site — a move;
+      * same floor — a re-pin, not a move;
+      * no floor yet, same site — the floor plan REFINING a site-only assignment
+        made on the device-first surface. Nothing is taken off anywhere.
+    """
+    if existing.site_id != body.site_id:
+        return True
+    return existing.floor_id is not None and existing.floor_id != body.floor_id
+
+
+def _where(loc: dict) -> str:
+    """`Tower A › Level 4` for a message; an id stands in for a missing name."""
+    site = loc.get("site_name") or loc.get("site_id")
+    floor = loc.get("floor_name") or loc.get("floor_id")
+    return f"{site} › {floor}" if floor else str(site)
 
 
 class DevicePlacementService:
@@ -147,6 +176,24 @@ class DevicePlacementService:
             )
         ).scalars().first()
 
+        moved_from: dict | None = None
+        if existing is not None and _is_move(existing, body):
+            elsewhere = {
+                "device_id": existing.device_id,
+                "site_id": existing.site_id,
+                "floor_id": existing.floor_id,
+                **await self._location_names(existing.site_id, existing.floor_id, None),
+            }
+            elsewhere.pop("zone_name", None)
+            if not body.move:
+                raise ConflictError(
+                    f"This device is already placed at {_where(elsewhere)}. A device "
+                    "has one location: confirm the move to take it off there.",
+                    code=PLACEMENT_ELSEWHERE,
+                    details=elsewhere,
+                )
+            moved_from = elsewhere
+
         # A position may be absent with or without a floor; it may never be
         # present WITHOUT one — `ck_device_placements_pin_is_whole`, and the
         # schema's `_pin_is_whole` before it.
@@ -182,10 +229,12 @@ class DevicePlacementService:
 
         await self.db.commit()
         await self.db.refresh(row)
-        await self._emit(
-            actor, event, row, {"floor_position": row.floor_position},
-            source=SOURCE_FLOOR_PLAN,
-        )
+        changed: dict = {"floor_position": row.floor_position}
+        if moved_from is not None:
+            # The audit row of a confirmed move says where the device came FROM:
+            # "who took the lobby camera off Tower A" is the question it answers.
+            changed["moved_from"] = moved_from
+        await self._emit(actor, event, row, changed, source=SOURCE_FLOOR_PLAN)
         return DevicePlacementPublic.from_row(row)
 
     # ── the device-first surface ─────────────────────────────────────────────
@@ -476,20 +525,34 @@ class DevicePlacementService:
         campus with forty floors is forty round trips, and the caller does not
         know the floors until it has fetched them.
 
-        Deliberately four columns, not the full placement: the map joins on the
-        device id and counts by type, and the floor-plan coordinates that make up
-        most of a placement row mean nothing on a geographic map.
+        Deliberately not the full placement: the map joins on the device id and
+        counts by type, and the floor-plan coordinates that make up most of a
+        placement row mean nothing on a geographic map.
+
+        The site and floor NAMES ride along (SCRUM-309): the floor-plan editor
+        lists a device placed elsewhere as "Tower A › Level 4" so the operator
+        sees where it is before moving it, and without them that is one floors
+        request per site — which the editor cannot even enumerate, the floor
+        list being paged.
         """
-        stmt = scoped(
-            select(
-                DevicePlacement.device_id,
-                DevicePlacement.device_type,
-                DevicePlacement.site_id,
-                DevicePlacement.floor_id,
-            ),
-            DevicePlacement,
-            self.scope,
-        ).order_by(DevicePlacement.created_at.desc()).limit(limit)
+        stmt = (
+            scoped(
+                select(
+                    DevicePlacement.device_id,
+                    DevicePlacement.device_type,
+                    DevicePlacement.site_id,
+                    DevicePlacement.floor_id,
+                    Site.name.label("site_name"),
+                    Floor.name.label("floor_name"),
+                ),
+                DevicePlacement,
+                self.scope,
+            )
+            .outerjoin(Site, Site.site_id == DevicePlacement.site_id)
+            .outerjoin(Floor, Floor.floor_id == DevicePlacement.floor_id)
+            .order_by(DevicePlacement.created_at.desc())
+            .limit(limit)
+        )
         rows = (await self.db.execute(stmt)).all()
         return [
             {
@@ -497,6 +560,8 @@ class DevicePlacementService:
                 "device_type": r.device_type,
                 "site_id": r.site_id,
                 "floor_id": r.floor_id,
+                "site_name": r.site_name,
+                "floor_name": r.floor_name,
             }
             for r in rows
         ]
