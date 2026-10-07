@@ -48,6 +48,12 @@ AGENT_ROWS = [
         "created_at": "2026-01-01T00:00:00Z", "service": "db-init",
         "cpu_pct": None, "mem_used_mb": None, "mem_limit_mb": None,
     },
+    {
+        "name": "neubit-v3-corefiles-init-1", "id": "mno111", "image": "x",
+        "state": "exited", "status": "exited", "health": None,
+        "created_at": "2026-01-01T00:00:00Z", "service": "corefiles-init",
+        "cpu_pct": None, "mem_used_mb": None, "mem_limit_mb": None,
+    },
 ]
 
 
@@ -85,6 +91,7 @@ async def test_the_estate_is_listed_for_system_read(app, db, agent):
     names = [row["name"] for row in rows]
     # db-init is a one-shot migration, not a service anyone watches.
     assert "db-init" not in names
+    assert "corefiles-init" not in names
     # Trouble first: the exited service is at the top.
     assert names[0] == "vision"
     core = next(row for row in rows if row["name"] == "core")

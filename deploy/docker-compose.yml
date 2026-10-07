@@ -34,7 +34,8 @@ x-logging: &logging
 # is already tight, instead of guessing the way a copied number forces you to.
 # The tiers:
 #
-#   256m   one job, no buffers — traefik, celery beat, the one-shot db-init
+#   256m   one job, no buffers — traefik, celery beat, the one-shots db-init
+#          and corefiles-init
 #   512m   a FastAPI satellite: 60-120 MB idle, room for a request burst
 #   1g     anything that BUFFERS — a batching writer, a celery prefork pool,
 #          segment checksums over the recordings volume, a Node runner
@@ -51,7 +52,8 @@ x-logging: &logging
 # These are CEILINGS, not reservations — nothing is set aside and the sum is not
 # a requirement. Measured steady state for the whole estate is ~1.5 GB; the
 # limits add up to ~15 GB only because every service would have to peak at once,
-# and two of them (db-init, reporting-migrate) exit seconds after `up`.
+# and three of them (db-init, corefiles-init, reporting-migrate) exit seconds
+# after `up`.
 #
 # CPU is deliberately NOT capped. A cpu quota on an appliance converts a burst
 # into latency rather than preventing anything: the contended resources on this
@@ -277,6 +279,38 @@ services:
     networks: [neubit]
     restart: "no"
 
+  # Hands core's upload volume to the uid core runs as, on every `up`.
+  #
+  # Core runs as uid 10001 (backend/core/Dockerfile). A NEW `corefiles` volume is
+  # seeded from the image's /app/data, which is already 10001's, so a fresh install
+  # never notices. A volume that predates that change does: everything core wrote
+  # while it ran as root is still root's, so the first floor-plan or site-image
+  # upload into an existing tenant directory dies on mkdir with EACCES and the
+  # operator sees "An unexpected error occurred". Found on a live estate, 2026-10-07.
+  #
+  # The fix is the init-container pattern rather than starting core as root and
+  # dropping privileges: core never holds uid 0, even for a moment. Only entries
+  # that are not already 10001's are touched, so on a healthy volume this is one
+  # directory walk and no writes. A chown that fails exits non-zero, and core —
+  # gated on service_completed_successfully — stays down saying why, instead of
+  # 500ing on the first upload.
+  #
+  # The timescale image because it is already in the appliance payload
+  # (build-appliance.ps1): an air-gapped box cannot pull a new one.
+  corefiles-init:
+    logging: *logging
+    mem_limit: 256m
+    image: timescale/timescaledb:2.17.2-pg16
+    user: "0:0"
+    entrypoint:
+      - sh
+      - -c
+      - find /app/data \( ! -user 10001 -o ! -group 10001 \) -exec chown -h 10001:10001 {} +
+    volumes:
+      - corefiles:/app/data
+    network_mode: none
+    restart: "no"
+
   redis:
     # Log rotation + a memory ceiling — see the x-logging anchor and the memory
     # tiers at the top of this file for why every service carries both.
@@ -473,6 +507,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       db-init: { condition: service_completed_successfully }
+      corefiles-init: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
       nats: { condition: service_started }
     # 8000 published for DEVELOPMENT ONLY, from docker-compose.override.yml.

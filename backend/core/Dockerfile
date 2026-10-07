@@ -34,7 +34,9 @@ RUN uv pip install --system --no-cache -e ".[messaging,tasks,reports,system,stor
 # The account is created in the OS-setup layer at the top rather than here, so this
 # file has one RUN per concern instead of a second one that only adds a user. 10001
 # is fixed rather than left to useradd: the named volume mounted here is chowned
-# to that uid once, outside the image, and the two have to keep matching.
+# to that uid by the `corefiles-init` one-shot in deploy/docker-compose.yml on
+# every `up` (a volume older than this USER line is root's), and the two have to
+# keep matching.
 USER neubit
 
 EXPOSE 8000

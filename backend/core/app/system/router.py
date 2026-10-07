@@ -80,7 +80,7 @@ async def stream_resources(websocket: WebSocket) -> None:
 #: A container outside this list (a one-shot migration, a build helper) is not a
 #: service an operator watches; the ops-agent's own project whitelist still
 #: decides what exists at all.
-_HIDDEN_SERVICES = {"db-init", "reporting-migrate"}
+_HIDDEN_SERVICES = {"db-init", "corefiles-init", "reporting-migrate"}
 
 
 def _service_row(container: dict) -> dict:
