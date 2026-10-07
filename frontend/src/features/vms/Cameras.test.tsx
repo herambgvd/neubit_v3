@@ -15,8 +15,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderWithProviders } from "@/test/render";
 
+import { sites as sitesApi } from "@/lib/api/sites";
+
 import CamerasPage from "./Cameras";
 import { vms } from "./api";
+
+/** The address bar the page reads its drill-down filters from. */
+const nav = { params: new URLSearchParams() };
+vi.mock("next/navigation", () => ({ useSearchParams: () => nav.params }));
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 
@@ -42,6 +48,7 @@ const camsReturn = (items: ReturnType<typeof camera>[]) =>
   vi.spyOn(vms.federation, "cameras").mockResolvedValue({ items, unreachable: [] } as never);
 
 beforeEach(() => {
+  nav.params = new URLSearchParams();
   vi.spyOn(vms.federation, "nodes").mockResolvedValue({ items: [], total: 0 } as never);
 });
 
@@ -111,7 +118,8 @@ describe("what the detail pane is given", () => {
     await screen.findByRole("heading", { name: "Lobby" });
 
     await userEvent.click(screen.getByRole("button", { name: /all statuses/i }));
-    await userEvent.click(await screen.findByRole("option", { name: /online/i }));
+    // Exact: "Not online" is an option too, since the estate map links to it.
+    await userEvent.click(await screen.findByRole("option", { name: /^online$/i }));
 
     expect(await screen.findByRole("heading", { name: "Dock" })).toBeInTheDocument();
   });
@@ -127,5 +135,56 @@ describe("what the detail pane is given", () => {
 
     expect(await screen.findByText("1 online")).toBeInTheDocument();
     expect(screen.getByText("2 offline")).toBeInTheDocument();
+  });
+});
+
+describe("opened from the estate map (SCRUM-311)", () => {
+  const placedAt = () =>
+    vi.spyOn(sitesApi.devicePlacements, "index").mockResolvedValue({
+      items: [
+        // Placed under the wall's composite id, as the floor plan does.
+        { device_id: "fed:n1:c1", device_type: "camera", site_id: "s1", floor_id: "f1", site_name: "Gvd gurugram" },
+        { device_id: "fed:n1:c3", device_type: "camera", site_id: "s1", floor_id: "f1", site_name: "Gvd gurugram" },
+        { device_id: "fed:n2:c2", device_type: "camera", site_id: "s2", floor_id: "f2", site_name: "Gvd Delhi" },
+      ],
+      count: 3,
+    } as never);
+
+  it("lists only the cameras placed at the site, and says which site", async () => {
+    nav.params = new URLSearchParams("site=s1");
+    placedAt();
+    camsReturn([camera("c1", "Lobby", "n1"), camera("c2", "Dock", "n2"), camera("c3", "Gate", "n1", "error")]);
+
+    renderWithProviders(<CamerasPage />);
+
+    expect(await screen.findByText("Site: Gvd gurugram")).toBeInTheDocument();
+    expect(await screen.findByText("Gate")).toBeInTheDocument();
+    expect(screen.queryByText("Dock")).not.toBeInTheDocument();
+  });
+
+  it("narrows to the ones the map counted as offline — anything but online", async () => {
+    nav.params = new URLSearchParams("site=s1&status=not_online");
+    placedAt();
+    camsReturn([camera("c1", "Lobby", "n1"), camera("c2", "Dock", "n2", "offline"), camera("c3", "Gate", "n1", "error")]);
+
+    renderWithProviders(<CamerasPage />);
+
+    expect(await screen.findByRole("heading", { name: "Gate" })).toBeInTheDocument();
+    expect(screen.queryByText("Lobby")).not.toBeInTheDocument();
+    // Offline, but at another site.
+    expect(screen.queryByText("Dock")).not.toBeInTheDocument();
+  });
+
+  it("shows every site again when the site chip is cleared", async () => {
+    nav.params = new URLSearchParams("site=s1");
+    placedAt();
+    camsReturn([camera("c1", "Lobby", "n1"), camera("c2", "Dock", "n2")]);
+
+    renderWithProviders(<CamerasPage />);
+    await screen.findByText("Site: Gvd gurugram");
+
+    await userEvent.click(screen.getByRole("button", { name: /show cameras at every site/i }));
+    expect(await screen.findByText("Dock")).toBeInTheDocument();
+    expect(screen.queryByText(/^Site:/)).not.toBeInTheDocument();
   });
 });

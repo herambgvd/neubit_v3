@@ -23,6 +23,10 @@ import { HeaderSlotOutlet } from "@/components/shell/HeaderSlot";
 import CameraEventsPage, { feedVerdict } from "./CameraEvents";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
+
+/** The address bar the page reads its drill-down filters from. */
+const nav = { params: new URLSearchParams() };
+vi.mock("next/navigation", () => ({ useSearchParams: () => nav.params }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ can: () => true, hasModule: () => true }) }));
 // The SSE bridge is a live connection; this suite is about the rendered feed.
 let liveFrames: unknown[] = [];
@@ -95,6 +99,7 @@ function stubAll(over: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  nav.params = new URLSearchParams();
   liveFrames = [];
   Object.defineProperty(globalThis, "scrollY", { value: 0, writable: true, configurable: true });
   stubAll();
@@ -829,5 +834,34 @@ describe("feedVerdict", () => {
       const v = feedVerdict(live, connected);
       expect(v.dot === "bg-emerald-500").toBe(v.text === "Live feed");
     }
+  });
+});
+
+describe("opened from the estate map's Alarms count (SCRUM-311)", () => {
+  it("shows only the unacknowledged events of the site's cameras", async () => {
+    nav.params = new URLSearchParams("site=s1&ack=false");
+    stubAll({
+      "GET /device-placements/index": {
+        // Pinned under the wall's composite; the events carry the node-side id.
+        items: [{ device_id: "fed:n1:fed-cam-1", device_type: "camera", site_id: "s1", floor_id: "f1", site_name: "Gvd gurugram" }],
+        count: 1,
+      },
+      "GET /vms/events": {
+        items: [
+          event({ severity: "critical" }),
+          event({ severity: "warning" }),
+          event({ severity: "critical", camera_id: "elsewhere-cam" }),
+        ],
+        total: 3,
+      },
+    });
+
+    renderWithProviders(<CameraEventsPage />);
+
+    expect(await screen.findByText(/Site: Gvd gurugram/)).toBeInTheDocument();
+    // Two of the three: the third camera is at no site this filter names.
+    expect(await screen.findByRole("button", { name: /^1 Critical$/ })).toBeInTheDocument();
+    await waitFor(() => expect(stub.matching("GET /vms/events")).not.toHaveLength(0));
+    expect(stub.matching("GET /vms/events")[0].search.get("acknowledged")).toBe("false");
   });
 });

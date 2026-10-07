@@ -4,7 +4,7 @@
 // per site, auto-fits bounds, and shows a SiteCard info-window for the selected
 // site. Only reached when a tenant has explicitly enabled Google Maps and saved a
 // key; the default is the offline basemap in OfflineMapView.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GoogleMap, InfoWindow, Marker, useJsApiLoader } from "@react-google-maps/api";
 import { Icon } from "@iconify/react";
 
@@ -12,6 +12,7 @@ import { THREAT_PIN, type SiteWithCoords } from "../constants";
 import { Loading } from "./MapChrome";
 import { PIN_H, PIN_SCALE, PIN_SCALE_SELECTED, PIN_TIP_Y, PIN_W, pinSvg } from "./pin";
 import type { SiteOps } from "../estateRollup";
+import type { MapFocus } from "./OfflineMapView";
 import SiteCard from "./SiteCard";
 
 const CONTAINER_STYLE = { width: "100%", height: "100%" };
@@ -70,9 +71,21 @@ export interface MapViewProps {
   ops?: Map<string, SiteOps>;
   onSelect: (site: SiteWithCoords) => void;
   onClose: () => void;
+  /** Bring one site into view — see OfflineMapView. */
+  focus?: MapFocus | null;
 }
 
-export default function MapView({ apiKey, center, zoom, sites, selected, ops, onSelect, onClose }: Readonly<MapViewProps>) {
+export default function MapView({
+  apiKey,
+  center,
+  zoom,
+  sites,
+  selected,
+  ops,
+  onSelect,
+  onClose,
+  focus = null,
+}: Readonly<MapViewProps>) {
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: apiKey,
     id: "neubit-google-map",
@@ -104,6 +117,21 @@ export default function MapView({ apiKey, center, zoom, sites, selected, ops, on
       mapInstance.fitBounds(bounds, 64);
     }
   }, [mapInstance, sites]);
+
+  // A site picked from the header's lists: centre on it, close enough to stand
+  // apart from its neighbours. The zoom only ever goes IN.
+  // `sites` is read through a ref, not watched: a refetch must not re-centre.
+  const sitesRef = useRef(sites);
+  useEffect(() => {
+    sitesRef.current = sites;
+  }, [sites]);
+  useEffect(() => {
+    if (!mapInstance || !focus) return;
+    const site = sitesRef.current.find((s) => s.site_id === focus.siteId);
+    if (!site) return;
+    mapInstance.setCenter({ lat: site.coordinates.latitude, lng: site.coordinates.longitude });
+    mapInstance.setZoom(Math.max(mapInstance.getZoom() ?? 0, 14));
+  }, [mapInstance, focus]);
 
   if (loadError) {
     return (

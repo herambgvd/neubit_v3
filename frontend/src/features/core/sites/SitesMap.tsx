@@ -19,7 +19,7 @@
 // /settings/maps, NOT a build-time env var.
 //
 // Both canvases are code-split: whichever provider is off never ships its SDK.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { Icon } from "@iconify/react";
@@ -31,7 +31,10 @@ import type { SitePublic } from "@/lib/types";
 import type { MapsConfigOut } from "../types";
 import type { SiteWithCoords } from "./constants";
 import { Loading } from "./components/MapChrome";
+import type { MapFocus } from "./components/OfflineMapView";
 import { needsAttentionOnly } from "./estateFilters";
+import type { SiteOps } from "./estateRollup";
+import { siteSettingsHref } from "./siteLinks";
 import useEstateOps from "./useEstateOps";
 
 // ssr:false — both SDKs touch `window`/`document` at module scope.
@@ -76,7 +79,6 @@ export default function SitesMapPage() {
       ),
     [sites],
   );
-  const unplaced = sites.length - sitesWithCoords.length;
 
   const [attentionOnly, setAttentionOnly] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
@@ -87,6 +89,15 @@ export default function SitesMapPage() {
   );
 
   const [selected, setSelected] = useState<SiteWithCoords | null>(null);
+  // A site picked from the header's lists. The seq makes a second pick of the
+  // same site a fresh request (SCRUM-311).
+  const [focus, setFocus] = useState<MapFocus | null>(null);
+  const showSite = (site: SiteWithCoords) => {
+    // A filtered-out site would be focused on nothing.
+    if (attentionOnly && !needsAttentionOnly([site], ops.bySite).length) setAttentionOnly(false);
+    setSelected(site);
+    setFocus((f) => ({ siteId: site.site_id, seq: (f?.seq ?? 0) + 1 }));
+  };
 
   const center = useMemo(() => {
     if (sitesWithCoords.length === 0) {
@@ -101,17 +112,23 @@ export default function SitesMapPage() {
     // must not fly the camera somewhere else.
   }, [sitesWithCoords, cfgQ.data]);
 
-  const attention = useMemo(
-    () => needsAttentionOnly(sitesWithCoords, ops.bySite).length,
+  const attentionSites = useMemo(
+    () => needsAttentionOnly(sitesWithCoords, ops.bySite),
     [sitesWithCoords, ops.bySite],
+  );
+  const unplacedSites = useMemo(
+    () => sites.filter((s) => !sitesWithCoords.some((w) => w.site_id === s.site_id)),
+    [sites, sitesWithCoords],
   );
 
   return (
     <div className="flex h-full flex-col gap-2">
       <EstateBar
         total={sitesWithCoords.length}
-        unplaced={unplaced}
-        attention={attention}
+        unplacedSites={unplacedSites}
+        attentionSites={attentionSites}
+        ops={ops.bySite}
+        onShowSite={showSite}
         failed={ops.failed}
         attentionOnly={attentionOnly}
         onAttentionOnly={setAttentionOnly}
@@ -132,6 +149,7 @@ export default function SitesMapPage() {
             ops={ops.bySite}
             onSelect={setSelected}
             onClose={() => setSelected(null)}
+            focus={focus}
           />
         ) : (
           <OfflineMapView
@@ -144,6 +162,7 @@ export default function SitesMapPage() {
             showLabels={showLabels}
             onSelect={setSelected}
             onClose={() => setSelected(null)}
+            focus={focus}
           />
         )}
       </section>
@@ -153,8 +172,13 @@ export default function SitesMapPage() {
 
 interface EstateBarProps {
   total: number;
-  unplaced: number;
-  attention: number;
+  /** Sites with no coordinates — they have no pin, so this list is the only
+   *  place on the map they can be found. */
+  unplacedSites: SitePublic[];
+  /** Sites with unacknowledged alarms or dark cameras. */
+  attentionSites: SiteWithCoords[];
+  ops: Map<string, SiteOps>;
+  onShowSite: (site: SiteWithCoords) => void;
   failed: string[];
   attentionOnly: boolean;
   onAttentionOnly: (v: boolean) => void;
@@ -162,30 +186,101 @@ interface EstateBarProps {
   onShowLabels: (v: boolean) => void;
 }
 
+/** "2 alarms · 1 offline" — why a site is on the attention list. */
+function attentionReason(o: SiteOps | undefined): string {
+  if (!o) return "";
+  const parts = [];
+  if (o.alarms) parts.push(`${o.alarms} alarm${o.alarms === 1 ? "" : "s"}`);
+  if (o.offline) parts.push(`${o.offline} offline`);
+  return parts.join(" · ");
+}
+
 /** The map's own header: what is on it, what is wrong, and the two switches that
- *  change what is drawn. */
+ *  change what is drawn.
+ *
+ *  Each count is a door, not a caption (SCRUM-311). "1 need attention" said there
+ *  was trouble without saying where; "1 without coordinates" named a site the map
+ *  cannot draw. Both now open the list they count: an attention site jumps the
+ *  map to its pin, an unplaced one links to where its location is set. */
 function EstateBar({
   total,
-  unplaced,
-  attention,
+  unplacedSites,
+  attentionSites,
+  ops,
+  onShowSite,
   failed,
   attentionOnly,
   onAttentionOnly,
   showLabels,
   onShowLabels,
 }: Readonly<EstateBarProps>) {
+  const [open, setOpen] = useState<"attention" | "unplaced" | null>(null);
+  const barRef = useRef<HTMLDivElement | null>(null);
+
+  // A list closes on Escape or a click anywhere else, like every menu.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!barRef.current?.contains(e.target as Node)) setOpen(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const toggle = (which: "attention" | "unplaced") => setOpen((o) => (o === which ? null : which));
+
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] px-3 py-2">
+    <div
+      ref={barRef}
+      className="relative z-20 flex shrink-0 flex-wrap items-center gap-2 rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] px-3 py-2"
+    >
       <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[1.2px] text-nb-muted">
         <Icon icon="heroicons-outline:globe-alt" className="text-sm text-nb-blueb" />
         Estate
         <span className="font-mono text-nb-faint">{total}</span>
       </span>
 
-      {attention > 0 ? (
-        <span className="flex items-center gap-1.5 text-[11px] text-nb-crit">
-          <span className="h-1.5 w-1.5 rounded-full bg-nb-crit shadow-[0_0_5px_#f87171]" />
-          <span>{attention} need attention</span>
+      {attentionSites.length > 0 ? (
+        <span className="relative">
+          <button
+            type="button"
+            onClick={() => toggle("attention")}
+            aria-expanded={open === "attention"}
+            className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[11px] text-nb-crit hover:bg-nb-crit/10"
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-nb-crit shadow-[0_0_5px_#f87171]" />
+            <span>{attentionSites.length} need attention</span>
+            <Icon icon="heroicons-outline:chevron-down" className="text-[11px]" />
+          </button>
+          {open === "attention" && (
+            <SiteList title="Need attention">
+              {attentionSites.map((site) => (
+                <li key={site.site_id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onShowSite(site);
+                      setOpen(null);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-nb-blue/10"
+                  >
+                    <Icon icon="heroicons-outline:map-pin" className="shrink-0 text-[13px] text-nb-crit" />
+                    <span className="min-w-0 flex-1 truncate text-[12px] text-nb-ink">{site.name}</span>
+                    <span className="shrink-0 text-[10.5px] text-nb-muted">
+                      {attentionReason(ops.get(site.site_id))}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </SiteList>
+          )}
         </span>
       ) : (
         <span className="flex items-center gap-1.5 text-[11px] text-nb-good">
@@ -194,12 +289,34 @@ function EstateBar({
         </span>
       )}
 
-      {unplaced > 0 && (
-        <span
-          className="text-[11px] text-nb-warn"
-          title="These sites have no coordinates, so they cannot be drawn. Set them in Sites → Edit → Pick on map."
-        >
-          {unplaced} without coordinates
+      {unplacedSites.length > 0 && (
+        <span className="relative">
+          <button
+            type="button"
+            onClick={() => toggle("unplaced")}
+            aria-expanded={open === "unplaced"}
+            className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-nb-warn hover:bg-nb-warn/10"
+          >
+            {unplacedSites.length} without coordinates
+            <Icon icon="heroicons-outline:chevron-down" className="text-[11px]" />
+          </button>
+          {open === "unplaced" && (
+            <SiteList title="Not on the map — no coordinates">
+              {unplacedSites.map((site) => (
+                <li key={site.site_id}>
+                  <a
+                    href={siteSettingsHref(site.site_id)}
+                    title="Open the site, then Edit → Pick on map"
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-nb-blue/10"
+                  >
+                    <Icon icon="heroicons-outline:building-office-2" className="shrink-0 text-[13px] text-nb-warn" />
+                    <span className="min-w-0 flex-1 truncate text-[12px] text-nb-ink">{site.name}</span>
+                    <span className="shrink-0 text-[10.5px] text-nb-blueb">Set location</span>
+                  </a>
+                </li>
+              ))}
+            </SiteList>
+          )}
         </span>
       )}
 
@@ -226,6 +343,15 @@ function EstateBar({
           label="Labels"
         />
       </div>
+    </div>
+  );
+}
+
+function SiteList({ title, children }: Readonly<{ title: string; children: ReactNode }>) {
+  return (
+    <div className="absolute left-0 top-full z-30 mt-1 w-72 rounded-lg border border-nb-line bg-[rgb(8,15,34)] p-1 shadow-xl">
+      <p className="px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-[1.2px] text-nb-muted">{title}</p>
+      <ul className="scroll-themed max-h-72 overflow-y-auto">{children}</ul>
     </div>
   );
 }

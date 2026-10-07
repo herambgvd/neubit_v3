@@ -11,6 +11,7 @@ import { Icon } from "@iconify/react";
 import type { SitePublic } from "@/lib/types";
 import { THREAT_PIN } from "../constants";
 import type { SiteOps } from "../estateRollup";
+import { siteAlarmsHref, siteCamerasHref } from "../siteLinks";
 
 export interface SiteCardProps {
   site: SitePublic;
@@ -25,6 +26,9 @@ export interface SiteCardProps {
    *  A pin on the ALARMS map must not send an operator to the video wall — the
    *  drill-down that makes sense there is this site's floor plan, in Alarms. */
   actions?: ReactNode;
+  /** The counts open the lists they count. Off where leaving the page would cost
+   *  the operator what they were doing — the video wall's camera picker. */
+  drillDown?: boolean;
 }
 
 export default function SiteCard({
@@ -33,6 +37,7 @@ export default function SiteCard({
   onClose,
   actions,
   showAlarms = true,
+  drillDown = true,
 }: Readonly<SiteCardProps>) {
   const tone = THREAT_PIN[site.threat_level] || THREAT_PIN.normal;
   return (
@@ -69,17 +74,54 @@ export default function SiteCard({
       {ops && (
         <div className={`grid ${showAlarms ? "grid-cols-3" : "grid-cols-2"} gap-1 text-center`}>
           {[
-            { label: "Cameras", value: ops.cameras, tone: "text-slate-800" },
-            { label: "Offline", value: ops.offline, tone: ops.offline ? "text-amber-600" : "text-slate-400" },
+            {
+              label: "Cameras",
+              value: ops.cameras,
+              tone: "text-slate-800",
+              href: siteCamerasHref(site.site_id),
+              hint: `The cameras placed at ${site.name}`,
+            },
+            {
+              label: "Offline",
+              value: ops.offline,
+              tone: ops.offline ? "text-amber-600" : "text-slate-400",
+              href: siteCamerasHref(site.site_id, true),
+              hint: `The cameras at ${site.name} that are not online`,
+            },
             ...(showAlarms
-              ? [{ label: "Alarms", value: ops.alarms, tone: ops.alarms ? "text-red-600" : "text-slate-400" }]
+              ? [
+                  {
+                    label: "Alarms",
+                    value: ops.alarms,
+                    tone: ops.alarms ? "text-red-600" : "text-slate-400",
+                    href: siteAlarmsHref(site.site_id),
+                    hint: `Unacknowledged events on ${site.name}'s cameras`,
+                  },
+                ]
               : []),
-          ].map((s) => (
-            <div key={s.label} className="rounded-md border border-slate-200 py-1">
-              <div className={`text-sm font-semibold ${s.tone}`}>{s.value}</div>
-              <div className="text-[9.5px] uppercase tracking-wide text-slate-500">{s.label}</div>
-            </div>
-          ))}
+          ].map((s) => {
+            const body = (
+              <>
+                <div className={`text-sm font-semibold ${s.tone}`}>{s.value}</div>
+                <div className="text-[9.5px] uppercase tracking-wide text-slate-500">{s.label}</div>
+              </>
+            );
+            // Every count opens the list it was counted from (SCRUM-311).
+            return drillDown ? (
+              <a
+                key={s.label}
+                href={s.href}
+                title={s.hint}
+                className="block rounded-md border border-slate-200 py-1 hover:border-slate-400 hover:bg-slate-50"
+              >
+                {body}
+              </a>
+            ) : (
+              <div key={s.label} className="rounded-md border border-slate-200 py-1">
+                {body}
+              </div>
+            );
+          })}
         </div>
       )}
       <div className="flex flex-wrap gap-1">

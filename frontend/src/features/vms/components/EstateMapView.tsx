@@ -135,6 +135,7 @@ export default function EstateMapView({ cameras = [], onPick }: Readonly<EstateM
         selected={null}
         ops={ops}
         showAlarms={false}
+        drillDown={false}
         onSelect={() => setInPlan(true)}
         siteActions={(site) => (
           <button

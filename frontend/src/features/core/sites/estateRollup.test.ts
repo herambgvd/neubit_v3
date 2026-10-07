@@ -65,6 +65,17 @@ describe("rollupBySite", () => {
     expect(out.get("site-2")?.alarms).toBe(2);
   });
 
+  it("reaches a federated camera's site from the node-side id its events carry", () => {
+    // The floor plan pins the composite `fed:<node>:<cam>`; the recorder's event
+    // names `<cam>`. Keyed on the composite alone, Alarms stayed 0 (SCRUM-311).
+    const out = rollupBySite({
+      placements: [place({ device_id: "fed:node-1:cam-177" })],
+      cameras: [],
+      events: [{ camera_id: "cam-177", acknowledged: false }],
+    });
+    expect(out.get("site-1")?.alarms).toBe(1);
+  });
+
   it("ignores acknowledged events", () => {
     const out = rollupBySite({
       placements: [place({})],

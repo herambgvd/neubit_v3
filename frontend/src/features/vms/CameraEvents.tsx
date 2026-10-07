@@ -13,12 +13,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import { EmptyState, Select } from "@/components/ui/kit";
 import { HeaderSlot } from "@/components/shell/HeaderSlot";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
+import { sites as sitesApi } from "@/lib/api/sites";
+import { dropUrlParams, siteCameraKeys, siteNameFrom } from "@/features/core/sites/siteLinks";
 import { workflow as wfApi } from "@/features/workflow/api";
 import { vms } from "./api";
 import { useAuth } from "@/lib/auth";
@@ -56,7 +59,10 @@ export default function CameraEventsPage() {
   const [cameraId, setCameraId] = useState("");
   const [eventType, setEventType] = useState("");
   const [severity, setSeverity] = useState("");
-  const [ack, setAck] = useState(""); // "" all | "false" unacked | "true" acked
+  // `?site=<id>&ack=false` is the estate map's Alarms count, opened (SCRUM-311).
+  const params = useSearchParams();
+  const [ack, setAck] = useState(() => params?.get("ack") ?? ""); // "" all | "false" unacked | "true" acked
+  const [siteId, setSiteId] = useState<string | null>(() => params?.get("site") ?? null);
   const [day, setDay] = useState("");
   const [live, setLive] = useState(true);
 
@@ -80,6 +86,16 @@ export default function CameraEventsPage() {
     }
     return m;
   }, [cameras]);
+  // The cameras placed at the site filter, under both ids an event may carry.
+  const placementsQ = useQuery({
+    queryKey: ["device-placements-index"],
+    queryFn: () => sitesApi.devicePlacements.index(),
+    enabled: !!siteId,
+    staleTime: 30_000,
+  });
+  const placements = useMemo(() => placementsQ.data?.items ?? [], [placementsQ.data]);
+  const siteKeys = useMemo(() => (siteId ? siteCameraKeys(placements, siteId) : null), [placements, siteId]);
+  const siteName = siteId ? siteNameFrom(placements, siteId) ?? "this site" : null;
   const cameraName = (id: string | null | undefined): string | null => (id ? cameraById[id]?.name : null) || null;
   /** The id the events API filters on: node-side for a recorder-owned camera. */
   const eventCameraId = (c: EstateCamera): string => (c as { real_id?: string }).real_id || c.id;
@@ -183,17 +199,21 @@ export default function CameraEventsPage() {
       if (key) seen.add(key);
       out.push(e);
     }
+    // An event is at the filtered site when its camera is one placed there.
+    const atSite = (id: string | null | undefined) => !siteKeys || (!!id && siteKeys.has(id));
+    // "" is every event; otherwise the flag has to match the filter's word.
+    const ackMatches = (acked: boolean) => ack === "" || String(acked) === ack;
     return out.filter((e) => {
       if (cameraId && e.camera_id !== cameraId) return false;
+      if (!atSite(e.camera_id)) return false;
       if (eventType && e.event_type !== eventType) return false;
       if (severity && e.severity !== severity) return false;
-      if (ack === "true" && !e.acknowledged) return false;
-      if (ack === "false" && e.acknowledged) return false;
+      if (!ackMatches(!!e.acknowledged)) return false;
       if (window.from && e.occurred_at && e.occurred_at < window.from) return false;
       if (window.to && e.occurred_at && e.occurred_at >= window.to) return false;
       return true;
     });
-  }, [liveEvents, history, cameraId, eventType, severity, ack, window]);
+  }, [liveEvents, history, cameraId, siteKeys, eventType, severity, ack, window]);
 
   const total = q.data?.total ?? events.length;
 
@@ -375,8 +395,13 @@ export default function CameraEventsPage() {
     () => (selected?.camera_id ? cameraById[selected.camera_id] ?? null : null),
     [selected, cameraById],
   );
-  const filtered = !!(cameraId || eventType || severity || ack || day);
+  const filtered = !!(cameraId || siteId || eventType || severity || ack || day);
+  const clearSite = () => {
+    setSiteId(null);
+    dropUrlParams("site", "ack");
+  };
   const clearAll = () => {
+    if (siteId) clearSite();
     setCameraId("");
     setEventType("");
     setSeverity("");
@@ -617,6 +642,21 @@ export default function CameraEventsPage() {
           cameraName={cameraName}
           toolbar={
             <>
+              {siteId && (
+                <span className="inline-flex h-8 items-center gap-1.5 rounded-md border border-nb-blue/40 bg-nb-blue/10 px-2 text-[11.5px] text-nb-blueb">
+                  <Icon icon="heroicons-outline:building-office-2" className="text-[12px]" />
+                  Site: {siteName}
+                  <button
+                    type="button"
+                    aria-label="Show events from every site"
+                    title="Show events from every site"
+                    onClick={clearSite}
+                    className="inline-flex h-5 w-5 items-center justify-center rounded hover:bg-nb-blue/20"
+                  >
+                    <Icon icon="heroicons-outline:x-mark" className="text-[12px]" />
+                  </button>
+                </span>
+              )}
               <div className="w-44">
                 <Select
                   ariaLabel="Filter by camera"

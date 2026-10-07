@@ -10,13 +10,21 @@
 // a left list of node-owned cameras (search + status filter + counts), tagged with
 // their owning recorder, and a right READ-ONLY detail pane (FederatedCameraDetail —
 // live view + a note that management happens on the owning recorder).
+//
+// DEEP LINKS (SCRUM-311). `?site=<id>` narrows the list to the cameras placed at
+// that site and `?status=not_online` to the ones the estate map counts as
+// offline — the map's Cameras and Offline counts open exactly this list.
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
+import { useSearchParams } from "next/navigation";
 
 import { Select } from "@/components/ui/kit";
 import { EmptyDetail } from "@/components/common";
 import { apiError } from "@/lib/api";
+import { sites as sitesApi } from "@/lib/api/sites";
+import { isOffline } from "@/features/core/sites/estateRollup";
+import { NOT_ONLINE, dropUrlParams, siteCameraKeys, siteNameFrom } from "@/features/core/sites/siteLinks";
 import { vms } from "./api";
 import { STATUS_FILTERS } from "./constants";
 import { StatusDot } from "./components/StatusBadge";
@@ -29,9 +37,18 @@ interface CameraRow extends EstateFederatedCamera {
   source_label: string;
 }
 
+/** The status dropdown: the exact states, plus the map's "offline" — anything
+ *  that is not online — which is what a drill-down from the map asks for. */
+const STATUS_OPTIONS = [
+  ...STATUS_FILTERS.map((s) => ({ value: s.key, label: s.key === "" ? "All statuses" : s.label })),
+  { value: NOT_ONLINE, label: "Not online" },
+];
+
 export default function CamerasPage() {
+  const params = useSearchParams();
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState(() => params?.get("status") ?? "");
+  const [siteId, setSiteId] = useState<string | null>(() => params?.get("site") ?? null);
   const [selectedId, setSelectedId] = useState<string | null>(null); // detail selection
 
   // ── Data ─────────────────────────────────────────────────────────────
@@ -44,6 +61,18 @@ export default function CamerasPage() {
     queryFn: () => vms.federation.cameras(),
     refetchInterval: 30_000,
   });
+
+  // Where cameras are — only read when a site filter is on. Same key as the
+  // floor plan and the map, so it is usually already cached.
+  const placementsQ = useQuery({
+    queryKey: ["device-placements-index"],
+    queryFn: () => sitesApi.devicePlacements.index(),
+    enabled: !!siteId,
+    staleTime: 30_000,
+  });
+  const placements = useMemo(() => placementsQ.data?.items ?? [], [placementsQ.data]);
+  const siteKeys = useMemo(() => (siteId ? siteCameraKeys(placements, siteId) : null), [placements, siteId]);
+  const siteName = siteId ? siteNameFrom(placements, siteId) ?? "this site" : null;
 
   // Map federated items to a display shape tagged `federated`. The composite id
   // (`fed:<node>:<cam>`) matches the floor-builder inventory + the video wall, so a
@@ -73,11 +102,16 @@ export default function CamerasPage() {
           source_label: c.node_name,
         };
       })
-      .filter((c) => (status ? c.status === status : true))
+      .filter((c) => !siteKeys || siteKeys.has(c.id) || siteKeys.has(c.real_id))
+      .filter((c) => {
+        if (!status) return true;
+        if (status === NOT_ONLINE) return isOffline(c);
+        return c.status === status;
+      })
       .filter((c) =>
         q ? c.name?.toLowerCase().includes(q) || (c.node_name || "").toLowerCase().includes(q) : true,
       );
-  }, [fedQ.data, status, search]);
+  }, [fedQ.data, status, search, siteKeys]);
 
   const statusCounts = useMemo(() => {
     let online = 0;
@@ -129,7 +163,33 @@ export default function CamerasPage() {
               <Icon icon="heroicons-outline:magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-nb-faint" />
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name or recorder…" className={`${fieldCls} pl-8`} />
             </label>
-            <Select value={status} onChange={(e) => setStatus(e.target.value)} options={STATUS_FILTERS.map((s) => ({ value: s.key, label: s.key === "" ? "All statuses" : s.label }))} className="!h-8 !py-1" />
+            {siteId && (
+              <div className="flex items-center gap-1.5 rounded-[9px] border border-nb-blue/40 bg-nb-blue/10 px-2 py-1 text-[11.5px] text-nb-blueb">
+                <Icon icon="heroicons-outline:building-office-2" className="shrink-0 text-[12px]" />
+                <span className="min-w-0 flex-1 truncate">Site: {siteName}</span>
+                <button
+                  type="button"
+                  aria-label="Show cameras at every site"
+                  title="Show cameras at every site"
+                  onClick={() => {
+                    setSiteId(null);
+                    dropUrlParams("site");
+                  }}
+                  className="inline-flex h-5 w-5 items-center justify-center rounded hover:bg-nb-blue/20"
+                >
+                  <Icon icon="heroicons-outline:x-mark" className="text-[12px]" />
+                </button>
+              </div>
+            )}
+            <Select
+              value={status}
+              onChange={(e) => {
+                setStatus(e.target.value);
+                dropUrlParams("status");
+              }}
+              options={STATUS_OPTIONS}
+              className="!h-8 !py-1"
+            />
             <div className="flex items-center gap-3 px-0.5 pt-0.5 text-[11px]">
               <span className="flex items-center gap-1 text-nb-soft"><span className="h-1.5 w-1.5 rounded-full bg-nb-good shadow-[0_0_5px_#34d399]" />{statusCounts.online} online</span>
               <span className="flex items-center gap-1 text-nb-soft"><span className="h-1.5 w-1.5 rounded-full bg-nb-faint" />{statusCounts.offline} offline</span>
@@ -144,7 +204,7 @@ export default function CamerasPage() {
               <div className="px-2 py-8 text-center text-xs text-nb-crit">{apiError(fedQ.error, "Failed to load cameras")}</div>
             ) : cameras.length === 0 ? (
               <div className="px-2 py-8 text-center text-xs text-nb-faint">
-                {search || status ? "No cameras match." : "No cameras — register a recorder to surface its cameras."}
+                {search || status || siteId ? "No cameras match." : "No cameras — register a recorder to surface its cameras."}
               </div>
             ) : (
               <div className="space-y-0.5">

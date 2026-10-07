@@ -14,6 +14,8 @@
 // counted nowhere rather than being attributed to the nearest one.
 import type { DevicePlacementIndexRow } from "@/lib/types";
 
+import { placementKeys } from "./siteLinks";
+
 /** The camera fields this rollup reads — a narrow slice of `EstateCamera`. */
 export interface RollupCamera {
   id: string;
@@ -61,6 +63,20 @@ export interface RollupInput {
   events: RollupEvent[];
 }
 
+/** One placement's share of its site's numbers: a device, and if it is a camera,
+ *  a camera that may be offline. */
+function countPlacement(
+  b: SiteOps,
+  p: DevicePlacementIndexRow,
+  statusById: Map<string, RollupCamera>,
+): void {
+  b.devices += 1;
+  if ((p.device_type || "").toLowerCase() !== "camera") return;
+  b.cameras += 1;
+  const cam = statusById.get(p.device_id);
+  if (cam && isOffline(cam)) b.offline += 1;
+}
+
 /** site_id → the numbers its pin shows. Sites with nothing placed are absent. */
 export function rollupBySite({ placements, cameras, events }: RollupInput): Map<string, SiteOps> {
   const statusById = new Map(cameras.map((c) => [c.id, c]));
@@ -78,13 +94,11 @@ export function rollupBySite({ placements, cameras, events }: RollupInput): Map<
 
   for (const p of placements) {
     if (!p.site_id) continue;
-    siteOf.set(p.device_id, p.site_id);
-    const b = bucket(p.site_id);
-    b.devices += 1;
-    if ((p.device_type || "").toLowerCase() !== "camera") continue;
-    b.cameras += 1;
-    const cam = statusById.get(p.device_id);
-    if (cam && isOffline(cam)) b.offline += 1;
+    // Under every id the device answers to: an event names a federated camera
+    // by its node-side id, the placement by the `fed:` composite. Keyed on the
+    // composite alone, no event ever reached its site and Alarms stayed 0.
+    for (const k of placementKeys(p.device_id)) siteOf.set(k, p.site_id);
+    countPlacement(bucket(p.site_id), p, statusById);
   }
 
   for (const e of events) {

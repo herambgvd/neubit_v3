@@ -156,6 +156,17 @@ export interface OfflineMapViewProps {
   /** Passed to SiteCard: a console that does not know about alarms says nothing
    *  rather than "0". */
   showAlarms?: boolean;
+  /** Passed to SiteCard: its counts link to the lists they count. */
+  drillDown?: boolean;
+  /** Bring one site into view, out of any cluster. `seq` re-fires it for the
+   *  same site — "show me that one again" is a second request, not a no-op. */
+  focus?: MapFocus | null;
+}
+
+/** A request from outside the canvas to show one site. */
+export interface MapFocus {
+  siteId: string;
+  seq: number;
 }
 
 export default function OfflineMapView({
@@ -170,6 +181,8 @@ export default function OfflineMapView({
   onClose,
   siteActions,
   showAlarms = true,
+  drillDown = true,
+  focus = null,
 }: Readonly<OfflineMapViewProps>) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -473,6 +486,20 @@ export default function OfflineMapView({
     map.fitBounds(bounds, { padding: 64, maxZoom: SINGLE_SITE_ZOOM, animate: false });
   }, [sites, status.state]);
 
+  // ── focus: a site picked from a list outside the canvas ──────────────────
+  // jumpTo, not flyTo: the console does not animate (see the zoom readout).
+  // Zoomed to where a single site stands alone, so it is a pin and not a member
+  // of a cluster bubble.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || status.state !== "ready" || !focus) return;
+    // Read through the ref: siteById is rebuilt on every refetch, and re-running
+    // then would yank the view back to a site the operator has since left.
+    const site = siteByIdRef.current.get(focus.siteId);
+    if (!site) return;
+    map.jumpTo({ center: lngLat(site), zoom: Math.max(map.getZoom(), SINGLE_SITE_ZOOM) });
+  }, [focus, status.state]);
+
   // ── popup ────────────────────────────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
@@ -519,6 +546,7 @@ export default function OfflineMapView({
             onClose={onClose}
             actions={siteActions?.(selected)}
             showAlarms={showAlarms}
+            drillDown={drillDown}
           />,
           popupNode,
         )}

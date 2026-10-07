@@ -16,17 +16,27 @@ import { renderWithProviders } from "@/test/render";
 
 import SitesMapPage from "./SitesMap";
 
+interface CanvasProps {
+  sites: { site_id: string }[];
+  ops?: Map<string, unknown>;
+  showLabels?: boolean;
+  selected?: { site_id: string } | null;
+  focus?: { siteId: string; seq: number } | null;
+}
+
 /** The props the canvas was last rendered with — the page's real output. */
-const drawn: { sites: { site_id: string }[]; ops?: Map<string, unknown>; showLabels?: boolean } = {
+const drawn: CanvasProps = {
   sites: [],
 };
 
 vi.mock("next/dynamic", () => ({
   default: () =>
-    function StubCanvas(props: { sites: { site_id: string }[]; ops?: Map<string, unknown>; showLabels?: boolean }) {
+    function StubCanvas(props: CanvasProps) {
       drawn.sites = props.sites;
       drawn.ops = props.ops;
       drawn.showLabels = props.showLabels;
+      drawn.selected = props.selected;
+      drawn.focus = props.focus;
       return <div data-testid="canvas">{props.sites.map((s) => s.site_id).join(",")}</div>;
     },
 }));
@@ -79,6 +89,8 @@ function stubAll(over: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   drawn.sites = [];
+  drawn.selected = null;
+  drawn.focus = null;
   stubAll();
 });
 
@@ -142,5 +154,42 @@ describe("the estate bar", () => {
     stubAll({ "GET /vms/events": { items: [] }, "GET /vms/cameras": { items: [{ id: "cam-d", status: "online" }] } });
     renderWithProviders(<SitesMapPage />);
     expect(await screen.findByText(/all clear/i)).toBeInTheDocument();
+  });
+});
+
+describe("the counts open what they count (SCRUM-311)", () => {
+  it("lists the sites needing attention, and one click shows it on the map", async () => {
+    renderWithProviders(<SitesMapPage />);
+    await userEvent.click(await screen.findByRole("button", { name: /2 need attention/i }));
+
+    // Why each is there, not just its name.
+    expect(screen.getByText("1 alarm")).toBeInTheDocument();
+    expect(screen.getByText("1 offline")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /dark/i }));
+    await waitFor(() => expect(drawn.focus?.siteId).toBe("dark"));
+    expect(drawn.selected?.site_id).toBe("dark");
+    // The list closes once it has done its job.
+    expect(screen.queryByText("1 alarm")).not.toBeInTheDocument();
+  });
+
+  it("names the site with no coordinates and links to where its location is set", async () => {
+    renderWithProviders(<SitesMapPage />);
+    await userEvent.click(await screen.findByRole("button", { name: /1 without coordinates/i }));
+
+    const link = screen.getByRole("link", { name: /nowhere/i });
+    expect(link).toHaveAttribute("href", "/sites?site=nowhere");
+  });
+
+  it("shows a site the attention filter would hide by turning the filter off", async () => {
+    renderWithProviders(<SitesMapPage />);
+    await userEvent.click(await screen.findByRole("button", { name: /needs attention/i }));
+    await waitFor(() => expect(drawn.sites.map((x) => x.site_id)).toEqual(["noisy", "dark"]));
+
+    await userEvent.click(screen.getByRole("button", { name: /2 need attention/i }));
+    await userEvent.click(screen.getByRole("button", { name: /noisy/i }));
+    // noisy is in the filtered set, so the filter stays on.
+    expect(drawn.sites.map((x) => x.site_id)).toEqual(["noisy", "dark"]);
+    expect(drawn.focus?.siteId).toBe("noisy");
   });
 });
