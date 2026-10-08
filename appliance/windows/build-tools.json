@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "notes": "Pinned tools the BUILD uses to assemble the payload (never installed on a customer machine). Verified by sha256 before use, like binaries.json. The CPython build is what the payload's python\\ directory IS: python-build-standalone's install_only build is relocatable, unlike a venv, so the installed tree runs from whatever directory the installer puts it in.",
+  "tools": [
+    {
+      "name": "uv",
+      "version": "0.12.23",
+      "url": "https://github.com/astral-sh/uv/releases/download/0.12.23/uv-x86_64-pc-windows-msvc.zip",
+      "sha256": "75d05de6762778c31ee183398de7dd15093fad0ed90b1f236d8205ea5ec00c90",
+      "checksumSource": "publisher",
+      "checksumUrl": "https://github.com/astral-sh/uv/releases/download/0.12.23/uv-x86_64-pc-windows-msvc.zip.sha256"
+    },
+    {
+      "name": "cpython",
+      "version": "3.11.17+20261003",
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.11.17%2B20261003-x86_64-pc-windows-msvc-install_only.tar.gz",
+      "sha256": "0f7defa7a0ed99b61e0df0bba5027474711521f1307cc3830c2f456401beeed5",
+      "checksumSource": "publisher",
+      "checksumUrl": "https://github.com/astral-sh/python-build-standalone/releases/download/20261003/SHA256SUMS",
+      "notes": "3.11 to match the services' python:3.11-slim images and requires-python >= 3.11."
+    }
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "schema": 1,
+  "platform": "windows/amd64",
+  "notes": "Third-party runtimes the Neubit VMS native appliance supervises (docs/WINDOWS_NATIVE_APPLIANCE.md). Not committed: fetch-binaries.ps1 installs them under <data root>\\bin, verifying each sha256 BEFORE extracting and writing vendorbin.lock.json. checksumSource says whether a digest is the publisher's own (checksumUrl) or was computed from a download made while pinning ('local': it pins against later substitution but is not an upstream attestation). The postgresql, vcredist, node and ffmpeg entries are the SAME pins the Neubit NVR ships (neubit_nvr deploy/windows/binaries.json), so one server running both products holds one verified copy of each artifact's bytes.",
+  "artifacts": [
+    {
+      "name": "postgresql",
+      "version": "17.11-1",
+      "url": "https://get.enterprisedb.com/postgresql/postgresql-17.11-1-windows-x64-binaries.zip",
+      "sha256": "6eabdf00d2893713b75db4336a23c3fdf505f056e217ec6e2e95d901750cfea3",
+      "archive": "zip",
+      "extractGlob": "tree:pgsql/bin=>pgsql/bin; tree:pgsql/lib=>pgsql/lib; tree:pgsql/share=>pgsql/share; file:pgsql/server_license.txt=>licences/postgresql-LICENSE.txt",
+      "licence": "PostgreSQL",
+      "licenceFile": "licences/postgresql-LICENSE.txt",
+      "sourceUrl": "https://www.postgresql.org/ftp/source/v17.11/",
+      "checksumSource": "local",
+      "notes": "PostgreSQL 17 for the builtin C.UTF-8 locale provider (identical collation on Windows and Linux). bin, lib and share stay siblings: postgres.exe finds share/ and lib/ relative to itself, and TimescaleDB below is placed INTO lib and share/extension. Same pin and digest as the NVR."
+    },
+    {
+      "name": "timescaledb",
+      "version": "2.17.2",
+      "url": "https://github.com/timescale/timescaledb/releases/download/2.17.2/timescaledb-postgresql-17-windows-amd64.zip",
+      "sha256": "a1055fd70a3dc4ebc81dcad1954568dc2bea649abb460f0b3f8876ecccb27822",
+      "archive": "zip",
+      "extractGlob": "flat:timescaledb/*.dll=>pgsql/lib; flat:timescaledb/*.sql=>pgsql/share/extension; file:timescaledb/timescaledb.control=>pgsql/share/extension/timescaledb.control",
+      "licence": "Apache-2.0 (core) + Timescale License (TSL: compression, continuous aggregates)",
+      "sourceUrl": "https://github.com/timescale/timescaledb/tree/2.17.2",
+      "checksumSource": "local",
+      "notes": "2.17.2 to match the Docker stack's timescale/timescaledb:2.17.2-pg16, so the reporting store's hypertables, compression and continuous aggregates behave identically, built here for PG 17. The release publishes no checksum file; digest computed from a download of 6282490 bytes on 2026-10-08. The bundled setup.exe and timescaledb-tune.exe are deliberately NOT extracted: placement is done by these rules, tuning by the appliance's own overlay (pgboot)."
+    },
+    {
+      "name": "vcredist",
+      "version": "14.44.35211.0",
+      "url": "https://download.visualstudio.microsoft.com/download/pr/bd1c8d9d-ba95-4eee-bc6e-df1fcc876373/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe",
+      "sha256": "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b",
+      "archive": "none",
+      "extractGlob": "vc_redist.x64.exe",
+      "licence": "Microsoft Visual C++ Redistributable (redistributable code)",
+      "sourceUrl": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist",
+      "checksumSource": "publisher",
+      "notes": "The EnterpriseDB binaries import VCRUNTIME140.dll / MSVCP140.dll, absent on a clean Windows; without it postgres exits 0xc0000135. install-appliance.ps1 verifies the Authenticode signature, then runs it /install /quiet /norestart. Same pin as the NVR."
+    },
+    {
+      "name": "node",
+      "version": "v22.23.2",
+      "url": "https://nodejs.org/dist/v22.23.2/win-x64/node.exe",
+      "sha256": "0d0f5e39f9f3d9587bc19f73eab3c2c9c4903fd02d6dbf9c853dd81b3d95fad4",
+      "archive": "none",
+      "extractGlob": "node/node.exe",
+      "licence": "MIT",
+      "sourceUrl": "https://github.com/nodejs/node/tree/v22.23.2",
+      "checksumSource": "publisher",
+      "checksumUrl": "https://nodejs.org/dist/v22.23.2/SHASUMS256.txt",
+      "notes": "Runs the two Next.js standalone builds (console and admin). Next 16 needs Node >= 20.9; 22 LTS. Same pin as the NVR."
+    },
+    {
+      "name": "nats",
+      "version": "v2.10.29",
+      "url": "https://github.com/nats-io/nats-server/releases/download/v2.10.29/nats-server-v2.10.29-windows-amd64.zip",
+      "sha256": "98657bf4d5a9ce44168c019ba6894cda8e22e6adc8798edc05c168db7262de29",
+      "archive": "zip",
+      "extractGlob": "file:*/nats-server.exe=>nats/nats-server.exe; file:*/LICENSE=>licences/nats-LICENSE.txt",
+      "licence": "Apache-2.0",
+      "licenceFile": "licences/nats-LICENSE.txt",
+      "sourceUrl": "https://github.com/nats-io/nats-server/tree/v2.10.29",
+      "checksumSource": "publisher",
+      "checksumUrl": "https://github.com/nats-io/nats-server/releases/download/v2.10.29/SHA256SUMS",
+      "notes": "The event bus with JetStream. 2.10.x to match the Docker stack's nats:2.10-alpine; v2.10.29 is that line's newest."
+    },
+    {
+      "name": "traefik",
+      "version": "v3.1.7",
+      "url": "https://github.com/traefik/traefik/releases/download/v3.1.7/traefik_v3.1.7_windows_amd64.zip",
+      "sha256": "07c8a4eb620647b88b92c5380bf7ccace8db5bf3cf7e380e2aa49cbe488610a7",
+      "archive": "zip",
+      "extractGlob": "file:traefik.exe=>traefik/traefik.exe; file:LICENSE.md=>licences/traefik-LICENSE.md",
+      "licence": "MIT",
+      "licenceFile": "licences/traefik-LICENSE.md",
+      "sourceUrl": "https://github.com/traefik/traefik/tree/v3.1.7",
+      "checksumSource": "publisher",
+      "checksumUrl": "https://github.com/traefik/traefik/releases/download/v3.1.7/traefik_v3.1.7_checksums.txt",
+      "notes": "The gateway: the repo's own gateway/dynamic routes and middlewares (ForwardAuth, rate limit, media auth), rendered for loopback upstreams. 3.1.x to match the Docker stack's traefik:v3.1."
+    },
+    {
+      "name": "ffmpeg",
+      "version": "n8.1.2-34-g9b6c8969e0",
+      "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-31-14-10/ffmpeg-n8.1.2-34-g9b6c8969e0-win64-lgpl-shared-8.1.zip",
+      "sha256": "c222a490dde4e7059f45495deef6bfb98dbcacc2b43df5b607546252037aa95c",
+      "archive": "zip",
+      "extractGlob": "file:*/bin/ffmpeg.exe=>ffmpeg/bin/ffmpeg.exe; file:*/bin/ffprobe.exe=>ffmpeg/bin/ffprobe.exe; flat:*/bin/*.dll=>ffmpeg/bin; file:*/LICENSE.txt=>licences/ffmpeg-LICENSE.txt",
+      "licence": "LGPL-3.0-or-later",
+      "licenceFile": "licences/ffmpeg-LICENSE.txt",
+      "sourceUrl": "https://github.com/FFmpeg/FFmpeg/tree/n8.1.2",
+      "checksumSource": "publisher",
+      "checksumUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-31-14-10/checksums.sha256",
+      "notes": "vision's snapshot grabs (one frame from an RTSP stream, no encoding to H.264). LGPL shared build deliberately, the NVR's licensing decision. Same pin as the NVR."
+    },
+    {
+      "name": "poppler",
+      "version": "26.09.0-0",
+      "url": "https://github.com/oschwartz10612/poppler-windows/releases/download/v26.09.0-0/Release-26.09.0-0.zip",
+      "sha256": "7a6f256a0ddf7536182246a5733331bf4677cbcc34f4663774947ad34556c8d0",
+      "archive": "zip",
+      "extractGlob": "tree:poppler-26.09.0/Library/bin=>poppler/Library/bin; file:poppler-26.09.0/share/poppler/COPYING=>licences/poppler-COPYING.txt",
+      "licence": "GPL-2.0-or-later (invoked as a separate program, never linked)",
+      "licenceFile": "licences/poppler-COPYING.txt",
+      "sourceUrl": "https://gitlab.freedesktop.org/poppler/poppler",
+      "checksumSource": "local",
+      "notes": "pdftoppm for core's floor-plan PDF import (pdf2image shells out to it; the Docker image installs poppler-utils). Run as a separate executable, as on Linux. The release publishes no checksum; digest computed from a download of 43709956 bytes on 2026-10-08."
+    }
+  ]
+}
