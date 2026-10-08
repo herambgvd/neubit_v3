@@ -34,7 +34,6 @@ const handlers = () => ({
   onAck: vi.fn(),
   onDismiss: vi.fn(),
   onMute: vi.fn(),
-  onEmpty: vi.fn(),
 });
 
 beforeEach(() => {
@@ -89,7 +88,7 @@ describe("a burst", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /clear all \(2\)/i }));
     expect(alarmQueue()).toHaveLength(0);
-    expect(h.onEmpty).toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("has no pager or clear-all for a single alarm — Dismiss is that", () => {
@@ -102,15 +101,14 @@ describe("a burst", () => {
 
 describe("the card's own clock", () => {
   it("leaves 15 s after the newest alarm", () => {
-    const h = handlers();
     act(() => pushAlarm(alarm("a")));
-    render(<AlarmNotification {...h} />);
+    render(<AlarmNotification {...handlers()} />);
 
     act(() => vi.advanceTimersByTime(AUTO_HIDE_MS - 1));
     expect(alarmQueue()).toHaveLength(1);
     act(() => vi.advanceTimersByTime(1));
     expect(alarmQueue()).toHaveLength(0);
-    expect(h.onEmpty).toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("waits while the pointer is on it, and still leaves after the pointer goes", () => {
@@ -160,20 +158,32 @@ describe("the card's own clock", () => {
   });
 });
 
-describe("one life per card", () => {
-  it("stays finished once emptied, even if sonner has not taken it off yet", () => {
-    // Sonner applies a dismiss on the next animation frame, which a background
-    // tab never runs. The old card was still mounted when the next alarm came
-    // and showed it beside the new card — the same alarm twice.
-    const h = handlers();
+describe("after it empties", () => {
+  it("comes back for the next alarm", () => {
     act(() => pushAlarm(alarm("a")));
-    render(<AlarmNotification {...h} />);
-
+    render(<AlarmNotification {...handlers()} />);
     act(() => clearAlarms());
-    expect(h.onEmpty).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 
     act(() => pushAlarm(alarm("b")));
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getByText("Camera b")).toBeInTheDocument();
+  });
+
+  it("does not start the next card paused when it was emptied under the pointer", () => {
+    // Clear all is clicked with the pointer ON the card, and the card goes with
+    // it — no mouseleave ever comes. The next card must still leave on time.
+    act(() => {
+      pushAlarm(alarm("a"));
+      pushAlarm(alarm("b"));
+    });
+    render(<AlarmNotification {...handlers()} />);
+    fireEvent.mouseEnter(screen.getByRole("alert").parentElement as HTMLElement);
+    fireEvent.click(screen.getByRole("button", { name: /clear all/i }));
+
+    act(() => pushAlarm(alarm("c")));
+    act(() => vi.advanceTimersByTime(AUTO_HIDE_MS));
+    expect(alarmQueue()).toHaveLength(0);
   });
 });
 

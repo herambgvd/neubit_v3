@@ -11,7 +11,7 @@
  * toasts a heartbeat teaches an operator to ignore toasts, and then it has no way
  * left to tell them something is wrong.
  */
-import { render, renderHook, screen } from "@testing-library/react";
+import { act, render, renderHook, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -54,15 +54,10 @@ vi.mock("./useEstateCameras", () => ({
 const ack = vi.fn((_id: string) => Promise.resolve({}));
 vi.mock("../api", () => ({ vms: { events: { ack: (id: string) => ack(id) } } }));
 
-import { toast as toastImport } from "sonner";
-
-import { clearAlarms } from "../alarmQueue";
-import { resetAlarmCard, setEventsMuted, useEventNotifier } from "./useEventNotifier";
-
-const toast = toastImport as unknown as ReturnType<typeof vi.fn> & {
-  custom: ReturnType<typeof vi.fn>;
-  dismiss: ReturnType<typeof vi.fn>;
-};
+import AlarmCorner from "../components/AlarmCorner";
+import { alarmQueue, clearAlarms } from "../alarmQueue";
+import { toastInset } from "@/lib/toastInset";
+import { setEventsMuted, useEventNotifier } from "./useEventNotifier";
 
 /** The hook needs a QueryClient (it invalidates the feed after an ack). */
 const wrapper = ({ children }: { children: ReactNode }) => (
@@ -72,11 +67,10 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 );
 const run = () => renderHook(() => useEventNotifier(), { wrapper });
 
-/** Render whatever the notifier handed sonner, so the toast can be asserted on
- *  as the thing an operator actually sees. */
-function renderToast(call = 0) {
-  const node = (toast.custom.mock.calls[call][0] as (id: string) => ReactNode)("toast-1");
-  render(<QueryClientProvider client={new QueryClient()}>{node}</QueryClientProvider>);
+/** Render the corner as the shell mounts it, so the card can be asserted on as
+ *  the thing an operator actually sees. */
+function renderToast() {
+  render(<AlarmCorner />, { wrapper });
 }
 
 const frame = (over: Record<string, unknown> = {}) => ({
@@ -91,17 +85,13 @@ const frame = (over: Record<string, unknown> = {}) => ({
 });
 
 beforeEach(() => {
-  toast.mockClear();
-  toast.custom.mockClear();
-  toast.dismiss.mockClear();
   ack.mockClear();
   push.mockClear();
   frames = [];
   pathname = "/streaming";
   setEventsMuted(false);
-  // Module state outlives a test: the queue and whether the card is up.
+  // Module state outlives a test.
   clearAlarms();
-  resetAlarmCard();
 });
 
 describe("off the Events page", () => {
@@ -146,37 +136,56 @@ describe("off the Events page", () => {
     // pages the burst and keeps its own clock (see AlarmNotification.test).
     frames = [frame(), frame(), frame({ severity: "critical" })];
     run();
-    expect(toast.custom).toHaveBeenCalledTimes(1);
     renderToast();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
     expect(screen.getByText("1 of 3")).toBeInTheDocument();
   });
 
-  it("leaves the clock to the card — sonner's pauses on hover and can stay paused", () => {
-    frames = [frame()];
+  it("is not a sonner toast, so the toaster's hover cannot clip it", () => {
+    // Sonner measured the card once, before its pager row appeared, and pinned
+    // it to that height on hover — the bottom of the card went off-screen.
+    frames = [frame(), frame()];
     run();
-    const opts = toast.custom.mock.calls[0][1] as { duration: number };
-    expect(opts.duration).toBe(Infinity);
+    renderToast();
+    const card = screen.getByRole("alert");
+    expect(card.closest("[data-sonner-toast]")).toBeNull();
+    expect(card.closest(".fixed")).not.toBeNull();
+  });
+
+  it("moves the app's toasts up while it holds the corner, and gives the room back", () => {
+    const height = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(136);
+    try {
+      frames = [frame()];
+      run();
+      renderToast();
+      expect(toastInset()).toBe(136);
+
+      act(() => clearAlarms());
+      expect(toastInset()).toBe(0);
+    } finally {
+      height.mockRestore();
+    }
   });
 
   it("stays quiet for anything below an alarm", () => {
     // The rule that keeps the mechanism worth having.
     frames = [frame({ severity: "info" }), frame({ severity: "warning" })];
     run();
-    expect(toast.custom).not.toHaveBeenCalled();
+    expect(alarmQueue()).toHaveLength(0);
   });
 
   it("stays quiet when the operator muted it", () => {
     setEventsMuted(true);
     frames = [frame()];
     run();
-    expect(toast.custom).not.toHaveBeenCalled();
+    expect(alarmQueue()).toHaveLength(0);
   });
 
   it("says a thing once, however often the buffer replays it", () => {
     const one = frame({ event_id: "ev-dup" });
     frames = [one, { ...one }];
     run();
-    expect(toast.custom).toHaveBeenCalledTimes(1);
+    expect(alarmQueue()).toHaveLength(1);
   });
 });
 
@@ -185,7 +194,7 @@ describe("on the Events page", () => {
     pathname = "/events";
     frames = [frame()];
     run();
-    expect(toast.custom).not.toHaveBeenCalled();
+    expect(alarmQueue()).toHaveLength(0);
   });
 
   it("does not toast it LATER either, once the operator navigates away", () => {
@@ -198,6 +207,6 @@ describe("on the Events page", () => {
 
     pathname = "/streaming";
     rerender();
-    expect(toast.custom).not.toHaveBeenCalled();
+    expect(alarmQueue()).toHaveLength(0);
   });
 });

@@ -12,12 +12,30 @@ import "@/lib/icons";
 
 import { AppearanceProvider } from "@/lib/appearance";
 import { AuthProvider } from "@/lib/auth";
+import { useToastInset } from "@/lib/toastInset";
 import { ThemeProvider } from "@/components/theme";
 import TitleSync from "@/components/TitleSync";
 
-// Dark-only console — the toasts are pinned to match.
+// Sonner's own figures: its viewport offsets (desktop, phone) and stack gap.
+const TOAST_OFFSET = 24;
+const TOAST_OFFSET_MOBILE = 16;
+const TOAST_GAP = 14;
+
+// Dark-only console — the toasts are pinned to match. They sit above whatever
+// holds the bottom of the corner (the VMS alarm card), not on top of it.
 function ThemedToaster() {
-  return <Toaster theme="dark" position="bottom-right" richColors closeButton />;
+  const inset = useToastInset();
+  const lift = inset ? inset + TOAST_GAP : 0;
+  return (
+    <Toaster
+      theme="dark"
+      position="bottom-right"
+      richColors
+      closeButton
+      offset={{ bottom: TOAST_OFFSET + lift }}
+      mobileOffset={{ bottom: TOAST_OFFSET_MOBILE + lift }}
+    />
+  );
 }
 
 // App-wide client providers: theme + TanStack Query + Auth + sonner toasts.

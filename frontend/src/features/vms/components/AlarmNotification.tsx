@@ -6,10 +6,10 @@
 // sizes every slot to the front toast) and could stop every timer in it (sonner
 // pauses them while the stack is expanded, and a dismissed toast under the cursor
 // left it expanded). Milestone's Smart Client shows one notification for alarms
-// that arrive together and closes it after 15 s; this is that card.
+// that arrive together and closes it after 15 s; this is that card. AlarmCorner
+// puts it on the screen — not sonner, whose hover-expand clipped it (see there).
 //
-// THE CLOCK IS OURS, NOT SONNER'S. The card is raised with duration Infinity and
-// closes itself:
+// THE CLOCK IS OURS. The card closes itself:
 //   * 15 s after the NEWEST alarm arrived — a new alarm restarts the wait, so an
 //     operator always gets the full time to read the latest one;
 //   * never while the pointer is over it — the pause ends on mouseleave of THIS
@@ -33,11 +33,9 @@ export interface AlarmNotificationProps {
   /** Take this alarm off the card. */
   onDismiss: (alarm: QueuedAlarm) => void;
   onMute: () => void;
-  /** The queue is empty — take the card off the screen. */
-  onEmpty: () => void;
 }
 
-export default function AlarmNotification({ onView, onAck, onDismiss, onMute, onEmpty }: Readonly<AlarmNotificationProps>) {
+export default function AlarmNotification({ onView, onAck, onDismiss, onMute }: Readonly<AlarmNotificationProps>) {
   const alarms = useAlarmQueue();
   const [index, setIndex] = useState(0);
   const [hovered, setHovered] = useState(false);
@@ -52,17 +50,10 @@ export default function AlarmNotification({ onView, onAck, onDismiss, onMute, on
     setIndex(0);
   }
 
-  // ONE LIFE PER CARD. Once its queue empties, this card is finished, even if
-  // sonner has not taken it off yet: sonner applies a dismiss on the next
-  // animation frame, which a background tab never runs. Without the latch, the
-  // still-mounted card came back to life when the next alarm arrived — beside
-  // the new card raised for it, showing the same alarm twice.
+  // Emptied under the pointer (Clear all, the last Dismiss): the element is gone,
+  // so no mouseleave will come, and the next card must not start out paused.
   const empty = alarms.length === 0;
-  const [spent, setSpent] = useState(false);
-  if (empty && !spent) setSpent(true);
-  useEffect(() => {
-    if (spent) onEmpty();
-  }, [spent, onEmpty]);
+  if (empty && hovered) setHovered(false);
 
   const raisedAt = alarms[0]?.raisedAt ?? 0;
   // When the pointer last left the card. Reading for 20 s and moving away must
@@ -70,14 +61,14 @@ export default function AlarmNotification({ onView, onAck, onDismiss, onMute, on
   const [leftAt, setLeftAt] = useState(0);
   const stays = hovered || holdsCritical(alarms);
   useEffect(() => {
-    if (spent || empty || stays) return;
+    if (empty || stays) return;
     const now = Date.now();
     const wait = Math.max(0, AUTO_HIDE_MS - (now - raisedAt), LINGER_MS - (now - leftAt));
     const t = setTimeout(clearAlarms, wait);
     return () => clearTimeout(t);
-  }, [spent, empty, stays, raisedAt, leftAt]);
+  }, [empty, stays, raisedAt, leftAt]);
 
-  if (spent || empty) return null;
+  if (empty) return null;
   const at = Math.min(index, alarms.length - 1);
   const alarm = alarms[at];
 

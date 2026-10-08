@@ -4,14 +4,14 @@
 //
 // A component rather than a hook call in the shell because the shell is a server
 // boundary's child and this needs the client router; and because the hook must
-// have exactly ONE subscriber — two would double every toast.
+// have exactly ONE subscriber — two would queue every alarm twice.
 //
-// It renders nothing: the corner belongs to `sonner`, which the app already uses
-// for every other transient message, so an alarm looks like the console talking
-// rather than like a second notification system bolted on.
+// The hook fills the alarm queue; AlarmCorner shows it, in the same bottom-right
+// corner as the app's other messages, which move up out of its way.
+import AlarmCorner from "./AlarmCorner";
 import { useEventNotifier } from "../hooks/useEventNotifier";
 
 export default function EventNotifierHost() {
   useEventNotifier();
-  return null;
+  return <AlarmCorner />;
 }
