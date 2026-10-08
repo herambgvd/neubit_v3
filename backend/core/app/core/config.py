@@ -116,6 +116,13 @@ class Settings(BaseSettings):
     # this admin (with the built-in Administrator role) on startup.
     bootstrap_admin_email: str | None = None
     bootstrap_admin_password: str | None = None
+    # First-run setup (POST /auth/setup) only from the server itself. An
+    # appliance answers on the LAN before anyone has set it up, and the setup
+    # endpoint is public by necessity: without this, whoever reaches it first
+    # owns the system. The native Windows appliance turns it on; its operator
+    # sets up from the desktop app on that machine. Needs trusted_proxy_cidrs to
+    # cover the gateway, or every caller looks like the gateway.
+    setup_local_only: bool = False
 
     # --- Licensing (see core/license.py) -----------------------------------
     # Provide the token inline OR via a file; same for the verification public key.

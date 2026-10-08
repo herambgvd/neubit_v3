@@ -121,7 +121,14 @@ function Hero() {
   );
 }
 
-export default function NeubitAuthShell({ children }: Readonly<{ children?: ReactNode }>) {
+const ACCESS_HINT = "Need access? Contact your administrator.";
+
+/** `hint` replaces the line under the card: first-run setup has no
+ *  administrator to contact yet. */
+export default function NeubitAuthShell({
+  children,
+  hint = ACCESS_HINT,
+}: Readonly<{ children?: ReactNode; hint?: ReactNode }>) {
   return (
     <div
       className="relative grid h-screen w-full overflow-hidden text-[#f2f6ff] antialiased lg:grid-cols-[1.25fr_1fr]"
@@ -173,7 +180,7 @@ export default function NeubitAuthShell({ children }: Readonly<{ children?: Reac
             <Link href="/" className="transition hover:text-[#cfd0f2]">
               ← Back to site
             </Link>
-            <span>Need access? Contact your administrator.</span>
+            <span>{hint}</span>
           </div>
         </div>
       </div>
@@ -184,9 +191,11 @@ export default function NeubitAuthShell({ children }: Readonly<{ children?: Reac
 /* ------------------------------------------------------------------ */
 /* Shared NeuBit-styled primitives for the login + MFA forms.          */
 /* ------------------------------------------------------------------ */
-export function NbLabel({ children }: Readonly<{ children?: ReactNode }>) {
+export function NbLabel({ children, htmlFor }: Readonly<{ children?: ReactNode; htmlFor?: string }>) {
   return (
-    <label className="mb-[5px] block font-mono text-[10px] tracking-[0.8px] text-[#9a92c8]">{children}</label>
+    <label htmlFor={htmlFor} className="mb-[5px] block font-mono text-[10px] uppercase tracking-[0.8px] text-[#9a92c8]">
+      {children}
+    </label>
   );
 }
 

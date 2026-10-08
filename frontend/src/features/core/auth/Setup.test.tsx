@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { tokens } from "@/lib/api";
 import { AuthProvider } from "@/lib/auth";
-import { stubApi, type ApiStub } from "@/test/apiStub";
+import { httpError, stubApi, type ApiStub } from "@/test/apiStub";
 
 import SetupPage from "./Setup";
 
@@ -95,7 +95,9 @@ describe("creating the first administrator", () => {
     await userEvent.click(screen.getByRole("button", { name: /create admin/i }));
 
     await waitFor(() => expect(tokens.access).toBe("first-admin-token"));
-    expect(replace).toHaveBeenCalledWith("/");
+    // The console, not "/": that is the public site, and a new administrator
+    // landing on a marketing page reads as setup having failed.
+    expect(replace).toHaveBeenCalledWith("/home");
   });
 });
 
@@ -119,5 +121,32 @@ describe("a deployment that is already set up", () => {
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/login"));
     expect(screen.queryByLabelText("Work email")).not.toBeInTheDocument();
+  });
+});
+
+describe("a deployment that keeps setup to the server itself", () => {
+  it("tells a browser elsewhere where to finish, and offers no form to submit", async () => {
+    stub.set({ "GET /auth/setup-status": { needs_setup: true, setup_here: false } });
+
+    renderSetup();
+
+    expect(await screen.findByText("Finish setting up on the server")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Work email")).not.toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
+  });
+});
+
+describe("a refused setup", () => {
+  it("shows the server's reason on the form and signs nobody in", async () => {
+    stub.set({
+      "POST /auth/setup": () => httpError(403, "First-run setup is only possible on the server itself."),
+    });
+    renderSetup();
+    await fill();
+    await userEvent.click(screen.getByRole("button", { name: /create admin/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/only possible on the server itself/i);
+    expect(tokens.access).toBeNull();
+    expect(replace).not.toHaveBeenCalled();
   });
 });

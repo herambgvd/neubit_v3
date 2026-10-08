@@ -98,6 +98,10 @@ export interface SessionOut {
 /** GET /auth/setup-status — auth/routes/session.py. */
 export interface SetupStatus {
   needs_setup: boolean;
+  /** False when the deployment keeps first-run setup to the server itself
+   *  (the native appliance) and this browser is elsewhere. Absent from older
+   *  servers, which meant "yes". */
+  setup_here?: boolean;
 }
 
 /** `TokenOut` — what first-run setup answers with. */

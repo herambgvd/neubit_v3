@@ -7,13 +7,14 @@ routes where a missing gate looks exactly like a correct one.
 
 from __future__ import annotations
 
+import ipaddress
 
 from fastapi import Body, Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.audit import record as audit_record
 from ...core.config import get_settings
-from ...core.errors import UnauthorizedError, ValidationError
+from ...core.errors import ForbiddenError, UnauthorizedError, ValidationError
 from ...core.ratelimit import login_rate_limit
 from ...db.base import get_db
 from ..cookies import clear_refresh_cookie, set_refresh_cookie
@@ -39,10 +40,26 @@ from . import router
 
 
 # --- session -----------------------------------------------------------------
+def _setup_allowed_from(request: Request) -> bool:
+    """Whether this caller may run first-run setup: anyone, unless the
+    deployment keeps setup to the server itself (`setup_local_only`)."""
+    if not get_settings().setup_local_only:
+        return True
+    ip = _client_ip(request)
+    try:
+        return ip is not None and ipaddress.ip_address(ip).is_loopback
+    except ValueError:
+        return False
+
+
 @router.get("/setup-status")
-async def setup_status(db: AsyncSession = Depends(get_db)) -> dict:
-    """PUBLIC — whether the deployment still needs its first administrator."""
-    return {"needs_setup": (await AuthService(db).user_count()) == 0}
+async def setup_status(request: Request, db: AsyncSession = Depends(get_db)) -> dict:
+    """PUBLIC — whether the deployment still needs its first administrator, and
+    whether it can be created from where this caller is."""
+    return {
+        "needs_setup": (await AuthService(db).user_count()) == 0,
+        "setup_here": _setup_allowed_from(request),
+    }
 
 
 @router.post("/setup", response_model=TokenOut, status_code=201)
@@ -55,11 +72,21 @@ async def setup(
     """PUBLIC, one-time — create the first administrator and sign them in.
 
     Refuses once any user exists, so it can never be used to escalate later.
+    The administrator it creates is the platform super-admin, exactly what
+    VE_BOOTSTRAP_ADMIN_* produces: the two are the same first account.
     """
+    if not _setup_allowed_from(request):
+        raise ForbiddenError(
+            "First-run setup is only possible on the server itself. Open Neubit VMS "
+            "on that computer, or http://localhost there."
+        )
     svc = AuthService(db)
     admin = await svc.ensure_admin(data.email, data.password, data.full_name or "Administrator")
     if admin is None:
         raise ValidationError("Setup has already been completed.")
+    admin.is_superadmin = True
+    admin.tenant_id = None  # super-admins sit above all tenants (tenancy/seed.py)
+    await db.commit()
     access, refresh = await svc.issue_tokens(
         admin, user_agent=request.headers.get("user-agent"), ip=_client_ip(request)
     )
