@@ -17,6 +17,10 @@ Nullable with no backfill: an existing webhook keeps working exactly as it did,
 and an operator opts it in when the sender can be updated. There are no webhook
 rows in this deployment, so new ones start protected via the schema default in the
 API layer.
+
+Guarded like 0003-0005: on a FRESH database 0001 creates ingest_webhooks from
+the live model, which already has this column, so an unguarded add fails the
+whole chain with DuplicateColumnError and ingest never starts.
 """
 
 import sqlalchemy as sa
@@ -28,12 +32,19 @@ branch_labels = None
 depends_on = None
 
 
+def _has_column(bind, table: str, column: str) -> bool:
+    insp = sa.inspect(bind)
+    return column in {c["name"] for c in insp.get_columns(table)}
+
+
 def upgrade() -> None:
-    op.add_column(
-        "ingest_webhooks",
-        sa.Column("hmac_max_age_seconds", sa.Integer(), nullable=True),
-    )
+    if not _has_column(op.get_bind(), "ingest_webhooks", "hmac_max_age_seconds"):
+        op.add_column(
+            "ingest_webhooks",
+            sa.Column("hmac_max_age_seconds", sa.Integer(), nullable=True),
+        )
 
 
 def downgrade() -> None:
-    op.drop_column("ingest_webhooks", "hmac_max_age_seconds")
+    if _has_column(op.get_bind(), "ingest_webhooks", "hmac_max_age_seconds"):
+        op.drop_column("ingest_webhooks", "hmac_max_age_seconds")

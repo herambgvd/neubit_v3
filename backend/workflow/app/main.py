@@ -3,7 +3,9 @@
 Boots the FastAPI app on ``kernel`` (config/auth/events/errors), mounts the
 workflow REST API (tenant-scoped, ``workflow.*`` permission-gated) under the
 service api_prefix, and connects the event bus. The correlation engine
-(NATS→incident) + scheduled sweeps run in the Celery worker (``app.worker``);
+(NATS→incident) + scheduled sweeps run in the Celery worker (``app.worker``), or
+in this process with ``VE_WORKFLOW_SCHEDULER=inline`` (the native Windows
+appliance, which has no Redis — see ``app/sweeps.py``);
 the API process can optionally host the correlation consumer in-process by
 setting ``VE_WORKFLOW_INLINE_CORRELATION=1`` (default off).
 
@@ -54,11 +56,16 @@ probes = ApiProbes()
 # lifespan shutdown can close them cleanly.
 _correlation = None
 _notify = None
+# The periodic sweeps, when this process drives them (VE_WORKFLOW_SCHEDULER=inline).
+_scheduler = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _correlation, _notify
+    global _correlation, _notify, _scheduler
+    from app.workflow.runtime.scheduler import InlineScheduler, scheduler_mode
+
+    mode = scheduler_mode()  # fails startup on a misspelt mode, before anything connects
     await bus.connect()
     await bus.publish(subject(None, "workflow", "startup"), {"service": "workflow"})
     # DPDP right-to-erase: wipe this service's rows for a tenant core offboards.
@@ -102,7 +109,15 @@ async def lifespan(app: FastAPI):
         ))
         log.info("inline notify consumer started")
     await probes.start_watches()
+    if mode == "inline":
+        from app.sweeps import sweeps
+
+        _scheduler = InlineScheduler(sweeps=sweeps())
+        _scheduler.start()
+        probes.scheduler = _scheduler
     yield
+    if _scheduler is not None:
+        await _scheduler.close()
     await probes.close()
     if _notify is not None:
         await _notify.close()

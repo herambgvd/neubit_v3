@@ -41,7 +41,24 @@ async def _check_database() -> str:
     return "ok"
 
 
+def redis_in_use() -> bool:
+    """Whether core depends on Redis at all.
+
+    Its only Redis client is the rate limiter. With the per-process window
+    (`VE_RATE_LIMIT_BACKEND=memory`, or no `VE_REDIS_URL`) there is no Redis to be
+    ready for: the native Windows appliance runs that way, because Redis has no
+    first-party Windows build. A readiness probe that failed on a dependency the
+    process never touches would keep the console "not ready" forever.
+    """
+    settings = get_settings()
+    backend = (settings.rate_limit_backend or "redis").strip().lower()
+    return backend == "redis" and bool(settings.redis_url)
+
+
 async def _check_redis() -> str:
+    if not redis_in_use():
+        return "not used"
+
     import redis.asyncio as aioredis
 
     client = aioredis.from_url(get_settings().redis_url)

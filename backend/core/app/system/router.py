@@ -80,7 +80,13 @@ async def stream_resources(websocket: WebSocket) -> None:
 #: A container outside this list (a one-shot migration, a build helper) is not a
 #: service an operator watches; the ops-agent's own project whitelist still
 #: decides what exists at all.
-_HIDDEN_SERVICES = {"db-init", "corefiles-init", "reporting-migrate"}
+_HIDDEN_SERVICES = {
+    "db-init", "corefiles-init", "reporting-migrate",
+    # The native Windows appliance's one-shots (appliance/internal/stack): the
+    # same migrations as processes of neubitvms-svc rather than containers.
+    "migrate-core", "migrate-ingest", "migrate-workflow", "migrate-access",
+    "migrate-vision", "reporting-db", "reporting-apply",
+}
 
 
 def _service_row(container: dict) -> dict:

@@ -51,7 +51,8 @@ _installed = False
 
 
 def install_signal_handlers() -> None:
-    """Chain `shutting_down.set()` onto whatever handles SIGTERM / SIGINT.
+    """Chain `shutting_down.set()` onto whatever handles SIGTERM / SIGINT (and
+    SIGBREAK on Windows).
 
     Call from the lifespan's startup half. Idempotent, and a no-op off the main
     thread or on a platform without these signals — the compose-level graceful
@@ -88,10 +89,24 @@ def install_signal_handlers() -> None:
         except (ValueError, OSError):  # pragma: no cover
             return
 
-    for sig in (signal.SIGTERM, signal.SIGINT):
+    for sig in _shutdown_signals():
         _chain(sig)
     _installed = True
-    log.debug("shutdown signal handlers chained (SIGTERM, SIGINT)")
+    log.debug("shutdown signal handlers chained (%s)", ", ".join(s.name for s in _shutdown_signals()))
+
+
+def _shutdown_signals() -> tuple[signal.Signals, ...]:
+    """The signals that mean "exit now, gracefully".
+
+    On Windows a supervisor cannot send SIGTERM to a console child; the native
+    appliance's `neubitvms-svc` sends CTRL_BREAK, which Python delivers as
+    SIGBREAK. uvicorn already exits on it; this makes the SSE relays wind down too.
+    """
+    sigs = [signal.SIGTERM, signal.SIGINT]
+    brk = getattr(signal, "SIGBREAK", None)  # Windows only
+    if brk is not None:
+        sigs.append(brk)
+    return tuple(sigs)
 
 
 async def next_sse_frame(queue: "asyncio.Queue[Any]", keepalive: float) -> tuple[str, Any]:

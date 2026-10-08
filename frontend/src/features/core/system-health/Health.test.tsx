@@ -97,6 +97,18 @@ describe("the estate", () => {
     renderWithProviders(<HealthPage />);
     expect(await screen.findByText(/error: connection refused/i)).toBeInTheDocument();
   });
+
+  it("shows a dependency the deployment does not have as neutral, not failed", async () => {
+    stubAll({
+      "GET /system/health": {
+        status: "healthy",
+        checks: { database: "ok", redis: "not used", storage: "ok" },
+      },
+    });
+    renderWithProviders(<HealthPage />);
+    const label = await screen.findByText("not used");
+    expect(label).not.toHaveClass("text-nb-crit");
+  });
 });
 
 describe("logs", () => {

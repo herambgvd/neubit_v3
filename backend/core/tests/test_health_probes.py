@@ -59,6 +59,28 @@ async def test_ready_is_200_when_everything_answers(app, monkeypatch):
     assert r.json()["status"] == "ready"
 
 
+@pytest.mark.parametrize(
+    ("backend", "url"),
+    [("memory", "redis://localhost:6379/0"), ("redis", ""), ("memory", "")],
+)
+async def test_redis_is_not_a_dependency_when_nothing_uses_it(monkeypatch, backend, url):
+    """The native Windows appliance runs without Redis: core's one Redis client is
+    the rate limiter, and it uses the per-process window there. Probing Redis anyway
+    would hold the console at 503 forever."""
+    settings = health.get_settings()
+    monkeypatch.setattr(settings, "rate_limit_backend", backend)
+    monkeypatch.setattr(settings, "redis_url", url)
+    assert health.redis_in_use() is False
+    assert await health._check_redis() == "not used"
+
+
+async def test_redis_is_probed_when_the_limiter_uses_it(monkeypatch):
+    settings = health.get_settings()
+    monkeypatch.setattr(settings, "rate_limit_backend", "redis")
+    monkeypatch.setattr(settings, "redis_url", "redis://localhost:6379/0")
+    assert health.redis_in_use() is True
+
+
 async def test_health_is_liveness_and_says_nothing_about_dependencies(app, monkeypatch):
     """Do not "fix" /health by giving it a database check. Alive-but-not-ready has to
     stay distinguishable from dead, or a restart loop and a dependency outage look

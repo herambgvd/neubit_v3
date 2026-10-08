@@ -62,6 +62,8 @@ from app.workflow.correlation import jobs as correlation_jobs
 from app.workflow.instances import jobs as instance_jobs
 from app.workflow.notifications import jobs as notification_jobs
 from app.workflow.runtime import heartbeat
+from app.sweeps import sweeps
+from app.workflow.runtime.scheduler import crontab_minute
 
 log = logging.getLogger("workflow.worker")
 
@@ -112,23 +114,14 @@ celery_app.conf.update(
 )
 
 # --- beat schedule ---------------------------------------------------------
+# The cadence lives in app/sweeps.py, which the inline scheduler
+# (VE_WORKFLOW_SCHEDULER=inline, the native Windows appliance) reads too.
 celery_app.conf.beat_schedule = {
-    "workflow-escalation-sweep": {
-        "task": "app.worker.escalation_sweep",
-        "schedule": crontab(minute="*"),  # every minute
-    },
-    "workflow-timeout-sweep": {
-        "task": "app.worker.timeout_sweep",
-        "schedule": crontab(minute="*/5"),  # every 5 minutes
-    },
-    "workflow-dispatch-notifications": {
-        "task": "app.worker.dispatch_notifications",
-        "schedule": crontab(minute="*"),  # every minute
-    },
-    "workflow-dedup-cleanup": {
-        "task": "app.worker.dedup_cleanup",
-        "schedule": crontab(minute="*/10"),  # every 10 minutes
-    },
+    f"workflow-{s.name.replace('_', '-')}": {
+        "task": f"app.worker.{s.name}",
+        "schedule": crontab(minute=crontab_minute(s.every_min)),
+    }
+    for s in sweeps()
 }
 
 

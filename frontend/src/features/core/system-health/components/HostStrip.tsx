@@ -102,10 +102,21 @@ export default function HostStrip({ health, loading }: Readonly<HostStripProps>)
       {Object.entries(DEP_META).map(([key, meta]) => {
         const state = loading ? "…" : checks[key] || "unknown";
         const ok = state === "ok";
+        // A dependency this deployment does not have (Redis on the native
+        // Windows appliance) is neither up nor down: neutral, never red.
+        const unused = state.startsWith("not used");
+        const calm = ok || unused;
+        let dot = "bg-nb-crit shadow-[0_0_6px_#f87171]";
+        if (ok) dot = "bg-nb-good shadow-[0_0_6px_#34d399]";
+        else if (unused) dot = "bg-nb-faint";
+        let text = state;
+        if (loading) text = "checking…";
+        else if (ok) text = "reachable";
+        else if (unused) text = "not used";
         return (
           <div
             key={key}
-            className={`rounded-[10px] border px-3 py-2 ${ok ? "border-nb-line bg-[rgba(8,15,34,.5)]" : "border-nb-crit/40 bg-nb-crit/[.07]"}`}
+            className={`rounded-[10px] border px-3 py-2 ${calm ? "border-nb-line bg-[rgba(8,15,34,.5)]" : "border-nb-crit/40 bg-nb-crit/[.07]"}`}
             title={ok ? undefined : state}
           >
             <div className="flex items-center gap-1.5">
@@ -113,19 +124,15 @@ export default function HostStrip({ health, loading }: Readonly<HostStripProps>)
               <span className="font-mono text-[10px] uppercase tracking-[1.2px] text-nb-soft">
                 {meta.label}
               </span>
-              <span
-                className={`ml-auto h-[7px] w-[7px] shrink-0 rounded-full ${
-                  ok ? "bg-nb-good shadow-[0_0_6px_#34d399]" : "bg-nb-crit shadow-[0_0_6px_#f87171]"
-                }`}
-              />
+              <span className={`ml-auto h-[7px] w-[7px] shrink-0 rounded-full ${dot}`} />
             </div>
             <div
-              className={`mt-1.5 truncate font-mono text-[10px] ${ok ? "text-nb-faint" : "text-nb-crit"}`}
+              className={`mt-1.5 truncate font-mono text-[10px] ${calm ? "text-nb-faint" : "text-nb-crit"}`}
             >
               {/* The probe's own message when it fails: "error: connection refused"
                   is the whole diagnosis, and hiding it behind "Down" cost a
                   round-trip to the logs every time. */}
-              {loading ? "checking…" : ok ? "reachable" : state}
+              {text}
             </div>
           </div>
         );

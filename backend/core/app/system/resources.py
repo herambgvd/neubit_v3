@@ -16,6 +16,8 @@ import platform
 import subprocess
 from functools import lru_cache
 
+from pathlib import Path
+
 import psutil
 
 from ..core.logging import get_logger
@@ -154,6 +156,22 @@ def _sample_gpus() -> list[dict]:
     return gpus
 
 
+
+def _data_disk_path() -> str:
+    """The disk the console's data lives on — the one that fills up.
+
+    `/` was right in a container, where the root and the data volume share a disk.
+    On the native Windows appliance `/` means the drive the process was started
+    from (the program drive), while the data root deliberately follows the big
+    disk, so the gauge would watch the wrong one.
+    """
+    from ..core.config import get_settings
+
+    p = Path(get_settings().storage_local_dir).resolve()
+    while not p.exists() and p.parent != p:
+        p = p.parent  # not created yet: measure the nearest ancestor on that drive
+    return str(p) if p.exists() else "/"
+
 def sample_resources() -> dict:
     """Return a one-shot snapshot of host CPU / RAM / disk / GPU utilisation.
 
@@ -180,7 +198,7 @@ def sample_resources() -> dict:
         cpu_freq_ghz = None
 
     vm = psutil.virtual_memory()
-    disk = psutil.disk_usage("/")
+    disk = psutil.disk_usage(_data_disk_path())
 
     return {
         "cpu_percent": float(cpu_percent),

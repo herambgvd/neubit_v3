@@ -173,3 +173,14 @@ async def test_an_unreachable_agent_is_a_503_not_an_empty_estate(app, db, monkey
     async with api_client(app) as c:
         r = await c.get(f"{PREFIX}/system/services", headers=bearer(user))
     assert r.status_code == 503
+
+
+def test_the_native_appliances_one_shots_are_hidden_too():
+    """On the Windows appliance the migrations are supervisor processes named
+    migrate-* / reporting-*; a finished one is 'exited' and would otherwise sort
+    to the top of the page as if it were an outage."""
+    from app.system.router import _HIDDEN_SERVICES
+
+    for name in ("migrate-core", "migrate-ingest", "migrate-workflow", "migrate-access",
+                 "migrate-vision", "reporting-db", "reporting-migrate", "reporting-apply"):
+        assert name in _HIDDEN_SERVICES

@@ -107,6 +107,9 @@ class ApiProbes:
     def __init__(self) -> None:
         self.watches: list[ConsumerWatch] = []
         self.hosts_consumers = False
+        # Set when this process drives the sweeps itself (VE_WORKFLOW_SCHEDULER=
+        # inline). Then there is no Celery broker, worker or beat to report on.
+        self.scheduler = None
 
     def add(self, watch: ConsumerWatch) -> None:
         self.watches.append(watch)
@@ -123,6 +126,8 @@ class ApiProbes:
 
     async def readiness(self) -> tuple[bool, dict]:
         """(ready, body). Every reason names the dependency that failed."""
+        if self.scheduler is not None:
+            return await self._readiness_inline()
         db, broker = await asyncio.gather(check_database(), check_broker())
         reasons = [r for r in (db, broker) if r]
         for w in self.watches:
@@ -146,6 +151,33 @@ class ApiProbes:
             # Advisory only, not part of `ready` — see the module docstring.
             "worker": _role_view("worker", worker, worker_err, heartbeat.WORKER_SILENCE_SEC),
             "beat": _role_view("beat", beat, beat_err, heartbeat.BEAT_SILENCE_SEC),
+        }
+        return not reasons, body
+
+    async def _readiness_inline(self) -> tuple[bool, dict]:
+        """Readiness when the sweeps run here: no broker to ask, no worker to age.
+
+        The sweeps stay advisory, as the Celery worker's age is: the API serves
+        fine while a sweep fails, and 503 would take the console offline for it.
+        """
+        db = await check_database()
+        reasons = [db] if db else []
+        for w in self.watches:
+            reasons.extend(w.reasons())
+        body = {
+            "ready": not reasons,
+            "reasons": reasons,
+            "service": "workflow",
+            "role": "api",
+            "uptime_sec": round(time.time() - STARTED_AT, 1),
+            "database": "ok" if db is None else db,
+            "broker": "not used (VE_WORKFLOW_SCHEDULER=inline)",
+            "consumers": (
+                {w.label: w.snapshot() for w in self.watches}
+                if self.hosts_consumers
+                else "not hosted in this process (VE_WORKFLOW_INLINE_CORRELATION off)"
+            ),
+            "scheduler": {"mode": "inline", "sweeps": self.scheduler.snapshot()},
         }
         return not reasons, body
 
@@ -195,8 +227,11 @@ class ApiProbes:
                          "consumers.\n# TYPE workflow_consumers_hosted gauge\n"
                          "workflow_consumers_hosted 0")
 
-        # ── worker + beat liveness, read from the shared broker ──
-        parts.append(await _role_metrics())
+        # ── sweep liveness: the inline scheduler's own, or worker + beat off the broker ──
+        if self.scheduler is not None:
+            parts.append(self.scheduler.prometheus())
+        else:
+            parts.append(await _role_metrics())
         return "\n".join(p.rstrip("\n") for p in parts) + "\n"
 
 
