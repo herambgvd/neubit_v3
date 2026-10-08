@@ -59,6 +59,11 @@ const bridge: NeubitBridge = {
   installUpdate: () => ipcRenderer.invoke(IPC.updateInstall),
   onUpdateStatus: (cb: (s: UpdateStatus) => void) => subscribe(IPC.updateStatusEvent, cb),
 
+  localServer: () => ipcRenderer.invoke(IPC.localServerState),
+  startLocalServer: () => ipcRenderer.invoke(IPC.localServerStart),
+  openLocalServer: () => ipcRenderer.invoke(IPC.localServerOpen),
+  repairLocalServer: () => ipcRenderer.invoke(IPC.localServerRepair),
+
   appInfo: () => ipcRenderer.invoke(IPC.appInfo),
   relaunch: () => ipcRenderer.invoke(IPC.appRelaunch),
 };

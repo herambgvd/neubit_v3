@@ -6,6 +6,7 @@ import { autoStartEnabled, isAutoStartSupported, setAutoStartEnabled } from "./a
 import { beginQuit, setTrayActive } from "./lifecycle";
 import { log } from "./logger";
 import { probe } from "./server";
+import { applianceStatus, controlService, describe, serviceExe, type ApplianceStatus } from "./appliance";
 import { applyKiosk, openWallSignatures, showMainWindow } from "./window";
 import { closeAllWalls, identifyScreens } from "./screens";
 import { chooseExportFolder, clearExportFolder, exportPrefs, openExportFolder } from "./exports";
@@ -30,6 +31,8 @@ import type { ServerStatus } from "@shared/ipc";
 let tray: Tray | null = null;
 let pollTimer: NodeJS.Timeout | null = null;
 let lastStatus: ServerStatus | null = null;
+/** The VMS server installed on THIS computer (the NeubitVMS service), if any. */
+let localServer: ApplianceStatus | null = null;
 
 /** How often the tray re-reads the server. Slow on purpose: this runs for the
  *  whole life of the session, and /health is cheap but not free. */
@@ -94,6 +97,8 @@ function buildMenu(): Menu {
       click: () => void shell.openExternal(active),
     });
   }
+
+  template.push(...localServerSection());
 
   template.push(
     { type: "separator" },
@@ -206,8 +211,35 @@ function applyMenu(): void {
 }
 
 /** Re-read the server and rebuild the menu. Safe to call at any time. */
+/** The server on this computer: its state, and restart/start behind a UAC
+ *  prompt. Absent on a workstation that only runs the console. */
+function localServerSection(): Electron.MenuItemConstructorOptions[] {
+  const installed = existsSync(serviceExe());
+  if (!localServer?.present && !installed) return [];
+  const items: Electron.MenuItemConstructorOptions[] = [
+    { type: "separator" },
+    { label: localServer ? describe(localServer) : "Server: checking...", enabled: false },
+  ];
+  const act = (action: "start" | "restart") => async () => {
+    const r = await controlService(action);
+    if (r === "failed") log.warn(`could not ${action} the server`);
+    await refreshTray();
+  };
+  if (localServer?.present) {
+    items.push({ label: "Restart the server...", click: () => void act("restart")() });
+  } else if (installed) {
+    items.push({ label: "Start the server...", click: () => void act("start")() });
+  }
+  return items;
+}
+
 export async function refreshTray(): Promise<void> {
   if (!tray) return;
+  try {
+    localServer = await applianceStatus();
+  } catch {
+    localServer = null;
+  }
   const url = activeServerUrl();
   if (!url) {
     lastStatus = null;

@@ -10,6 +10,10 @@ node_modules/
 out/
 dist/
 build/
+# Not output: electron-builder's buildResources (icons, entitlements and the
+# NSIS hooks that install the server). Ignored, a fresh clone builds an
+# installer with no icon and no server.
+!desktop/build/
 *.tsbuildinfo
 .turbo/
 npm-debug.log*

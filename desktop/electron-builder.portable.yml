@@ -1,0 +1,13 @@
+# The CLIENT-ONLY portable exe: the console for a workstation (or an engineer on
+# a customer site who may not install software) that connects to a server
+# elsewhere. Same app as the installer, WITHOUT the server payload.
+#
+# Built with `electron-builder --win portable --config electron-builder.portable.yml`.
+# `extends` merges ARRAYS by concatenation, so neither half of this can be said
+# with a list here:
+#   - `extraResources: []` would keep the server payload (a 200 MB portable that
+#     re-extracts it to %TEMP% on every launch). null replaces instead.
+#   - a `win.target` list would be ADDED to the installer's nsis target. The
+#     target comes from the command line, which overrides the config.
+extends: ./electron-builder.yml
+extraResources: null

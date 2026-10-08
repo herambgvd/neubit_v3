@@ -218,6 +218,60 @@
         color: var(--good);
       }
 
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 1.1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+      }
+      .panel p {
+        margin: 0;
+      }
+      .wait-title {
+        font-weight: 600;
+      }
+      .wait-text,
+      .checking {
+        color: var(--ink-2);
+        font-size: 0.86rem;
+      }
+      .wait-text.bad {
+        color: var(--bad);
+      }
+      /* Progress without motion: the width is set per poll, never animated. */
+      .meter {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--line);
+        overflow: hidden;
+      }
+      .meter > div {
+        height: 100%;
+        width: 0;
+        background: var(--accent);
+      }
+      .wait-detail,
+      .wait-clock {
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 0.74rem;
+        color: var(--muted);
+        overflow-wrap: anywhere;
+        user-select: text;
+      }
+      .link {
+        background: none;
+        border: 0;
+        padding: 0;
+        margin-top: 0.9rem;
+        color: var(--accent);
+        font: inherit;
+        font-size: 0.82rem;
+        cursor: pointer;
+      }
+
       footer {
         margin-top: 1.5rem;
         font-family: ui-monospace, Consolas, monospace;
@@ -230,33 +284,67 @@
   <body>
     <main>
       <div class="brand"><b>NeuBit</b><span>Genius Vision Digital</span></div>
-      <p class="lede">Connect this workstation to a Neubit VMS server.</p>
+      <p class="lede" id="lede">Connect this workstation to a Neubit VMS server.</p>
 
-      <h2 id="saved-heading" hidden>Saved servers</h2>
-      <ul class="servers" id="servers"></ul>
+      <p class="checking" id="checking">
+        Looking for a Neubit VMS server on this computer…
+      </p>
 
-      <h2>Add a server</h2>
-      <form id="add">
-        <label>
-          Name
-          <input id="label" type="text" placeholder="Control room" autocomplete="off" />
-        </label>
-        <label>
-          Address
-          <input
-            id="url"
-            type="text"
-            placeholder="192.168.1.10"
-            autocomplete="off"
-            spellcheck="false"
-          />
-        </label>
-        <p class="status" id="status"></p>
-        <div class="row">
-          <button class="action" type="button" id="test">Test connection</button>
-          <button class="action primary" type="submit" id="connect">Connect</button>
+      <!-- The server installed on THIS machine, still starting or stopped. Shown
+           instead of the picker: typing an address here would override the local
+           server, which is what the operator was waiting for. -->
+      <section id="waiting" hidden>
+        <h2>This computer</h2>
+        <div class="panel">
+          <p class="wait-title" id="waitTitle"></p>
+          <p class="wait-text" id="waitText"></p>
+          <div class="meter" id="waitMeter"><div id="waitBar"></div></div>
+          <p class="wait-detail" id="waitDetail"></p>
+          <p class="wait-clock" id="waitClock"></p>
+          <div class="row">
+            <button class="action primary" type="button" id="startServer" hidden>
+              Start the server
+            </button>
+            <button class="action primary" type="button" id="repairServer" hidden>
+              Set up the server
+            </button>
+            <button class="action" type="button" id="usePicker">
+              Connect to a different server
+            </button>
+          </div>
         </div>
-      </form>
+      </section>
+
+      <div id="picker" hidden>
+        <h2 id="saved-heading" hidden>Saved servers</h2>
+        <ul class="servers" id="servers"></ul>
+
+        <h2>Add a server</h2>
+        <form id="add">
+          <label>
+            Name
+            <input id="label" type="text" placeholder="Control room" autocomplete="off" />
+          </label>
+          <label>
+            Address
+            <input
+              id="url"
+              type="text"
+              placeholder="192.168.1.10"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </label>
+          <p class="status" id="status"></p>
+          <div class="row">
+            <button class="action" type="button" id="test">Test connection</button>
+            <button class="action primary" type="submit" id="connect">Connect</button>
+          </div>
+        </form>
+        <button class="link" type="button" id="useLocal" hidden>
+          Use the server on this computer
+        </button>
+      </div>
 
       <footer id="version"></footer>
     </main>

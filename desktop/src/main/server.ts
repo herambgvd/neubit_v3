@@ -1,5 +1,6 @@
 import { net } from "electron";
 import { CONSOLE_PORT, type ServerStatus } from "@shared/ipc";
+import { applianceStatus, describe } from "./appliance";
 import { log } from "./logger";
 
 // Is there a v3 console at this origin, and is it actually working?
@@ -133,8 +134,21 @@ function connectionReason(e: Error): string {
   return m || "The server could not be reached.";
 }
 
-/** Whether this machine is running a v3 appliance. */
+/** Whether this machine is running a v3 appliance.
+ *
+ *  The native appliance (the NeubitVMS Windows Service) is asked first, through
+ *  its control API: it knows its console's port, and whether the console is
+ *  READY rather than merely listening. Failing that, the gateway on port 80 is
+ *  probed directly — a developer's Docker stack. */
 export async function probeLocal(): Promise<ServerStatus> {
+  const native = await applianceStatus();
+  if (native.present && native.localUrl) {
+    if (native.ready) {
+      log.info(`native VMS server ready at ${native.localUrl}`);
+      return { url: native.localUrl, reachable: true };
+    }
+    return { url: native.localUrl, reachable: false, reason: `${describe(native)}. It keeps starting on its own.` };
+  }
   const status = await probe(LOCAL_CONSOLE_URL);
   log.info(
     status.reachable

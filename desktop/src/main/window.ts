@@ -5,7 +5,7 @@ import iconPath from "../../build/icon.png?asset";
 import { consoleEntryUrl } from "@shared/ipc";
 import { hardenContents, isAllowedConsoleUrl } from "./security";
 import { activeServerUrl, getConfig } from "./config";
-import { LOCAL_CONSOLE_URL, probeLocal } from "./server";
+import { probeLocal } from "./server";
 import { isQuitting, isTrayActive } from "./lifecycle";
 import { log } from "./logger";
 
@@ -112,7 +112,7 @@ export async function resolveConsoleOrigin(): Promise<string | null> {
   if (chosen) return chosen;
 
   const status = await probeLocal();
-  if (status.reachable) return LOCAL_CONSOLE_URL;
+  if (status.reachable) return status.url;
 
   return null;
 }

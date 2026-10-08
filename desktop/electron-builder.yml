@@ -2,14 +2,18 @@
 #
 # Produces ONE installer that carries both halves:
 #
-#   * the Electron shell (this directory), always; and
-#   * the server appliance — the baked WSL2 distro — when
-#     deploy/windows/build-appliance.ps1 has staged it into ../dist/appliance.
+#   * the Electron shell (this directory); and
+#   * the SERVER: the native appliance payload (resources\server), staged into
+#     ../dist/vms-server by appliance/windows/build-native-appliance.ps1, and
+#     registered as the Windows Service "NeubitVMS" by build/installer.nsh.
+#     docs/WINDOWS_NATIVE_APPLIANCE.md.
 #
-# Running `npm run package:win` WITHOUT that step still succeeds and produces a
-# client-only installer. That is a supported shape, not a degraded one: an operator
-# workstation connects to a server elsewhere and has no business running one. See
-# build/installer.nsh, which skips the appliance silently when the payload is absent.
+# Build order (CI and by hand):
+#   appliance\windows\build-native-appliance.ps1   [-Offline for the air-gapped installer]
+#   npm run package:win
+#
+# The Portable exe is the CLIENT-ONLY shape: an operator workstation that
+# connects to a server elsewhere. It carries no server.
 
 appId: com.geniusvision.neubit.vms
 productName: Neubit VMS
@@ -25,37 +29,20 @@ files:
   - "!**/*.map"
   - "!**/*.ts"
 
-# ── the appliance payload is NOT embedded here ───────────────────────────────
+# ── the server payload ───────────────────────────────────────────────────────
 #
-# It used to be `extraResources: ../dist/appliance`, and that CANNOT WORK. NSIS's
-# makensis is a 32-bit program: to embed a payload it memory-maps the compressed
-# blob, and a 2.9 GB appliance does not fit in a 32-bit address space. The build
-# fails at the last step, after doing all the work:
-#
-#   File: failed creating mmap of "...neubit-vms-desktop-0.1.0-x64.nsis.7z"
-#   APP_64_UNPACKED_SIZE=3275259
-#
-# Shrinking under the limit is not available either — the distro is 5.7 GB raw and
-# 2.9 GB gzipped, and the only way below that is to stop shipping the images,
-# which is the entire point of Route B.
-#
-# So the payload travels BESIDE the installer instead:
-#
-#   Neubit VMS 0.1.0\
-#     Neubit VMS Setup 0.1.0-x64.exe      <- this, ~80 MB
-#     appliance\                          <- dist/appliance, ~2.9 GB
-#       neubit-vms.tar.gz
-#       install-appliance.ps1  ...
-#
-# build/installer.nsh looks for that folder next to itself ($EXEDIR) and installs
-# the server half when it is there. That keeps the property this design was chosen
-# for — ONE installer for both shapes — and it is better than embedding for the
-# case the product actually has to serve: an air-gapped site, where a folder on a
-# USB stick is the delivery mechanism and a web installer is not an option.
-#
-# A NOTE FOR CI: the two halves are built by two commands in this order —
-# deploy\windows\build-appliance.ps1 first, then npm run package:win — and the
-# release is the installer plus that folder, zipped together.
+# Embedded, unlike Route B's 2.9 GB WSL distro (which makensis, a 32-bit program,
+# could not map). The native payload is a few hundred MB; the runtimes are
+# fetched at install time and SHA-256-verified (or baked in by -Offline).
+# The filter keeps a dev leftover (a .env, caches) from shipping by accident.
+extraResources:
+  - from: ../dist/vms-server
+    to: server
+    filter:
+      - "**/*"
+      - "!**/__pycache__/**"
+      - "!**/.env"
+      - "!**/.env.*"
 
 # ── auto-update ──────────────────────────────────────────────────────────────
 #
@@ -110,19 +97,16 @@ win:
   target:
     - target: nsis
       arch: [x64]
-    # A portable build for the case that comes up constantly in this market: an
-    # engineer on a customer site who needs the console on a machine they are not
-    # allowed to install software on.
-    - target: portable
-      arch: [x64]
+    # The portable (client-only) build has its own config,
+    # electron-builder.portable.yml: it must NOT carry the server payload, which
+    # a portable exe would re-extract to %TEMP% on every launch.
 
 nsis:
   artifactName: ${productName} Setup ${version}-${arch}.${ext}
   include: build/installer.nsh
   oneClick: false
-  # perMachine, and elevated, because the appliance half registers a scheduled task
-  # under SYSTEM, imports a WSL distro into SYSTEM's profile and writes firewall
-  # rules. A per-user install could do none of those and would produce a desktop app
+  # perMachine, and elevated, because the server half registers a Windows Service,
+  # seals its data directory and writes a firewall rule. A per-user install could do none of those and would produce a desktop app
   # beside a server that never starts — the worst of both.
   #
   # A client-only build pays a UAC prompt it does not strictly need. That is the

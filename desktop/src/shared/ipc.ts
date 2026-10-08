@@ -69,6 +69,29 @@ export interface ServerStatus {
   reason?: string;
 }
 
+/** The VMS server installed on THIS machine (the NeubitVMS Windows Service), as
+ *  the launcher needs it: enough to wait for it, or to say why not, instead of
+ *  offering "Add a server" on the machine that IS the server. */
+export interface LocalServerState {
+  /** What Windows says about the service. "absent": no server installed here. */
+  service: "absent" | "stopped" | "starting" | "running" | "unknown";
+  /** This app was installed WITH the server (the installer, not the Portable):
+   *  "absent" then means the installer's server setup did not finish. */
+  bundled: boolean;
+  /** Its control API answered. */
+  answering: boolean;
+  ready: boolean;
+  healthy: number;
+  total: number;
+  /** Required processes not up yet. */
+  waitingFor: string[];
+  /** Processes that crashed or gave up, with what they last said. */
+  failing: { name: string; error: string }[];
+  logDir?: string;
+}
+
+export type ServiceResult = "ok" | "cancelled" | "failed";
+
 export interface DisplayInfo {
   id: number;
   label: string;
@@ -136,6 +159,11 @@ export const IPC = {
   updateInstall: "update:install",
   updateStatusEvent: "update:status",
 
+  localServerState: "localServer:state",
+  localServerStart: "localServer:start",
+  localServerOpen: "localServer:open",
+  localServerRepair: "localServer:repair",
+
   appInfo: "app:info",
   appRelaunch: "app:relaunch",
 } as const;
@@ -182,6 +210,15 @@ export interface NeubitBridge {
   checkForUpdates(): Promise<void>;
   installUpdate(): Promise<void>;
   onUpdateStatus(cb: (status: UpdateStatus) => void): () => void;
+
+  /** The server installed on this machine, if any, and how far it has started. */
+  localServer(): Promise<LocalServerState>;
+  /** Start the stopped NeubitVMS service (UAC prompt). */
+  startLocalServer(): Promise<ServiceResult>;
+  /** Load this machine's console into the main window, once it is ready. */
+  openLocalServer(): Promise<void>;
+  /** Run the installer's server setup again, elevated, in a visible window. */
+  repairLocalServer(): Promise<ServiceResult>;
 
   appInfo(): Promise<AppInfo>;
   relaunch(): Promise<void>;

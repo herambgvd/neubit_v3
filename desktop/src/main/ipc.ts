@@ -6,7 +6,9 @@ import {
   type AppInfo,
   type ConsoleServer,
   type ExportPrefs,
+  type LocalServerState,
   type ScreenLayout,
+  type ServiceResult,
   type ServerStatus,
   type ShellPrefs,
   type WallTarget,
@@ -37,8 +39,9 @@ import {
   openExportFolder,
 } from "./exports";
 import { isNativeWallAvailable } from "../../native/loader";
+import { controlService, localServerState, repairServer } from "./appliance";
 import { log } from "./logger";
-import { probe } from "./server";
+import { probe, probeLocal } from "./server";
 import { checkForUpdates, installUpdate } from "./updater";
 import { refreshTray, syncTrayPrefs } from "./tray";
 import { applyKiosk, loadConsole, showLauncher } from "./window";
@@ -206,6 +209,24 @@ export function registerIpc(): void {
       nativeWallAvailable: isNativeWallAvailable(),
     }),
   );
+
+  // ── this machine's server ────────────────────────────────────────────────
+  ipcMain.handle(IPC.localServerState, (): Promise<LocalServerState> => localServerState());
+  ipcMain.handle(IPC.localServerStart, async (): Promise<ServiceResult> => {
+    const result = await controlService("start");
+    void refreshTray();
+    return result;
+  });
+  ipcMain.handle(IPC.localServerRepair, (): Promise<ServiceResult> => repairServer());
+  ipcMain.handle(IPC.localServerOpen, async (): Promise<void> => {
+    const local = await probeLocal();
+    if (local.reachable) {
+      await loadConsole(local.url);
+      void refreshTray();
+    } else {
+      log.warn("open local server: not ready:", local.reason ?? "unknown");
+    }
+  });
 
   ipcMain.handle(IPC.appRelaunch, () => {
     app.relaunch();
