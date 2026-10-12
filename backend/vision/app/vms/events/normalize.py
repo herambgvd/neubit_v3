@@ -36,6 +36,8 @@ _NORMALIZE: dict[str, str] = {
     # Face + thermal aren't in the P5 device-event vocabulary (no AI) → generic system.
     "face_detected": "system",
     "system_error": "system",
+    # A plate read from a paired recorder's ANPR camera (SCRUM-324).
+    "anpr": "anpr",
 }
 
 # The full set the VmsEvent model + UI + correlation understand (system events too).
@@ -53,6 +55,7 @@ NORMALIZED_TYPES: frozenset[str] = frozenset(
         "recording_error",
         "storage_low",
         "system",
+        "anpr",
     }
 )
 
@@ -102,6 +105,15 @@ def dedup_key(
     bucket = int(ts.timestamp()) // max(1, w)
     raw = f"{camera_id or '-'}:{event_type}:{bucket}"
     return hashlib.sha256(raw.encode()).hexdigest()[:64]
+
+
+def node_dedup_key(node_id: str, node_event_id: str) -> str:
+    """The dedup grain of an event a paired recorder already logged: its own event id.
+
+    A recorder's ledger is already one row per occurrence, so its id is the identity;
+    the time bucket would merge two plates read within one window into one alert.
+    """
+    return hashlib.sha256(f"node:{node_id}:{node_event_id}".encode()).hexdigest()[:64]
 
 
 def event_payload(row) -> dict:

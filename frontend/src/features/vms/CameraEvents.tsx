@@ -33,6 +33,8 @@ import type { EstateCamera, VmsEventPublic } from "./types";
 import EventMonitorPane from "./components/EventMonitorPane";
 import EventDetails from "./components/EventDetails";
 import EventLivePane from "./components/EventLivePane";
+import AnprEvidence from "./components/AnprEvidence";
+import { anprInvestigateHref, anprOf } from "./anprLib";
 import EventTable from "./components/EventTable";
 import EscalateDialog from "./components/EscalateDialog";
 
@@ -514,7 +516,13 @@ export default function CameraEventsPage() {
             ackPending={ackMut.isPending && !!selected.id && ackMut.variables === selected.id}
             investigateHref={
               selected.camera_id && selected.occurred_at
-                ? `/playback?camera=${encodeURIComponent(selected.camera_id)}&t=${encodeURIComponent(selected.occurred_at)}`
+                ? (() => {
+                    // A plate read opens with the cameras bound to its ANPR camera.
+                    const plate = anprOf(selected);
+                    return plate
+                      ? anprInvestigateHref(selected.camera_id, plate, selected.occurred_at)
+                      : `/playback?camera=${encodeURIComponent(selected.camera_id)}&t=${encodeURIComponent(selected.occurred_at)}`;
+                  })()
                 : null
             }
             onEscalate={canEscalate ? () => setEscalating([selected]) : undefined}
@@ -545,6 +553,21 @@ export default function CameraEventsPage() {
         )}
         <EventLivePane camera={monitorCamera} />
       </div>
+
+      {/* A plate read's own evidence: the plate, the scene, and the cameras the
+          recorder bound to the ANPR camera, playing at the read. */}
+      {(() => {
+        const plate = anprOf(selected);
+        return plate && selected?.camera_id ? (
+          <AnprEvidence
+            key={plate.readId || selected.id}
+            anpr={plate}
+            cameraId={selected.camera_id}
+            occurredAt={selected.occurred_at}
+            cameraById={cameraById}
+          />
+        ) : null;
+      })()}
 
       {/* Bulk actions appear only when there is a selection — a burst of motion
           from one camera is acknowledged in one action, not twenty-nine. */}

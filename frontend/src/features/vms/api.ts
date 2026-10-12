@@ -55,6 +55,7 @@ import type {
   EvidenceLockListResponse,
   EvidenceLockPublic,
   FederatedBackchannel,
+  FederatedAnprRead,
   FederatedBookmark,
   FederatedBookmarkList,
   FederatedExportJob,
@@ -323,6 +324,14 @@ export const vms = {
         unwrap(api.post<FederatedBookmark>(`/vms/federation/nodes/${nodeId}/cameras/${cameraId}/bookmarks`, body)),
       remove: (nodeId: string, bookmarkId: string) =>
         unwrap(api.delete<FederatedOpResult>(`/vms/federation/nodes/${nodeId}/bookmarks/${bookmarkId}`)),
+    },
+    // ANPR plate reads, kept on the recorder that took them (SCRUM-324). Stills are
+    // relative paths fetched as authed blobs, like the snapshot below.
+    anpr: {
+      read: (nodeId: string, readId: string) =>
+        unwrap(api.get<FederatedAnprRead>(`/vms/federation/nodes/${nodeId}/anpr/reads/${encodeURIComponent(readId)}`)),
+      imageUrl: (nodeId: string, readId: string, kind: string) =>
+        `/vms/federation/nodes/${nodeId}/anpr/reads/${encodeURIComponent(readId)}/images/${encodeURIComponent(kind)}`,
     },
     // Snapshot URL for a federated camera (relative path — fetched as an authed
     // blob, same as cameras.snapshotUrl, since the endpoint needs the Bearer header).

@@ -35,7 +35,7 @@ from kernel.auth import Scope, assert_owned, scoped
 from app.vms.common.events import emit_camera_event
 from app.vms.models import VmsEvent
 
-from .normalize import dedup_key, event_payload, normalize_event_type
+from .normalize import dedup_key, event_payload, node_dedup_key, normalize_event_type
 from .schemas import VmsEventListResponse, VmsEventPublic
 
 log = logging.getLogger("vision.events_service")
@@ -165,6 +165,12 @@ class VmsEventService:
         tid = _coerce_tenant(tenant_id)
         occ = _parse_occurred(occurred_at)
         key = dedup_key(camera_id, event_type, occ)
+        # A plate read is one row per vehicle on its recorder: two plates read within
+        # one bucket are two alerts, so it dedupes on the recorder's own event id.
+        # Every other type keeps the bucket it always had.
+        node_event = (raw or {}).get("node_event_id")
+        if event_type == "anpr" and node_event:
+            key = node_dedup_key(str((raw or {}).get("node_id") or "-"), str(node_event))
 
         # Dedupe up-front (cheap read) so a chatty camera doesn't spam failed inserts.
         existing = (

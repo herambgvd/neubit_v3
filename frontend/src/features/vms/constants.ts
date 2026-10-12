@@ -159,12 +159,14 @@ export const EVENT_TYPE_PRESETS = {
   recording_error: { label: "Recording error", icon: "heroicons:exclamation-triangle", cls: "bg-red-500/10 text-red-500 border-red-500/20" },
   storage_low: { label: "Storage low", icon: "heroicons-outline:circle-stack", cls: "bg-amber-500/10 text-amber-500 border-amber-500/20" },
   system: { label: "System", icon: "heroicons-outline:cog-6-tooth", cls: "bg-hover text-muted border-card-border" },
+  // A plate read from a paired recorder's ANPR camera (SCRUM-324).
+  anpr: { label: "ANPR", icon: "heroicons-outline:identification", cls: "bg-sky-500/10 text-sky-400 border-sky-500/20" },
 };
 
 // A stable ORDER for selectors (feed filter + linkage trigger picker).
 export const EVENT_TYPES = [
   "motion", "tamper", "video_loss", "camera_online", "camera_offline",
-  "io_input", "line_crossing", "zone_intrusion", "audio",
+  "io_input", "line_crossing", "zone_intrusion", "audio", "anpr",
   "recording_error", "storage_low", "system",
 ] as const satisfies readonly (keyof typeof EVENT_TYPE_PRESETS)[];
 

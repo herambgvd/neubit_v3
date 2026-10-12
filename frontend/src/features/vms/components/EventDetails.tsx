@@ -18,6 +18,7 @@ import { Icon } from "@iconify/react";
 import { eventTypeLabel, fmtDate, fmtTime, sevPreset, typePreset, type NormalizedVmsEvent } from "../eventLib";
 import { durationLabel, eventInterval } from "../eventState";
 import { useTicker } from "../hooks/useTicker";
+import { anprListCls, anprListLabel, anprOf, confidencePct } from "../anprLib";
 
 export interface EventDetailsProps {
   event: NormalizedVmsEvent;
@@ -75,6 +76,7 @@ export default function EventDetails({
   const sp = sevPreset(event.severity);
   const tp = typePreset(event.event_type);
   const reason = reasonOf(event);
+  const plate = anprOf(event);
   const topic = typeof (event.raw as { topic?: unknown })?.topic === "string"
     ? ((event.raw as { topic?: string }).topic as string)
     : null;
@@ -124,6 +126,20 @@ export default function EventDetails({
             {eventTypeLabel(event.event_type)}
           </span>
         </Row>
+        {plate && (
+          <>
+            <Row label="Plate">
+              <span className="text-[14px] font-semibold tracking-wider">{plate.noPlate ? "No plate" : plate.plate}</span>
+            </Row>
+            <Row label="List">
+              <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${anprListCls(plate.list)}`}>
+                {anprListLabel(plate.list, plate.listLabel)}
+              </span>
+            </Row>
+            <Row label="Confidence">{confidencePct(plate.confidence)}</Row>
+            <Row label="Linked cameras">{plate.linkedCameraIds.length || "None"}</Row>
+          </>
+        )}
         <Row label="Severity">
           <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${sp.cls}`}>{sp.label}</span>
         </Row>

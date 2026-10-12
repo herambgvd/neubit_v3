@@ -203,6 +203,28 @@ export function usePlaybackWorkspace() {
     [cams, sync.anchorMs, sync.clock, win.fromMs, playAt, clampAllSpeeds],
   );
 
+  /** Adds several cameras in one step, in order and up to the grid's cap: a deep link
+   *  that names an ANPR camera with its linked cameras. `addCam` in a loop would read
+   *  the same `cams` each time and keep only the last one. Returns how many it added. */
+  const addCams = useCallback(
+    (list: PlaybackCam[]): number => {
+      const next = [...cams];
+      for (const cam of list) {
+        if (next.some((c) => c.key === cam.key)) continue;
+        if (next.length >= MAX_TILES) break;
+        next.push(cam);
+      }
+      if (list.length > 0) setActiveKey(list[0].key);
+      if (next.length === cams.length) return 0;
+      setCams(next);
+      setLayout((l) => (l >= next.length ? l : layoutFor(next.length)));
+      if (sync.anchorMs == null) playAt(sync.clock.get() ?? win.fromMs, SYNC_ID);
+      clampAllSpeeds(next.length);
+      return next.length - cams.length;
+    },
+    [cams, sync.anchorMs, sync.clock, win.fromMs, playAt, clampAllSpeeds],
+  );
+
   const removeCam = useCallback(
     (key: string) => {
       setCams((cs) => cs.filter((c) => c.key !== key));
@@ -366,6 +388,7 @@ export function usePlaybackWorkspace() {
     maxSpeed: maxSpeedFor(Math.max(1, tileCount)),
     canReverse: reverseAllowed(Math.max(1, tileCount)),
     addCam,
+    addCams,
     removeCam,
     clearAll,
     toggleIndependent,

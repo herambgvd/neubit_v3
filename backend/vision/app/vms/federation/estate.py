@@ -242,6 +242,56 @@ async def federated_snapshot(
         raise _unreachable(e)
     return Response(content=raw, media_type=content_type, headers={"Cache-Control": "no-store"})
 
+# ── ANPR plate reads (SCRUM-324) ─────────────────────────────────────────────
+# A plate read lives on the recorder that took it: the plate log row and its stills
+# (plate crop, scene, a frame from each camera the recorder bound to the ANPR camera).
+# The VMS relays them through the owning node's credential, as it does a snapshot.
+
+
+@router.get(
+    "/nodes/{node_id}/anpr/reads/{read_id}",
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def federated_anpr_read(
+    node_id: str,
+    read_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> dict:
+    """One plate read off its recorder's plate log, tagged with the node it came from."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        read = await fed.anpr_read_node(node.api_url, read_id, credential=node.credential)
+    except fed.NodeUnavailable as e:
+        raise _unreachable(e)
+    read["node_id"] = str(node.id)
+    read["node_name"] = node.name
+    return read
+
+
+@router.get(
+    "/nodes/{node_id}/anpr/reads/{read_id}/images/{kind}",
+    dependencies=[Depends(require_permission(PERM_READ))],
+)
+async def federated_anpr_image(
+    node_id: str,
+    read_id: str,
+    kind: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    scope: Annotated[Scope, Depends(get_scope)],
+) -> Response:
+    """One still of a plate read, relayed from its recorder as the JPEG it stored. A
+    still never changes once taken, so the browser may keep it."""
+    node = await _resolve_node(db, scope, node_id)
+    try:
+        raw, content_type = await fed.anpr_image_node(
+            node.api_url, read_id, kind, credential=node.credential
+        )
+    except fed.NodeUnavailable as e:
+        raise _unreachable(e)
+    return Response(content=raw, media_type=content_type, headers={"Cache-Control": "private, max-age=3600"})
+
+
 @router.get(
     "/nodes/{node_id}/cameras/{camera_id}/timeline",
     dependencies=[Depends(require_permission(PERM_PLAYBACK))],

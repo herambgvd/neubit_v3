@@ -40,6 +40,22 @@ describe("usePlaybackWorkspace", () => {
     expect(result.current.layout).toBe(9);
   });
 
+  // An ANPR read opens its camera with the cameras bound to it, in one deep link.
+  // addCam in a loop reads one stale camera list and keeps only the last.
+  it("adds several cameras in one step, in order, skipping one already open", () => {
+    const { result } = setup();
+    act(() => {
+      result.current.addCam(cam(2));
+    });
+    let added = 0;
+    act(() => {
+      added = result.current.addCams([cam(1), cam(2), cam(3)]);
+    });
+    expect(added).toBe(2);
+    expect(result.current.cams.map((c) => c.key)).toEqual([cam(2).key, cam(1).key, cam(3).key]);
+    expect(result.current.activeKey).toBe(cam(1).key);
+  });
+
   it("refuses a seventeenth camera", () => {
     const { result } = setup();
     for (let i = 1; i <= 16; i += 1) {

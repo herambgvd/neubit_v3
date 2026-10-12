@@ -932,6 +932,32 @@ export interface FederatedRecordingList extends NodeTagged {
 }
 
 /** A bookmark stored on the recorder (`…/bookmarks`). */
+/** One plate read off a recorder's plate log (SCRUM-324), as the recorder serves it
+ *  plus the node it came from. `images` names the stills the recorder kept: plate,
+ *  vehicle, scene, evidence, and `linked-<camera id>` for each bound camera's frame. */
+export interface FederatedAnprRead {
+  id: string;
+  camera_id: string;
+  camera_name?: string | null;
+  event_id?: string | null;
+  plate: string;
+  no_plate: boolean;
+  confidence?: number | null;
+  country?: string;
+  list_type?: string;
+  list_label?: string;
+  vehicle_type?: string;
+  vehicle_color?: string;
+  vehicle_brand?: string;
+  direction?: string;
+  region?: string;
+  read_at: string;
+  images: string[];
+  linked: { camera_id: string; camera_name?: string }[];
+  node_id?: string;
+  node_name?: string;
+}
+
 export interface FederatedBookmark {
   id: string;
   camera_id?: string;

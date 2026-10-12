@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import re
+from urllib.parse import quote
 
 import httpx
 
@@ -800,6 +801,31 @@ async def list_events_node(
     if since:
         params["since"] = since
     return await _node_json("GET", api_url, "/events", credential=credential, params=params)
+
+
+async def anpr_read_node(api_url: str, read_id: str, *, credential: str | None = None) -> dict:
+    """GET {api_url}/api/v1/nvr/estate/anpr/reads/{id} → one plate read off the
+    recorder's plate log: the plate, its list result, which stills it kept and the
+    cameras the recorder had bound to the ANPR camera when it read (SCRUM-324). Gated
+    node-side on vms.event.read, which the federation credential carries."""
+    return await _node_json("GET", api_url, f"/anpr/reads/{quote(read_id, safe='')}", credential=credential)
+
+
+async def anpr_image_node(
+    api_url: str, read_id: str, kind: str, *, credential: str | None = None
+) -> tuple[bytes, str]:
+    """GET {api_url}/api/v1/nvr/estate/anpr/reads/{id}/images/{kind} → one still of a
+    plate read (the plate crop, the scene, or a linked camera's frame) as raw JPEG
+    bytes. NodeUnavailable on any non-2xx (a 404 is a still the read does not have)."""
+    url = (
+        f"{api_url.rstrip('/')}{_ESTATE}/anpr/reads/{quote(read_id, safe='')}"
+        f"/images/{quote(kind, safe='')}"
+    )
+    r = await _send("GET", url, headers=_headers(credential))
+    if r.status_code // 100 != 2:
+        raise (_refusal(r.status_code, r.text) if r.status_code // 100 == 4
+               else NodeUnavailable(f"{r.status_code}: {_node_error_message(r, r.text[:160])}"))
+    return r.content, (r.headers.get("content-type") or "image/jpeg").split(";", 1)[0]
 
 
 async def verify_export_node(

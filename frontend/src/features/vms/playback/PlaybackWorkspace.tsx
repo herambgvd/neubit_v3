@@ -128,29 +128,32 @@ export default function PlaybackWorkspace({ onExport }: Readonly<PlaybackWorkspa
 
   // ── deep link ────────────────────────────────────────────────────────────
   // An id no recorder owns is SAID, not shown as an empty workspace that looks like
-  // nobody picked a camera.
-  const [deepLinkId] = useState(() =>
-    typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("camera"),
+  // nobody picked a camera. `camera` may repeat: an ANPR read opens its camera with
+  // the cameras the recorder bound to it, in sync at the read (SCRUM-324).
+  const [deepLinkIds] = useState<string[]>(() =>
+    typeof window === "undefined"
+      ? []
+      : new URLSearchParams(window.location.search).getAll("camera").filter(Boolean),
   );
+  const ownedByARecorder = (id: string) => fedCameras.some((c) => c.id === id || c.real_id === id);
   const deepLinkMiss =
-    deepLinkId && !fedCamsQ.isLoading && !fedCameras.some((c) => c.id === deepLinkId || c.real_id === deepLinkId)
-      ? deepLinkId
-      : null;
+    deepLinkIds.length > 0 && !fedCamsQ.isLoading && !deepLinkIds.some(ownedByARecorder) ? deepLinkIds[0] : null;
   const deepDone = useRef(false);
   useEffect(() => {
-    if (deepDone.current || fedCamsQ.isLoading || !deepLinkId) return;
+    if (deepDone.current || fedCamsQ.isLoading || deepLinkIds.length === 0) return;
     deepDone.current = true;
-    const hit = fedCameras.find((c) => c.id === deepLinkId || c.real_id === deepLinkId);
-    if (!hit) return;
+    const hits = deepLinkIds
+      .map((id) => fedCameras.find((c) => c.id === id || c.real_id === id))
+      .filter((c): c is NonNullable<typeof c> => !!c);
+    if (hits.length === 0) return;
     const params = new URLSearchParams(window.location.search);
-    const cam = toCam(hit);
-    ws.addCam(cam);
+    ws.addCams(hits.map(toCam)); // past the grid's cap the first ones are kept
     const t = new Date(params.get("t") ?? "").getTime();
     if (Number.isFinite(t)) {
       ws.setWin(windowAt(t, 3_600));
       playAt(t - 10_000, SYNC_ID); // a little before the moment, as Milestone opens it
     }
-  }, [fedCamsQ.isLoading, fedCameras, deepLinkId, ws, playAt]);
+  }, [fedCamsQ.isLoading, fedCameras, deepLinkIds, ws, playAt]);
 
   // ── coverage, events and bookmarks, per camera, over the visible window ──
   const { spansByKey, eventsByKey, events, bookmarks, bookmarksFailed, coverageFailed } = useGridData(cams, win);

@@ -35,7 +35,9 @@ buckets, and polling would multiply it by the number of ticks it survived.
 
 Config (env, ``VE_`` prefix):
   * ``VE_EVENT_SUPERVISOR_ENABLED``  — master switch (default "1"; "0" disables).
-  * ``VE_EVENT_RESCAN_INTERVAL_SEC`` — seconds between polls (default 30).
+  * ``VE_EVENT_RESCAN_INTERVAL_SEC`` — seconds between polls (default 5, floor 2). An
+    alarm or a plate read that reaches the operator half a minute late has missed the
+    vehicle; each poll asks only for rows newer than the watermark, so it is cheap.
   * ``VE_EVENT_SUB_CONCURRENCY``     — how many nodes are polled at once (default 16).
   * ``VE_EVENT_POLL_LIMIT``          — max events fetched per node per tick (default 200).
 """
@@ -93,7 +95,7 @@ def supervisor_enabled() -> bool:
 
 
 def rescan_interval_sec() -> int:
-    return max(5, _env_int("VE_EVENT_RESCAN_INTERVAL_SEC", 30))
+    return max(2, _env_int("VE_EVENT_RESCAN_INTERVAL_SEC", 5))
 
 
 def poll_concurrency() -> int:
@@ -236,7 +238,7 @@ class EventSupervisor:
                 camera_id=raw.get("camera_id"),
                 driver_event_type=str(raw.get("type") or "other"),
                 severity=str(raw.get("severity") or "info"),
-                title=str(raw.get("camera_name") or raw.get("type") or "event"),
+                title=_event_title(raw),
                 # The recorder's own row, kept whole — its raw ONVIF topic, its
                 # payload, and its event id, so an estate event can always be traced
                 # back to the recorder row it came from.
@@ -254,6 +256,18 @@ class EventSupervisor:
             )
         except Exception as exc:  # noqa: BLE001
             log.info("event ingest failed for node %s event %s: %s", node.name, raw.get("id"), exc)
+
+
+def _event_title(raw: dict) -> str:
+    """The line an operator reads first. A plate read leads with its plate (SCRUM-324):
+    at a gate the plate IS the alert, and the camera name alone says nothing."""
+    camera = str(raw.get("camera_name") or "")
+    if raw.get("type") == "anpr":
+        anpr = ((raw.get("payload") or {}).get("anpr") or {}) if isinstance(raw.get("payload"), dict) else {}
+        plate = str(anpr.get("plate") or "").strip()
+        head = f"Plate {plate}" if plate else "Vehicle without a plate"
+        return f"{head} · {camera}" if camera else head
+    return camera or str(raw.get("type") or "event")
 
 
 __all__ = ["EventSupervisor", "supervisor_enabled", "rescan_interval_sec"]
