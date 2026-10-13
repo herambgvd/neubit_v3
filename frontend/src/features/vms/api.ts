@@ -613,9 +613,12 @@ export const vms = {
   // title, description, raw, occurred_at, acknowledged, acknowledged_by/_at,
   // snapshot_path, recording_id, created_at }.
   events: {
-    // GET /vms/events?camera_id=&event_type=&severity=&acknowledged=&from=&to=&skip=&limit=
-    //   → { items, total, skip, limit } (newest first).
-    list: (params: QueryParams = {}) => unwrap(api.get<VmsEventListResponse>(`${EVENTS}${qs(params)}`)),
+    // GET /vms/events?camera_id=&event_type=&severity=&acknowledged=&from=&to=&q=&skip=&limit=
+    //   → { items, total, skip, limit } (newest first). `q` is free text on the title.
+    //   `opts` carries the query's abort signal and a timeout, so a read the network
+    //   swallowed ends in an error the page can offer to retry, not an endless spinner.
+    list: (params: QueryParams = {}, opts: { signal?: AbortSignal; timeout?: number } = {}) =>
+      unwrap(api.get<VmsEventListResponse>(`${EVENTS}${qs(params)}`, opts)),
     // GET /vms/cameras/{id}/events?… → one camera's events.
     listForCamera: (cameraId: string, params: QueryParams = {}) =>
       unwrap(api.get<VmsEventListResponse>(`${CAMERAS}/${cameraId}/events${qs(params)}`)),

@@ -1,19 +1,18 @@
 "use client";
 
-// Live VMS camera-event stream via the core realtime-bridge SSE endpoint
-// (GET /api/v1/realtime/vms-events?token=<jwt>&camera_id=<id>). Mirrors the access
-// feature's useAccessEventStream: accumulates each `vms.event` frame into a bounded,
-// newest-first buffer and exposes { events, connected }. EventSource can't set
-// headers, so the JWT rides as a ?token= query. Auto-reconnects with capped backoff;
-// closes when `enabled` is false or on unmount.
+// Live VMS camera events off the realtime bridge (GET /api/v1/realtime/vms-events),
+// as a bounded, newest-first buffer plus { connected }. The connection itself is
+// the tab's one shared stream (vmsRealtime.ts): this hook subscribes to its
+// `vms.event` frames and closes nothing of its own. Unsubscribes when `enabled` is
+// false or on unmount.
 //
-// `cameraId` is optional — pass it to narrow the stream server-side to one camera
-// (the Camera-events surface passes it when a camera filter is active; omitting it
-// streams every camera's events in the tenant).
+// `cameraId` is optional — pass it to keep one camera's events (the Camera-events
+// surface passes it when a camera filter is active). The shared stream carries
+// every camera in the tenant, so the narrowing is done here.
 import { useEffect, useState } from "react";
 
-import { api, tokens } from "@/lib/api";
 import type { VmsEventFrame } from "../types";
+import { subscribeVmsRealtime } from "./vmsRealtime";
 
 export interface UseVmsEventStreamOptions {
   cameraId?: string | null;
@@ -33,67 +32,15 @@ export function useVmsEventStream({ cameraId = null, enabled = true, max = MAX_E
       setConnected(false);
       return;
     }
-    if (typeof window === "undefined" || typeof EventSource === "undefined") return;
-
-    let es: EventSource | null = null;
-    let closed = false;
-    let retry = 0;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    const connect = () => {
-      if (closed) return;
-      // Read the token at CONNECT time, not from the mount-time closure: when
-      // the access token expires the server drops the stream, and this retry
-      // must reconnect with the token lib/api.ts stored after its 401→refresh —
-      // a captured 12h-old token would just 401 forever. Same fix as
-      // useVmsPopups; the five hooks share this shape.
-      const token = tokens.access;
-      if (!token) {
-        // No token YET, not "no session": the access token lives in memory, so a
-        // component that mounts while the auth provider is still probing the
-        // refresh cookie sees none. Returning here left the stream dead forever;
-        // retry on the same backoff the error path uses.
-        retry = Math.min(retry + 1, 6);
-        timer = setTimeout(connect, Math.min(1000 * 2 ** retry, 30000));
-        return;
-      }
-      let url =
-        `${api.defaults.baseURL}/realtime/vms-events` + `?token=${encodeURIComponent(token)}`;
-      if (cameraId) url += `&camera_id=${encodeURIComponent(cameraId)}`;
-      es = new EventSource(url);
-
-      es.addEventListener("vms.event", (e) => {
-        let data: VmsEventFrame | null = null;
-        try {
-          data = JSON.parse(e.data) as VmsEventFrame;
-        } catch {
-          return; // keepalive/comment — ignore
-        }
-        if (!data) return;
+    return subscribeVmsRealtime({
+      event: "vms.event",
+      onFrame: (frame) => {
+        const data = frame as VmsEventFrame;
+        if (cameraId && data.camera_id !== cameraId) return;
         setEvents((prev) => [data, ...prev].slice(0, max));
-      });
-
-      es.onopen = () => {
-        retry = 0;
-        setConnected(true);
-      };
-      es.onerror = () => {
-        setConnected(false);
-        es?.close();
-        if (closed) return;
-        // Manual capped-backoff reconnect (also covers an expired/rotated token).
-        retry = Math.min(retry + 1, 6);
-        timer = setTimeout(connect, Math.min(1000 * 2 ** retry, 30000));
-      };
-    };
-
-    connect();
-    return () => {
-      closed = true;
-      setConnected(false);
-      if (timer) clearTimeout(timer);
-      es?.close();
-    };
+      },
+      onConnected: setConnected,
+    });
   }, [cameraId, enabled, max]);
 
   return { events, connected };

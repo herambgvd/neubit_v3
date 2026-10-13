@@ -865,3 +865,153 @@ describe("opened from the estate map's Alarms count (SCRUM-311)", () => {
     expect(stub.matching("GET /vms/events")[0].search.get("acknowledged")).toBe("false");
   });
 });
+
+describe("a plate read (SCRUM-325)", () => {
+  // A recorder's ANPR event: the plate and the camera it bound to the ANPR camera.
+  const read = (over: Record<string, unknown> = {}) =>
+    event({
+      event_type: "anpr",
+      severity: "alarm",
+      title: "Plate PB10GN4497 · Channel 1",
+      raw: {
+        node_id: "n1",
+        payload: {
+          anpr: { read_id: "r1", plate: "PB10GN4497", list: "block", list_label: "Stolen" },
+          linked_camera_ids: ["fed-cam-2"],
+        },
+      },
+      ...over,
+    });
+  const plateRoutes = (items: unknown[]) => ({
+    "GET /vms/federation/cameras": {
+      items: [
+        { id: "fed-cam-1", name: "Channel 1", node_id: "n1", node_name: "recorder-a", status: "online" },
+        { id: "fed-cam-2", name: "Hall", node_id: "n1", node_name: "recorder-a", status: "online" },
+      ],
+      total: 2,
+    },
+    "GET /vms/events": { items, total: items.length },
+    "GET /vms/federation/nodes/n1/anpr/reads/r1": {
+      id: "r1",
+      camera_id: "fed-cam-1",
+      plate: "PB10GN4497",
+      no_plate: false,
+      confidence: null,
+      vehicle_type: "car",
+      vehicle_color: "White",
+      direction: "approach",
+      read_at: TODAY,
+      images: ["plate", "scene", "linked-fed-cam-2"],
+      linked: [{ camera_id: "fed-cam-2", camera_name: "Hall" }],
+    },
+  });
+
+  it("opens on its snapshot and plays the LINKED camera at the read, inside the panes", async () => {
+    // The defect: the linked camera's player filled the whole page and covered
+    // the table. It belongs in the third pane, and the table stays where it was.
+    stubAll(plateRoutes([read()]));
+    renderWithProviders(<CameraEventsPage />);
+
+    expect(await screen.findByRole("button", { name: /^snapshot$/i })).toHaveAttribute("aria-pressed", "true");
+    const linked = await screen.findByText(/^recording:Hall:/);
+    expect(Date.parse(TODAY) - Number(linked.textContent!.split(":").pop())).toBeGreaterThan(0);
+    // The monitor pane did not start the ANPR camera's own recording behind the still.
+    expect(screen.queryByText(/^recording:Channel 1:/)).toBeNull();
+    // The linked pane sits in the evidence row, in a box that bounds its player.
+    expect(linked.closest(".relative")).not.toBeNull();
+    expect(screen.getByText("Linked camera")).toBeInTheDocument();
+    // The row carries the plate, so the feed is scanned by plate.
+    expect(screen.getByRole("table")).toHaveTextContent("PB10GN4497");
+  });
+
+  it("leads the details with the plate and says what the camera did not report", async () => {
+    stubAll(plateRoutes([read()]));
+    renderWithProviders(<CameraEventsPage />);
+
+    expect(await screen.findByText("Not reported by the camera")).toBeInTheDocument();
+    expect(await screen.findByText("White car")).toBeInTheDocument();
+    expect(screen.getAllByText("Block list: Stolen").length).toBeGreaterThan(0);
+  });
+
+  it("finds every read of the plate across the history, not just the rows on screen", async () => {
+    stubAll(plateRoutes([read()]));
+    renderWithProviders(<CameraEventsPage />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /every read of this plate/i }));
+    await waitFor(() =>
+      expect(stub.matching("GET /vms/events").some((c) => c.search.get("q") === "PB10GN4497")).toBe(true),
+    );
+    const asked = stub.matching("GET /vms/events").find((c) => c.search.get("q") === "PB10GN4497")!;
+    expect(asked.search.get("event_type")).toBe("anpr");
+    expect(screen.getByRole("searchbox", { name: /search events/i })).toHaveValue("PB10GN4497");
+  });
+
+  it("keeps live of the ANPR camera when no camera is bound to it", async () => {
+    stubAll({
+      ...plateRoutes([]),
+      "GET /vms/events": {
+        items: [read({ raw: { node_id: "n1", payload: { anpr: { read_id: "r9", plate: "HR87K4650" } } } })],
+        total: 1,
+      },
+    });
+    renderWithProviders(<CameraEventsPage />);
+
+    expect(await screen.findByText("live:Channel 1")).toBeInTheDocument();
+    expect(screen.queryByText("Linked camera")).toBeNull();
+  });
+});
+
+describe("searching the feed (SCRUM-325)", () => {
+  it("asks the API for the typed text once the operator stops typing", async () => {
+    stubAll();
+    renderWithProviders(<CameraEventsPage />);
+
+    await userEvent.type(await screen.findByRole("searchbox", { name: /search events/i }), "pb10");
+    await waitFor(() => expect(stub.matching("GET /vms/events").some((c) => c.search.get("q") === "pb10")).toBe(true));
+    // Typing is not a query per key.
+    expect(stub.matching("GET /vms/events").some((c) => c.search.get("q") === "pb")).toBe(false);
+  });
+});
+
+describe("reading the history (SCRUM-325)", () => {
+  it("keeps the filters while a read is on its way, and says it is loading there", async () => {
+    let release: (v: unknown) => void = () => {};
+    stubAll();
+    renderWithProviders(<CameraEventsPage />);
+    await screen.findByRole("table");
+    stub.set({ "GET /vms/events": () => new Promise((r) => (release = r)) });
+
+    await userEvent.type(screen.getByRole("searchbox", { name: /search events/i }), "zz");
+    // The rows of the last filter do not match "zz": that is loading, not "no match".
+    expect(await screen.findByText("Loading events…")).toBeInTheDocument();
+    expect(screen.queryByText(/no events match/i)).toBeNull();
+    expect(screen.getByRole("searchbox", { name: /search events/i })).toHaveValue("zz");
+    release({ items: [], total: 0 });
+    expect(await screen.findByText(/no events match these filters/i)).toBeInTheDocument();
+  });
+
+  it("says the server did not answer, and reads again on Try again", async () => {
+    let calls = 0;
+    stubAll({
+      "GET /vms/events": () => {
+        calls += 1;
+        if (calls <= 2) {
+          const err = new Error("timeout of 12000ms exceeded") as Error & { code?: string };
+          err.code = "ECONNABORTED";
+          throw err;
+        }
+        return { items: [event({ title: "Back" })], total: 1 };
+      },
+    });
+    renderWithProviders(<CameraEventsPage />);
+
+    expect(await screen.findByText(/did not answer within 12 s/i, {}, { timeout: 4000 })).toBeInTheDocument();
+    // Tried once more by itself before saying so.
+    expect(calls).toBe(2);
+    // The filters are still there to change.
+    expect(screen.getByRole("searchbox", { name: /search events/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /try again/i }));
+    expect(await screen.findByRole("table")).toBeInTheDocument();
+    expect(calls).toBe(3);
+  });
+});

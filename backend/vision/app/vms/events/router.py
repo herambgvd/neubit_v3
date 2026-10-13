@@ -53,10 +53,12 @@ async def list_events(
     acknowledged: bool | None = Query(None),
     from_: datetime | None = Query(None, alias="from"),
     to: datetime | None = Query(None),
+    q: str | None = Query(None, max_length=64),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
 ) -> VmsEventListResponse:
-    """The camera device-events feed (newest first); camera/type/severity/ack/time filters."""
+    """The camera device-events feed (newest first); camera/type/severity/ack/time filters,
+    and ``q``, free text on the title (a plate, a camera name)."""
     return await svc.list_(
         camera_id=camera_id,
         event_type=event_type,
@@ -64,6 +66,7 @@ async def list_events(
         acknowledged=acknowledged,
         from_=from_,
         to=to,
+        search=q,
         skip=skip,
         limit=limit,
     )
@@ -81,6 +84,7 @@ async def list_camera_events(
     acknowledged: bool | None = Query(None),
     from_: datetime | None = Query(None, alias="from"),
     to: datetime | None = Query(None),
+    q: str | None = Query(None, max_length=64),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
 ) -> VmsEventListResponse:
@@ -92,6 +96,7 @@ async def list_camera_events(
         acknowledged=acknowledged,
         from_=from_,
         to=to,
+        search=q,
         skip=skip,
         limit=limit,
     )

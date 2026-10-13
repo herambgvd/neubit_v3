@@ -60,6 +60,18 @@ export function confidencePct(c: number | null | undefined): string {
   return c == null || !Number.isFinite(c) ? "—" : `${Math.round(c * 100)}%`;
 }
 
+/** Confidence as a sentence for the details pane: many plate cameras never send one,
+ *  and a bare dash reads like a fault. */
+export function anprConfidenceText(c: number | null | undefined): string {
+  return c == null || !Number.isFinite(c) ? "Not reported by the camera" : confidencePct(c);
+}
+
+/** "White Toyota car" out of whatever the camera reported; empty when it said nothing. */
+export function anprVehicleText(read: { vehicle_color?: string; vehicle_brand?: string; vehicle_type?: string } | null | undefined): string {
+  if (!read) return "";
+  return [read.vehicle_color, read.vehicle_brand, read.vehicle_type].map((v) => (v ?? "").trim()).filter(Boolean).join(" ");
+}
+
 /** Playback at the read with the ANPR camera and every camera bound to it, in sync. */
 export function anprInvestigateHref(cameraId: string, a: AnprOfEvent, occurredAt: string): string {
   const p = new URLSearchParams();
@@ -68,7 +80,15 @@ export function anprInvestigateHref(cameraId: string, a: AnprOfEvent, occurredAt
   return `/playback?${p.toString()}`;
 }
 
-/** The stills of a read in the order an operator looks at them. */
-export function anprStills(images: readonly string[]): string[] {
-  return ["plate", "scene", "vehicle", "evidence"].filter((k) => images.includes(k));
+/** The picture of the read for the monitor pane: the whole scene first, the plate
+ *  crop only when the camera kept nothing wider. */
+export function anprSceneStill(images: readonly string[]): string | null {
+  return ["scene", "evidence", "vehicle", "plate"].find((k) => images.includes(k)) ?? null;
+}
+
+/** The events page's free-text filter, client side for live rows: the same match the
+ *  API makes on the title (case-insensitive, the typed text taken literally). */
+export function matchesEventSearch(title: string | null | undefined, search: string): boolean {
+  const q = search.trim().toLowerCase();
+  return !q || (title ?? "").toLowerCase().includes(q);
 }

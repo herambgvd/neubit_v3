@@ -1,35 +1,49 @@
 "use client";
 
-// THE PLATE READ — what an ANPR camera on a paired recorder saw (SCRUM-324).
+// THE PLATE READ — what an ANPR camera on a paired recorder saw (SCRUM-324, -325).
 //
-// A plate read is answered by pictures, not by facts: is that the plate, and what
-// was the vehicle doing. So this strip shows the recorder's own plate crop and scene,
-// then every camera the recorder bound to the ANPR camera — the frame it grabbed at
-// the read and the recording around it — the way XProtect LPR and AutoVu put the
-// context camera beside the plate. The binding is the recorder's: the VMS only shows
-// what the recorder kept.
-import { useEffect, useState } from "react";
+// A plate read lives in the same three evidence panes as any other event, the way
+// AutoVu's read tile, XProtect LPR's preview and the recorder's own event panes show
+// it: the read's scene in the monitor pane, the plate itself (crop, text, list) at the
+// top of the details, and the camera the recorder bound to the ANPR camera, playing at
+// the read, in the third pane. Each piece fills the bounded pane it is given and never
+// more: a player here is `absolute inset-0`, so every picture box is `relative`.
+import { useEffect, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 
 import { api } from "@/lib/api";
 import { vms } from "../api";
-import { anprListCls, anprListLabel, anprStills, confidencePct, type AnprOfEvent } from "../anprLib";
-import type { EstateCamera } from "../types";
+import { fmtTime } from "../eventLib";
+import { anprListCls, anprListLabel, anprSceneStill, type AnprOfEvent } from "../anprLib";
+import type { EstateCamera, FederatedAnprRead } from "../types";
+import ModeButton from "./ModeButton";
 import TilePlayback from "./TilePlayback";
 
 const PRE_ROLL_MS = 8_000;
 const POST_ROLL_MS = 45_000;
 
-const STILL_LABEL: Record<string, string> = {
-  plate: "Plate",
-  scene: "Full scene",
-  vehicle: "Vehicle",
-  evidence: "Camera evidence",
-};
+/** The recorder's own record of the read: attributes, the stills it kept, the cameras
+ *  it bound. One query per read, shared by the three panes. */
+export function useAnprRead(anpr: AnprOfEvent | null) {
+  const nodeId = anpr?.nodeId ?? "";
+  const readId = anpr?.readId ?? "";
+  return useQuery({
+    queryKey: ["vms-anpr-read", nodeId, readId],
+    queryFn: () => vms.federation.anpr.read(nodeId, readId),
+    enabled: !!nodeId && !!readId,
+    staleTime: 15_000,
+    // The linked frames land a moment after the read: look again once.
+    refetchInterval: (q) => (q.state.dataUpdateCount < 2 ? 8_000 : false),
+  });
+}
 
-/** An image behind the API's Bearer auth: fetched as a blob, shown from an object URL. */
-function AuthedImage({ path, alt, contain }: Readonly<{ path: string; alt: string; contain?: boolean }>) {
+const stillUrl = (anpr: AnprOfEvent, kind: string) => vms.federation.anpr.imageUrl(anpr.nodeId, anpr.readId, kind);
+
+/** An image behind the API's Bearer auth: fetched as a blob, shown from an object URL.
+ *  It fills its box; the box decides the size. */
+export function AuthedImage({ path, alt, cover = false }: Readonly<{ path: string; alt: string; cover?: boolean }>) {
   const [src, setSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -49,25 +63,127 @@ function AuthedImage({ path, alt, contain }: Readonly<{ path: string; alt: strin
     };
   }, [path]);
   if (failed) {
-    return <div className="flex aspect-video items-center justify-center bg-black text-[10.5px] text-muted">not available</div>;
+    return <div className="flex h-full w-full items-center justify-center text-[10.5px] text-muted">not available</div>;
   }
-  if (!src) return <div className="aspect-video animate-pulse bg-black/60" />;
+  if (!src) return <div className="h-full w-full bg-black/60" />;
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt={alt} className={`aspect-video w-full bg-black ${contain ? "object-contain" : "object-cover"}`} />;
+  return <img src={src} alt={alt} className={`h-full w-full ${cover ? "object-cover" : "object-contain"}`} />;
 }
 
-/** A linked camera's picture: its recording at the read, else the frame the recorder
- *  grabbed, else why there is neither. */
-function LinkedPicture({
-  camera,
-  eventMs,
-  stillPath,
-}: Readonly<{ camera: EstateCamera | undefined; eventMs: number | null; stillPath: string | null }>) {
-  if (camera && eventMs != null) {
-    return (
+/** The plate, the way an operator checks it: the camera's crop beside the text it
+ *  read, large, with the list it matched. */
+export function AnprPlateCard({
+  anpr,
+  read,
+  onFindPlate,
+}: Readonly<{ anpr: AnprOfEvent; read: FederatedAnprRead | undefined; onFindPlate?: (plate: string) => void }>) {
+  const hasCrop = !!read?.images.includes("plate");
+  return (
+    <div className="m-2 rounded-lg border border-card-border bg-background/40 p-2">
+      <div className="flex items-center gap-3">
+        <div className="relative h-12 w-28 shrink-0 overflow-hidden rounded bg-black">
+          {hasCrop ? (
+            <AuthedImage path={stillUrl(anpr, "plate")} alt={`Plate crop — ${anpr.plate || "no plate"}`} />
+          ) : (
+            <div className="flex h-full items-center justify-center text-[10px] text-muted">
+              {read ? "no crop" : ""}
+            </div>
+          )}
+        </div>
+        <div className="min-w-0">
+          <div className="text-[10.5px] text-muted">Plate</div>
+          <div className={`truncate text-[18px] font-semibold tracking-wider ${anpr.noPlate ? "text-muted" : "text-foreground"}`}>
+            {anpr.noPlate ? "No plate" : anpr.plate}
+          </div>
+          <span className={`mt-0.5 inline-block rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${anprListCls(anpr.list)}`}>
+            {anprListLabel(anpr.list, anpr.listLabel)}
+          </span>
+        </div>
+      </div>
+      {onFindPlate && !anpr.noPlate && (
+        <button
+          type="button"
+          onClick={() => onFindPlate(anpr.plate)}
+          className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-card-border px-2 py-1 text-[11px] text-muted transition hover:bg-hover hover:text-foreground"
+        >
+          <Icon icon="heroicons-outline:queue-list" className="text-xs" /> Every read of this plate
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** The monitor pane's Snapshot: the scene the camera saw when it read the plate —
+ *  there at once, no stream to open. */
+export function AnprSnapshot({
+  anpr,
+  read,
+  loading,
+  onPlayRecording,
+}: Readonly<{ anpr: AnprOfEvent; read: FederatedAnprRead | undefined; loading: boolean; onPlayRecording: () => void }>) {
+  const still = read ? anprSceneStill(read.images) : null;
+  if (still) {
+    return <AuthedImage key={still} path={stillUrl(anpr, still)} alt={`The read — ${anpr.plate || "no plate"}`} />;
+  }
+  if (loading) return <div className="h-full w-full bg-black/60" />;
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+      <p className="text-[12px] text-muted">
+        {read ? "The recorder kept no picture of this read." : "The recorder's pictures for this read are not reachable right now."}
+      </p>
+      <button
+        type="button"
+        onClick={onPlayRecording}
+        className="inline-flex items-center gap-1.5 rounded-md border border-card-border px-2.5 py-1 text-[11px] text-muted transition hover:text-foreground"
+      >
+        <Icon icon="heroicons-outline:play" className="text-xs" />
+        Play the recording at the read
+      </button>
+    </div>
+  );
+}
+
+type LinkedMode = "recording" | "frame";
+
+/** The third pane for a plate read: the camera the recorder bound to the ANPR camera,
+ *  at the read — its recording by default, the frame the recorder grabbed one click
+ *  away, one chip per bound camera, and Playback with all of them for the long look. */
+export function AnprLinkedPane({
+  anpr,
+  read,
+  cameraById,
+  occurredAt,
+  investigateHref,
+}: Readonly<{
+  anpr: AnprOfEvent;
+  read: FederatedAnprRead | undefined;
+  cameraById: Record<string, EstateCamera>;
+  occurredAt: string | null | undefined;
+  investigateHref: string | null;
+}>) {
+  const linked = read?.linked?.length
+    ? read.linked
+    : anpr.linkedCameraIds.map((id) => ({ camera_id: id, camera_name: undefined as string | undefined }));
+  const [picked, setPicked] = useState<string | null>(null);
+  const [mode, setMode] = useState<LinkedMode>("recording");
+  const current = linked.find((l) => l.camera_id === picked) ?? linked[0];
+  const cam = current ? cameraById[current.camera_id] : undefined;
+  const nameOf = (l: { camera_id: string; camera_name?: string }) =>
+    cameraById[l.camera_id]?.name || l.camera_name || l.camera_id;
+  const frame = current && read?.images.includes(`linked-${current.camera_id}`) ? `linked-${current.camera_id}` : null;
+  const eventMs = occurredAt ? new Date(occurredAt).getTime() : null;
+  const showing: LinkedMode = mode === "frame" && frame ? "frame" : "recording";
+
+  let picture;
+  if (!current) {
+    picture = <Notice>No camera is bound to this ANPR camera on its recorder.</Notice>;
+  } else if (showing === "frame" && frame) {
+    picture = <AuthedImage key={frame} path={stillUrl(anpr, frame)} alt={`${nameOf(current)} at the read`} />;
+  } else if (cam && eventMs != null) {
+    picture = (
       <TilePlayback
-        key={`${camera.id}:${eventMs}`}
-        camera={camera}
+        key={`${cam.id}:${eventMs}`}
+        camera={cam}
         anchorMs={eventMs - PRE_ROLL_MS}
         anchorSeq={eventMs}
         windowToMs={eventMs + POST_ROLL_MS}
@@ -76,115 +192,69 @@ function LinkedPicture({
         compact
       />
     );
+  } else if (frame) {
+    picture = <AuthedImage key={frame} path={stillUrl(anpr, frame)} alt={`${nameOf(current)} at the read`} />;
+  } else {
+    picture = <Notice>This camera is not on this VMS, so its recording cannot be shown here.</Notice>;
   }
-  if (stillPath) return <AuthedImage path={stillPath} alt="Linked camera at the read" />;
+
   return (
-    <div className="flex h-full items-center justify-center px-3 text-center text-[11px] text-muted">
-      This camera is not visible to this VMS.
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card">
+      <header className="flex shrink-0 items-center gap-2 border-b border-card-border px-3 py-2">
+        <Icon icon="heroicons-outline:video-camera" className="text-sm text-sky-400" />
+        <span className="shrink-0 text-[12px] font-semibold text-foreground">Linked camera</span>
+        {linked.length === 1 && current && (
+          <span className="truncate text-[11px] text-muted">{nameOf(current)}</span>
+        )}
+        {investigateHref && (
+          <Link
+            href={investigateHref}
+            title="Open the ANPR camera and every camera bound to it in Playback, at the read"
+            className="ml-auto inline-flex shrink-0 items-center gap-1 text-[11px] text-sky-400 transition hover:text-sky-300"
+          >
+            Playback <Icon icon="heroicons-outline:arrow-top-right-on-square" className="text-xs" />
+          </Link>
+        )}
+      </header>
+      {linked.length > 1 && (
+        <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-card-border px-2 py-1">
+          {linked.map((l) => (
+            <button
+              key={l.camera_id}
+              type="button"
+              aria-pressed={l.camera_id === current?.camera_id}
+              onClick={() => setPicked(l.camera_id)}
+              className={`shrink-0 rounded-full border px-2 py-0.5 text-[10.5px] transition ${
+                l.camera_id === current?.camera_id
+                  ? "border-sky-500/50 bg-sky-500/15 text-sky-300"
+                  : "border-card-border text-muted hover:text-foreground"
+              }`}
+            >
+              {nameOf(l)}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="relative min-h-0 w-full flex-1 bg-black">{picture}</div>
+      <div className="flex shrink-0 items-center gap-1 px-3 py-1.5">
+        <ModeButton active={showing === "recording"} onClick={() => setMode("recording")} icon="heroicons-outline:play">
+          Recording
+        </ModeButton>
+        {frame && (
+          <ModeButton active={showing === "frame"} onClick={() => setMode("frame")} icon="heroicons-outline:photo">
+            Frame at the read
+          </ModeButton>
+        )}
+        {eventMs != null && (
+          <span className="ml-auto font-mono text-[10.5px] text-muted">read {fmtTime(occurredAt)}</span>
+        )}
+      </div>
     </div>
   );
 }
 
-export default function AnprEvidence({
-  anpr,
-  cameraId,
-  occurredAt,
-  cameraById,
-}: Readonly<{
-  anpr: AnprOfEvent;
-  cameraId: string;
-  occurredAt: string | null | undefined;
-  cameraById: Record<string, EstateCamera>;
-}>) {
-  const readQ = useQuery({
-    queryKey: ["vms-anpr-read", anpr.nodeId, anpr.readId],
-    queryFn: () => vms.federation.anpr.read(anpr.nodeId, anpr.readId),
-    enabled: !!anpr.nodeId && !!anpr.readId,
-    staleTime: 15_000,
-    // The linked frames land a moment after the read: look again once.
-    refetchInterval: (q) => (q.state.dataUpdateCount < 2 ? 8_000 : false),
-  });
-  const read = readQ.data;
-  const eventMs = occurredAt ? new Date(occurredAt).getTime() : null;
-  const stills = read ? anprStills(read.images) : [];
-  const linked = read?.linked?.length
-    ? read.linked
-    : anpr.linkedCameraIds.map((id) => ({ camera_id: id, camera_name: undefined as string | undefined }));
-  const imageUrl = (kind: string) => vms.federation.anpr.imageUrl(anpr.nodeId, anpr.readId, kind);
-
+function Notice({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <div className="flex shrink-0 flex-col gap-3 rounded-xl border border-card-border bg-card p-3 lg:flex-row">
-      {/* the plate */}
-      <div className="flex shrink-0 flex-col gap-2 lg:w-[22rem]">
-        <div className="flex items-center gap-2">
-          <Icon icon="heroicons-outline:identification" className="text-base text-sky-400" />
-          <span className="text-[12px] font-semibold text-foreground">Plate read</span>
-          <span className={`ml-auto rounded-full border px-2 py-0.5 text-[10.5px] font-semibold ${anprListCls(anpr.list)}`}>
-            {anprListLabel(anpr.list, anpr.listLabel)}
-          </span>
-        </div>
-        <div className={`text-2xl font-semibold tracking-wider ${anpr.noPlate ? "text-muted" : "text-foreground"}`}>
-          {anpr.noPlate ? "No plate" : anpr.plate}
-        </div>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted">
-          <span>Confidence {confidencePct(anpr.confidence)}</span>
-          {read?.vehicle_type && <span>{[read.vehicle_color, read.vehicle_type].filter(Boolean).join(" ")}</span>}
-          {read?.direction && <span>{read.direction}</span>}
-          {read?.country && <span>{read.country}</span>}
-        </div>
-        {readQ.isError ? (
-          <p className="text-[11px] text-muted">The recorder&apos;s stills for this read are not reachable right now.</p>
-        ) : (
-          <div className="grid grid-cols-2 gap-2">
-            {stills.map((k) => (
-              <figure key={k} className="overflow-hidden rounded-md border border-card-border">
-                <AuthedImage path={imageUrl(k)} alt={`${STILL_LABEL[k] ?? k} — ${anpr.plate || "no plate"}`} contain={k === "plate"} />
-                <figcaption className="px-1.5 py-0.5 text-[10px] text-muted">{STILL_LABEL[k] ?? k}</figcaption>
-              </figure>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* the cameras bound to it */}
-      <div className="min-w-0 flex-1">
-        <div className="mb-2 flex items-center gap-2">
-          <Icon icon="heroicons-outline:video-camera" className="text-sm text-muted" />
-          <span className="text-[12px] font-semibold text-foreground">Linked cameras</span>
-          <span className="text-[11px] text-muted">bound to the ANPR camera on its recorder</span>
-        </div>
-        {linked.length === 0 ? (
-          <p className="text-[11.5px] text-muted">
-            No camera is bound to this ANPR camera. Bind the cameras that watch the lane on the recorder (ANPR → ANPR cameras).
-          </p>
-        ) : (
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {linked.map((l) => {
-              const cam = cameraById[l.camera_id];
-              const still = read?.images.includes(`linked-${l.camera_id}`) ? `linked-${l.camera_id}` : null;
-              return (
-                <div key={l.camera_id} className="overflow-hidden rounded-md border border-card-border">
-                  <div className="truncate px-2 py-1 text-[11.5px] text-foreground" title={cam?.name || l.camera_name || l.camera_id}>
-                    {cam?.name || l.camera_name || l.camera_id}
-                  </div>
-                  <div className="aspect-video bg-black">
-                    <LinkedPicture camera={cam} eventMs={eventMs} stillPath={still ? imageUrl(still) : null} />
-                  </div>
-                  {still && cam && (
-                    <details className="border-t border-card-border">
-                      <summary className="cursor-pointer px-2 py-1 text-[10.5px] text-muted">Frame at the read</summary>
-                      <AuthedImage path={imageUrl(still)} alt="Linked camera at the read" />
-                    </details>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-        {cameraId && !cameraById[cameraId] && (
-          <p className="mt-2 text-[11px] text-muted">The ANPR camera itself is not in this VMS&apos;s camera list.</p>
-        )}
-      </div>
-    </div>
+    <div className="flex h-full items-center justify-center px-4 text-center text-[11.5px] text-muted">{children}</div>
   );
 }

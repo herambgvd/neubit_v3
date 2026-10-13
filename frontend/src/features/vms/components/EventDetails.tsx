@@ -18,7 +18,8 @@ import { Icon } from "@iconify/react";
 import { eventTypeLabel, fmtDate, fmtTime, sevPreset, typePreset, type NormalizedVmsEvent } from "../eventLib";
 import { durationLabel, eventInterval } from "../eventState";
 import { useTicker } from "../hooks/useTicker";
-import { anprListCls, anprListLabel, anprOf, confidencePct } from "../anprLib";
+import { anprConfidenceText, anprOf, anprVehicleText, type AnprOfEvent } from "../anprLib";
+import { AnprPlateCard, useAnprRead } from "./AnprEvidence";
 
 export interface EventDetailsProps {
   event: NormalizedVmsEvent;
@@ -37,6 +38,8 @@ export interface EventDetailsProps {
    *  has to be a way to put it down — otherwise the only way off an event is onto
    *  another one. */
   onClose?: () => void;
+  /** A plate read's "every read of this plate": filter the feed to it. */
+  onFindPlate?: (plate: string) => void;
 }
 
 function Row({ label, children }: Readonly<{ label: string; children: ReactNode }>) {
@@ -69,6 +72,7 @@ export default function EventDetails({
   investigateHref = null,
   onClose,
   onEscalate,
+  onFindPlate,
 }: Readonly<EventDetailsProps>) {
   const iv = eventInterval(event);
   // Only an OPEN event needs a clock: its duration is still changing.
@@ -109,6 +113,7 @@ export default function EventDetails({
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {plate && <PlateCard anpr={plate} onFindPlate={onFindPlate} />}
         <Row label="Status">
           {event.acknowledged ? (
             <span className="rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-400">
@@ -126,20 +131,7 @@ export default function EventDetails({
             {eventTypeLabel(event.event_type)}
           </span>
         </Row>
-        {plate && (
-          <>
-            <Row label="Plate">
-              <span className="text-[14px] font-semibold tracking-wider">{plate.noPlate ? "No plate" : plate.plate}</span>
-            </Row>
-            <Row label="List">
-              <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${anprListCls(plate.list)}`}>
-                {anprListLabel(plate.list, plate.listLabel)}
-              </span>
-            </Row>
-            <Row label="Confidence">{confidencePct(plate.confidence)}</Row>
-            <Row label="Linked cameras">{plate.linkedCameraIds.length || "None"}</Row>
-          </>
-        )}
+        {plate && <PlateFacts anpr={plate} />}
         <Row label="Severity">
           <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${sp.cls}`}>{sp.label}</span>
         </Row>
@@ -226,5 +218,29 @@ export default function EventDetails({
         )}
       </div>
     </div>
+  );
+}
+
+/** The plate card leads a plate read's details: what was read, and the list it hit. */
+function PlateCard({ anpr, onFindPlate }: Readonly<{ anpr: AnprOfEvent; onFindPlate?: (plate: string) => void }>) {
+  const read = useAnprRead(anpr).data;
+  return <AnprPlateCard anpr={anpr} read={read} onFindPlate={onFindPlate} />;
+}
+
+/** What the camera reported about the read, one row per thing it actually said. */
+function PlateFacts({ anpr }: Readonly<{ anpr: AnprOfEvent }>) {
+  const read = useAnprRead(anpr).data;
+  const vehicle = anprVehicleText(read);
+  const linked = read?.linked?.length
+    ? read.linked.map((l) => l.camera_name || l.camera_id).join(", ")
+    : String(anpr.linkedCameraIds.length || "None");
+  return (
+    <>
+      <Row label="Confidence">{anprConfidenceText(anpr.confidence)}</Row>
+      {vehicle && <Row label="Vehicle">{vehicle}</Row>}
+      {read?.direction && <Row label="Direction">{read.direction}</Row>}
+      {read?.country && <Row label="Country">{read.country}</Row>}
+      <Row label="Linked cameras">{linked}</Row>
+    </>
   );
 }

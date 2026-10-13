@@ -86,10 +86,37 @@ describe("stream lifecycle", () => {
     expect(FakeEventSource.instances).toHaveLength(0);
   });
 
-  it("narrows the subscription server-side when a camera filter is active", () => {
+  it("keeps only the filtered camera's events off the shared stream", async () => {
     tokens.set("t");
-    renderHook(() => useVmsEventStream({ cameraId: "cam-7" }));
-    expect(FakeEventSource.last?.url).toContain("camera_id=cam-7");
+    const { result } = renderHook(() => useVmsEventStream({ cameraId: "cam-7" }));
+    await act(async () => {
+      FakeEventSource.last?.emit("vms.event", { id: "a", camera_id: "cam-7" });
+      FakeEventSource.last?.emit("vms.event", { id: "b", camera_id: "cam-9" });
+    });
+    expect(result.current.events.map((e) => e.id)).toEqual(["a"]);
+  });
+
+  it("shares ONE connection between every consumer in the tab (SCRUM-325)", async () => {
+    // Three streams per tab held three of the browser's six connections to the
+    // host for good, and the events page queued behind them on "Loading events…".
+    tokens.set("t");
+    const first = renderHook(() => useVmsEventStream({}));
+    const second = renderHook(() => useVmsEventStream({ cameraId: "cam-7" }));
+    expect(FakeEventSource.instances).toHaveLength(1);
+
+    await act(async () => {
+      FakeEventSource.last?.open();
+      FakeEventSource.last?.emit("vms.event", { id: "a", camera_id: "cam-7" });
+    });
+    expect(first.result.current.events.map((e) => e.id)).toEqual(["a"]);
+    expect(second.result.current.connected).toBe(true);
+
+    // The stream stays up while anyone still listens, and closes with the last.
+    const es = FakeEventSource.last;
+    first.unmount();
+    expect(es?.closed).toBe(false);
+    second.unmount();
+    expect(es?.closed).toBe(true);
   });
 
   it("reports itself connected only after the server actually opens the stream", async () => {

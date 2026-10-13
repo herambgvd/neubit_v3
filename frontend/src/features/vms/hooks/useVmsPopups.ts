@@ -1,7 +1,7 @@
 "use client";
 
-// Operator-popup consumer — the same core realtime SSE bridge as useVmsEventStream,
-// but routing the `vms.popup` frames (published by the P5-B linkage `popup` action on
+// Operator-popup consumer — the tab's one shared realtime connection (vmsRealtime.ts),
+// routing the `vms.popup` frames (published by the P5-B linkage `popup` action on
 // `tenant.<id>.vms.popup`). Each popup carries { camera_id, reason, event_id,
 // event_type, severity }. This hook fires a toast per popup and maintains a small
 // queue of ACTIVE popups (a floating LivePlayer for the camera) that the app-wide
@@ -13,8 +13,8 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { api, tokens } from "@/lib/api";
 import type { VmsPopupFrame } from "../types";
+import { subscribeVmsRealtime } from "./vmsRealtime";
 
 /** A popup in the active queue: the frame plus its de-dupe key. */
 export type ActivePopup = VmsPopupFrame & { key: string };
@@ -28,17 +28,6 @@ export function useVmsPopups({ enabled = true }: { enabled?: boolean } = {}) {
 
   useEffect(() => {
     if (!enabled) return;
-    if (typeof window === "undefined" || typeof EventSource === "undefined") return;
-    // No token check here: `connect` below reads the token at connect time and
-    // RETRIES when there is none yet. Bailing out of the effect instead left the
-    // popup stream dead for the whole session whenever this host mounted before
-    // the auth provider had finished probing the refresh cookie.
-
-    let es: EventSource | null = null;
-    let closed = false;
-    let retry = 0;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
     const push = (p: VmsPopupFrame) => {
       // Dedupe by event_id (a rule + a manual re-fire could double up).
       const key = p.event_id || `${p.camera_id}:${p.occurred_at}:${p.event_type}`;
@@ -59,53 +48,10 @@ export function useVmsPopups({ enabled = true }: { enabled?: boolean } = {}) {
       });
     };
 
-    const connect = () => {
-      if (closed) return;
-      // Read the token at CONNECT time, not from the mount-time closure: when the
-      // access token expires the server drops the stream, and the retry below must
-      // reconnect with the token lib/api.ts stored after its 401→refresh — a
-      // captured 12h-old token would just 401 forever.
-      const token = tokens.access;
-      if (!token) {
-        // No token YET, not "no session": the access token lives in memory, so a
-        // component that mounts while the auth provider is still probing the
-        // refresh cookie sees none. Returning here left the stream dead forever;
-        // retry on the same backoff the error path uses.
-        retry = Math.min(retry + 1, 6);
-        timer = setTimeout(connect, Math.min(1000 * 2 ** retry, 30000));
-        return;
-      }
-      const url =
-        `${api.defaults.baseURL}/realtime/vms-events` + `?token=${encodeURIComponent(token)}`;
-      es = new EventSource(url);
-
-      es.addEventListener("vms.popup", (e) => {
-        let data: VmsPopupFrame | null = null;
-        try {
-          data = JSON.parse(e.data) as VmsPopupFrame;
-        } catch {
-          return;
-        }
-        if (data) push(data);
-      });
-
-      es.onopen = () => {
-        retry = 0;
-      };
-      es.onerror = () => {
-        es?.close();
-        if (closed) return;
-        retry = Math.min(retry + 1, 6);
-        timer = setTimeout(connect, Math.min(1000 * 2 ** retry, 30000));
-      };
-    };
-
-    connect();
-    return () => {
-      closed = true;
-      if (timer) clearTimeout(timer);
-      es?.close();
-    };
+    // The shared connection reads the token at connect time and retries until
+    // there is one, so a host that mounts before the auth provider has finished
+    // probing the refresh cookie still gets its popups.
+    return subscribeVmsRealtime({ event: "vms.popup", onFrame: (frame) => push(frame as VmsPopupFrame) });
   }, [enabled]);
 
   const dismiss = (key: string) => setActive((prev) => prev.filter((p) => p.key !== key));

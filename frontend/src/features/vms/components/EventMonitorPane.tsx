@@ -27,13 +27,16 @@
 // list with a viewer attached: an incoming alarm takes the canvas. It is a toggle,
 // and it only ever follows an ATTENTION severity — a canvas that jumps to a
 // heartbeat is a canvas an operator turns off.
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Icon } from "@iconify/react";
 
 import { vms } from "../api";
 import { sevPreset, eventTypeLabel, typePreset, fmtTime, type NormalizedVmsEvent } from "../eventLib";
 import type { EstateCamera, LiveSessionSource } from "../types";
+import { anprOf } from "../anprLib";
+import { AnprSnapshot, useAnprRead } from "./AnprEvidence";
 import LivePlayer from "./LivePlayer";
+import ModeButton from "./ModeButton";
 import TilePlayback from "./TilePlayback";
 
 // The alarm clip's shape: a few seconds before the event so the operator sees it
@@ -41,6 +44,8 @@ import TilePlayback from "./TilePlayback";
 // and the reason the pane opens on the recording rather than on live.
 const PRE_ROLL_MS = 8_000;
 const POST_ROLL_MS = 60_000;
+
+type Mode = "snapshot" | "recording" | "live";
 
 export interface EventMonitorPaneProps {
   event: NormalizedVmsEvent | null;
@@ -77,7 +82,21 @@ export default function EventMonitorPane({
   const realId = (camera as { real_id?: string } | null)?.real_id ?? null;
   // RECORDING first: the operator opened an alarm to see what happened. Live
   // answers a different question ("is it still going on?") and is one click away.
-  const [mode, setMode] = useState<"recording" | "live">("recording");
+  const [kept, setKept] = useState<"recording" | "live">("recording");
+  // A PLATE READ opens on its Snapshot: the scene the camera saw when it read the
+  // plate is there at once and is the picture an operator checks the plate against
+  // (AutoVu's context image, the recorder's own Snapshot pane). Its choice is per
+  // read, so the next read opens on its own scene; other events keep the choice made.
+  const anpr = anprOf(event);
+  const readQ = useAnprRead(anpr);
+  const eventKey = event ? event.id || event.event_id || "" : "";
+  const [anprPick, setAnprPick] = useState<{ key: string; mode: Mode } | null>(null);
+  let mode: Mode = kept;
+  if (anpr) mode = anprPick?.key === eventKey ? anprPick.mode : "snapshot";
+  const setMode = (m: Mode) => {
+    if (anpr) setAnprPick({ key: eventKey, mode: m });
+    else if (m !== "snapshot") setKept(m);
+  };
   const source = useMemo<LiveSessionSource | null>(() => {
     if (!nodeId || !realId) return null;
     const mint = async (profile: string) => {
@@ -139,6 +158,71 @@ export default function EventMonitorPane({
   const offline = camera?.status ? String(camera.status).toLowerCase() !== "online" : false;
   const eventMs = event.occurred_at ? new Date(event.occurred_at).getTime() : null;
 
+  // The picture: the read's scene (a plate read's Snapshot), the recording at the
+  // event's own instant, or live — and when live cannot be shown, why.
+  let picture: ReactNode;
+  if (mode === "snapshot" && anpr) {
+    picture = (
+      <AnprSnapshot anpr={anpr} read={readQ.data} loading={readQ.isLoading} onPlayRecording={() => setMode("recording")} />
+    );
+  } else if (mode === "recording") {
+    picture =
+      eventMs != null && camera ? (
+        // Anchored a few seconds BEFORE the event so it is seen beginning.
+        // `TilePlayback` mints the recorded session from the owning recorder
+        // and says so itself when the window holds no footage.
+        <TilePlayback
+          key={`${camera.id}:${eventMs}`}
+          camera={camera}
+          anchorMs={eventMs - PRE_ROLL_MS}
+          anchorSeq={eventMs}
+          windowToMs={eventMs + POST_ROLL_MS}
+          playing
+          muted
+          compact
+        />
+      ) : (
+        <div className="flex h-full items-center justify-center px-6 text-center text-[12px] text-muted">
+          This event carries no timestamp, so there is no moment to play.
+        </div>
+      );
+  } else if (source && !offline) {
+    picture = (
+      <LivePlayer
+        key={`${nodeId}:${realId}`}
+        cameraId={camera?.id}
+        cameraName={camera?.name}
+        nodeId={nodeId}
+        source={source}
+        profile="sub"
+        autoPlay
+        muted
+        fit="contain"
+      />
+    );
+  } else {
+    // A camera that is DOWN is the one case where live cannot be shown, and it is
+    // exactly when an operator is looking. Say which, in the recorder's own words —
+    // the recording from before it went is still there, one click back.
+    picture = (
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+        <Icon icon="heroicons-outline:video-camera-slash" className="text-3xl text-red-400/70" />
+        <p className="text-[12.5px] text-foreground">
+          {offline ? "This camera is not streaming" : "No live source for this camera"}
+        </p>
+        {reason && <p className="max-w-md break-words font-mono text-[11px] text-muted">{reason}</p>}
+        <button
+          type="button"
+          onClick={() => setMode("recording")}
+          className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-card-border px-2.5 py-1 text-[11px] text-muted transition hover:text-foreground"
+        >
+          <Icon icon="heroicons-outline:play" className="text-xs" />
+          Play the recording from this moment
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-card-border bg-card">
       {/* what + where */}
@@ -153,66 +237,19 @@ export default function EventMonitorPane({
         <span className="ml-auto">{followToggle}</span>
       </header>
 
-      {/* the picture — the recording, at the event's own instant */}
+      {/* the picture — the read's scene, the recording at the event's instant, or live */}
       <div className="relative min-h-0 w-full flex-1 bg-black">
-        {mode === "recording" ? (
-          eventMs != null && camera ? (
-            // Anchored a few seconds BEFORE the event so it is seen beginning.
-            // `TilePlayback` mints the recorded session from the owning recorder
-            // and says so itself when the window holds no footage.
-            <TilePlayback
-              key={`${camera.id}:${eventMs}`}
-              camera={camera}
-              anchorMs={eventMs - PRE_ROLL_MS}
-              anchorSeq={eventMs}
-              windowToMs={eventMs + POST_ROLL_MS}
-              playing
-              muted
-              compact
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center px-6 text-center text-[12px] text-muted">
-              This event carries no timestamp, so there is no moment to play.
-            </div>
-          )
-        ) : source && !offline ? (
-          <LivePlayer
-            key={`${nodeId}:${realId}`}
-            cameraId={camera?.id}
-            cameraName={camera?.name}
-            nodeId={nodeId}
-            source={source}
-            profile="sub"
-            autoPlay
-            muted
-            fit="contain"
-          />
-        ) : (
-          // A camera that is DOWN is the one case where live cannot be shown, and
-          // it is exactly when an operator is looking. Say which, in the
-          // recorder's own words — the recording from before it went is still
-          // there, one click back.
-          <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-            <Icon icon="heroicons-outline:video-camera-slash" className="text-3xl text-red-400/70" />
-            <p className="text-[12.5px] text-foreground">
-              {offline ? "This camera is not streaming" : "No live source for this camera"}
-            </p>
-            {reason && <p className="max-w-md break-words font-mono text-[11px] text-muted">{reason}</p>}
-            <button
-              type="button"
-              onClick={() => setMode("recording")}
-              className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-card-border px-2.5 py-1 text-[11px] text-muted transition hover:text-foreground"
-            >
-              <Icon icon="heroicons-outline:play" className="text-xs" />
-              Play the recording from this moment
-            </button>
-          </div>
-        )}
+        {picture}
       </div>
 
       {/* Recording ⇄ Live. Two words, because they answer two different
           questions: what happened, and whether it still is. */}
       <div className="flex items-center gap-1 border-b border-card-border px-3 py-1.5">
+        {anpr && (
+          <ModeButton active={mode === "snapshot"} onClick={() => setMode("snapshot")} icon="heroicons-outline:photo">
+            Snapshot
+          </ModeButton>
+        )}
         <ModeButton active={mode === "recording"} onClick={() => setMode("recording")} icon="heroicons-outline:play">
           Recording
         </ModeButton>
@@ -224,36 +261,11 @@ export default function EventMonitorPane({
             from {fmtTime(new Date(eventMs - PRE_ROLL_MS).toISOString())}
           </span>
         )}
+        {mode === "snapshot" && event.occurred_at && (
+          <span className="ml-auto font-mono text-[10.5px] text-muted">read {fmtTime(event.occurred_at)}</span>
+        )}
       </div>
 
     </div>
-  );
-}
-
-function ModeButton({
-  active,
-  onClick,
-  icon,
-  children,
-}: Readonly<{
-  active: boolean;
-  onClick: () => void;
-  icon: string;
-  children: React.ReactNode;
-}>) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11.5px] transition ${
-        active
-          ? "bg-blue-500/15 text-blue-300"
-          : "text-muted hover:bg-hover hover:text-foreground"
-      }`}
-    >
-      <Icon icon={icon} className="text-xs" />
-      {children}
-    </button>
   );
 }

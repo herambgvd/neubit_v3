@@ -240,10 +240,15 @@ class VmsEventService:
         acknowledged: bool | None = None,
         from_: datetime | None = None,
         to: datetime | None = None,
+        search: str | None = None,
         skip: int = 0,
         limit: int = 50,
     ) -> VmsEventListResponse:
         stmt = scoped(select(VmsEvent), VmsEvent, self.scope)
+        # Free text on the title, which is what the operator reads in the row: a plate
+        # read's title leads with its plate (SCRUM-324), so a plate is found across the
+        # whole history, not only in the page the console happens to hold (SCRUM-325).
+        term = _like_term(search)
         count_stmt = scoped(select(func.count(VmsEvent.id)), VmsEvent, self.scope)
 
         def _apply(q):
@@ -259,6 +264,8 @@ class VmsEventService:
                 q = q.where(VmsEvent.occurred_at >= from_)
             if to is not None:
                 q = q.where(VmsEvent.occurred_at <= to)
+            if term is not None:
+                q = q.where(VmsEvent.title.ilike(term, escape="\\"))
             return q
 
         stmt = _apply(stmt)
@@ -297,6 +304,16 @@ class VmsEventService:
             await self.db.commit()
             await self.db.refresh(row)
         return VmsEventPublic.from_row(row)
+
+
+def _like_term(search: str | None) -> str | None:
+    """``%search%`` for ILIKE with the operator's text taken literally: ``%`` and ``_``
+    in a typed plate or name are characters, not wildcards."""
+    text = (search or "").strip()
+    if not text:
+        return None
+    escaped = text.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+    return f"%{escaped}%"
 
 
 # ── background-worker convenience: emit a system event with its own DB session ─────

@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { anprInvestigateHref, anprListLabel, anprOf, anprStills, confidencePct } from "./anprLib";
+import {
+  anprConfidenceText,
+  anprInvestigateHref,
+  anprListLabel,
+  anprOf,
+  anprSceneStill,
+  anprVehicleText,
+  confidencePct,
+  matchesEventSearch,
+} from "./anprLib";
 
 const event = {
   event_type: "anpr",
@@ -50,7 +59,30 @@ describe("words", () => {
     expect(confidencePct(null)).toBe("—");
   });
 
-  it("orders stills plate first and leaves out linked frames", () => {
-    expect(anprStills(["linked-hall", "scene", "plate", "evidence"])).toEqual(["plate", "scene", "evidence"]);
+  it("says when the camera reported no confidence, instead of a bare dash", () => {
+    expect(anprConfidenceText(null)).toBe("Not reported by the camera");
+    expect(anprConfidenceText(0.9)).toBe("90%");
+  });
+
+  it("describes the vehicle only from what the camera reported", () => {
+    expect(anprVehicleText({ vehicle_color: "White", vehicle_brand: " Toyota ", vehicle_type: "car" })).toBe("White Toyota car");
+    expect(anprVehicleText({ vehicle_type: "" })).toBe("");
+    expect(anprVehicleText(null)).toBe("");
+  });
+
+  it("shows the scene of a read first, the plate crop only as a last resort", () => {
+    expect(anprSceneStill(["plate", "linked-hall", "scene"])).toBe("scene");
+    expect(anprSceneStill(["plate", "vehicle"])).toBe("vehicle");
+    expect(anprSceneStill(["plate"])).toBe("plate");
+    expect(anprSceneStill(["linked-hall"])).toBeNull();
+  });
+});
+
+describe("matchesEventSearch", () => {
+  it("finds a plate in the title however it is typed", () => {
+    expect(matchesEventSearch("Plate PB10GN4497 · Gate ANPR", " pb10gn ")).toBe(true);
+    expect(matchesEventSearch("Plate PB10GN4497 · Gate ANPR", "HR87")).toBe(false);
+    expect(matchesEventSearch(null, "PB10")).toBe(false);
+    expect(matchesEventSearch(null, "  ")).toBe(true);
   });
 });

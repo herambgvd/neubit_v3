@@ -28,6 +28,7 @@ import { Icon } from "@iconify/react";
 import { eventTypeLabel, fmtDate, fmtTime, sevPreset, typePreset, type NormalizedVmsEvent } from "../eventLib";
 import { durationLabel, eventInterval, type EventInterval } from "../eventState";
 import { useTicker } from "../hooks/useTicker";
+import { anprListCls, anprOf } from "../anprLib";
 
 /** How a duration reads. An OPEN interval is still counting, so it reads live
  *  rather than as a settled figure; an unreliable one is italicised because the
@@ -58,6 +59,11 @@ export interface EventTableProps {
    *  top" for the new-events pill, and to take them back there. */
   scrollRef?: RefObject<HTMLDivElement | null>;
   onScroll?: () => void;
+  /** Loading, a failed read or an empty feed, said where the rows go. The toolbar
+   *  stays, so the filter that caused it can always be changed back. */
+  status?: ReactNode;
+  /** A new read is on its way while the last one's rows are still shown. */
+  busy?: boolean;
 }
 
 const keyOf = (e: NormalizedVmsEvent) => e.event_id || e.id || "";
@@ -74,6 +80,8 @@ export default function EventTable({
   paging,
   scrollRef,
   onScroll,
+  status,
+  busy = false,
 }: Readonly<EventTableProps>) {
   // One clock for the whole table: the open rows count up together, and a ticker
   // per row would be a timer per row.
@@ -88,9 +96,17 @@ export default function EventTable({
       {(toolbar || paging) && (
         <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-card-border px-3 py-2">
           {toolbar}
+          {busy && (
+            <output className="inline-flex items-center gap-1.5 text-[11px] text-muted">
+              <Icon icon="svg-spinners:180-ring" className="text-xs" /> Updating…
+            </output>
+          )}
           {paging && <span className="ml-auto flex items-center gap-2">{paging}</span>}
         </header>
       )}
+      {status ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-6">{status}</div>
+      ) : (
 
       <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-auto">
         <table className="w-full min-w-[46rem] text-left">
@@ -120,6 +136,7 @@ export default function EventTable({
               const tp = typePreset(e.event_type);
               const iv = eventInterval(e);
               const duration = durationLabel(e, now);
+              const plate = anprOf(e);
               const isSelected = !!selectedId && selectedId === key;
               return (
                 <tr
@@ -160,6 +177,17 @@ export default function EventTable({
                     <span className="inline-flex items-center gap-1.5 text-foreground">
                       <Icon icon={tp.icon} className={`text-sm ${sp.text}`} />
                       {eventTypeLabel(e.event_type)}
+                      {/* A plate read is scanned by its plate, so the row carries it,
+                          in the colour of the list it matched. */}
+                      {plate && (
+                        <span
+                          className={`rounded border px-1.5 py-px text-[11px] font-semibold tracking-wider ${
+                            plate.noPlate ? "border-card-border text-muted" : anprListCls(plate.list)
+                          }`}
+                        >
+                          {plate.noPlate ? "No plate" : plate.plate}
+                        </span>
+                      )}
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-2 py-1.5">
@@ -191,6 +219,7 @@ export default function EventTable({
           </tbody>
         </table>
       </div>
+      )}
     </section>
   );
 }

@@ -132,6 +132,30 @@ async def test_two_plates_in_one_bucket_are_two_alerts(engine, capture, monkeypa
     assert [p[1] for p in capture] == ["anpr", "anpr"]
 
 
+async def test_a_plate_is_found_by_typing_part_of_it(engine, capture, monkeypatch):
+    """SCRUM-325: "every read of this plate" searches the whole history, not the page
+    the console holds — case-insensitive, and a typed % or _ is a character."""
+    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    await _node(maker)
+    _serve(monkeypatch, [[
+        _read_event("e1", "PB10GN4497", "2026-10-12T06:54:31Z"),
+        _read_event("e2", "HR87K4650", "2026-10-12T06:54:33Z"),
+    ]])
+    await EventSupervisor(maker)._tick()
+
+    async with maker() as s:
+        svc = VmsEventService(s, PLATFORM)
+        one = await svc.list_(search="pb10gn")
+        both = await svc.list_(search="  Gate ANPR ")
+        wildcard = await svc.list_(search="PB10%4497")
+        blank = await svc.list_(search="   ")
+    assert [e.title for e in one.items] == ["Plate PB10GN4497 · Gate ANPR"]
+    assert one.total == 1
+    assert both.total == 2
+    assert wildcard.total == 0
+    assert blank.total == 2
+
+
 async def test_anpr_image_relay_reads_the_recorder_still(monkeypatch):
     jpeg = b"\xff\xd8\xff\xe0plate"
     seen = {}

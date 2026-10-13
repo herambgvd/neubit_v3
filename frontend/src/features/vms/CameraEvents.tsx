@@ -10,8 +10,8 @@
 // Data source mirrors the access EventsFeed: an INITIAL history fetch via
 // GET /vms/events (one request) + LIVE appends over SSE. Both are normalized to
 // one shape and de-duped by event id so every renderer works across sources.
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -33,12 +33,21 @@ import type { EstateCamera, VmsEventPublic } from "./types";
 import EventMonitorPane from "./components/EventMonitorPane";
 import EventDetails from "./components/EventDetails";
 import EventLivePane from "./components/EventLivePane";
-import AnprEvidence from "./components/AnprEvidence";
-import { anprInvestigateHref, anprOf } from "./anprLib";
+import { AnprLinkedPane, useAnprRead } from "./components/AnprEvidence";
+import { anprInvestigateHref, anprOf, matchesEventSearch } from "./anprLib";
 import EventTable from "./components/EventTable";
 import EscalateDialog from "./components/EscalateDialog";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
+
+/** Playback at an event — with the cameras bound to its ANPR camera, for a plate read. */
+function investigateHrefOf(event: NormalizedVmsEvent | null | undefined): string | null {
+  if (!event?.camera_id || !event.occurred_at) return null;
+  const anpr = anprOf(event);
+  return anpr
+    ? anprInvestigateHref(event.camera_id, anpr, event.occurred_at)
+    : `/playback?camera=${encodeURIComponent(event.camera_id)}&t=${encodeURIComponent(event.occurred_at)}`;
+}
 
 /** What the feed indicator says and what colour it says it in.
  *
@@ -55,6 +64,26 @@ export function feedVerdict(live: boolean, connected: boolean): { dot: string; t
   return { dot: "bg-emerald-500", text: "Live feed" };
 }
 
+/** How long one read of the event history may take before it counts as lost. */
+const EVENTS_TIMEOUT_MS = 12_000;
+
+/** The axios code of a read that got no answer at all (timed out, or no network). */
+function lostCode(err: unknown): string | null {
+  const e = err as { code?: string; response?: unknown } | null;
+  if (!e || e.response) return null;
+  return e.code === "ECONNABORTED" || e.code === "ETIMEDOUT" || e.code === "ERR_NETWORK" ? e.code : null;
+}
+
+/** Why the history could not be read, in words that say what to check. */
+function eventsLoadError(err: unknown): string {
+  const code = lostCode(err);
+  if (code === "ECONNABORTED" || code === "ETIMEDOUT") {
+    return `The server did not answer within ${EVENTS_TIMEOUT_MS / 1000} s. Check the network connection to the server, then try again.`;
+  }
+  if (code === "ERR_NETWORK") return "The server cannot be reached. Check the network connection, then try again.";
+  return apiError(err, "Unknown error");
+}
+
 export default function CameraEventsPage() {
   const qc = useQueryClient();
   const { can } = useAuth();
@@ -66,6 +95,14 @@ export default function CameraEventsPage() {
   const [ack, setAck] = useState(() => params?.get("ack") ?? ""); // "" all | "false" unacked | "true" acked
   const [siteId, setSiteId] = useState<string | null>(() => params?.get("site") ?? null);
   const [day, setDay] = useState("");
+  // Free text on the title (a plate, a camera name): typed into the box, applied a
+  // moment after the operator stops typing so each key is not a query.
+  const [searchText, setSearchText] = useState("");
+  const [search, setSearch] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchText.trim()), 350);
+    return () => clearTimeout(t);
+  }, [searchText]);
   const [live, setLive] = useState(true);
 
   // CAMERA ROSTER — THE WHOLE ESTATE, not this service's own rows.
@@ -118,16 +155,24 @@ export default function CameraEventsPage() {
       acknowledged: ack === "" ? undefined : ack === "true",
       from: window.from,
       to: window.to,
+      q: search || undefined,
       limit: 200,
     }),
-    [cameraId, eventType, severity, ack, window],
+    [cameraId, eventType, severity, ack, window, search],
   );
 
   // Initial history — one fetch (no polling). Live updates arrive over SSE below.
+  // A changed filter keeps the last rows up (marked Updating) until the new ones
+  // land; a read the network swallowed times out and is tried once more, then the
+  // table says so with a retry, never an endless spinner (SCRUM-325).
   const q = useQuery({
     queryKey: ["vms-events", listParams],
-    queryFn: () => vms.events.list(listParams),
+    queryFn: ({ signal }) => vms.events.list(listParams, { signal, timeout: EVENTS_TIMEOUT_MS }),
     refetchOnWindowFocus: false,
+    placeholderData: keepPreviousData,
+    // Once more only when the server never answered; an answer, even an error, is
+    // the answer.
+    retry: (failures, err) => failures < 1 && !!lostCode(err),
   });
 
   // Live appends over the core realtime SSE bridge. Narrow to one camera when a
@@ -213,9 +258,9 @@ export default function CameraEventsPage() {
       if (!ackMatches(!!e.acknowledged)) return false;
       if (window.from && e.occurred_at && e.occurred_at < window.from) return false;
       if (window.to && e.occurred_at && e.occurred_at >= window.to) return false;
-      return true;
+      return matchesEventSearch(e.title, search);
     });
-  }, [liveEvents, history, cameraId, siteKeys, eventType, severity, ack, window]);
+  }, [liveEvents, history, cameraId, siteKeys, eventType, severity, ack, window, search]);
 
   const total = q.data?.total ?? events.length;
 
@@ -397,7 +442,7 @@ export default function CameraEventsPage() {
     () => (selected?.camera_id ? cameraById[selected.camera_id] ?? null : null),
     [selected, cameraById],
   );
-  const filtered = !!(cameraId || siteId || eventType || severity || ack || day);
+  const filtered = !!(cameraId || siteId || eventType || severity || ack || day || search);
   const clearSite = () => {
     setSiteId(null);
     dropUrlParams("site", "ack");
@@ -409,7 +454,76 @@ export default function CameraEventsPage() {
     setSeverity("");
     setAck("");
     setDay("");
+    setSearchText("");
+    setSearch("");
   };
+  // "Every read of this plate": the plate's reads across every ANPR camera and the
+  // whole history, with nothing else narrowing it.
+  const findPlate = (plate: string) => {
+    clearAll();
+    setEventType("anpr");
+    setSearchText(plate);
+    setSearch(plate);
+  };
+
+  // The selected event as a plate read, and the recorder's record of it (shared with
+  // the panes, one query per read).
+  const selectedAnpr = anprOf(selected);
+  const selectedRead = useAnprRead(selectedAnpr).data;
+  const investigateHref = investigateHrefOf(selected);
+
+  // What the table says where its rows go. The rows of the last filter are still in
+  // the cache while the new read is on its way, and the client filter may empty them:
+  // that is "loading", not "no events match".
+  let tableStatus: ReactNode = null;
+  if (q.isError) {
+    // A failed read must never look like a quiet estate — one is a reason to
+    // relax, the other is a reason to look at the recorder.
+    tableStatus = (
+      <div role="alert" className="flex max-w-md flex-col items-center gap-2 text-center">
+        <Icon icon="heroicons-outline:exclamation-circle" className="text-2xl text-red-400" />
+        <p className="text-[12.5px] font-medium text-foreground">Could not load events</p>
+        <p className="text-[11px] text-muted">{eventsLoadError(q.error)}</p>
+        <button
+          type="button"
+          onClick={() => void q.refetch()}
+          className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-card-border px-2.5 py-1.5 text-[11px] font-medium text-muted transition hover:bg-hover hover:text-foreground"
+        >
+          <Icon icon="heroicons-outline:arrow-path" className="text-xs" /> Try again
+        </button>
+      </div>
+    );
+  } else if (q.isLoading || (q.isPlaceholderData && events.length === 0)) {
+    tableStatus = (
+      <output className="flex flex-col items-center gap-2 text-center text-[12px] text-muted">
+        <Icon icon="svg-spinners:180-ring" className="text-xl" />
+        <span>{q.failureCount > 0 ? "The server did not answer — trying once more…" : "Loading events…"}</span>
+      </output>
+    );
+  } else if (events.length === 0) {
+    tableStatus = (
+      <EmptyState
+        icon={filtered ? "heroicons-outline:funnel" : "heroicons-outline:bell-slash"}
+        title={filtered ? "No events match these filters" : "No events yet"}
+        subtitle={
+          filtered
+            ? "Widen the day, the camera or the severity — the feed itself is live."
+            : "Events appear here the moment a recorder reports one — motion, tamper, video loss, I/O."
+        }
+        action={
+          filtered ? (
+            <button
+              type="button"
+              onClick={clearAll}
+              className="inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-1.5 text-[11px] font-medium text-muted transition hover:bg-hover hover:text-foreground"
+            >
+              <Icon icon="heroicons-outline:x-mark" className="text-xs" /> Clear filters
+            </button>
+          ) : undefined
+        }
+      />
+    );
+  }
 
   return (
     // A COLUMN THAT FILLS THE PANE. Nothing on this screen scrolls except the
@@ -514,17 +628,8 @@ export default function CameraEventsPage() {
               if (ev.id) ackMut.mutate(ev.id);
             }}
             ackPending={ackMut.isPending && !!selected.id && ackMut.variables === selected.id}
-            investigateHref={
-              selected.camera_id && selected.occurred_at
-                ? (() => {
-                    // A plate read opens with the cameras bound to its ANPR camera.
-                    const plate = anprOf(selected);
-                    return plate
-                      ? anprInvestigateHref(selected.camera_id, plate, selected.occurred_at)
-                      : `/playback?camera=${encodeURIComponent(selected.camera_id)}&t=${encodeURIComponent(selected.occurred_at)}`;
-                  })()
-                : null
-            }
+            investigateHref={investigateHref}
+            onFindPlate={findPlate}
             onEscalate={canEscalate ? () => setEscalating([selected]) : undefined}
             onClose={() => {
               setDismissed(true);
@@ -551,23 +656,22 @@ export default function CameraEventsPage() {
             </div>
           </div>
         )}
-        <EventLivePane camera={monitorCamera} />
-      </div>
-
-      {/* A plate read's own evidence: the plate, the scene, and the cameras the
-          recorder bound to the ANPR camera, playing at the read. */}
-      {(() => {
-        const plate = anprOf(selected);
-        return plate && selected?.camera_id ? (
-          <AnprEvidence
-            key={plate.readId || selected.id}
-            anpr={plate}
-            cameraId={selected.camera_id}
-            occurredAt={selected.occurred_at}
+        {/* A plate read's third pane is the camera its recorder bound to the ANPR
+            camera, at the read — the context camera every ANPR console puts beside
+            the plate. Without one bound, live of the ANPR camera, as for any event. */}
+        {selectedAnpr && selectedAnpr.linkedCameraIds.length > 0 ? (
+          <AnprLinkedPane
+            key={selectedAnpr.readId || selected?.id}
+            anpr={selectedAnpr}
+            read={selectedRead}
             cameraById={cameraById}
+            occurredAt={selected?.occurred_at}
+            investigateHref={investigateHref}
           />
-        ) : null;
-      })()}
+        ) : (
+          <EventLivePane camera={monitorCamera} />
+        )}
+      </div>
 
       {/* Bulk actions appear only when there is a selection — a burst of motion
           from one camera is acknowledged in one action, not twenty-nine. */}
@@ -608,48 +712,13 @@ export default function CameraEventsPage() {
         </div>
       )}
 
-      {q.isLoading ? (
-        <div className="flex min-h-0 flex-1 items-center gap-2 rounded-xl border border-card-border bg-card p-6 text-xs text-muted">
-          <Icon icon="svg-spinners:180-ring" className="text-sm" /> Loading events…
-        </div>
-      ) : q.isError ? (
-        // A failed read must never look like a quiet estate — one is a reason to
-        // relax, the other is a reason to look at the recorder.
-        <div className="flex min-h-0 flex-1 items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-500">
-          <Icon icon="heroicons-outline:exclamation-circle" className="mt-0.5 shrink-0 text-sm" />
-          <div>
-            <p className="font-medium">Could not load events</p>
-            <p className="mt-0.5 text-[11px] opacity-80">{apiError(q.error, "Unknown error")}</p>
-          </div>
-        </div>
-      ) : events.length === 0 ? (
-        <div className="grid min-h-0 flex-1 place-items-center rounded-xl border border-card-border bg-card">
-          <EmptyState
-            icon={filtered ? "heroicons-outline:funnel" : "heroicons-outline:bell-slash"}
-            title={filtered ? "No events match these filters" : "No events yet"}
-            subtitle={
-              filtered
-                ? "Widen the day, the camera or the severity — the feed itself is live."
-                : "Events appear here the moment a recorder reports one — motion, tamper, video loss, I/O."
-            }
-            action={
-              filtered ? (
-                <button
-                  type="button"
-                  onClick={clearAll}
-                  className="inline-flex items-center gap-1 rounded-md border border-card-border px-2.5 py-1.5 text-[11px] font-medium text-muted transition hover:bg-hover hover:text-foreground"
-                >
-                  <Icon icon="heroicons-outline:x-mark" className="text-xs" /> Clear filters
-                </button>
-              ) : undefined
-            }
-          />
-        </div>
-      ) : (
-        // min-h-0 flex-1: the table takes whatever the evidence row left and
-        // scrolls its ROWS inside that, so the toolbar and the paging stay put.
-        <div className="min-h-0 flex-1">
+      {/* min-h-0 flex-1: the table takes whatever the evidence row left and
+          scrolls its ROWS inside that, so the toolbar and the paging stay put —
+          through loading, a failed read and an empty feed too. */}
+      <div className="min-h-0 flex-1">
         <EventTable
+          status={tableStatus}
+          busy={q.isFetching && q.isPlaceholderData && !tableStatus}
           scrollRef={rowsRef}
           onScroll={onRowsScroll}
           events={pageRows}
@@ -680,6 +749,21 @@ export default function CameraEventsPage() {
                   </button>
                 </span>
               )}
+              <label className="relative">
+                <Icon
+                  icon="heroicons-outline:magnifying-glass"
+                  className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted"
+                />
+                <input
+                  type="search"
+                  aria-label="Search events by plate or title"
+                  placeholder="Plate or title"
+                  value={searchText}
+                  maxLength={64}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  className="h-8 w-40 rounded-lg border border-field bg-transparent pl-7 pr-2 text-[12px] text-foreground outline-hidden placeholder:text-muted focus:border-muted"
+                />
+              </label>
               <div className="w-44">
                 <Select
                   ariaLabel="Filter by camera"
@@ -769,8 +853,8 @@ export default function CameraEventsPage() {
             </>
           }
         />
-        </div>
-      )}
+      </div>
+
 
       {escalating && (
         <EscalateDialog
