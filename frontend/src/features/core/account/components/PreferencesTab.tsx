@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { Card, Toggle } from "@/components/ui/kit";
 import AppearanceCard from "./AppearanceCard";
+import EventAlertsCard from "@/features/vms/components/EventAlertsCard";
 import { api, apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -56,6 +57,9 @@ export default function PreferencesTab() {
       </Card>
 
       <AppearanceCard />
+
+      {/* Pop-ups and sound for alarms and plate hits — every event, one place. */}
+      <EventAlertsCard />
     </div>
   );
 }

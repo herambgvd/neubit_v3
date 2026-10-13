@@ -16,7 +16,7 @@ import { Icon } from "@iconify/react";
 import { api } from "@/lib/api";
 import { vms } from "../api";
 import { fmtTime } from "../eventLib";
-import { anprListCls, anprListLabel, anprSceneStill, type AnprOfEvent } from "../anprLib";
+import { anprListCls, anprListLabel, anprSceneStill, anprVehicleText, confidencePct, type AnprOfEvent } from "../anprLib";
 import type { EstateCamera, FederatedAnprRead } from "../types";
 import ModeButton from "./ModeButton";
 import TilePlayback from "./TilePlayback";
@@ -256,5 +256,37 @@ export function AnprLinkedPane({
 function Notice({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <div className="flex h-full items-center justify-center px-4 text-center text-[11.5px] text-muted">{children}</div>
+  );
+}
+
+/** The plate on the alarm card: crop, text and list, so the card answers "which
+ *  vehicle" without opening anything — HikCentral's and AutoVu's hit pop-ups lead
+ *  with the plate the same way — and what else the camera said about the vehicle. */
+export function AnprAlertPlate({ anpr }: Readonly<{ anpr: AnprOfEvent }>) {
+  const read = useAnprRead(anpr).data;
+  const hasCrop = !!read?.images.includes("plate");
+  const confidence = read?.confidence ?? anpr.confidence;
+  const facts = [
+    anprVehicleText(read),
+    read?.direction ?? "",
+    confidence == null ? "" : `${confidencePct(confidence)} sure`,
+  ].filter(Boolean);
+  return (
+    <div className="mt-1.5 flex items-center gap-2">
+      {hasCrop && (
+        <div className="relative h-8 w-20 shrink-0 overflow-hidden rounded bg-black">
+          <AuthedImage path={stillUrl(anpr, "plate")} alt={`Plate crop — ${anpr.plate || "no plate"}`} />
+        </div>
+      )}
+      <div className="min-w-0">
+        <div className={`truncate text-[15px] font-semibold tracking-wider ${anpr.noPlate ? "text-muted" : "text-foreground"}`}>
+          {anpr.noPlate ? "No plate" : anpr.plate}
+        </div>
+        <span className={`inline-block rounded-full border px-1.5 py-px text-[10px] font-semibold ${anprListCls(anpr.list)}`}>
+          {anprListLabel(anpr.list, anpr.listLabel)}
+        </span>
+        {facts.length > 0 && <div className="mt-0.5 truncate text-[11px] text-muted">{facts.join(" · ")}</div>}
+      </div>
+    </div>
   );
 }

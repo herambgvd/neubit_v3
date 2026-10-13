@@ -12,15 +12,17 @@
  *   * an empty feed says WHY it is empty. "No events" under an active filter and
  *     "no events" on a quiet estate are opposite instructions.
  */
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { httpError, stubApi, type ApiStub, type Recorded } from "@/test/apiStub";
 import { renderWithProviders } from "@/test/render";
 
 import { HeaderSlotOutlet } from "@/components/shell/HeaderSlot";
 import CameraEventsPage, { feedVerdict } from "./CameraEvents";
+import { alarmQueue, clearAlarms, pushAlarm } from "./alarmQueue";
+import { normalizeVmsEvent, type NormalizedVmsEvent } from "./eventLib";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 
@@ -1013,5 +1015,91 @@ describe("reading the history (SCRUM-325)", () => {
     await userEvent.click(screen.getByRole("button", { name: /try again/i }));
     expect(await screen.findByRole("table")).toBeInTheDocument();
     expect(calls).toBe(3);
+  });
+});
+
+describe("the alarm pop-up's Show in panes (SCRUM-327)", () => {
+  it("opens the asked event in the panes whenever the link changes, even after they were put down", async () => {
+    stubAll({
+      "GET /vms/events": {
+        items: [
+          event({ id: "t1", event_id: "t1", severity: "critical", event_type: "tamper" }),
+          event({ id: "l1", event_id: "l1", severity: "alarm", event_type: "line_crossing" }),
+        ],
+        total: 2,
+      },
+    });
+    const { rerender } = renderWithProviders(<CameraEventsPage />);
+    await userEvent.click(await screen.findByRole("button", { name: /close event details/i }));
+    expect(await screen.findByText("Pick an event")).toBeInTheDocument();
+
+    // The pop-up on this page replaces the URL with ?event=<id>.
+    nav.params = new URLSearchParams("event=l1");
+    rerender(<CameraEventsPage />);
+
+    const close = await screen.findByRole("button", { name: /close event details/i });
+    const details = close.closest("header")?.parentElement as HTMLElement;
+    expect(within(details).getByText("Line crossing")).toBeInTheDocument();
+  });
+});
+
+describe("the alarm window (SCRUM-327)", () => {
+  // A new alarm on this page opens in the middle of it, with the page's own panes.
+  const queue = (over: Record<string, unknown>) => {
+    const e = normalizeVmsEvent(event(over)) as NormalizedVmsEvent;
+    act(() =>
+      pushAlarm({
+        key: e.event_id || "",
+        event: e,
+        cameraName: "Channel 1",
+        recorderName: "recorder-a",
+        ackId: e.id,
+        raisedAt: Date.now(),
+      }),
+    );
+  };
+
+  afterEach(() => act(() => clearAlarms()));
+
+  it("opens with the page's own picture and details, and acknowledges from inside", async () => {
+    stubAll({
+      "GET /vms/events": {
+        items: [event({ id: "a1", event_id: "a1", severity: "alarm", event_type: "line_crossing" })],
+        total: 1,
+      },
+      "POST /vms/events/a1/ack": { id: "a1", acknowledged: true },
+    });
+    queue({ id: "a1", event_id: "a1", severity: "alarm", event_type: "line_crossing" });
+    renderWithProviders(<CameraEventsPage />);
+
+    const win = await screen.findByRole("dialog");
+    expect(within(win).getByRole("heading", { name: "Line crossing" })).toBeInTheDocument();
+    // The details pane, with its actions — not a second, thinner copy of them.
+    expect(within(win).getByRole("button", { name: /escalate/i })).toBeInTheDocument();
+
+    await userEvent.click(within(win).getByRole("button", { name: /^acknowledge$/i }));
+    await waitFor(() => expect(stub.matching("POST /vms/events/*")).toHaveLength(1));
+    expect(alarmQueue()).toHaveLength(0);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("closes on Show in panes, with that alarm in the panes", async () => {
+    stubAll({
+      "GET /vms/events": {
+        items: [
+          event({ id: "t1", event_id: "t1", severity: "critical", event_type: "tamper" }),
+          event({ id: "l1", event_id: "l1", severity: "alarm", event_type: "line_crossing" }),
+        ],
+        total: 2,
+      },
+    });
+    queue({ id: "l1", event_id: "l1", severity: "alarm", event_type: "line_crossing" });
+    renderWithProviders(<CameraEventsPage />);
+
+    await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: /show in panes/i }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const close = await screen.findByRole("button", { name: /close event details/i });
+    const details = close.closest("header")?.parentElement as HTMLElement;
+    expect(within(details).getByText("Line crossing")).toBeInTheDocument();
   });
 });

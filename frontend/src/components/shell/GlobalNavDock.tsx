@@ -26,6 +26,7 @@ import MenuNavigator from "@/components/shell/MenuNavigator";
 import GlobalBrand from "@/components/shell/GlobalBrand";
 import HeaderSectionNav from "@/components/shell/HeaderSectionNav";
 import { HeaderSlotOutlet } from "@/components/shell/HeaderSlot";
+import EventAlertControl from "@/features/vms/components/EventAlertControl";
 import { useAuth } from "@/lib/auth";
 import type { NotificationOut, Page } from "@/lib/types";
 
@@ -336,6 +337,8 @@ export default function GlobalNavDock({ home = false }: Readonly<{ home?: boolea
             <span>K</span>
           </kbd>
         </button>
+        {/* Mute / unmute and pop-ups on / off for every alarm, from any page. */}
+        <EventAlertControl />
         <NotificationsBell />
         <AccountMenu />
       </div>

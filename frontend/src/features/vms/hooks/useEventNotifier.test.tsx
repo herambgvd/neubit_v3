@@ -1,10 +1,11 @@
 /**
- * THE SPLIT EVERY ENTERPRISE VMS MAKES, and why it is not cosmetic.
+ * THE ALARM POP-UP, on every page.
  *
- *   * On the alarm-MONITORING surface, an alarm shows its VIDEO — the operator is
- *     there to watch, so the console switches the canvas.
- *   * ANYWHERE ELSE it is a corner toast: what, where, and one click to go look.
+ *   * ANYWHERE ELSE it is a corner card: what, where, and one click to go look.
  *     Never a camera thrown over a form somebody is filling in.
+ *   * ON THE EVENTS PAGE it pops up too (SCRUM-327), at the top over the panes,
+ *     with "Show in panes" — HikCentral's and DSS's alarm window opens wherever
+ *     the operator is — unless the operator keeps that page to its own feed.
  *
  * And a rule that decides whether the mechanism is worth anything at all: it
  * fires for alarms, not for every frame the estate produces. A console that
@@ -54,10 +55,21 @@ vi.mock("./useEstateCameras", () => ({
 const ack = vi.fn((_id: string) => Promise.resolve({}));
 vi.mock("../api", () => ({ vms: { events: { ack: (id: string) => ack(id) } } }));
 
+// The operator's alert settings live in their preferences (SCRUM-326).
+let prefs: Record<string, unknown> = {};
+vi.mock("@/lib/auth", () => ({ useAuth: () => ({ user: { preferences: prefs }, reload: vi.fn() }) }));
+
+// The tone is Web Audio; this suite is about WHEN it rings, and in which sound.
+const tone = vi.fn((_t: string, _v: number, _id?: string) => true);
+vi.mock("../alertSound", async (orig) => ({
+  ...(await orig<typeof import("../alertSound")>()),
+  playAlertTone: (t: string, v: number, id?: string) => tone(t, v, id),
+}));
+
 import AlarmCorner from "../components/AlarmCorner";
 import { alarmQueue, clearAlarms } from "../alarmQueue";
 import { toastInset } from "@/lib/toastInset";
-import { setEventsMuted, useEventNotifier } from "./useEventNotifier";
+import { useEventNotifier } from "./useEventNotifier";
 
 /** The hook needs a QueryClient (it invalidates the feed after an ack). */
 const wrapper = ({ children }: { children: ReactNode }) => (
@@ -72,6 +84,12 @@ const run = () => renderHook(() => useEventNotifier(), { wrapper });
 function renderToast() {
   render(<AlarmCorner />, { wrapper });
 }
+
+/** The card, by its label — a region, not an alert, so its countdown is not read out. */
+const card = () => screen.getByRole("region", { name: /alarm:/i });
+
+/** Text the operator SEES: the screen-reader announcement repeats some of it. */
+const seen = (re: RegExp) => screen.getAllByText(re).filter((el) => !el.closest(".sr-only"));
 
 const frame = (over: Record<string, unknown> = {}) => ({
   id: `e-${Math.random().toString(36).slice(2)}`,
@@ -89,7 +107,8 @@ beforeEach(() => {
   push.mockClear();
   frames = [];
   pathname = "/streaming";
-  setEventsMuted(false);
+  prefs = {};
+  tone.mockClear();
   // Module state outlives a test.
   clearAlarms();
 });
@@ -107,7 +126,7 @@ describe("off the Events page", () => {
     expect(screen.getByText("Critical")).toBeInTheDocument();
     // The ESTATE's name for the camera, and the recorder that owns it — the frame
     // itself only carried "Channel 1" and a node-side id.
-    expect(screen.getByText(/Lobby entrance/)).toBeInTheDocument();
+    expect(seen(/Lobby entrance/)).toHaveLength(1);
     expect(screen.getByText(/recorder-a/)).toBeInTheDocument();
     expect(screen.getByText(/just now/)).toBeInTheDocument();
   });
@@ -117,7 +136,7 @@ describe("off the Events page", () => {
     run();
     renderToast();
 
-    await userEvent.click(screen.getByRole("button", { name: /view video/i }));
+    await userEvent.click(screen.getByRole("button", { name: /open in events/i }));
     expect(push).toHaveBeenCalledWith("/events?event=ev-9");
   });
 
@@ -137,7 +156,7 @@ describe("off the Events page", () => {
     frames = [frame(), frame(), frame({ severity: "critical" })];
     run();
     renderToast();
-    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getAllByRole("region", { name: /alarm:/i })).toHaveLength(1);
     expect(screen.getByText("1 of 3")).toBeInTheDocument();
   });
 
@@ -147,9 +166,8 @@ describe("off the Events page", () => {
     frames = [frame(), frame()];
     run();
     renderToast();
-    const card = screen.getByRole("alert");
-    expect(card.closest("[data-sonner-toast]")).toBeNull();
-    expect(card.closest(".fixed")).not.toBeNull();
+    expect(card().closest("[data-sonner-toast]")).toBeNull();
+    expect(card().closest(".fixed")).not.toBeNull();
   });
 
   it("moves the app's toasts up while it holds the corner, and gives the room back", () => {
@@ -174,11 +192,12 @@ describe("off the Events page", () => {
     expect(alarmQueue()).toHaveLength(0);
   });
 
-  it("stays quiet when the operator muted it", () => {
-    setEventsMuted(true);
+  it("shows no pop-up when the operator turned pop-ups off — and still rings", () => {
+    prefs = { event_alert_popup: false };
     frames = [frame()];
     run();
     expect(alarmQueue()).toHaveLength(0);
+    expect(tone).toHaveBeenCalledWith("alarm", 70, "hilo");
   });
 
   it("says a thing once, however often the buffer replays it", () => {
@@ -189,24 +208,146 @@ describe("off the Events page", () => {
   });
 });
 
-describe("on the Events page", () => {
-  it("says nothing — the video is already showing it", () => {
+describe("on the Events page (SCRUM-327)", () => {
+  it("queues the alarm for the page's alarm window, and keeps the corner card away", () => {
+    // The operator may be reading another event or the table: the feed alone
+    // does not tell them. The window in the middle of the page does (AlarmWindow,
+    // which the page renders); the corner stays empty, and so do the toasts' room.
+    const height = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(136);
+    try {
+      pathname = "/events";
+      frames = [frame({ event_type: "tamper" })];
+      run();
+      renderToast();
+      expect(alarmQueue()).toHaveLength(1);
+      expect(screen.queryByRole("region", { name: /alarm:/i })).not.toBeInTheDocument();
+      expect(toastInset()).toBe(0);
+    } finally {
+      height.mockRestore();
+    }
+  });
+
+  it("shows the corner card there instead when the operator turned the window off", () => {
+    prefs = { event_alert_popup_on_events: false };
     pathname = "/events";
     frames = [frame()];
     run();
-    expect(alarmQueue()).toHaveLength(0);
+    renderToast();
+    expect(card()).toBeInTheDocument();
+    expect(tone).toHaveBeenCalledTimes(1);
   });
 
-  it("does not toast it LATER either, once the operator navigates away", () => {
-    // The buffer replays on the next surface. An event they already watched must
-    // not chase them across the console.
+  it("does not pop up LATER an alarm that arrived while pop-ups were off", () => {
+    // The buffer replays when the settings change. An alarm that has had its
+    // moment must not chase the operator afterwards.
+    prefs = { event_alert_popup: false };
     pathname = "/events";
     const one = frame({ event_id: "ev-seen" });
     frames = [one];
     const { rerender } = renderHook(() => useEventNotifier(), { wrapper });
 
+    prefs = {};
     pathname = "/streaming";
     rerender();
     expect(alarmQueue()).toHaveLength(0);
+  });
+});
+
+describe("the alert tone (SCRUM-326)", () => {
+  it("rings the critical tone for a critical, at the operator's volume", () => {
+    prefs = { event_alert_volume: 40 };
+    frames = [frame({ severity: "critical", event_type: "tamper" })];
+    run();
+    expect(tone).toHaveBeenCalledWith("critical", 40, "yelp");
+  });
+
+  it("rings in the sound the operator picked for that priority (SCRUM-327)", () => {
+    prefs = { event_alert_critical_sound: "warble", event_alert_alarm_sound: "horn" };
+    frames = [frame({ severity: "critical" })];
+    const { rerender } = run();
+    expect(tone).toHaveBeenLastCalledWith("critical", 70, "warble");
+
+    // Past the burst window, so the next alarm rings on its own.
+    const later = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 10_000);
+    frames = [frame(), ...frames];
+    rerender();
+    later.mockRestore();
+    expect(tone).toHaveBeenLastCalledWith("alarm", 70, "horn");
+  });
+
+  it("rings on the Events page too", () => {
+    // An operator on the other monitor still has to be told.
+    pathname = "/events";
+    frames = [frame()];
+    run();
+    expect(tone).toHaveBeenCalledTimes(1);
+  });
+
+  it("rings ONCE for a burst, at its worst severity", () => {
+    frames = [frame(), frame({ severity: "critical" }), frame()];
+    run();
+    expect(tone).toHaveBeenCalledTimes(1);
+    expect(tone).toHaveBeenCalledWith("critical", 70, "yelp");
+    expect(alarmQueue()).toHaveLength(3);
+  });
+
+  it("stays silent when muted, and the card still comes", () => {
+    prefs = { event_alert_sound: false };
+    frames = [frame()];
+    run();
+    expect(tone).not.toHaveBeenCalled();
+    expect(alarmQueue()).toHaveLength(1);
+  });
+
+  it("stays silent through a timed mute, and rings once it has run out", () => {
+    prefs = { event_alert_mute_until: Date.now() + 60_000 };
+    frames = [frame()];
+    run();
+    expect(tone).not.toHaveBeenCalled();
+    expect(alarmQueue()).toHaveLength(1);
+
+    tone.mockClear();
+    prefs = { event_alert_mute_until: Date.now() - 1 };
+    frames = [frame()];
+    run();
+    expect(tone).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not ring for what the operator does not want to hear", () => {
+    prefs = { event_alert_level: "critical" };
+    frames = [frame({ severity: "alarm" }), frame({ severity: "info" })];
+    run();
+    expect(tone).not.toHaveBeenCalled();
+    expect(alarmQueue()).toHaveLength(0);
+  });
+});
+
+describe("plate reads (SCRUM-326)", () => {
+  const plate = (list: string, severity: string) =>
+    frame({
+      event_type: "anpr",
+      severity,
+      raw: { node_id: "n1", payload: { anpr: { read_id: `r-${list}`, plate: "PB10GN4497", list } } },
+    });
+
+  it("with 'block-list hits only', a visitor's read stays in the list and a hit interrupts", () => {
+    prefs = { event_alert_anpr: "hits" };
+    frames = [plate("visitor", "alarm")];
+    const { rerender } = run();
+    expect(alarmQueue()).toHaveLength(0);
+    expect(tone).not.toHaveBeenCalled();
+
+    frames = [plate("block", "critical"), ...frames];
+    rerender();
+    expect(alarmQueue()).toHaveLength(1);
+    expect(tone).toHaveBeenCalledWith("critical", 70, "yelp");
+  });
+
+  it("with plate alerts off, no read interrupts — other alarms still do", () => {
+    prefs = { event_alert_anpr: "off" };
+    frames = [plate("block", "critical"), frame({ severity: "alarm" })];
+    run();
+    expect(alarmQueue()).toHaveLength(1);
+    expect(alarmQueue()[0].event.event_type).toBe("motion");
   });
 });

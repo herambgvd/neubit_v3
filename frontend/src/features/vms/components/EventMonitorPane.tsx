@@ -53,8 +53,9 @@ export interface EventMonitorPaneProps {
    *  answers to there. Without both there is neither a live session nor a
    *  recorded one to mint. */
   camera: EstateCamera | null;
-  follow: boolean;
-  onFollowChange: (follow: boolean) => void;
+  follow?: boolean;
+  /** Absent where there is nothing to follow — the alarm window shows one alarm. */
+  onFollowChange?: (follow: boolean) => void;
 }
 
 /** The recorder's own words for why, dug out of the payload it sent. A row that
@@ -110,7 +111,7 @@ export default function EventMonitorPane({
     };
   }, [nodeId, realId]);
 
-  const followToggle = (
+  const followToggle = onFollowChange && (
     <label
       className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-card-border px-2 py-1 text-[11px] text-muted transition hover:text-foreground"
       title="Switch this pane to each new alarm as it arrives"
@@ -118,7 +119,7 @@ export default function EventMonitorPane({
       <input
         type="checkbox"
         className="h-3 w-3 accent-blue-500"
-        checked={follow}
+        checked={!!follow}
         onChange={(e) => onFollowChange(e.target.checked)}
       />
       <span>Follow alarms</span>

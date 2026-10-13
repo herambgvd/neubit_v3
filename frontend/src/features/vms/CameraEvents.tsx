@@ -37,6 +37,9 @@ import { AnprLinkedPane, useAnprRead } from "./components/AnprEvidence";
 import { anprInvestigateHref, anprOf, matchesEventSearch } from "./anprLib";
 import EventTable from "./components/EventTable";
 import EscalateDialog from "./components/EscalateDialog";
+import AlarmWindow from "./components/AlarmWindow";
+import { clearAlarms, removeAlarm, type QueuedAlarm } from "./alarmQueue";
+import { useAlarmPopupSettings } from "./hooks/useAlarmPopupSettings";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
@@ -47,6 +50,28 @@ function investigateHrefOf(event: NormalizedVmsEvent | null | undefined): string
   return anpr
     ? anprInvestigateHref(event.camera_id, anpr, event.occurred_at)
     : `/playback?camera=${encodeURIComponent(event.camera_id)}&t=${encodeURIComponent(event.occurred_at)}`;
+}
+
+/** A plate read's linked camera in the alarm window, at the read — the same pane as
+ *  the page's third panel. Nothing for any other alarm. */
+function AlarmLinkedPane({
+  event,
+  cameraById,
+}: Readonly<{ event: NormalizedVmsEvent; cameraById: Record<string, EstateCamera> }>) {
+  const anpr = anprOf(event);
+  const read = useAnprRead(anpr).data;
+  if (!anpr || anpr.linkedCameraIds.length === 0) return null;
+  return (
+    <div className="h-[18rem] min-h-0">
+      <AnprLinkedPane
+        anpr={anpr}
+        read={read}
+        cameraById={cameraById}
+        occurredAt={event.occurred_at}
+        investigateHref={investigateHrefOf(event)}
+      />
+    </div>
+  );
 }
 
 /** What the feed indicator says and what colour it says it in.
@@ -400,18 +425,16 @@ export default function CameraEventsPage() {
     return m;
   })();
 
-  // The toast off this page links here with ?event=<id>: the operator clicked a
-  // notification about ONE event, so that is the one the canvas opens on.
+  // The alarm pop-up links here with ?event=<id> — from another page, or from the
+  // pop-up on this one ("Show in panes", SCRUM-327): the operator picked ONE
+  // event, so that is the one the canvas opens on, whenever the link changes.
+  const askedEvent = params?.get("event") ?? null;
   useEffect(() => {
-    // `globalThis`, not `window`: this component already binds a local `window`
-    // for the day range, and the shadow makes the global unreachable here.
-    if (typeof globalThis === "undefined" || !globalThis.location) return;
-    const asked = new URLSearchParams(globalThis.location.search).get("event");
-    if (asked) {
-      setSelectedId(asked);
-      setFollow(false); // they asked for this one; do not yank it away
-    }
-  }, []);
+    if (!askedEvent) return;
+    setSelectedId(askedEvent);
+    setDismissed(false);
+    setFollow(false); // they asked for this one; do not yank it away
+  }, [askedEvent]);
 
   // Auto-follow: the newest attention event takes the canvas, once. `followed`
   // remembers which one so an operator who clicks another row keeps it until a
@@ -471,6 +494,50 @@ export default function CameraEventsPage() {
   const selectedAnpr = anprOf(selected);
   const selectedRead = useAnprRead(selectedAnpr).data;
   const investigateHref = investigateHrefOf(selected);
+
+  // THE ALARM WINDOW (SCRUM-327): a new alarm opens in the middle of this page,
+  // large, with this page's own monitor and details panes for it — the window
+  // HikCentral and DSS open on their monitoring screens. Its actions are this
+  // page's: acknowledging or escalating takes the alarm out of the window, and
+  // "Show in panes" closes it on that alarm in the panes.
+  const popup = useAlarmPopupSettings();
+  const showInPanes = (key: string) => {
+    setSelectedId(key);
+    setDismissed(false);
+    setFollow(false); // they picked this one; do not yank it away
+  };
+  const alarmMedia = (a: QueuedAlarm) => (
+    <EventMonitorPane event={a.event} camera={a.event.camera_id ? cameraById[a.event.camera_id] ?? null : null} />
+  );
+  const alarmDetails = (a: QueuedAlarm) => {
+    const cam = a.event.camera_id ? cameraById[a.event.camera_id] : undefined;
+    return (
+      <EventDetails
+        event={a.event}
+        cameraName={cameraName(a.event.camera_id) ?? a.cameraName}
+        recorderName={(cam as { node_name?: string } | undefined)?.node_name ?? a.recorderName}
+        incidentId={incidentByEventId.get(a.event.event_id || a.event.id || "") || null}
+        onAck={(ev) => {
+          removeAlarm(a.key);
+          if (ev.id) ackMut.mutate(ev.id);
+        }}
+        ackPending={ackMut.isPending && !!a.event.id && ackMut.variables === a.event.id}
+        investigateHref={investigateHrefOf(a.event)}
+        onFindPlate={(plate) => {
+          clearAlarms();
+          findPlate(plate);
+        }}
+        onEscalate={
+          canEscalate
+            ? () => {
+                removeAlarm(a.key);
+                setEscalating([a.event]);
+              }
+            : undefined
+        }
+      />
+    );
+  };
 
   // What the table says where its rows go. The rows of the last filter are still in
   // the cache while the new read is on its way, and the client filter may empty them:
@@ -855,6 +922,21 @@ export default function CameraEventsPage() {
         />
       </div>
 
+      {popup.prefs.popup && popup.prefs.popupOnEvents && (
+        <AlarmWindow
+          closeAfterMs={popup.closeAfterMs}
+          criticalStays={popup.criticalStays}
+          sound={popup.sound}
+          onMute={popup.mute}
+          onShowInPanes={(a) => {
+            clearAlarms();
+            showInPanes(a.key);
+          }}
+          renderMedia={alarmMedia}
+          renderDetails={alarmDetails}
+          renderExtra={(a) => <AlarmLinkedPane event={a.event} cameraById={cameraById} />}
+        />
+      )}
 
       {escalating && (
         <EscalateDialog
