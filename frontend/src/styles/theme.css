@@ -43,44 +43,29 @@
 .animate-modal-in { animation: modal-in 0.18s cubic-bezier(0.16, 1, 0.3, 1); }
 .animate-command-in { animation: command-in 0.16s cubic-bezier(0.16, 1, 0.3, 1); }
 
-/* Thin, themed horizontal scrollbar for nav / tab strips (top nav + Config sub-tabs).
-   Track is invisible; the slim rounded thumb uses the border token and brightens on
-   hover — far cleaner than the chunky default OS scrollbar. */
-.nav-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: var(--card-border) transparent;
-}
-.nav-scroll::-webkit-scrollbar { height: 6px; }
-.nav-scroll::-webkit-scrollbar-track { background: transparent; }
-.nav-scroll::-webkit-scrollbar-thumb {
-  background: var(--card-border);
-  border-radius: 9999px;
-}
-.nav-scroll:hover::-webkit-scrollbar-thumb { background: var(--muted); }
+/* EVERY SCROLLBAR IN THE CONSOLE, ONE RULE. At rest a pane draws no scrollbar at
+   all — no white OS track, no arrow buttons, on any page, in any pane nobody gave a
+   class. It still scrolls (wheel, touch, keyboard, scrollIntoView). While the
+   pointer is over a pane that scrolls, a slim thumb shows where in it the operator
+   is, the overlay scrollbar Windows 11 and macOS draw, and it brightens under the
+   pointer to be dragged. `.app-scroll`, `.scroll-themed` and `.nav-scroll` still
+   mark scroll panes in the markup, and draw like every other pane.
 
-/* App-wide themed scrollbar — slim, dark, uses theme tokens. `.app-scroll` for the
-   shell's main pane, `.scroll-themed` for any inner scroll container. Track is
-   transparent; the rounded thumb sits on the border token and brightens on hover. */
-.app-scroll,
-.scroll-themed {
-  scrollbar-width: thin;
-  scrollbar-color: var(--card-border) transparent;
+   Chromium (Chrome, Edge, the desktop app) takes the ::-webkit-scrollbar rules —
+   only while no element sets the standard scrollbar-width / scrollbar-color, which
+   would switch them off, so those are given to Firefox alone. */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-button { display: none; }
+::-webkit-scrollbar-thumb { background: transparent; border-radius: 9999px; }
+:hover::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--muted) 40%, transparent); }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+  *:hover { scrollbar-color: color-mix(in srgb, var(--muted) 40%, transparent) transparent; }
 }
-.app-scroll::-webkit-scrollbar,
-.scroll-themed::-webkit-scrollbar { width: 10px; height: 10px; }
-.app-scroll::-webkit-scrollbar-track,
-.scroll-themed::-webkit-scrollbar-track { background: transparent; }
-.app-scroll::-webkit-scrollbar-thumb,
-.scroll-themed::-webkit-scrollbar-thumb {
-  background: var(--card-border);
-  border-radius: 9999px;
-  border: 3px solid transparent;
-  background-clip: padding-box;
-}
-.app-scroll:hover::-webkit-scrollbar-thumb,
-.scroll-themed:hover::-webkit-scrollbar-thumb { background: var(--muted); }
-.app-scroll::-webkit-scrollbar-thumb:hover,
-.scroll-themed::-webkit-scrollbar-thumb:hover { background: var(--foreground); }
 
 /* Fully INVISIBLE scrollbar — the pane still scrolls (wheel, touch, keyboard, and
    scrollIntoView), it just draws no track or thumb. For compact overlay surfaces

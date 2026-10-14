@@ -87,6 +87,23 @@ describe("the window", () => {
     render(<AlarmWindow {...props()} />);
     expect(screen.getByRole("heading", { name: "ANPR · PB10GN4497" })).toBeInTheDocument();
   });
+
+  it("shares the column between the picture and a linked camera, and gives an alarm without one the whole of it", () => {
+    act(() => {
+      pushAlarm(alarm("a"));
+      pushAlarm(alarm("b"));
+    });
+    const extra = (a: QueuedAlarm) => (a.key === "b" ? <div>linked of {a.key}</div> : null);
+    render(<AlarmWindow {...props()} renderExtra={extra} />);
+
+    // Newest in front: b has a linked camera, and it shares the column.
+    const picture = screen.getByText("picture of b").parentElement!;
+    expect(screen.getByText("linked of b").parentElement!.parentElement).toBe(picture.parentElement);
+    expect(picture.parentElement!.children).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: /next alarm/i }));
+    expect(screen.getByText("picture of a").parentElement!.parentElement!.children).toHaveLength(1);
+  });
 });
 
 describe("closing it", () => {

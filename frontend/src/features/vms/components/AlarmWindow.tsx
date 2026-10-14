@@ -58,7 +58,8 @@ export interface AlarmWindowProps {
   renderMedia: (alarm: QueuedAlarm) => ReactNode;
   /** The facts and the actions: the page's details pane for this alarm. */
   renderDetails: (alarm: QueuedAlarm) => ReactNode;
-  /** More evidence under the picture — a plate read's linked camera. */
+  /** More evidence under the picture — a plate read's linked camera; null for none,
+   *  and the picture takes the whole column. */
   renderExtra?: (alarm: QueuedAlarm) => ReactNode;
 }
 
@@ -130,6 +131,7 @@ export default function AlarmWindow({
   const said = [`${sp.label}: ${typeLabel}`, plate && !plate.noPlate ? `plate ${plate.plate}` : null, alarm.cameraName]
     .filter(Boolean)
     .join(" — ");
+  const extra = renderExtra?.(alarm) ?? null;
 
   return (
     <Overlay onClose={clearAlarms} staticBackdrop>
@@ -142,7 +144,7 @@ export default function AlarmWindow({
         aria-labelledby={TITLE_ID}
         tabIndex={-1}
         {...bind}
-        className="relative m-0 flex max-h-[94vh] w-[94vw] max-w-[1400px] flex-col overflow-hidden rounded-xl border border-card-border bg-card p-0 text-foreground shadow-2xl outline-none"
+        className="relative m-0 flex max-h-[94vh] w-[94vw] max-w-[1400px] flex-col overflow-hidden rounded-xl border border-card-border bg-card p-0 text-foreground shadow-2xl outline-none lg:h-[94vh]"
       >
         {critical ? (
           <p role="alert" className="sr-only">
@@ -222,17 +224,21 @@ export default function AlarmWindow({
         </header>
 
         {/* THE PICTURE beside EVERY DETAIL, sized by the screen rather than the text
-            size, so the window stays large on a compact console. Keyed per alarm:
-            paging starts the next one's players and facts fresh. */}
+            size, so the window stays large on a compact console. Side by side, the
+            window is the screen's height and the panes share it — the picture three
+            parts, a linked camera two — so nothing is cut off and the window itself
+            never scrolls; only the details scroll inside their own pane. Stacked on
+            a narrow screen, the panes keep their own heights and the body scrolls.
+            Keyed per alarm: paging starts the next one's players and facts fresh. */}
         <div
           key={alarm.key}
-          className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]"
+          className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden"
         >
-          <div className="flex min-w-0 flex-col gap-3">
-            <div className="h-[min(56vh,560px)] min-h-[18rem]">{renderMedia(alarm)}</div>
-            {renderExtra?.(alarm)}
+          <div className="flex min-w-0 flex-col gap-3 lg:min-h-0">
+            <div className="h-[min(56vh,560px)] min-h-[18rem] lg:h-auto lg:min-h-0 lg:flex-[3]">{renderMedia(alarm)}</div>
+            {extra != null && <div className="h-[18rem] min-h-0 lg:h-auto lg:flex-[2]">{extra}</div>}
           </div>
-          <div className="min-h-[18rem] min-w-0">{renderDetails(alarm)}</div>
+          <div className="min-h-[18rem] min-w-0 lg:min-h-0">{renderDetails(alarm)}</div>
         </div>
 
         <Waiting alarms={alarms} current={alarm.key} onPick={view} />

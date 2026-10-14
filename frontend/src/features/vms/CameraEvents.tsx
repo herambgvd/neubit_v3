@@ -52,25 +52,29 @@ function investigateHrefOf(event: NormalizedVmsEvent | null | undefined): string
     : `/playback?camera=${encodeURIComponent(event.camera_id)}&t=${encodeURIComponent(event.occurred_at)}`;
 }
 
+/** Whether an alarm brings a linked camera to show: a plate read whose recorder bound
+ *  a camera to the ANPR camera. */
+function hasLinkedCamera(event: NormalizedVmsEvent): boolean {
+  return (anprOf(event)?.linkedCameraIds.length ?? 0) > 0;
+}
+
 /** A plate read's linked camera in the alarm window, at the read — the same pane as
- *  the page's third panel. Nothing for any other alarm. */
+ *  the page's third panel. The window sizes it. */
 function AlarmLinkedPane({
   event,
   cameraById,
 }: Readonly<{ event: NormalizedVmsEvent; cameraById: Record<string, EstateCamera> }>) {
   const anpr = anprOf(event);
   const read = useAnprRead(anpr).data;
-  if (!anpr || anpr.linkedCameraIds.length === 0) return null;
+  if (!anpr) return null;
   return (
-    <div className="h-[18rem] min-h-0">
-      <AnprLinkedPane
-        anpr={anpr}
-        read={read}
-        cameraById={cameraById}
-        occurredAt={event.occurred_at}
-        investigateHref={investigateHrefOf(event)}
-      />
-    </div>
+    <AnprLinkedPane
+      anpr={anpr}
+      read={read}
+      cameraById={cameraById}
+      occurredAt={event.occurred_at}
+      investigateHref={investigateHrefOf(event)}
+    />
   );
 }
 
@@ -934,7 +938,9 @@ export default function CameraEventsPage() {
           }}
           renderMedia={alarmMedia}
           renderDetails={alarmDetails}
-          renderExtra={(a) => <AlarmLinkedPane event={a.event} cameraById={cameraById} />}
+          renderExtra={(a) =>
+            hasLinkedCamera(a.event) ? <AlarmLinkedPane event={a.event} cameraById={cameraById} /> : null
+          }
         />
       )}
 
