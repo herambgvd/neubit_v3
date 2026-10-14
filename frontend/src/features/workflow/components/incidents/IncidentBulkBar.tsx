@@ -18,13 +18,13 @@ export interface IncidentBulkBarProps {
 export default function IncidentBulkBar({ count, pending, onAction, onClear }: Readonly<IncidentBulkBarProps>) {
   if (count === 0) return null;
   return (
-    <div className="mb-3 flex items-center gap-2 rounded-[13px] border border-[rgba(34,211,238,.35)] bg-[rgba(34,211,238,.08)] px-3 py-2 backdrop-blur-xs">
-      <span className="font-mono text-sm font-semibold text-[#67e8f9]">{count} selected</span>
+    <div className="mb-3 flex items-center gap-2 rounded-[13px] border border-nb-teal/35 bg-nb-teal/8 px-3 py-2 backdrop-blur-xs">
+      <span className="font-mono text-sm font-semibold text-nb-tealb">{count} selected</span>
       <div className="ml-auto flex items-center gap-2">
         <Button variant="secondary" onClick={() => onAction("paused")} disabled={pending} className="!px-3 !py-1.5 text-xs">Pause</Button>
         <Button variant="secondary" icon="heroicons-outline:arrow-trending-up" onClick={() => onAction("escalate")} disabled={pending} className="!px-3 !py-1.5 text-xs">Escalate</Button>
         <Button variant="danger" onClick={() => onAction("cancelled")} disabled={pending} className="!px-3 !py-1.5 text-xs">Cancel</Button>
-        <button onClick={onClear} className="px-2 text-xs text-[#aec2e8] hover:text-[#67e8f9]">Clear</button>
+        <button onClick={onClear} className="px-2 text-xs text-nb-soft hover:text-nb-tealb">Clear</button>
       </div>
     </div>
   );

@@ -45,7 +45,7 @@ export default function PermissionSelector({ groups, selected, loading, readOnly
                 key={category}
                 className="rounded-[12px] border border-nb-line overflow-hidden"
               >
-                <div className="flex items-center justify-between bg-[rgba(96,165,250,.08)] px-4 py-2.5">
+                <div className="flex items-center justify-between bg-nb-blue/8 px-4 py-2.5">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-nb-ink">
                       {category}
@@ -71,7 +71,7 @@ export default function PermissionSelector({ groups, selected, loading, readOnly
                       <label
                         key={p.key}
                         className={`flex items-start gap-3 px-4 py-2.5 ${
-                          readOnly ? "cursor-default" : "cursor-pointer hover:bg-[rgba(96,165,250,.06)]"
+                          readOnly ? "cursor-default" : "cursor-pointer hover:bg-nb-blue/6"
                         }`}
                       >
                         <input
@@ -79,7 +79,7 @@ export default function PermissionSelector({ groups, selected, loading, readOnly
                           checked={on}
                           disabled={readOnly}
                           onChange={() => onToggleKey(p.key)}
-                          className="mt-0.5 h-4 w-4 rounded-sm border-nb-line text-nb-blue focus:ring-nb-line bg-[rgba(6,11,26,.5)]"
+                          className="mt-0.5 h-4 w-4 rounded-sm border-nb-line text-nb-blue focus:ring-nb-line bg-nb-surface3/50"
                         />
                         <div className="min-w-0">
                           <div className="text-sm text-nb-ink">{p.label}</div>

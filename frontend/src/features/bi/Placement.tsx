@@ -210,12 +210,12 @@ function PlacementInner() {
         </AnimatePresence>
 
         {loadErr && (
-          <p className="rounded-[10px] border border-[rgba(248,113,113,.35)] bg-[rgba(248,113,113,.06)] px-4 py-2.5 text-[12.5px] text-nb-crit">
+          <p className="rounded-[10px] border border-nb-crit/35 bg-nb-crit/6 px-4 py-2.5 text-[12.5px] text-nb-crit">
             {apiError(loadErr, "Could not read the devices")}
           </p>
         )}
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] border border-white/[.08]">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] border border-nb-glint/[.08]">
           <Header />
           <div data-testid="placement-rows" className="min-h-0 flex-1 overflow-y-auto">
           {loading && <p className="px-5 py-10 text-center text-[13px] text-nb-faint">Reading the devices…</p>}
@@ -240,7 +240,7 @@ function PlacementInner() {
             <button
               type="button"
               onClick={() => setShowPlaced((s) => !s)}
-              className="flex w-full items-center gap-2 border-t border-white/[.06] px-5 py-3 text-left text-[12.5px] text-nb-muted transition hover:text-nb-ink"
+              className="flex w-full items-center gap-2 border-t border-nb-glint/[.06] px-5 py-3 text-left text-[12.5px] text-nb-muted transition hover:text-nb-ink"
             >
               <Icon
                 icon="heroicons-outline:chevron-right"
@@ -274,7 +274,7 @@ const COLS = "grid grid-cols-[minmax(0,1.2fr)_220px_minmax(0,1fr)_110px] items-c
 
 function Header() {
   return (
-    <div className={`${COLS} bg-white/[.02] px-5 py-2.5 text-[10.5px] tracking-[.6px] text-nb-faint`}>
+    <div className={`${COLS} bg-nb-glint/[.02] px-5 py-2.5 text-[10.5px] tracking-[.6px] text-nb-faint`}>
       <span>DEVICE</span>
       <span>BUILDING</span>
       <span>WHY</span>
@@ -305,7 +305,7 @@ function DeviceLine({
   const can = mayAssign && assignable(device);
   const label = device.device_tag ?? "unnamed device";
   return (
-    <div className={`${COLS} border-t border-white/[.05] px-5 py-2.5 ${quiet ? "bg-white/[.012]" : ""}`}>
+    <div className={`${COLS} border-t border-nb-glint/[.05] px-5 py-2.5 ${quiet ? "bg-nb-glint/[.012]" : ""}`}>
       <div className="min-w-0">
         <div className={`truncate text-[13px] ${quiet ? "text-nb-muted" : "text-nb-ink"}`}>{label}</div>
         <div className="text-[11px] text-nb-faint">
@@ -318,7 +318,7 @@ function DeviceLine({
         disabled={!can}
         onChange={(e) => onChange(e.target.value)}
         className={`h-8 rounded-[7px] border bg-transparent px-2 text-[12.5px] outline-none transition disabled:opacity-50 ${
-          value ? "border-nb-blue/40 text-nb-blueb" : "border-white/[.14] text-nb-muted"
+          value ? "border-nb-blue/40 text-nb-blueb" : "border-nb-glint/[.14] text-nb-muted"
         }`}
       >
         <option value="">choose…</option>

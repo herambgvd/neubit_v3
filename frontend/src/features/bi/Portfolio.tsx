@@ -134,7 +134,7 @@ function CategoryCard({ row }: any) {
         <div className="flex items-center gap-2">
           <span
             className="grid h-8 w-8 place-items-center rounded-[9px] border"
-            style={{ borderColor: `${meta.accent}55`, background: `${meta.accent}18`, color: meta.accent }}
+            style={{ borderColor: `color-mix(in srgb, ${meta.accent} 33%, transparent)`, background: `color-mix(in srgb, ${meta.accent} 9%, transparent)`, color: meta.accent }}
           >
             <Icon icon={meta.icon} className="text-base" />
           </span>
@@ -174,7 +174,7 @@ function CategoryCard({ row }: any) {
         {row.device_types.map((t: any) => (
           <span
             key={`${t.device_type}`}
-            className="shrink-0 rounded-[6px] border border-nb-line bg-[rgba(6,11,26,.5)] px-2 py-0.5 text-[10.5px] text-nb-soft"
+            className="shrink-0 rounded-[6px] border border-nb-line bg-nb-surface3/50 px-2 py-0.5 text-[10.5px] text-nb-soft"
           >
             {deviceTypeLabel(t.device_type)}
             <span className="ml-1 font-mono text-nb-faint">{t.devices}</span>
@@ -198,10 +198,10 @@ function CategoryCard({ row }: any) {
   // point where every card is at its floor the strip scrolls sideways instead of
   // squeezing them into unreadable slivers.
   const cls =
-    "block min-w-[212px] flex-1 rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-3.5 transition";
+    "block min-w-[212px] flex-1 rounded-[12px] border border-nb-line bg-nb-surface2/50 p-3.5 transition";
 
   return meta.href ? (
-    <Link href={meta.href} className={`${cls} hover:border-nb-blue/60 hover:bg-white/[.03]`}>
+    <Link href={meta.href} className={`${cls} hover:border-nb-blue/60 hover:bg-nb-glint/[.03]`}>
       {body}
     </Link>
   ) : (
@@ -305,7 +305,7 @@ function SiteRow({ site, alertHours }: any) {
       <Link
         href={plantHref(site.site_id)}
         title={`${site.site_name || "This building"}'s plant — systems and equipment, coloured by data readiness`}
-        className="flex shrink-0 flex-col items-center justify-center gap-0.5 rounded-[11px] border border-nb-line bg-[rgba(10,18,40,.45)] px-2.5 text-[10px] tracking-[.5px] text-nb-muted transition hover:border-nb-blue/60 hover:text-nb-blueb"
+        className="flex shrink-0 flex-col items-center justify-center gap-0.5 rounded-[11px] border border-nb-line bg-nb-surface/45 px-2.5 text-[10px] tracking-[.5px] text-nb-muted transition hover:border-nb-blue/60 hover:text-nb-blueb"
       >
         <Icon icon="heroicons-outline:cpu-chip" className="text-[15px]" />
         PLANT

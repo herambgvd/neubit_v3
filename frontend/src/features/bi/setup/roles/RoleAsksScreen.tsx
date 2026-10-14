@@ -169,7 +169,7 @@ export default function RoleAsksScreen() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* what this screen is for, in one line */}
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-white/[.06] pb-3">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-nb-glint/[.06] pb-3">
         <h2 className="text-[14.5px] font-semibold text-nb-ink">What each reading means</h2>
         <p className="text-[12.5px] text-nb-muted">
           {totals?.asks ? (
@@ -260,8 +260,8 @@ export default function RoleAsksScreen() {
                   key={d.device_tag ?? "—"}
                   type="button"
                   onClick={() => setPicked(d.device_tag ?? "")}
-                  className={`flex w-full items-center gap-2.5 border-t border-white/[.05] px-3.5 py-2.5 text-left transition ${
-                    on ? "border-l-2 border-l-nb-blue bg-nb-blue/[.14]" : "hover:bg-white/[.03]"
+                  className={`flex w-full items-center gap-2.5 border-t border-nb-glint/[.05] px-3.5 py-2.5 text-left transition ${
+                    on ? "border-l-2 border-l-nb-blue bg-nb-blue/[.14]" : "hover:bg-nb-glint/[.03]"
                   }`}
                 >
                   <span className="min-w-0 flex-1">
@@ -284,7 +284,7 @@ export default function RoleAsksScreen() {
                 </button>
               );
             })}
-            <p className="border-t border-white/[.05] px-3.5 py-2.5 text-[11px] text-nb-faint">
+            <p className="border-t border-nb-glint/[.05] px-3.5 py-2.5 text-[11px] text-nb-faint">
               Devices whose readings nothing computes with are not listed.
             </p>
           </div>
@@ -385,7 +385,7 @@ export default function RoleAsksScreen() {
                 {error && <p className="mt-4 text-[12.5px] text-nb-crit">{error}</p>}
 
                 {mayWrite && device.asks.length > 0 && (
-                  <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-white/[.06] pt-4">
+                  <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-nb-glint/[.06] pt-4">
                     {bulkOf(device).length > 0 && (
                       <button
                         type="button"
@@ -434,7 +434,7 @@ function Question({
   return (
     <div
       className={`rounded-[11px] border px-4 py-3 ${
-        caution ? "border-nb-warn/30 bg-nb-warn/[.04]" : "border-white/[.09]"
+        caution ? "border-nb-warn/30 bg-nb-warn/[.04]" : "border-nb-glint/[.09]"
       }`}
     >
       <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
@@ -463,7 +463,7 @@ function Question({
             <button
               type="button"
               onClick={() => setOther((v) => !v)}
-              className="h-8 rounded-[8px] border border-white/[.14] px-3 text-[12.5px] text-nb-soft transition hover:border-nb-blue/50 hover:text-nb-ink"
+              className="h-8 rounded-[8px] border border-nb-glint/[.14] px-3 text-[12.5px] text-nb-soft transition hover:border-nb-blue/50 hover:text-nb-ink"
             >
               It is something else
             </button>
@@ -471,7 +471,7 @@ function Question({
         )}
       </div>
       {other && (
-        <p className="mt-2.5 border-t border-white/[.06] pt-2.5 text-[12px] text-nb-faint">
+        <p className="mt-2.5 border-t border-nb-glint/[.06] pt-2.5 text-[12px] text-nb-faint">
           Then leave it. Nothing is stored, and the one thing that reads it stays off and says why — better than a
           meaning nobody could stand behind.
         </p>
@@ -529,7 +529,7 @@ function Stranded({
             measurement. Read the tag before you move it — nothing is chosen for you.
           </p>
           {answer.successors.map((c) => (
-            <div key={c.point_id} className="rounded-[9px] border border-white/[.1] px-3 py-2">
+            <div key={c.point_id} className="rounded-[9px] border border-nb-glint/[.1] px-3 py-2">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                 <span className="font-mono text-[12.5px] text-nb-blueb">{c.point_tag}</span>
                 <button
@@ -556,7 +556,7 @@ function Stranded({
               {open === c.point_id && (
                 <ul className="mt-2 space-y-1.5">
                   {c.evidence.map((e) => (
-                    <li key={`${c.point_id}:${e.kind}`} className="rounded-[8px] border border-white/[.08] px-2.5 py-1.5">
+                    <li key={`${c.point_id}:${e.kind}`} className="rounded-[8px] border border-nb-glint/[.08] px-2.5 py-1.5">
                       <span className="text-[10.5px] font-semibold uppercase tracking-[1px] text-nb-muted">
                         {evidenceLabel(e.kind)}
                       </span>

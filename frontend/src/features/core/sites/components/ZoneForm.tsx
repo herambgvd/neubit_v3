@@ -69,10 +69,10 @@ export default function ZoneForm({ zone, onCancel, onSaved }: Readonly<ZoneFormP
   }
 
   return (
-    <form noValidate onSubmit={submit} className="rounded-lg border border-nb-line bg-white/5 p-4 space-y-4">
+    <form noValidate onSubmit={submit} className="rounded-lg border border-nb-line bg-nb-glint/5 p-4 space-y-4">
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-semibold text-nb-ink">Edit zone · {zone.name}</h4>
-        <button type="button" onClick={onCancel} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-nb-muted hover:bg-white/5 hover:text-nb-ink">
+        <button type="button" onClick={onCancel} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-nb-muted hover:bg-nb-glint/5 hover:text-nb-ink">
           <Icon icon="heroicons-outline:x-mark" className="text-sm" />
         </button>
       </div>

@@ -35,26 +35,41 @@
 
    VERIFY BY FETCHING THE COMPILED STYLESHEET, not by reading this file. */
 @theme static {
-  /* ── NeuBit command-console palette (fixed hexes; do not flip with theme) ── */
-  --color-nb-bg: #0c1530;
-  --color-nb-bg2: #0a1024;
-  --color-nb-panel: #0e1734;
-  --color-nb-field: #0b1228;
-  --color-nb-ink: #f2f6ff;
-  --color-nb-muted: #cfd0f2;
-  --color-nb-soft: #aec2e8;
-  --color-nb-faint: #9a92c8;
-  --color-nb-line: rgba(160, 150, 245, 0.2);
-  --color-nb-line2: rgba(150, 180, 245, 0.42);
-  --color-nb-teal: #22d3ee;
-  --color-nb-tealb: #67e8f9;
-  --color-nb-violet: #a78bfa;
-  --color-nb-violetb: #c4b5fd;
-  --color-nb-blue: #60a5fa;
-  --color-nb-blueb: #93c5fd;
-  --color-nb-good: #34d399;
-  --color-nb-warn: #fbbf24;
-  --color-nb-crit: #f87171;
+  /* ── NeuBit command-console palette ──────────────────────────────────────
+     Each colour is an RGB channel triple set per theme in theme.css (the
+     `--nb-c-*` variables), so the same class follows the operator's theme and
+     still takes an alpha: `bg-nb-surface/60`. The Default theme's channels are
+     the hexes this palette always had. theme.css declares these again on every
+     `[data-theme]` element; the values here are what registers the utilities. */
+  --color-nb-bg: rgb(var(--nb-c-bg));
+  --color-nb-bg2: rgb(var(--nb-c-bg2));
+  --color-nb-panel: rgb(var(--nb-c-panel));
+  --color-nb-field: rgb(var(--nb-c-field));
+  --color-nb-surface: rgb(var(--nb-c-surface));
+  --color-nb-surface2: rgb(var(--nb-c-surface2));
+  --color-nb-surface3: rgb(var(--nb-c-surface3));
+  --color-nb-ink: rgb(var(--nb-c-ink));
+  --color-nb-muted: rgb(var(--nb-c-muted));
+  --color-nb-soft: rgb(var(--nb-c-soft));
+  --color-nb-dim: rgb(var(--nb-c-dim));
+  --color-nb-faint: rgb(var(--nb-c-faint));
+  --color-nb-dim2: rgb(var(--nb-c-dim2));
+  --color-nb-haze: rgb(var(--nb-c-haze));
+  --color-nb-mist: rgb(var(--nb-c-mist));
+  --color-nb-glint: rgb(var(--nb-c-glint));
+  --color-nb-line: rgb(var(--nb-c-haze) / 0.2);
+  --color-nb-line2: rgb(var(--nb-c-mist) / 0.42);
+  --color-nb-teal: rgb(var(--nb-c-teal));
+  --color-nb-tealb: rgb(var(--nb-c-tealb));
+  /* ink on a teal fill: dark on the bright teal, white on Light's deep one */
+  --color-nb-onteal: rgb(var(--nb-c-onteal));
+  --color-nb-violet: rgb(var(--nb-c-violet));
+  --color-nb-violetb: rgb(var(--nb-c-violetb));
+  --color-nb-blue: rgb(var(--nb-c-blue));
+  --color-nb-blueb: rgb(var(--nb-c-blueb));
+  --color-nb-good: rgb(var(--nb-c-good));
+  --color-nb-warn: rgb(var(--nb-c-warn));
+  --color-nb-crit: rgb(var(--nb-c-crit));
 
   /* ── Semantic tokens: these read the CSS variables set in theme.css ──────── */
   --color-background: var(--background);

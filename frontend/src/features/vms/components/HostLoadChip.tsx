@@ -30,18 +30,18 @@ const SATURATED = 85;
  *  something is wrong — which is the half of the answer an operator already has
  *  from the wall stuttering. */
 export function loadTone(pct: number | null): string {
-  if (pct == null) return "text-[#7e93bf]";
-  if (pct >= SATURATED) return "text-[#f87171]";
-  if (pct >= BUSY) return "text-[#fbbf24]";
-  return "text-[#34d399]";
+  if (pct == null) return "text-nb-dim2";
+  if (pct >= SATURATED) return "text-nb-crit";
+  if (pct >= BUSY) return "text-nb-warn";
+  return "text-nb-good";
 }
 
 /** The chip's own border follows the worse of the two, so a saturated host is
  *  visible without reading either number. */
 function frame(worst: number): string {
-  if (worst >= SATURATED) return "border-[rgba(248,113,113,.45)]";
-  if (worst >= BUSY) return "border-[rgba(251,191,36,.45)]";
-  return "border-[rgba(150,180,245,.22)]";
+  if (worst >= SATURATED) return "border-nb-crit/45";
+  if (worst >= BUSY) return "border-nb-warn/45";
+  return "border-nb-mist/22";
 }
 
 export default function HostLoadChip() {
@@ -65,12 +65,12 @@ export default function HostLoadChip() {
       title={`Host load — CPU ${cpu ?? "?"}% · RAM ${ram ?? "?"}%${
         data?.cpu_cores ? ` · ${data.cpu_cores} cores` : ""
       }`}
-      className={`inline-flex h-[33px] items-center gap-1.5 rounded-[8px] border bg-[rgba(150,180,245,.04)] px-2 font-mono text-[11px] font-semibold tabular-nums ${frame(worst)}`}
+      className={`inline-flex h-[33px] items-center gap-1.5 rounded-[8px] border bg-nb-mist/4 px-2 font-mono text-[11px] font-semibold tabular-nums ${frame(worst)}`}
     >
-      <Icon icon="heroicons-outline:cpu-chip" className="text-sm text-[#7e93bf]" />
+      <Icon icon="heroicons-outline:cpu-chip" className="text-sm text-nb-dim2" />
       <span className={loadTone(cpu)}>{cpu ?? "—"}%</span>
-      <span className="text-[#7e93bf] opacity-40">·</span>
-      <Icon icon="heroicons-outline:circle-stack" className="text-sm text-[#7e93bf]" />
+      <span className="text-nb-dim2 opacity-40">·</span>
+      <Icon icon="heroicons-outline:circle-stack" className="text-sm text-nb-dim2" />
       <span className={loadTone(ram)}>{ram ?? "—"}%</span>
     </span>
   );

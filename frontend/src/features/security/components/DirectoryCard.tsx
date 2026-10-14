@@ -161,7 +161,7 @@ export default function DirectoryCard({ canManage }: Readonly<DirectoryCardProps
         )
       }
       enable={
-        <label className="flex items-center justify-between rounded-lg border border-nb-line bg-white/[.04] px-3 py-2.5">
+        <label className="flex items-center justify-between rounded-lg border border-nb-line bg-nb-glint/[.04] px-3 py-2.5">
           <span className="text-sm text-nb-ink">Directory enabled</span>
           <Toggle checked={form.enabled} onChange={(v) => set({ enabled: v })} disabled={!canManage} label="Enable directory sync" />
         </label>
@@ -191,7 +191,7 @@ export default function DirectoryCard({ canManage }: Readonly<DirectoryCardProps
             placeholder={hasBindPassword ? PLACEHOLDER : "Set the bind password"}
             autoComplete="new-password"
           />
-          <label className="flex items-center justify-between rounded-lg border border-nb-line bg-white/[.04] px-3 py-2.5">
+          <label className="flex items-center justify-between rounded-lg border border-nb-line bg-nb-glint/[.04] px-3 py-2.5">
             <span className="text-sm text-nb-ink">Use SSL/TLS</span>
             <Toggle checked={form.use_ssl} onChange={(v) => set({ use_ssl: v })} disabled={!canManage} label="Use SSL" />
           </label>
@@ -247,7 +247,7 @@ export default function DirectoryCard({ canManage }: Readonly<DirectoryCardProps
         <p className="flex items-start gap-2 text-[11px] text-nb-muted">
           <Icon icon="heroicons-outline:information-circle" className="mt-0.5 shrink-0" />
           Live LDAP bind requires the server to have the ldap3 extra installed and reachable directory. Sync reports
-          <span className="mx-1 rounded-sm bg-white/5 px-1">live: true</span> when a real bind was used.
+          <span className="mx-1 rounded-sm bg-nb-glint/5 px-1">live: true</span> when a real bind was used.
         </p>
       </div>
     </SecuritySection>

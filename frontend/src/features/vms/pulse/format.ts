@@ -159,7 +159,7 @@ export const TONE_BAR: Record<Tone, string> = {
   good: "bg-nb-good",
   warn: "bg-nb-warn",
   bad: "bg-nb-crit",
-  idle: "bg-[rgba(150,180,245,.25)]",
+  idle: "bg-nb-mist/25",
 };
 
 export const SEVERITY_TONE: Record<string, Tone> = {

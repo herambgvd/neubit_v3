@@ -42,6 +42,10 @@ const nextConfig = {
   // minimal `server.js` — the Docker runner stage ships that alone (no source, no
   // dev tooling). See frontend/Dockerfile.
   output: "standalone",
+  // The dev server's floating "N" badge sits bottom-left over the console's own
+  // content (it covered the Event alerts rows on My account). Production builds
+  // never draw it; this keeps the dev console looking like the shipped one.
+  devIndicators: false,
   // Next 16 runs on Turbopack by default. We have no custom bundler rules
   // (SVGs are rendered via @iconify at runtime, not imported as modules), so no
   // webpack/turbopack config is required.

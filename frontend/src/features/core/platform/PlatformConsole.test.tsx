@@ -55,10 +55,9 @@ describe("the Platform console's view keys", () => {
 
   async function open() {
     renderWithProviders(<PlatformConsole />);
-    // Two cards no other Platform view renders: a delivery channel and the
-    // appearance picker.
+    // Two cards no other Platform view renders: a delivery channel and branding.
     await screen.findByText("Email (SMTP)");
-    await screen.findByText("Typeface");
+    await screen.findByRole("button", { name: /upload logo/i });
     return true;
   }
 });

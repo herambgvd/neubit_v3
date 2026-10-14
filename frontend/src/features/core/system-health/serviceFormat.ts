@@ -20,17 +20,17 @@ export function serviceState(s: Pick<ServiceOut, "state" | "health" | "running">
   if (!s.running) {
     const stopped = s.state === "exited" || s.state === "dead";
     return stopped
-      ? { label: s.state === "dead" ? "Dead" : "Stopped", tone: "text-nb-crit", dot: "bg-nb-crit shadow-[0_0_8px_#f87171]" }
-      : { label: s.state, tone: "text-nb-warn", dot: "bg-nb-warn shadow-[0_0_8px_#fbbf24]" };
+      ? { label: s.state === "dead" ? "Dead" : "Stopped", tone: "text-nb-crit", dot: "bg-nb-crit shadow-[0_0_8px_rgb(var(--nb-c-crit))]" }
+      : { label: s.state, tone: "text-nb-warn", dot: "bg-nb-warn shadow-[0_0_8px_rgb(var(--nb-c-warn))]" };
   }
   if (s.health === "unhealthy") {
-    return { label: "Unhealthy", tone: "text-nb-crit", dot: "bg-nb-crit shadow-[0_0_8px_#f87171]" };
+    return { label: "Unhealthy", tone: "text-nb-crit", dot: "bg-nb-crit shadow-[0_0_8px_rgb(var(--nb-c-crit))]" };
   }
   if (s.health === "starting") {
-    return { label: "Starting", tone: "text-nb-warn", dot: "bg-nb-warn shadow-[0_0_8px_#fbbf24]" };
+    return { label: "Starting", tone: "text-nb-warn", dot: "bg-nb-warn shadow-[0_0_8px_rgb(var(--nb-c-warn))]" };
   }
   if (s.health === "healthy") {
-    return { label: "Healthy", tone: "text-nb-good", dot: "bg-nb-good shadow-[0_0_8px_#34d399]" };
+    return { label: "Healthy", tone: "text-nb-good", dot: "bg-nb-good shadow-[0_0_8px_rgb(var(--nb-c-good))]" };
   }
   return { label: "Running", tone: "text-nb-soft", dot: "bg-nb-soft" };
 }

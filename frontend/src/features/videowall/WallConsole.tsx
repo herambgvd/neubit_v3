@@ -215,17 +215,17 @@ export default function WallConsole({ wallId: wallIdParam }: Readonly<WallConsol
   // ── render ─────────────────────────────────────────────────────────────
   if (wallQ.isLoading) {
     return (
-      <div className="flex h-[60vh] items-center justify-center gap-2 text-[#aec2e8]">
+      <div className="flex h-[60vh] items-center justify-center gap-2 text-nb-soft">
         <Spinner /> Loading wall…
       </div>
     );
   }
   if (wallQ.isError || !wall) {
     return (
-      <div className="flex h-[60vh] flex-col items-center justify-center gap-3 text-[#aec2e8]">
-        <Icon icon="heroicons:exclamation-triangle" className="text-3xl text-[#fbbf24]" />
+      <div className="flex h-[60vh] flex-col items-center justify-center gap-3 text-nb-soft">
+        <Icon icon="heroicons:exclamation-triangle" className="text-3xl text-nb-warn" />
         <p>Wall not found or unavailable.</p>
-        <Link href="/wall" className="text-[#67e8f9] hover:underline">
+        <Link href="/wall" className="text-nb-tealb hover:underline">
           Back to walls
         </Link>
       </div>
@@ -237,14 +237,14 @@ export default function WallConsole({ wallId: wallIdParam }: Readonly<WallConsol
 
   return (
     <div
-      className="flex h-[calc(100vh-3.5rem)] flex-col text-[#f2f6ff]"
-      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+      className="flex h-[calc(100vh-3.5rem)] flex-col text-nb-ink"
+      style={{ background: "var(--nb-backdrop)" }}
     >
       {/* Toolbar */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[rgba(160,150,245,.22)] bg-[rgba(10,18,40,.55)] px-3 py-2 backdrop-blur-xs">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-nb-haze/22 bg-nb-surface/55 px-3 py-2 backdrop-blur-xs">
         <Link
           href="/wall"
-          className="inline-flex h-8 items-center gap-1 rounded-[8px] px-2 text-xs font-medium text-[#aec2e8] transition hover:bg-[rgba(150,180,245,.07)] hover:text-[#67e8f9]"
+          className="inline-flex h-8 items-center gap-1 rounded-[8px] px-2 text-xs font-medium text-nb-soft transition hover:bg-nb-mist/7 hover:text-nb-tealb"
         >
           <Icon icon="heroicons-outline:arrow-left" className="text-sm" />
           Walls
@@ -253,16 +253,16 @@ export default function WallConsole({ wallId: wallIdParam }: Readonly<WallConsol
           type="button"
           onClick={() => setRailOpen((o) => !o)}
           title="Toggle camera rail"
-          className="inline-flex h-8 items-center gap-1 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(10,18,40,.65)] px-2 text-xs font-medium text-[#aec2e8] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
+          className="inline-flex h-8 items-center gap-1 rounded-[8px] border border-nb-mist/22 bg-nb-surface/65 px-2 text-xs font-medium text-nb-soft transition hover:border-nb-teal/50 hover:text-nb-tealb"
         >
           <Icon icon={railOpen ? "heroicons-outline:chevron-left" : "heroicons-outline:bars-3"} className="text-sm" />
           Cameras
         </button>
 
         <div className="mx-1 flex min-w-0 items-center gap-2">
-          <Icon icon="heroicons:computer-desktop" className="shrink-0 text-base text-[#67e8f9]" />
-          <span className="truncate text-sm font-semibold text-[#f2f6ff]">{wall.name}</span>
-          <span className="shrink-0 rounded-full border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.06)] px-2 py-0.5 font-mono text-[10px] text-[#9a92c8]">
+          <Icon icon="heroicons:computer-desktop" className="shrink-0 text-base text-nb-tealb" />
+          <span className="truncate text-sm font-semibold text-nb-ink">{wall.name}</span>
+          <span className="shrink-0 rounded-full border border-nb-haze/22 bg-nb-mist/6 px-2 py-0.5 font-mono text-[10px] text-nb-faint">
             {monitors.length} monitor{monitors.length === 1 ? "" : "s"} · {rows}×{cols}
           </span>
         </div>
@@ -270,18 +270,18 @@ export default function WallConsole({ wallId: wallIdParam }: Readonly<WallConsol
         <span
           className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] font-medium ${
             connected
-              ? "border-[rgba(52,211,153,.45)] bg-[rgba(52,211,153,.1)] text-[#34d399]"
-              : "border-[rgba(251,191,36,.45)] bg-[rgba(251,191,36,.1)] text-[#fbbf24]"
+              ? "border-nb-good/45 bg-nb-good/10 text-nb-good"
+              : "border-nb-warn/45 bg-nb-warn/10 text-nb-warn"
           }`}
           title={connected ? "Live shared state connected" : "Reconnecting to shared state…"}
         >
           <span
             className="h-1.5 w-1.5 rounded-full"
-            style={{ background: connected ? "#34d399" : "#fbbf24", boxShadow: `0 0 5px ${connected ? "#34d399" : "#fbbf24"}` }}
+            style={{ background: connected ? "rgb(var(--nb-c-good))" : "rgb(var(--nb-c-warn))", boxShadow: `0 0 5px ${connected ? "rgb(var(--nb-c-good))" : "rgb(var(--nb-c-warn))"}` }}
           />
           {connected ? "Synced" : "Sync…"}
         </span>
-        <span className="font-mono text-[11px] text-[#9a92c8]">{liveCount} live</span>
+        <span className="font-mono text-[11px] text-nb-faint">{liveCount} live</span>
 
         <div className="ml-auto flex items-center gap-1.5">
           <ScreenMenu wall={wall} monitors={monitors} screens={screens} />
@@ -307,13 +307,13 @@ export default function WallConsole({ wallId: wallIdParam }: Readonly<WallConsol
           />
         )}
 
-        <main className="relative min-w-0 flex-1 overflow-auto bg-[rgba(6,11,26,.6)] p-2">
+        <main className="relative min-w-0 flex-1 overflow-auto bg-nb-surface3/60 p-2">
           {monitors.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center gap-3 text-[#aec2e8]">
-              <Icon icon="heroicons-outline:computer-desktop" className="text-4xl text-[#67e8f9]" />
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-nb-soft">
+              <Icon icon="heroicons-outline:computer-desktop" className="text-4xl text-nb-tealb" />
               <p className="text-sm">This wall has no monitors yet.</p>
               {can("vms.wall.manage") && (
-                <Link href="/config/video-wall" className="text-[#67e8f9] hover:underline">
+                <Link href="/config/video-wall" className="text-nb-tealb hover:underline">
                   Add monitors in Wall management →
                 </Link>
               )}
@@ -374,7 +374,7 @@ export default function WallConsole({ wallId: wallIdParam }: Readonly<WallConsol
           autoFocus
           onKeyDown={(e) => e.key === "Enter" && savePreset()}
         />
-        <p className="mt-2 text-xs text-[#9a92c8]">
+        <p className="mt-2 text-xs text-nb-faint">
           Snapshots the wall&apos;s current live state ({liveCount} camera{liveCount === 1 ? "" : "s"}). Recall it in one click, or add it to a tour.
         </p>
       </Modal>
@@ -401,18 +401,18 @@ function PresetMenu({ presets, onApply, onSave }: Readonly<PresetMenuProps>) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
-        className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(10,18,40,.65)] px-2.5 text-xs font-medium text-[#aec2e8] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
+        className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-nb-mist/22 bg-nb-surface/65 px-2.5 text-xs font-medium text-nb-soft transition hover:border-nb-teal/50 hover:text-nb-tealb"
       >
-        <Icon icon="heroicons-outline:bookmark" className="text-sm text-[#9a92c8]" />
+        <Icon icon="heroicons-outline:bookmark" className="text-sm text-nb-faint" />
         Presets
         {presets.length > 0 && (
-          <span className="rounded-full border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.07)] px-1.5 font-mono text-[9px] font-semibold text-[#9a92c8]">{presets.length}</span>
+          <span className="rounded-full border border-nb-haze/22 bg-nb-mist/7 px-1.5 font-mono text-[9px] font-semibold text-nb-faint">{presets.length}</span>
         )}
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-60 rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(12,21,44,.97)] py-1 shadow-2xl backdrop-blur-xs">
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-60 rounded-[13px] border border-nb-haze/22 bg-nb-surface/97 py-1 shadow-2xl backdrop-blur-xs">
           <div className="flex items-center justify-between px-3 py-1.5">
-            <span className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">Presets</span>
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-nb-faint">Presets</span>
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}
@@ -420,16 +420,16 @@ function PresetMenu({ presets, onApply, onSave }: Readonly<PresetMenuProps>) {
                 onSave?.();
                 setOpen(false);
               }}
-              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-[#67e8f9] transition hover:bg-[rgba(34,211,238,.12)]"
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-nb-tealb transition hover:bg-nb-teal/12"
             >
               <Icon icon="heroicons-mini:plus" className="text-xs" />
               Save current
             </button>
           </div>
           {presets.length === 0 ? (
-            <div className="px-3 py-3 text-xs text-[#9a92c8]">No presets yet — arrange the wall and Save current.</div>
+            <div className="px-3 py-3 text-xs text-nb-faint">No presets yet — arrange the wall and Save current.</div>
           ) : (
-            <ul className="max-h-72 overflow-y-auto border-t border-[rgba(160,150,245,.22)] pt-1">
+            <ul className="max-h-72 overflow-y-auto border-t border-nb-haze/22 pt-1">
               {presets.map((p) => (
                 <li key={p.id}>
                   <button
@@ -439,11 +439,11 @@ function PresetMenu({ presets, onApply, onSave }: Readonly<PresetMenuProps>) {
                       onApply(p);
                       setOpen(false);
                     }}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-[rgba(150,180,245,.07)]"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-nb-mist/7"
                   >
-                    <Icon icon="heroicons-outline:bookmark" className="shrink-0 text-xs text-[#9a92c8]" />
-                    <span className="min-w-0 flex-1 truncate text-xs font-medium text-[#f2f6ff]">{p.name}</span>
-                    {p.is_default && <span className="font-mono text-[9px] text-[#9a92c8]">default</span>}
+                    <Icon icon="heroicons-outline:bookmark" className="shrink-0 text-xs text-nb-faint" />
+                    <span className="min-w-0 flex-1 truncate text-xs font-medium text-nb-ink">{p.name}</span>
+                    {p.is_default && <span className="font-mono text-[9px] text-nb-faint">default</span>}
                   </button>
                 </li>
               ))}
@@ -472,20 +472,20 @@ function TourMenu({ tours, onToggle }: Readonly<TourMenuProps>) {
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         className={`inline-flex h-8 items-center gap-1.5 rounded-[8px] border px-2.5 text-xs font-medium transition ${
           running
-            ? "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
-            : "border-[rgba(150,180,245,.22)] bg-[rgba(10,18,40,.65)] text-[#aec2e8] hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
+            ? "border-nb-teal/50 bg-nb-teal/15 text-nb-tealb"
+            : "border-nb-mist/22 bg-nb-surface/65 text-nb-soft hover:border-nb-teal/50 hover:text-nb-tealb"
         }`}
       >
         <Icon icon={running ? "heroicons-solid:play" : "heroicons:arrow-path-rounded-square"} className="text-sm" />
         {running ? running.name : "Tours"}
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-60 rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(12,21,44,.97)] py-1 shadow-2xl backdrop-blur-xs">
-          <div className="px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">Tours</div>
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-60 rounded-[13px] border border-nb-haze/22 bg-nb-surface/97 py-1 shadow-2xl backdrop-blur-xs">
+          <div className="px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-nb-faint">Tours</div>
           {tours.length === 0 ? (
-            <div className="px-3 py-3 text-xs text-[#9a92c8]">No tours — create one in Wall management.</div>
+            <div className="px-3 py-3 text-xs text-nb-faint">No tours — create one in Wall management.</div>
           ) : (
-            <ul className="max-h-72 overflow-y-auto border-t border-[rgba(160,150,245,.22)] pt-1">
+            <ul className="max-h-72 overflow-y-auto border-t border-nb-haze/22 pt-1">
               {tours.map((t) => (
                 <li key={t.id}>
                   <button
@@ -495,14 +495,14 @@ function TourMenu({ tours, onToggle }: Readonly<TourMenuProps>) {
                       onToggle(t);
                       setOpen(false);
                     }}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-[rgba(150,180,245,.07)]"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-nb-mist/7"
                   >
                     <Icon
                       icon={t.is_running ? "heroicons-solid:stop" : "heroicons-solid:play"}
-                      className={`shrink-0 text-xs ${t.is_running ? "text-[#f87171]" : "text-[#34d399]"}`}
+                      className={`shrink-0 text-xs ${t.is_running ? "text-nb-crit" : "text-nb-good"}`}
                     />
-                    <span className="min-w-0 flex-1 truncate text-xs font-medium text-[#f2f6ff]">{t.name}</span>
-                    <span className="font-mono text-[9px] text-[#9a92c8]">
+                    <span className="min-w-0 flex-1 truncate text-xs font-medium text-nb-ink">{t.name}</span>
+                    <span className="font-mono text-[9px] text-nb-faint">
                       {(t.preset_ids || []).length} · {t.dwell_seconds}s
                     </span>
                   </button>

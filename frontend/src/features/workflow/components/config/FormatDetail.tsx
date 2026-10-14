@@ -47,16 +47,16 @@ export default function FormatDetail({ format, sopName, onEdit, onDelete }: Read
               <h2 className="text-lg font-semibold text-nb-ink truncate">{f.name}</h2>
               <Badge color={PRIORITY_COLOR[f.severity] || "slate"}>{titleize(f.severity)}</Badge>
               <Badge color={PRIORITY_COLOR[f.priority] || "slate"}>{titleize(f.priority)}</Badge>
-              <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium ${f.is_active === false ? "bg-[rgba(96,165,250,.1)] text-nb-faint" : "bg-[rgba(52,211,153,.10)] text-nb-good"}`}>{f.is_active === false ? "Inactive" : "Active"}</span>
+              <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium ${f.is_active === false ? "bg-nb-blue/10 text-nb-faint" : "bg-nb-good/10 text-nb-good"}`}>{f.is_active === false ? "Inactive" : "Active"}</span>
             </div>
             <p className="mt-0.5 text-[11px] text-nb-faint font-mono">{f.alert_code}</p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button onClick={onEdit} className="inline-flex items-center gap-1 rounded-md border border-nb-line px-2.5 py-1.5 text-xs text-nb-ink hover:bg-[rgba(96,165,250,.1)]">
+          <button onClick={onEdit} className="inline-flex items-center gap-1 rounded-md border border-nb-line px-2.5 py-1.5 text-xs text-nb-ink hover:bg-nb-blue/10">
             <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
           </button>
-          <button onClick={onDelete} className="inline-flex items-center gap-1 rounded-md border border-[rgba(248,113,113,.30)] bg-[rgba(248,113,113,.10)] px-2.5 py-1.5 text-xs text-nb-crit hover:bg-[rgba(248,113,113,.20)]">
+          <button onClick={onDelete} className="inline-flex items-center gap-1 rounded-md border border-nb-crit/30 bg-nb-crit/10 px-2.5 py-1.5 text-xs text-nb-crit hover:bg-nb-crit/20">
             <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
           </button>
         </div>

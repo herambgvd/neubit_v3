@@ -46,15 +46,15 @@ const EDGE = {
   unknown: "bg-amber-500",
 };
 
-const TILE_IDLE = "border border-[rgba(150,180,245,.22)] hover:border-[#22d3ee]";
-const TILE_DROP = "outline outline-2 outline-[#22d3ee]";
+const TILE_IDLE = "border border-nb-mist/22 hover:border-nb-teal";
+const TILE_DROP = "outline outline-2 outline-nb-teal";
 
 /** An EMPTY cell's edge. The drop target outranks the hint because during a drag
  *  the operator is looking for the one cell that will take the camera, and two
  *  cells outlined the same way is the moment it lands in the wrong one. */
 function emptyTileEdge(dropActive: boolean, hinting: boolean): string {
   if (dropActive) return TILE_DROP;
-  if (hinting) return "outline-dashed outline-1 outline-[rgba(34,211,238,.4)]";
+  if (hinting) return "outline-dashed outline-1 outline-nb-teal/40";
   return TILE_IDLE;
 }
 
@@ -62,7 +62,7 @@ function emptyTileEdge(dropActive: boolean, hinting: boolean): string {
  *  where the camera will land matters more than which tile drives the transport. */
 function filledTileEdge(dropActive: boolean, focused: boolean): string {
   if (dropActive) return TILE_DROP;
-  if (focused) return "border border-[#22d3ee] shadow-[0_0_0_1px_rgba(34,211,238,.45)]";
+  if (focused) return "border border-nb-teal shadow-[0_0_0_1px_rgb(var(--nb-c-teal)/.45)]";
   return TILE_IDLE;
 }
 
@@ -252,13 +252,13 @@ function WallTile({
         {/* Quiet centred glyph — always present, very faint. */}
         <Icon
           icon="heroicons:video-camera"
-          className={`text-[rgba(103,232,249,.1)] transition group-hover/empty:text-[rgba(103,232,249,.3)] ${
+          className={`text-nb-tealb/10 transition group-hover/empty:text-nb-tealb/30 ${
             isHero ? "text-5xl" : "text-2xl"
           }`}
         />
         {/* Hint appears only on hover or while dragging. */}
         <div
-          className={`pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 pb-2 font-mono text-[10px] font-medium uppercase tracking-[1px] text-[#67e8f9]/70 transition-opacity ${
+          className={`pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 pb-2 font-mono text-[10px] font-medium uppercase tracking-[1px] text-nb-tealb/70 transition-opacity ${
             hinting ? "opacity-100" : "opacity-0 group-hover/empty:opacity-100"
           }`}
         >
@@ -315,7 +315,7 @@ function WallTile({
           live player paints its own LIVE badge in the same corner, so the two
           states read the same way in the same place. */}
       {playing_back && (
-        <span className="pointer-events-none absolute left-2 top-2 z-20 inline-flex items-center gap-1 rounded-full bg-[#22d3ee] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#04121f]">
+        <span className="pointer-events-none absolute left-2 top-2 z-20 inline-flex items-center gap-1 rounded-full bg-nb-teal px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#04121f]">
           <Icon icon="heroicons-solid:play" className="text-[10px]" />
           Playback
         </span>
@@ -330,7 +330,7 @@ function WallTile({
           look; never intercepts pointer events. */}
       <div
         className="pointer-events-none absolute inset-0 z-[2]"
-        style={{ background: "repeating-linear-gradient(0deg,rgba(255,255,255,.02) 0 1px,transparent 1px 4px)" }}
+        style={{ background: "repeating-linear-gradient(0deg,rgb(var(--nb-c-glint)/.02) 0 1px,transparent 1px 4px)" }}
       />
 
       {/* Source badge (mockup) — the recorder/node this camera streams through.
@@ -375,7 +375,7 @@ function WallTile({
                 e.stopPropagation();
                 setForceLive(true);
               }}
-              className="mt-1 inline-flex items-center gap-1 rounded-[7px] border border-white/15 px-2 py-0.5 text-[10px] font-medium text-white/60 transition hover:border-[#22d3ee] hover:text-[#67e8f9]"
+              className="mt-1 inline-flex items-center gap-1 rounded-[7px] border border-white/15 px-2 py-0.5 text-[10px] font-medium text-white/60 transition hover:border-nb-teal hover:text-nb-tealb"
             >
               <Icon icon="heroicons-outline:arrow-path" className="text-[11px]" />
               Try anyway

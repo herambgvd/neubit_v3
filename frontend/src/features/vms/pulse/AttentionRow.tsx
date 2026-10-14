@@ -36,7 +36,7 @@ export default function AttentionRow({ item, selected, onSelect }: Readonly<Atte
   const body = (
     <>
       <span
-        className={`mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.6)] ${TONE_TEXT[tone]}`}
+        className={`mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-[8px] border border-nb-line bg-nb-surface/60 ${TONE_TEXT[tone]}`}
       >
         <Icon icon={ICON[item.kind] || "heroicons:exclamation-circle"} className="text-[14px]" />
       </span>
@@ -51,7 +51,7 @@ export default function AttentionRow({ item, selected, onSelect }: Readonly<Atte
 
   if (!onSelect) {
     return (
-      <div className="flex w-full items-start gap-2.5 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2.5 text-left">
+      <div className="flex w-full items-start gap-2.5 rounded-[10px] border border-nb-line bg-nb-surface3/50 px-3 py-2.5 text-left">
         {body}
       </div>
     );
@@ -62,8 +62,8 @@ export default function AttentionRow({ item, selected, onSelect }: Readonly<Atte
       onClick={onSelect}
       className={`flex w-full items-start gap-2.5 rounded-[10px] border px-3 py-2.5 text-left transition ${
         selected
-          ? "border-[rgba(96,165,250,.6)] bg-[rgba(96,165,250,.1)]"
-          : "border-nb-line bg-[rgba(6,11,26,.5)] hover:border-[rgba(150,180,245,.42)]"
+          ? "border-nb-blue/60 bg-nb-blue/10"
+          : "border-nb-line bg-nb-surface3/50 hover:border-nb-mist/42"
       }`}
     >
       {body}

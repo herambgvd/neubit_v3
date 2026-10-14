@@ -94,18 +94,18 @@ export default function TourFormModal({
           ) : (
             <ul className="space-y-1">
               {selected.map((id, idx) => (
-                <li key={id} className="flex items-center gap-2 rounded-[8px] border border-nb-line bg-[rgba(6,11,26,.5)] px-2 py-1.5">
+                <li key={id} className="flex items-center gap-2 rounded-[8px] border border-nb-line bg-nb-surface3/50 px-2 py-1.5">
                   <span className="w-5 text-center font-mono text-[11px] tabular-nums text-nb-tealb">{idx + 1}</span>
                   <span className="min-w-0 flex-1 truncate text-xs font-medium text-nb-ink">
                     {presetById.get(id)?.name || "(deleted preset)"}
                   </span>
-                  <button type="button" onClick={() => move(idx, -1)} disabled={idx === 0} className="rounded-sm p-0.5 text-nb-soft hover:bg-[rgba(150,180,245,.07)] hover:text-nb-tealb disabled:opacity-30">
+                  <button type="button" onClick={() => move(idx, -1)} disabled={idx === 0} className="rounded-sm p-0.5 text-nb-soft hover:bg-nb-mist/7 hover:text-nb-tealb disabled:opacity-30">
                     <Icon icon="heroicons-mini:chevron-up" className="text-xs" />
                   </button>
-                  <button type="button" onClick={() => move(idx, 1)} disabled={idx === selected.length - 1} className="rounded-sm p-0.5 text-nb-soft hover:bg-[rgba(150,180,245,.07)] hover:text-nb-tealb disabled:opacity-30">
+                  <button type="button" onClick={() => move(idx, 1)} disabled={idx === selected.length - 1} className="rounded-sm p-0.5 text-nb-soft hover:bg-nb-mist/7 hover:text-nb-tealb disabled:opacity-30">
                     <Icon icon="heroicons-mini:chevron-down" className="text-xs" />
                   </button>
-                  <button type="button" onClick={() => remove(id)} className="rounded-sm p-0.5 text-nb-soft hover:bg-[rgba(248,113,113,.1)] hover:text-nb-crit">
+                  <button type="button" onClick={() => remove(id)} className="rounded-sm p-0.5 text-nb-soft hover:bg-nb-crit/10 hover:text-nb-crit">
                     <Icon icon="heroicons-outline:x-mark" className="text-xs" />
                   </button>
                 </li>

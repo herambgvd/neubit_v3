@@ -47,7 +47,7 @@ export default function CloneRoleModal({ source, onClose, name, setName, onClone
       }
     >
       <div className="space-y-4">
-        <div className="rounded-[9px] border border-[rgba(96,165,250,.35)] bg-[rgba(96,165,250,.07)] px-3 py-2.5 text-xs text-nb-soft">
+        <div className="rounded-[9px] border border-nb-blue/35 bg-nb-blue/7 px-3 py-2.5 text-xs text-nb-soft">
           Copies all of <b className="text-nb-blueb">{source?.name}</b>&rsquo;s permissions under a new
           name — a fast starting point you can then trim down.
         </div>

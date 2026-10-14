@@ -26,7 +26,7 @@ export default function ServiceListItem({ service, selected, onSelect }: Readonl
       className={`w-full rounded-[10px] border px-3 py-2.5 text-left transition ${
         selected
           ? "border-nb-blue/50 bg-nb-blue/10"
-          : "border-nb-line bg-white/[.02] hover:border-nb-blue/30 hover:bg-white/[.05]"
+          : "border-nb-line bg-nb-glint/[.02] hover:border-nb-blue/30 hover:bg-nb-glint/[.05]"
       }`}
     >
       <div className="flex items-center gap-2">

@@ -386,7 +386,7 @@ export default function SiteFormModal({ site, allSites, onCancel, onSaved }: Rea
             />
             <div>
               <FieldLabel>Site image</FieldLabel>
-              <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={onPickImage} className="mt-1 block w-full rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2 text-sm text-nb-ink" />
+              <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={onPickImage} className="mt-1 block w-full rounded-[9px] border border-nb-line bg-nb-surface3/50 px-3 py-2 text-sm text-nb-ink" />
               <p className="mt-1 text-[11px] text-nb-faint">Allowed: PNG, JPEG, WEBP, SVG (max 8 MiB)</p>
               <div className="mt-3">
                 <ImagePreviewCard

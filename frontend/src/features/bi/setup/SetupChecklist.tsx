@@ -122,7 +122,7 @@ export default function SetupChecklist() {
               {done} of {rows.length} answered
             </span>
             <div
-              className="h-[5px] w-[120px] overflow-hidden rounded-full bg-[rgba(140,165,220,.16)]"
+              className="h-[5px] w-[120px] overflow-hidden rounded-full bg-nb-mist/16"
               role="img"
               aria-label={`${done} of ${rows.length} answered`}
             >
@@ -138,7 +138,7 @@ export default function SetupChecklist() {
       {/* Every gate answered: say so once, rather than opening a step with
           nothing left in it. */}
       {open === -1 && (
-        <p className="rounded-[12px] border border-[rgba(52,211,153,.35)] bg-[rgba(52,211,153,.07)] px-4 py-3 text-[12.5px] text-nb-good">
+        <p className="rounded-[12px] border border-nb-good/35 bg-nb-good/7 px-4 py-3 text-[12.5px] text-nb-good">
           Every gate is answered. Nothing on this screen is waiting on you — a metric that still
           refuses is short of a SIGNAL, not of a setting, and says which on the screen that reads it.
         </p>

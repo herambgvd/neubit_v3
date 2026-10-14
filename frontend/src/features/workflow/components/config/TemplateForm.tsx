@@ -125,7 +125,7 @@ export default function TemplateForm({ template, onCancel, onSaved }: Readonly<T
         <div className="mt-2 flex flex-wrap gap-1.5">
           <span className="text-[11px] text-nb-faint">Variables:</span>
           {TEMPLATE_VARS.map((v) => (
-            <button key={v} type="button" onClick={() => setBody((b) => `${b}{{${v}}}`)} className="text-[11px] font-mono rounded-sm bg-[rgba(8,15,34,.5)] border border-nb-line px-1.5 py-0.5 text-nb-faint hover:text-nb-ink hover:bg-[rgba(96,165,250,.1)]">{`{{${v}}}`}</button>
+            <button key={v} type="button" onClick={() => setBody((b) => `${b}{{${v}}}`)} className="text-[11px] font-mono rounded-sm bg-nb-surface2/50 border border-nb-line px-1.5 py-0.5 text-nb-faint hover:text-nb-ink hover:bg-nb-blue/10">{`{{${v}}}`}</button>
           ))}
         </div>
       </div>

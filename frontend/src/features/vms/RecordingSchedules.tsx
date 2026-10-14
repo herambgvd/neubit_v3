@@ -61,7 +61,7 @@ const WRITE_PERM = "vms.config.manage";
 const TOOLS: { slot: Slot; label: string; dot: string }[] = [
   { slot: "record", label: "Continuous", dot: "bg-nb-blue" },
   { slot: "motion", label: "Motion only", dot: "bg-amber-500" },
-  { slot: "off", label: "Off", dot: "bg-[rgba(120,150,200,.18)]" },
+  { slot: "off", label: "Off", dot: "bg-nb-mist/18" },
 ];
 
 /** A one-line summary of a template for the rail. Hours, not a shape: at rail width
@@ -123,7 +123,7 @@ function ScheduleWeek({
               className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11.5px] transition ${
                 tool === t.slot
                   ? "border-nb-cyan/45 bg-nb-cyan/10 text-nb-cyan"
-                  : "border-nb-line text-nb-muted hover:text-nb-text"
+                  : "border-nb-line text-nb-muted hover:text-nb-ink"
               }`}
             >
               <span className={`h-2.5 w-2.5 rounded-[3px] ${t.dot}`} />
@@ -158,7 +158,7 @@ function ScheduleWeek({
               <button
                 type="button"
                 onClick={onDiscard}
-                className="rounded-md border border-nb-line px-2.5 py-1.5 text-[12px] text-nb-muted transition hover:text-nb-text"
+                className="rounded-md border border-nb-line px-2.5 py-1.5 text-[12px] text-nb-muted transition hover:text-nb-ink"
               >
                 Discard
               </button>
@@ -178,7 +178,7 @@ function ScheduleWeek({
               disabled={dirty}
               title={dirty ? "Save the week before applying it" : undefined}
               onClick={onApply}
-              className="rounded-md border border-nb-line px-2.5 py-1.5 text-[12px] text-nb-soft transition hover:text-nb-text disabled:opacity-40"
+              className="rounded-md border border-nb-line px-2.5 py-1.5 text-[12px] text-nb-soft transition hover:text-nb-ink disabled:opacity-40"
             >
               <Icon icon="heroicons-outline:arrow-right-circle" className="mr-1 inline text-xs" />
               Apply to cameras…
@@ -303,7 +303,7 @@ export default function RecordingSchedules() {
                   setNodeId(e.target.value);
                   setSelectedId(null);
                 }}
-                className="w-full rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2 text-[12.5px] text-nb-muted outline-hidden"
+                className="w-full rounded-[9px] border border-nb-line bg-nb-surface3/50 px-3 py-2 text-[12.5px] text-nb-muted outline-hidden"
               >
                 {nodes.map((n) => (
                   <option key={n.id} value={n.id}>

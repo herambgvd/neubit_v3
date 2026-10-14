@@ -241,7 +241,7 @@ export function RecordingWithTransport({
             no transport to match, and two exhibits of different heights was the
             thing being fixed when this was added. */}
         {win && camera && (
-          <div className="absolute inset-x-0 bottom-0 z-10 bg-[rgba(8,15,34,.82)] backdrop-blur-xs">
+          <div className="absolute inset-x-0 bottom-0 z-10 bg-nb-surface2/82 backdrop-blur-xs">
         <RecordingScrubber
           fromMs={win.fromMs}
           toMs={win.toMs}

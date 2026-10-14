@@ -113,7 +113,7 @@ export default function ArchiveSection({ node }: Readonly<ArchiveSectionProps>) 
 
   return (
     <div className="space-y-3">
-      <div className="rounded-[10px] border border-nb-line bg-white/[0.02] px-3 py-2.5">
+      <div className="rounded-[10px] border border-nb-line bg-nb-glint/[0.02] px-3 py-2.5">
         <div className="flex flex-wrap items-center gap-2">
           <span className={`text-[12.5px] font-semibold ${TONE[verdict.tone]}`}>{verdict.text}</span>
           {archive?.destination_name && (

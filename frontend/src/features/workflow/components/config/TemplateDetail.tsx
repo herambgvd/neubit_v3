@@ -19,22 +19,22 @@ export default function TemplateDetail({ template, onEdit, onDelete }: Readonly<
     <div className="flex flex-col flex-1 min-h-0">
       <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-nb-line">
         <div className="flex items-start gap-3 min-w-0">
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-[rgba(96,165,250,.1)] text-nb-blueb shrink-0">
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-nb-blue/10 text-nb-blueb shrink-0">
             <Icon icon="heroicons-outline:bell-alert" className="text-lg" />
           </span>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-semibold text-nb-ink truncate">{t.name}</h2>
-              <span className="text-[10px] rounded-full px-1.5 py-0.5 font-medium bg-[rgba(96,165,250,.1)] text-nb-faint uppercase">{titleize(t.channel_type)}</span>
-              {t.is_active === false && <span className="text-[10px] rounded-full px-1.5 py-0.5 font-medium bg-[rgba(96,165,250,.1)] text-nb-faint">Inactive</span>}
+              <span className="text-[10px] rounded-full px-1.5 py-0.5 font-medium bg-nb-blue/10 text-nb-faint uppercase">{titleize(t.channel_type)}</span>
+              {t.is_active === false && <span className="text-[10px] rounded-full px-1.5 py-0.5 font-medium bg-nb-blue/10 text-nb-faint">Inactive</span>}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button onClick={onEdit} className="inline-flex items-center gap-1 rounded-md border border-nb-line px-2.5 py-1.5 text-xs text-nb-ink hover:bg-[rgba(96,165,250,.1)]">
+          <button onClick={onEdit} className="inline-flex items-center gap-1 rounded-md border border-nb-line px-2.5 py-1.5 text-xs text-nb-ink hover:bg-nb-blue/10">
             <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
           </button>
-          <button onClick={onDelete} className="inline-flex items-center gap-1 rounded-md border border-[rgba(248,113,113,.30)] bg-[rgba(248,113,113,.10)] px-2.5 py-1.5 text-xs text-nb-crit hover:bg-[rgba(248,113,113,.20)]">
+          <button onClick={onDelete} className="inline-flex items-center gap-1 rounded-md border border-nb-crit/30 bg-nb-crit/10 px-2.5 py-1.5 text-xs text-nb-crit hover:bg-nb-crit/20">
             <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
           </button>
         </div>
@@ -61,7 +61,7 @@ export default function TemplateDetail({ template, onEdit, onDelete }: Readonly<
         )}
         <div>
           <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-nb-faint/70">Body</div>
-          <pre className="whitespace-pre-wrap rounded-lg border border-nb-line bg-[rgba(96,165,250,.1)]/40 px-3 py-2.5 text-xs font-mono text-nb-ink">{t.body || "—"}</pre>
+          <pre className="whitespace-pre-wrap rounded-lg border border-nb-line bg-nb-blue/4 px-3 py-2.5 text-xs font-mono text-nb-ink">{t.body || "—"}</pre>
         </div>
       </div>
     </div>

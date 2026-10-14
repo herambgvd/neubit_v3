@@ -59,7 +59,7 @@ const RANGES = [
 ];
 
 const linkCls =
-  "inline-flex items-center gap-1.5 rounded-[7px] border border-[rgba(96,165,250,.45)] bg-[rgba(96,165,250,.12)] px-2.5 py-1 text-[11.5px] text-nb-blueb transition hover:bg-[rgba(96,165,250,.2)]";
+  "inline-flex items-center gap-1.5 rounded-[7px] border border-nb-blue/45 bg-nb-blue/12 px-2.5 py-1 text-[11.5px] text-nb-blueb transition hover:bg-nb-blue/20";
 
 const num = (v: any, digits = 1) =>
   typeof v === "number" && Number.isFinite(v)
@@ -143,8 +143,8 @@ export default function Ratings() {
                   onClick={() => setSiteId(s.site_id)}
                   className={`w-full rounded-[10px] border px-3 py-2 text-left transition ${
                     on
-                      ? "border-[rgba(251,191,36,.5)] bg-[rgba(251,191,36,.1)]"
-                      : "border-nb-line bg-[rgba(6,11,26,.45)] hover:bg-white/5"
+                      ? "border-nb-warn/50 bg-nb-warn/10"
+                      : "border-nb-line bg-nb-surface3/45 hover:bg-nb-glint/5"
                   }`}
                 >
                   <div className="truncate text-[12.5px] text-nb-ink">{s.site_name || s.site_id}</div>
@@ -233,7 +233,7 @@ export default function Ratings() {
                   </div>
 
                   {/* ── meter selection ────────────────────────────── */}
-                  <div className="rounded-[12px] border border-nb-line bg-[rgba(10,18,40,.45)] p-3">
+                  <div className="rounded-[12px] border border-nb-line bg-nb-surface/45 p-3">
                     <div className="mb-2 text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">
                       Meters counted
                     </div>
@@ -262,8 +262,8 @@ export default function Ratings() {
                                 }
                                 className={`flex items-center gap-1.5 rounded-[7px] border px-2 py-1 text-[11px] transition ${
                                   on
-                                    ? "border-[rgba(251,191,36,.55)] bg-[rgba(251,191,36,.12)] text-nb-ink"
-                                    : "border-nb-line bg-[rgba(6,11,26,.5)] text-nb-soft hover:border-nb-blue"
+                                    ? "border-nb-warn/55 bg-nb-warn/12 text-nb-ink"
+                                    : "border-nb-line bg-nb-surface3/50 text-nb-soft hover:border-nb-blue"
                                 }`}
                               >
                                 <Icon
@@ -294,7 +294,7 @@ export default function Ratings() {
                     <>
                       {/* ── the score, or the reasons there is none ─── */}
                       {r.epi ? (
-                        <div className="rounded-[12px] border border-[rgba(251,191,36,.35)] bg-[rgba(251,191,36,.07)] p-4">
+                        <div className="rounded-[12px] border border-nb-warn/35 bg-nb-warn/7 p-4">
                           <p className="text-[10px] font-semibold uppercase tracking-[1.4px] text-nb-faint">
                             Energy performance index
                           </p>
@@ -320,7 +320,7 @@ export default function Ratings() {
                             />
                             <InfoCell label="Area" value={`${num(r.epi.area_sqm, 0)} m²`} mono />
                           </div>
-                          <p className="mt-3 rounded-[8px] border border-nb-line bg-[rgba(6,11,26,.55)] px-3 py-2 font-mono text-[11px] leading-relaxed text-nb-soft">
+                          <p className="mt-3 rounded-[8px] border border-nb-line bg-nb-surface3/55 px-3 py-2 font-mono text-[11px] leading-relaxed text-nb-soft">
                             {r.epi.formula}
                           </p>
                           {r.epi.annualisation_factor > 2 && (
@@ -335,7 +335,7 @@ export default function Ratings() {
                           </p>
                         </div>
                       ) : (
-                        <div className="rounded-[12px] border border-dashed border-[rgba(251,191,36,.4)] bg-[rgba(6,11,26,.4)] p-4">
+                        <div className="rounded-[12px] border border-dashed border-nb-warn/40 bg-nb-surface3/40 p-4">
                           <div className="flex items-center gap-2">
                             <Icon
                               icon="heroicons:no-symbol"
@@ -373,7 +373,7 @@ export default function Ratings() {
 
                       {/* ── cost, only when a tariff was recorded ───── */}
                       {r.cost && (
-                        <div className="rounded-[12px] border border-nb-line bg-[rgba(10,18,40,.45)] p-3">
+                        <div className="rounded-[12px] border border-nb-line bg-nb-surface/45 p-3">
                           <div className="mb-1 text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">
                             Cost of the measured window
                           </div>
@@ -395,7 +395,7 @@ export default function Ratings() {
                           <div className="overflow-x-auto rounded-[10px] border border-nb-line">
                             <table className="w-full min-w-[700px] text-left">
                               <thead>
-                                <tr className="bg-[rgba(6,11,26,.6)] text-[10px] uppercase tracking-[1.2px] text-nb-faint">
+                                <tr className="bg-nb-surface3/60 text-[10px] uppercase tracking-[1.2px] text-nb-faint">
                                   <th className="px-3 py-2 font-semibold">Meter</th>
                                   <th className="px-3 py-2 text-right font-semibold">First</th>
                                   <th className="px-3 py-2 text-right font-semibold">Last</th>
@@ -447,7 +447,7 @@ export default function Ratings() {
                       )}
 
                       {/* ── the band — or the exact input still missing ── */}
-                      <div className="rounded-[12px] border border-nb-line bg-[rgba(10,18,40,.45)] p-3">
+                      <div className="rounded-[12px] border border-nb-line bg-nb-surface/45 p-3">
                         <div className="mb-1.5 flex flex-wrap items-center gap-2">
                           <Icon
                             icon="heroicons:academic-cap"
@@ -458,7 +458,7 @@ export default function Ratings() {
                           </div>
                           {r.benchmark.available ? (
                             <span
-                              className="rounded-[5px] border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.1)] px-1.5 py-0.5 text-[9.5px] uppercase tracking-[.6px] text-nb-blueb"
+                              className="rounded-[5px] border border-nb-blue/40 bg-nb-blue/10 px-1.5 py-0.5 text-[9.5px] uppercase tracking-[.6px] text-nb-blueb"
                               title={r.benchmark.citation || undefined}
                             >
                               {r.benchmark.standard} · {r.benchmark.version}
@@ -470,7 +470,7 @@ export default function Ratings() {
                           )}
                         </div>
                         {r.benchmark.band ? (
-                          <div className="mb-2 flex items-center gap-3 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2">
+                          <div className="mb-2 flex items-center gap-3 rounded-[10px] border border-nb-line bg-nb-surface3/50 px-3 py-2">
                             <span className="font-mono text-[22px] leading-none text-nb-ink">
                               {r.benchmark.band.stars}★
                             </span>
@@ -506,7 +506,7 @@ export default function Ratings() {
 
                       {/* ── baseline: the rule, and the honest day count ── */}
                       {r.baseline && (
-                        <div className="rounded-[12px] border border-nb-line bg-[rgba(10,18,40,.45)] p-3">
+                        <div className="rounded-[12px] border border-nb-line bg-nb-surface/45 p-3">
                           <div className="mb-1.5 flex items-center gap-2">
                             <Icon
                               icon="heroicons:calendar-days"

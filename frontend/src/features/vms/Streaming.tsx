@@ -799,7 +799,7 @@ export default function Streaming() {
     <div
       ref={wallRef}
       className="flex h-full min-h-0 flex-col fullscreen:h-screen"
-      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+      style={{ background: "var(--nb-backdrop)" }}
     >
       <WallToolbar
         railOpen={railOpen}
@@ -928,7 +928,7 @@ export default function Streaming() {
             {/* Facility MAP — camera positions over a site map. Scaffold until
                 site geometry / camera coordinates exist (honest empty state). */}
             {viewMode !== "grid" && (
-              <div className={`relative min-h-0 p-1.5 ${viewMode === "split" ? "flex-1 border-l border-[rgba(150,180,245,.15)]" : "flex-1"}`}>
+              <div className={`relative min-h-0 p-1.5 ${viewMode === "split" ? "flex-1 border-l border-nb-mist/15" : "flex-1"}`}>
                 <EstateMapView cameras={cameras} onPick={(cam: EstateCamera) => pickCamera(cam)} />
               </div>
             )}
@@ -990,7 +990,7 @@ export default function Streaming() {
           autoFocus
           onKeyDown={(e) => e.key === "Enter" && saveCurrent()}
         />
-        <p className="mt-2 text-xs text-[#9a92c8]">
+        <p className="mt-2 text-xs text-nb-faint">
           Saves the grid + camera assignment to this browser. {liveCount} camera{liveCount === 1 ? "" : "s"} on the wall.
         </p>
       </Modal>
@@ -1054,18 +1054,18 @@ function SavedLayoutsMenu({ layouts, onApply, onDelete, onSave, canSave }: Reado
         type="button"
         onClick={() => setOpen((o) => !o)}
         title="Saved layouts"
-        className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-2.5 text-xs font-medium text-[#aec2e8] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
+        className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-nb-mist/22 bg-nb-mist/4 px-2.5 text-xs font-medium text-nb-soft transition hover:border-nb-teal/50 hover:text-nb-tealb"
       >
-        <Icon icon="heroicons-outline:bookmark" className="text-sm text-[#7e93bf]" />
+        <Icon icon="heroicons-outline:bookmark" className="text-sm text-nb-dim2" />
         Saved
         {layouts.length > 0 && (
-          <span className="rounded-full bg-[rgba(150,180,245,.1)] px-1.5 text-[9px] font-semibold text-[#aec2e8]">{layouts.length}</span>
+          <span className="rounded-full bg-nb-mist/10 px-1.5 text-[9px] font-semibold text-nb-soft">{layouts.length}</span>
         )}
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-64 rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.93)] py-1 shadow-2xl backdrop-blur-xs">
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-64 rounded-[13px] border border-nb-haze/22 bg-nb-surface2/93 py-1 shadow-2xl backdrop-blur-xs">
           <div className="flex items-center justify-between px-3 py-1.5">
-            <span className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">Saved layouts</span>
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-nb-faint">Saved layouts</span>
             <button
               type="button"
               disabled={!canSave}
@@ -1073,20 +1073,20 @@ function SavedLayoutsMenu({ layouts, onApply, onDelete, onSave, canSave }: Reado
                 onSave?.();
                 setOpen(false);
               }}
-              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-[#67e8f9] transition hover:bg-[rgba(34,211,238,.12)] disabled:opacity-40"
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-nb-tealb transition hover:bg-nb-teal/12 disabled:opacity-40"
             >
               <Icon icon="heroicons-mini:plus" className="text-xs" />
               Save current
             </button>
           </div>
           {layouts.length === 0 ? (
-            <div className="px-3 py-3 text-xs text-[#aec2e8]">
+            <div className="px-3 py-3 text-xs text-nb-soft">
               No saved layouts yet — fill the grid and click <em>Save current</em>.
             </div>
           ) : (
-            <ul className="max-h-72 overflow-y-auto border-t border-[rgba(160,150,245,.22)] pt-1">
+            <ul className="max-h-72 overflow-y-auto border-t border-nb-haze/22 pt-1">
               {layouts.map((l) => (
-                <li key={l.id} className="flex items-center justify-between gap-2 px-2 py-1.5 hover:bg-[rgba(150,180,245,.07)]">
+                <li key={l.id} className="flex items-center justify-between gap-2 px-2 py-1.5 hover:bg-nb-mist/7">
                   <button
                     type="button"
                     onClick={() => {
@@ -1095,8 +1095,8 @@ function SavedLayoutsMenu({ layouts, onApply, onDelete, onSave, canSave }: Reado
                     }}
                     className="min-w-0 flex-1 text-left"
                   >
-                    <div className="truncate text-xs font-semibold text-[#f2f6ff]">{l.name}</div>
-                    <div className="text-[10px] text-[#7e93bf]">
+                    <div className="truncate text-xs font-semibold text-nb-ink">{l.name}</div>
+                    <div className="text-[10px] text-nb-dim2">
                       {getLayout(l.layout || l.layoutKey).label} ·{" "}
                       {(l.tiles || l.cameraIds || []).filter(Boolean).length} cameras
                     </div>
@@ -1105,7 +1105,7 @@ function SavedLayoutsMenu({ layouts, onApply, onDelete, onSave, canSave }: Reado
                     type="button"
                     title="Delete"
                     onClick={() => onDelete(l.id)}
-                    className="shrink-0 rounded-sm p-1 text-[#7e93bf] hover:bg-red-500/10 hover:text-red-500"
+                    className="shrink-0 rounded-sm p-1 text-nb-dim2 hover:bg-red-500/10 hover:text-red-500"
                   >
                     <Icon icon="heroicons-outline:trash" className="text-xs" />
                   </button>

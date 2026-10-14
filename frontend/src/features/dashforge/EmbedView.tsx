@@ -113,7 +113,7 @@ export default function EmbedView({ id, name }: Readonly<{ id: string; name?: st
         key={session.token}
         src={session.iframe_url}
         title={name || "DashForge dashboard"}
-        className="min-h-0 w-full flex-1 rounded-[10px] border border-nb-line bg-[rgba(8,15,34,.7)]"
+        className="min-h-0 w-full flex-1 rounded-[10px] border border-nb-line bg-nb-surface2/70"
         // `allow-same-origin` is REQUIRED here, and the comment that used to sit
         // in its place had the flag backwards. It does not grant the frame THIS
         // origin — it lets the frame keep ITS OWN. Without it the embed document

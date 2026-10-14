@@ -126,12 +126,12 @@ function RuleRow({ rule, onEdit, onToggle, onDelete }: Readonly<RuleRowProps>) {
   const condCount = (rule.match_conditions || []).length;
   const summary = summarizeConditions(rule.match_conditions);
   return (
-    <li className="flex items-center gap-3 px-3 py-2.5 transition hover:bg-[rgba(96,165,250,.05)]">
+    <li className="flex items-center gap-3 px-3 py-2.5 transition hover:bg-nb-blue/5">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate text-sm font-medium text-nb-ink">{rule.name}</span>
           <Badge color={rule.enabled ? "green" : "neutral"}>{rule.enabled ? "enabled" : "disabled"}</Badge>
-          <span className="rounded-full border border-nb-line bg-[rgba(10,18,40,.6)] px-1.5 py-0.5 font-mono text-[10px] text-nb-faint">
+          <span className="rounded-full border border-nb-line bg-nb-surface/60 px-1.5 py-0.5 font-mono text-[10px] text-nb-faint">
             p{rule.priority}
           </span>
           {rule.event_type && (

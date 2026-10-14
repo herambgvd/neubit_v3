@@ -31,7 +31,7 @@ export default function BrandingPreview({ form, logoUrl, faviconUrl }: Readonly<
       {/* A browser tab: favicon + the app name, which is the title. */}
       <div>
         <div className="mb-1 text-[10.5px] uppercase tracking-[1.2px] text-nb-faint">Browser tab</div>
-        <div className="flex w-fit max-w-full items-center gap-2 rounded-t-[10px] border border-nb-line border-b-0 bg-[rgba(255,255,255,.05)] px-3 py-1.5">
+        <div className="flex w-fit max-w-full items-center gap-2 rounded-t-[10px] border border-nb-line border-b-0 bg-nb-glint/5 px-3 py-1.5">
           <span className="flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden rounded-[3px]">
             {faviconUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -47,7 +47,7 @@ export default function BrandingPreview({ form, logoUrl, faviconUrl }: Readonly<
       {/* The console's brand mark. */}
       <div>
         <div className="mb-1 text-[10.5px] uppercase tracking-[1.2px] text-nb-faint">Console mark</div>
-        <div className="flex items-center gap-2.5 rounded-[10px] border border-nb-line bg-[rgba(255,255,255,.03)] px-3 py-2">
+        <div className="flex items-center gap-2.5 rounded-[10px] border border-nb-line bg-nb-glint/3 px-3 py-2">
           {logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={logoUrl} alt={name} className="h-6 max-w-[150px] object-contain" />

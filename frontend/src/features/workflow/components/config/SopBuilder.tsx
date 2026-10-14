@@ -41,9 +41,9 @@ export default function SopBuilder({ sop, onDelete, onSaved }: Readonly<SopBuild
           {sop.description && <p className="mt-0.5 text-xs text-nb-faint">{sop.description}</p>}
           <div className="mt-1.5 flex items-center gap-2 text-[11px] text-nb-faint flex-wrap">
             {typeof sop.version === "number" && <span className="font-mono">v{sop.version}</span>}
-            <span className="rounded-full bg-[rgba(96,165,250,.10)] text-nb-blueb px-2 py-0.5 capitalize">{titleize(sop.priority || "medium")}</span>
-            {sop.sla_hours != null && <span className="rounded-full bg-[rgba(96,165,250,.10)] text-nb-blueb px-2 py-0.5">SLA {sop.sla_hours}h</span>}
-            <span className={`rounded-full px-2 py-0.5 ${sop.is_active === false ? "bg-[rgba(96,165,250,.1)] text-nb-faint" : "bg-[rgba(52,211,153,.10)] text-nb-good"}`}>
+            <span className="rounded-full bg-nb-blue/10 text-nb-blueb px-2 py-0.5 capitalize">{titleize(sop.priority || "medium")}</span>
+            {sop.sla_hours != null && <span className="rounded-full bg-nb-blue/10 text-nb-blueb px-2 py-0.5">SLA {sop.sla_hours}h</span>}
+            <span className={`rounded-full px-2 py-0.5 ${sop.is_active === false ? "bg-nb-blue/10 text-nb-faint" : "bg-nb-good/10 text-nb-good"}`}>
               {sop.is_active === false ? "Inactive" : "Active"}
             </span>
           </div>
@@ -51,13 +51,13 @@ export default function SopBuilder({ sop, onDelete, onSaved }: Readonly<SopBuild
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => setTab("properties")}
-            className="inline-flex items-center gap-1 rounded-md border border-nb-line px-2.5 py-1.5 text-xs text-nb-ink hover:bg-[rgba(96,165,250,.1)]"
+            className="inline-flex items-center gap-1 rounded-md border border-nb-line px-2.5 py-1.5 text-xs text-nb-ink hover:bg-nb-blue/10"
           >
             <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
           </button>
           <button
             onClick={onDelete}
-            className="inline-flex items-center gap-1 rounded-md border border-[rgba(248,113,113,.30)] bg-[rgba(248,113,113,.10)] px-2.5 py-1.5 text-xs text-nb-crit hover:bg-[rgba(248,113,113,.20)]"
+            className="inline-flex items-center gap-1 rounded-md border border-nb-crit/30 bg-nb-crit/10 px-2.5 py-1.5 text-xs text-nb-crit hover:bg-nb-crit/20"
           >
             <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
           </button>

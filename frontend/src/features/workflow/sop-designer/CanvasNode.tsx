@@ -33,7 +33,7 @@ export default function CanvasNode({ state, selected, onPointerDown, onPointerUp
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
       onDoubleClick={(e) => { e.stopPropagation(); onEdit(); }}
-      className="absolute rounded-xl border bg-[rgba(8,15,34,.5)]  transition-shadow"
+      className="absolute rounded-xl border bg-nb-surface2/50  transition-shadow"
       style={{
         left: state.position_x ?? 0,
         top: state.position_y ?? 0,
@@ -70,7 +70,7 @@ export default function CanvasNode({ state, selected, onPointerDown, onPointerUp
         type="button"
         title="Drag to connect"
         onPointerDown={onHandleDown}
-        className="absolute -right-2.5 top-1/2 -translate-y-1/2 h-5 w-5 rounded-full border-2 border-nb-line bg-[rgba(8,15,34,.5)] text-nb-muted hover:text-nb-ink flex items-center justify-center shadow-sm"
+        className="absolute -right-2.5 top-1/2 -translate-y-1/2 h-5 w-5 rounded-full border-2 border-nb-line bg-nb-surface2/50 text-nb-muted hover:text-nb-ink flex items-center justify-center shadow-sm"
         style={{ cursor: "crosshair", color }}
       >
         <Icon icon="heroicons-solid:plus" className="text-[11px]" />

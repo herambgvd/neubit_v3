@@ -224,7 +224,7 @@ export default function Pulse() {
                     <button
                       key={n.node_id}
                       onClick={() => setFocus({ kind: "node", nodeId: n.node_id, label: n.node_name })}
-                      className="rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2.5 text-left transition hover:border-[rgba(150,180,245,.42)]"
+                      className="rounded-[10px] border border-nb-line bg-nb-surface3/50 px-3 py-2.5 text-left transition hover:border-nb-mist/42"
                     >
                       <div className="flex items-center gap-2">
                         <span
@@ -246,7 +246,7 @@ export default function Pulse() {
                   {data.unreachable.map((n) => (
                     <div
                       key={n.node_id}
-                      className="rounded-[10px] border border-[rgba(248,113,113,.35)] bg-[rgba(248,113,113,.06)] px-3 py-2.5"
+                      className="rounded-[10px] border border-nb-crit/35 bg-nb-crit/6 px-3 py-2.5"
                     >
                       <div className="flex items-center gap-2">
                         <Icon icon="heroicons:signal-slash" className="text-[13px] text-nb-crit" />

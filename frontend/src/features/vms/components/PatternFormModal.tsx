@@ -166,8 +166,8 @@ export default function PatternFormModal({ open, pattern, groups = [], onClose, 
                       onClick={() => toggleGroup(g.id)}
                       className={`flex w-full items-center gap-2.5 rounded-[10px] border px-2.5 py-2 text-left transition ${
                         checked
-                          ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]"
-                          : "border-transparent hover:bg-[rgba(96,165,250,.06)]"
+                          ? "border-nb-blue/50 bg-nb-blue/10"
+                          : "border-transparent hover:bg-nb-blue/6"
                       }`}
                     >
                       <span

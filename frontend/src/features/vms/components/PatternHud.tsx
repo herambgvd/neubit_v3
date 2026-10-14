@@ -65,7 +65,7 @@ export default function PatternHud({
     >
       <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-white/10 bg-black/80 px-3 py-2 shadow-2xl backdrop-blur-sm">
         <span className="inline-flex items-center gap-1.5 pl-1.5">
-          <Icon icon="heroicons-solid:squares-2x2" className="text-sm text-[#67e8f9]" />
+          <Icon icon="heroicons-solid:squares-2x2" className="text-sm text-nb-tealb" />
           <span className="max-w-[12rem] truncate text-xs font-semibold text-white">{patternName}</span>
         </span>
 
@@ -110,7 +110,7 @@ interface HudBtnProps {
  *  the bar is filled, a destructive one only reddens on hover, everything else
  *  is quiet over the video. */
 function hudBtnSkin(accent?: boolean, danger?: boolean): string {
-  if (accent) return "bg-[rgba(34,211,238,.9)] !text-[#0c1530] hover:bg-[#67e8f9]";
+  if (accent) return "bg-nb-teal/90 !text-nb-bg hover:bg-nb-tealb";
   if (danger) return "hover:bg-red-500/80 hover:text-white";
   return "hover:bg-white/15 hover:text-white";
 }

@@ -72,7 +72,7 @@ describe("categoryMeta", () => {
       expect(meta.key).toBe(key);
       expect(meta.label).toBeTruthy();
       expect(meta.icon).toBeTruthy();
-      expect(meta.accent).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(meta.accent).toMatch(/^(#[0-9a-f]{6}|rgb\(var\(--nb-c-[a-z0-9]+\)\))$/i);
     }
   });
 

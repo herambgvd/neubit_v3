@@ -218,7 +218,7 @@ export default function WebhookForm({ categoryId, webhook, onCancel, onSaved }: 
   const secretCfg = secretMeta[authType];
 
   return (
-    <form noValidate onSubmit={submit} className="space-y-4 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] p-4">
+    <form noValidate onSubmit={submit} className="space-y-4 rounded-[10px] border border-nb-line bg-nb-surface3/50 p-4">
       <div className="flex items-center justify-between">
         <h4 className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">{isEdit ? `Edit webhook · ${webhook.name}` : "Add webhook"}</h4>
 <RowAction icon="heroicons-outline:x-mark" title="Close" onClick={onCancel} />

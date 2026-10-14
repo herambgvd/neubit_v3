@@ -105,7 +105,7 @@ export default function FederatedCameraDetail({ camera }: Readonly<FederatedCame
           camera is owned by its recorder, not editable from the VMS. */}
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-nb-line px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-nb-line bg-[rgba(96,165,250,.08)] text-nb-blueb">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-nb-line bg-nb-blue/8 text-nb-blueb">
             <Icon icon="heroicons-outline:video-camera" className="text-sm" />
           </span>
           <div className="min-w-0">
@@ -130,7 +130,7 @@ export default function FederatedCameraDetail({ camera }: Readonly<FederatedCame
           </button>
           <span
             title="Operational actions (PTZ, snapshot) run through the owning recorder; device config lives on the NVR"
-            className="inline-flex items-center gap-1 rounded-full border border-[rgba(96,165,250,.3)] bg-[rgba(96,165,250,.08)] px-2 py-0.5 text-[10px] font-medium text-nb-blueb"
+            className="inline-flex items-center gap-1 rounded-full border border-nb-blue/30 bg-nb-blue/8 px-2 py-0.5 text-[10px] font-medium text-nb-blueb"
           >
             <Icon icon="heroicons-outline:bolt" className="text-xs" />
             Via recorder

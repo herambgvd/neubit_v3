@@ -117,7 +117,7 @@ function PlantInner() {
               <Link
                 key={b.site_id}
                 href={plantHref(b.site_id)}
-                className="block rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.45)] px-3 py-2 text-[12.5px] text-nb-ink transition hover:border-nb-blue/60"
+                className="block rounded-[10px] border border-nb-line bg-nb-surface3/45 px-3 py-2 text-[12.5px] text-nb-ink transition hover:border-nb-blue/60"
               >
                 {b.site_name || b.site_id}
               </Link>
@@ -167,7 +167,7 @@ function PlantInner() {
         <p className="text-[12px] text-nb-crit">{apiError(plantQ.error, "Could not read the plant")}</p>
       ) : empty || notInStore ? (
         <ConsolePanel className="flex-1 items-center justify-center px-4 py-16 text-center">
-          <span className="grid h-12 w-12 place-items-center rounded-full border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted">
+          <span className="grid h-12 w-12 place-items-center rounded-full border border-nb-line bg-nb-surface/60 text-nb-muted">
             <Icon icon="heroicons-outline:cpu-chip" className="text-xl" />
           </span>
           <h2 className="mt-3 text-sm font-semibold text-nb-ink">No plant described for this building</h2>
@@ -179,7 +179,7 @@ function PlantInner() {
           <div className="mt-4 flex flex-wrap items-center justify-center gap-3" data-empty-actions>
             <Link
               href={infraDesignerHref(siteId)}
-              className="inline-flex items-center gap-1 rounded-[8px] border border-[rgba(96,165,250,.45)] bg-[rgba(96,165,250,.12)] px-3 py-1.5 text-[12px] text-nb-blueb transition hover:border-nb-blue"
+              className="inline-flex items-center gap-1 rounded-[8px] border border-nb-blue/45 bg-nb-blue/12 px-3 py-1.5 text-[12px] text-nb-blueb transition hover:border-nb-blue"
             >
               Describe it in Setup → Equipment <Icon icon="heroicons:arrow-up-right" className="text-[12px]" />
             </Link>

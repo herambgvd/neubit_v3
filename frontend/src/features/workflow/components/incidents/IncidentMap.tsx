@@ -171,21 +171,21 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
   const openIncident = (it: InstancePublic) => router.push(`/alarms/${incId(it)}`);
 
   const mapSelCls =
-    "h-9 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(0,0,0,.28)] px-2.5 text-sm text-[#aec2e8] outline-hidden transition focus:border-[rgba(34,211,238,.5)]";
+    "h-9 rounded-[8px] border border-nb-mist/22 bg-[rgba(0,0,0,.28)] px-2.5 text-sm text-nb-soft outline-hidden transition focus:border-nb-teal/50";
 
   return (
-    <div className="overflow-hidden rounded-[13px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] backdrop-blur-xs">
+    <div className="overflow-hidden rounded-[13px] border border-nb-mist/22 bg-nb-mist/4 backdrop-blur-xs">
       {/* Map toolbar */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-[rgba(150,180,245,.22)] px-4 py-3">
-        <Icon icon="heroicons-outline:map-pin" className="text-base text-[#67e8f9]" />
+      <div className="flex flex-wrap items-center gap-2 border-b border-nb-mist/22 px-4 py-3">
+        <Icon icon="heroicons-outline:map-pin" className="text-base text-nb-tealb" />
         <select
           value={effectiveSiteId}
           onChange={(e) => { setSiteId(e.target.value); setFloorId(""); }}
           className={mapSelCls}
         >
-          {sites.length === 0 && <option value="" className="bg-[#0c1530]">No sites</option>}
+          {sites.length === 0 && <option value="" className="bg-nb-bg">No sites</option>}
           {sites.map((s) => (
-            <option key={s.site_id} value={s.site_id} className="bg-[#0c1530]">{s.name}</option>
+            <option key={s.site_id} value={s.site_id} className="bg-nb-bg">{s.name}</option>
           ))}
         </select>
         <select
@@ -194,12 +194,12 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
           disabled={!floors.length}
           className={`${mapSelCls} disabled:opacity-40`}
         >
-          {floors.length === 0 && <option value="" className="bg-[#0c1530]">No floors</option>}
+          {floors.length === 0 && <option value="" className="bg-nb-bg">No floors</option>}
           {floors.map((f) => (
-            <option key={f.floor_id} value={f.floor_id} className="bg-[#0c1530]">{f.name}</option>
+            <option key={f.floor_id} value={f.floor_id} className="bg-nb-bg">{f.name}</option>
           ))}
         </select>
-        <span className="ml-auto font-mono text-[11px] uppercase tracking-[1px] text-[#7e93bf]">
+        <span className="ml-auto font-mono text-[11px] uppercase tracking-[1px] text-nb-dim2">
           {siteCount} at this site · {clusters.reduce((n, c) => n + c.items.length, 0)} mapped
         </span>
       </div>
@@ -208,7 +208,7 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
         {/* Canvas */}
         <div className="relative min-h-[420px] bg-[rgba(0,0,0,.28)]">
           {floorsQ.isLoading || zonesQ.isLoading ? (
-            <div className="flex h-full items-center justify-center py-24"><Icon icon="svg-spinners:180-ring" className="text-2xl text-[#67e8f9]" /></div>
+            <div className="flex h-full items-center justify-center py-24"><Icon icon="svg-spinners:180-ring" className="text-2xl text-nb-tealb" /></div>
           ) : (
             <svg
               viewBox={`0 0 ${img.w} ${img.h}`}
@@ -280,7 +280,7 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
           )}
 
           {!planUrl && !floorsQ.isLoading && (
-            <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(9,16,36,.9)] px-3 py-1.5 text-xs text-[#aec2e8] shadow-sm backdrop-blur-xs">
+            <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-[8px] border border-nb-mist/22 bg-nb-surface2/90 px-3 py-1.5 text-xs text-nb-soft shadow-sm backdrop-blur-xs">
               <Icon icon="heroicons-outline:photo" className="mr-1 inline text-sm" />
               No floor plan uploaded — showing zones on a grid
             </div>
@@ -288,13 +288,13 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
         </div>
 
         {/* Side panel: mapped clusters + unplaced fallback */}
-        <div className="border-t border-[rgba(150,180,245,.22)] lg:border-l lg:border-t-0">
+        <div className="border-t border-nb-mist/22 lg:border-l lg:border-t-0">
           <div className="max-h-[70vh] overflow-y-auto p-3">
             {unmappedNoSite > 0 && (
-              <div className="mb-3 flex items-start gap-2 rounded-[10px] border border-[rgba(251,191,36,.4)] bg-[rgba(251,191,36,.1)] px-3 py-2 text-[11px] text-[#fbbf24]">
+              <div className="mb-3 flex items-start gap-2 rounded-[10px] border border-nb-warn/40 bg-nb-warn/10 px-3 py-2 text-[11px] text-nb-warn">
                 <Icon icon="heroicons-outline:information-circle" className="mt-0.5 shrink-0 text-sm" />
-                <span className="text-[#aec2e8]">
-                  <span className="font-medium text-[#fbbf24]">{unmappedNoSite}</span> incident(s) have no
+                <span className="text-nb-soft">
+                  <span className="font-medium text-nb-warn">{unmappedNoSite}</span> incident(s) have no
                   site set and can&apos;t be placed on a map. See the Board for the full list.
                 </span>
               </div>
@@ -303,7 +303,7 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
             {/* Mapped clusters */}
             {clusters.length > 0 && (
               <div className="mb-3">
-                <div className="mb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#7e93bf]">On this floor</div>
+                <div className="mb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-nb-dim2">On this floor</div>
                 <div className="space-y-1.5">
                   {clusters.map((c) =>
                     c.items.map((it) => (
@@ -316,12 +316,12 @@ export default function IncidentMap({ incidents = [], sites = [], sopName = {} }
 
             {/* Unplaced fallback */}
             <div>
-              <div className="mb-1.5 flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#7e93bf]">
+              <div className="mb-1.5 flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-nb-dim2">
                 <span>Unplaced at this site</span>
-                <span className="rounded-sm border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1 text-[10px] text-[#aec2e8]">{unplaced.length}</span>
+                <span className="rounded-sm border border-nb-mist/22 bg-nb-mist/6 px-1 text-[10px] text-nb-soft">{unplaced.length}</span>
               </div>
               {unplaced.length === 0 ? (
-                <p className="px-1 text-[11px] text-[#7e93bf]">
+                <p className="px-1 text-[11px] text-nb-dim2">
                   {siteCount === 0 ? "No incidents at this site." : "All site incidents are on a zone."}
                 </p>
               ) : (
@@ -352,12 +352,12 @@ function IncidentRow({ it, onOpen, zoneName }: Readonly<IncidentRowProps>) {
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full items-center gap-2 rounded-[10px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-2.5 py-2 text-left transition hover:border-[rgba(34,211,238,.4)] hover:bg-[rgba(150,180,245,.07)]"
+      className="flex w-full items-center gap-2 rounded-[10px] border border-nb-mist/22 bg-nb-mist/4 px-2.5 py-2 text-left transition hover:border-nb-teal/40 hover:bg-nb-mist/7"
     >
       <span className={`h-2 w-2 shrink-0 rounded-full ${s.dot}`} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs font-medium text-[#f2f6ff]">{incTitle(it)}</span>
-        <span className="block truncate font-mono text-[10px] text-[#7e93bf]">
+        <span className="block truncate text-xs font-medium text-nb-ink">{incTitle(it)}</span>
+        <span className="block truncate font-mono text-[10px] text-nb-dim2">
           {zoneName ? `${zoneName} · ` : ""}{fmtRelative(it.created_at)}
         </span>
       </span>

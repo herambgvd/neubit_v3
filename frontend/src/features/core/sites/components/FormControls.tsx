@@ -150,8 +150,8 @@ export interface ImagePreviewCardProps {
 
 export function ImagePreviewCard({ title, subtitle, imageUrl, emptyText }: Readonly<ImagePreviewCardProps>) {
   return (
-    <div className="rounded-lg border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden">
-      <div className="px-3 py-2 border-b border-nb-line bg-white/5">
+    <div className="rounded-lg border border-nb-line bg-nb-surface2/50 overflow-hidden">
+      <div className="px-3 py-2 border-b border-nb-line bg-nb-glint/5">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-nb-muted">{title}</p>
         <p className="text-[11px] text-nb-faint truncate">{subtitle}</p>
       </div>
@@ -160,7 +160,7 @@ export function ImagePreviewCard({ title, subtitle, imageUrl, emptyText }: Reado
           // eslint-disable-next-line @next/next/no-img-element
           <img src={imageUrl} alt={`${title} preview`} className="h-28 w-full rounded-md border border-nb-line object-cover" />
         ) : (
-          <div className="h-28 w-full rounded-md border border-dashed border-nb-line bg-white/[.04] px-3 flex items-center justify-center text-center text-[11px] text-nb-faint">
+          <div className="h-28 w-full rounded-md border border-dashed border-nb-line bg-nb-glint/[.04] px-3 flex items-center justify-center text-center text-[11px] text-nb-faint">
             {emptyText}
           </div>
         )}

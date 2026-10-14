@@ -94,8 +94,8 @@ function ScopeBadge({ site }: Readonly<{ site: boolean }>) {
     <span
       className={`flex items-center gap-1.5 rounded-[7px] border px-2 py-1 text-[10.5px] font-semibold uppercase tracking-[1.2px] ${
         site
-          ? "border-[rgba(96,165,250,.45)] bg-[rgba(96,165,250,.12)] text-nb-blueb"
-          : "border-[rgba(167,139,250,.45)] bg-[rgba(167,139,250,.12)] text-[#c4b5fd]"
+          ? "border-nb-blue/45 bg-nb-blue/12 text-nb-blueb"
+          : "border-nb-violet/45 bg-nb-violet/12 text-nb-violetb"
       }`}
       title={
         site
@@ -205,10 +205,10 @@ function EstateRollup({
             <Link
               key={r.key}
               href={r.href}
-              className={`flex flex-wrap items-center justify-between gap-2 rounded-[10px] border px-3 py-2 transition hover:bg-white/[.03] ${
+              className={`flex flex-wrap items-center justify-between gap-2 rounded-[10px] border px-3 py-2 transition hover:bg-nb-glint/[.03] ${
                 r.unplaced
-                  ? "border-[rgba(251,191,36,.35)] bg-[rgba(251,191,36,.06)] hover:border-[rgba(251,191,36,.7)]"
-                  : "border-nb-line bg-[rgba(6,11,26,.45)] hover:border-nb-blue/60"
+                  ? "border-nb-warn/35 bg-nb-warn/6 hover:border-nb-warn/70"
+                  : "border-nb-line bg-nb-surface3/45 hover:border-nb-blue/60"
               }`}
             >
               <span className="flex min-w-0 items-center gap-2">
@@ -375,7 +375,7 @@ function CategoryConsoleInner({ category }: Readonly<{ category: string }>) {
               <Link
                 href={plantHref(siteId)}
                 title="This building's plant — systems and equipment, coloured by data readiness"
-                className="inline-flex items-center gap-1 rounded-[7px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2 py-0.5 text-[11px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+                className="inline-flex items-center gap-1 rounded-[7px] border border-nb-line bg-nb-surface/65 px-2 py-0.5 text-[11px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
               >
                 <Icon icon="heroicons-outline:cpu-chip" className="text-[13px]" /> Plant
               </Link>
@@ -448,7 +448,7 @@ function CategoryConsoleInner({ category }: Readonly<{ category: string }>) {
                 onClick={() => setTypeFilter("")}
                 className={`shrink-0 rounded-[6px] border px-2 py-0.5 text-[10.5px] transition ${
                   !typeFilter
-                    ? "border-[rgba(96,165,250,.45)] bg-[rgba(96,165,250,.15)] text-nb-blueb"
+                    ? "border-nb-blue/45 bg-nb-blue/15 text-nb-blueb"
                     : "border-nb-line text-nb-faint hover:text-nb-muted"
                 }`}
               >
@@ -461,7 +461,7 @@ function CategoryConsoleInner({ category }: Readonly<{ category: string }>) {
                   onClick={() => setTypeFilter(t)}
                   className={`shrink-0 rounded-[6px] border px-2 py-0.5 text-[10.5px] transition ${
                     typeFilter === t
-                      ? "border-[rgba(96,165,250,.45)] bg-[rgba(96,165,250,.15)] text-nb-blueb"
+                      ? "border-nb-blue/45 bg-nb-blue/15 text-nb-blueb"
                       : "border-nb-line text-nb-faint hover:text-nb-muted"
                   }`}
                 >
@@ -493,15 +493,15 @@ function CategoryConsoleInner({ category }: Readonly<{ category: string }>) {
                   }}
                   className={`w-full rounded-[10px] border px-3 py-2 text-left transition ${
                     on
-                      ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.12)]"
-                      : "border-nb-line bg-[rgba(6,11,26,.45)] hover:bg-white/5"
+                      ? "border-nb-blue/50 bg-nb-blue/12"
+                      : "border-nb-line bg-nb-surface3/45 hover:bg-nb-glint/5"
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="truncate text-[12.5px] text-nb-ink">{d.device_tag}</span>
                     <span
                       className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                        quiet ? "bg-nb-warn" : "bg-nb-good shadow-[0_0_5px_#34d399]"
+                        quiet ? "bg-nb-warn" : "bg-nb-good shadow-[0_0_5px_rgb(var(--nb-c-good))]"
                       }`}
                       title={quiet ? `${quiet} of ${d.points} points quiet` : "all points reporting"}
                     />
@@ -573,7 +573,7 @@ function CategoryConsoleInner({ category }: Readonly<{ category: string }>) {
 
               {/* Trend — always a rollup. */}
               <div className="px-5 pb-3">
-                <div className="rounded-[12px] border border-nb-line bg-[rgba(10,18,40,.45)] p-3">
+                <div className="rounded-[12px] border border-nb-line bg-nb-surface/45 p-3">
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0">
                       <div className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">
@@ -621,7 +621,7 @@ function CategoryConsoleInner({ category }: Readonly<{ category: string }>) {
                   <div className="overflow-hidden rounded-[10px] border border-nb-line">
                     <table className="w-full text-left">
                       <thead>
-                        <tr className="bg-[rgba(6,11,26,.6)] text-[10px] uppercase tracking-[1.2px] text-nb-faint">
+                        <tr className="bg-nb-surface3/60 text-[10px] uppercase tracking-[1.2px] text-nb-faint">
                           <th className="px-3 py-2 font-semibold">Point</th>
                           <th className="px-3 py-2 font-semibold">Kind</th>
                           <th className="px-3 py-2 text-right font-semibold">Value</th>
@@ -647,7 +647,7 @@ function CategoryConsoleInner({ category }: Readonly<{ category: string }>) {
                               key={p.point_id}
                               onClick={() => setPointId(p.point_id)}
                               className={`cursor-pointer border-t border-nb-line/50 transition ${
-                                on ? "bg-[rgba(96,165,250,.1)]" : "hover:bg-white/[.03]"
+                                on ? "bg-nb-blue/10" : "hover:bg-nb-glint/[.03]"
                               }`}
                             >
                               <td className="px-3 py-1.5 font-mono text-[12px] text-nb-ink">

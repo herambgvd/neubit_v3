@@ -162,7 +162,7 @@ const cardBase =
 // Browser/app chrome frame around the live console — makes the product feel real.
 function AppWindow({ children }: Readonly<{ children?: ReactNode }>) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/[0.1] bg-[#0b1228] shadow-[0_50px_140px_-40px_rgba(0,0,0,0.95)]">
+    <div className="overflow-hidden rounded-2xl border border-white/[0.1] bg-nb-field shadow-[0_50px_140px_-40px_rgba(0,0,0,0.95)]">
       <div className="flex items-center gap-3 border-b border-white/[0.07] bg-white/[0.02] px-4 py-2.5">
         <div className="flex gap-1.5">
           {["#ff5f57", "#febc2e", "#28c840"].map((c) => (
@@ -313,9 +313,9 @@ export default function LandingPage() {
   );
 
   return (
-    <div ref={root} className="min-h-screen bg-[#0c1530] text-white antialiased selection:bg-cyan-500/20">
+    <div ref={root} className="min-h-screen bg-nb-bg text-white antialiased selection:bg-cyan-500/20">
       {/* ── Sticky glass nav ── */}
-      <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#0c1530]/80 backdrop-blur-xl">
+      <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-nb-bg/80 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
           <Link href="/" className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -401,7 +401,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── Sectors trust strip ── */}
-      <section className="border-y border-white/[0.06] bg-[#0a1226]">
+      <section className="border-y border-white/[0.06] bg-nb-field">
         <div className="mx-auto max-w-7xl px-6 py-8">
           <p className="reveal text-center font-mono text-[11px] uppercase tracking-[0.2em] text-white/35">
             Built for high-responsibility environments
@@ -415,7 +415,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── One platform (suite) ── */}
-      <section id="platform" className="relative bg-[#0c1530]">
+      <section id="platform" className="relative bg-nb-bg">
         <div className="mx-auto max-w-7xl px-6 py-24 lg:py-28">
           <div className="reveal mx-auto max-w-3xl text-center">
             <div className="flex justify-center"><Eyebrow>One platform</Eyebrow></div>
@@ -442,7 +442,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── Feature deep-dives (alternating) ── */}
-      <section id="features" className="relative bg-[#0a1024]">
+      <section id="features" className="relative bg-nb-bg2">
         <div className="mx-auto max-w-7xl space-y-20 px-6 py-24 lg:space-y-28 lg:py-28">
           {FEATURES.map((f, i) => (
             <div key={f.title} className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
@@ -472,7 +472,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── Stats band ── */}
-      <section className="relative overflow-hidden bg-[#0c1530]">
+      <section className="relative overflow-hidden bg-nb-bg">
         <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(700px 300px at 50% 120%, rgba(34,211,238,0.10), transparent 60%)" }} />
         <div className="relative mx-auto max-w-7xl px-6 py-20">
           <div className="grid grid-cols-2 gap-8 lg:grid-cols-4">
@@ -492,7 +492,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── Industries ── */}
-      <section id="industries" className="relative bg-[#0a1024]">
+      <section id="industries" className="relative bg-nb-bg2">
         <div className="mx-auto max-w-7xl px-6 py-24 lg:py-28">
           <div className="reveal mx-auto max-w-3xl text-center">
             <div className="flex justify-center"><Eyebrow>Industries</Eyebrow></div>
@@ -513,7 +513,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── Security & compliance ── */}
-      <section id="security" className="relative bg-[#0c1530]">
+      <section id="security" className="relative bg-nb-bg">
         <div className="mx-auto max-w-7xl px-6 py-24 lg:py-28">
           <div className="grid gap-12 lg:grid-cols-[1fr_1.1fr] lg:items-center">
             <div className="reveal">
@@ -541,7 +541,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── Why Neubit ── */}
-      <section id="why" className="relative bg-[#0a1024]">
+      <section id="why" className="relative bg-nb-bg2">
         <div className="mx-auto max-w-7xl px-6 py-24 lg:py-28">
           <div className="reveal mx-auto max-w-3xl text-center">
             <div className="flex justify-center"><Eyebrow>Why Neubit</Eyebrow></div>
@@ -563,7 +563,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── CTA ── */}
-      <section id="cta" className="relative overflow-hidden bg-[#0c1530] text-white">
+      <section id="cta" className="relative overflow-hidden bg-nb-bg text-white">
         <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(700px 400px at 50% 0%, rgba(34,211,238,0.16), transparent 60%)" }} />
         <div className="relative mx-auto max-w-5xl px-6 py-24 text-center lg:py-32">
           <h2 className="reveal text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl">
@@ -585,7 +585,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── Footer ── */}
-      <footer className="border-t border-white/[0.08] bg-[#0c1530]">
+      <footer className="border-t border-white/[0.08] bg-nb-bg">
         <div className="mx-auto max-w-7xl px-6 py-14">
           <div className="grid gap-10 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
             <div>

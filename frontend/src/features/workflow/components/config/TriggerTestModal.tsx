@@ -86,9 +86,9 @@ export default function TriggerTestModal({ open, trigger, onClose }: Readonly<Tr
   const verdict = triggerVerdict(matched);
 
   const toneCls: Record<Tone, string> = {
-    ok: "border-[rgba(52,211,153,.40)] bg-[rgba(52,211,153,.10)] text-nb-good",
-    warn: "border-[rgba(251,191,36,.40)] bg-[rgba(251,191,36,.10)] text-nb-warn",
-    bad: "border-[rgba(248,113,113,.40)] bg-[rgba(248,113,113,.10)] text-nb-crit",
+    ok: "border-nb-good/40 bg-nb-good/10 text-nb-good",
+    warn: "border-nb-warn/40 bg-nb-warn/10 text-nb-warn",
+    bad: "border-nb-crit/40 bg-nb-crit/10 text-nb-crit",
   };
 
   return (
@@ -150,12 +150,12 @@ export default function TriggerTestModal({ open, trigger, onClose }: Readonly<Tr
             {(matched || skipped) && (
               <ul className="space-y-1.5 text-xs">
                 {matched && (
-                  <li className="rounded-md border border-nb-line bg-[rgba(96,165,250,.1)]/40 px-3 py-2 text-nb-faint">
+                  <li className="rounded-md border border-nb-line bg-nb-blue/4 px-3 py-2 text-nb-faint">
                     <span className="font-mono text-nb-ink">would_create</span>: {String(matched.would_create)}
                   </li>
                 )}
                 {skipped && (
-                  <li className="rounded-md border border-nb-line bg-[rgba(96,165,250,.1)]/40 px-3 py-2 text-nb-faint">
+                  <li className="rounded-md border border-nb-line bg-nb-blue/4 px-3 py-2 text-nb-faint">
                     <span className="font-mono text-nb-ink">reason</span>: {skipped.reason}
                   </li>
                 )}

@@ -109,7 +109,7 @@ export default function EstateMapView({ cameras = [], onPick }: Readonly<EstateM
           <button
             type="button"
             onClick={() => setInPlan(false)}
-            className="inline-flex w-fit items-center gap-1.5 rounded-md border border-[rgba(150,180,245,.22)] px-2 py-1 text-[11.5px] text-[#aec2e8] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
+            className="inline-flex w-fit items-center gap-1.5 rounded-md border border-nb-mist/22 px-2 py-1 text-[11.5px] text-nb-soft transition hover:border-nb-teal/50 hover:text-nb-tealb"
           >
             <Icon icon="heroicons-outline:arrow-left" className="text-xs" /> Estate map
           </button>
@@ -124,7 +124,7 @@ export default function EstateMapView({ cameras = [], onPick }: Readonly<EstateM
   const centre = pins[0];
 
   return (
-    <div className="relative h-full min-h-0 overflow-hidden rounded-[11px] border border-[rgba(150,180,245,.22)]">
+    <div className="relative h-full min-h-0 overflow-hidden rounded-[11px] border border-nb-mist/22">
       <OfflineMapView
         center={{
           lat: Number(centre.coordinates.latitude),

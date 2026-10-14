@@ -48,7 +48,7 @@ export default function RoleMapEditor({ label, keyLabel = "Group", value = {}, o
               <div key={key} className="flex items-center gap-2 px-3 py-2 text-sm">
                 <code className="flex-1 truncate text-nb-ink">{key}</code>
                 <Icon icon="heroicons-outline:arrow-right" className="text-xs text-nb-muted" />
-                <span className="rounded-sm bg-white/5 px-2 py-0.5 text-xs text-nb-ink">{role}</span>
+                <span className="rounded-sm bg-nb-glint/5 px-2 py-0.5 text-xs text-nb-ink">{role}</span>
                 {!disabled && (
                   <button className="text-nb-muted transition hover:text-red-500" onClick={() => remove(key)} title="Remove">
                     <Icon icon="heroicons-outline:x-mark" className="text-base" />

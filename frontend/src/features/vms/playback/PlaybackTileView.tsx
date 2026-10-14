@@ -157,7 +157,7 @@ function PlaybackTileView({
       }}
       onDoubleClick={() => onToggleMaximise(cam.key)}
       className={`group relative h-full min-h-0 overflow-hidden rounded-lg bg-black ring-inset ${
-        active ? "ring-2 ring-[#22d3ee]" : "ring-1 ring-[rgba(160,150,245,.18)]"
+        active ? "ring-2 ring-nb-teal" : "ring-1 ring-nb-haze/18"
       } ${zoomOn ? "cursor-move" : ""}`}
     >
       <div
@@ -193,7 +193,7 @@ function PlaybackTileView({
           <span className="rounded bg-amber-500/85 px-1 py-0.5 text-[9px] font-bold uppercase text-black">Ind</span>
         ) : null}
         {zoom.s > 1 && (
-          <span className="rounded bg-black/65 px-1 py-0.5 text-[9px] font-semibold text-[#67e8f9]">
+          <span className="rounded bg-black/65 px-1 py-0.5 text-[9px] font-semibold text-nb-tealb">
             {zoom.s.toFixed(1)}×
           </span>
         )}
@@ -255,7 +255,7 @@ function TileBtn({ icon, title, on = false, onClick }: Readonly<TileBtnProps>) {
         onClick();
       }}
       className={`inline-flex h-6 w-6 items-center justify-center rounded bg-black/65 transition hover:bg-black/85 ${
-        on ? "text-[#67e8f9]" : "text-white/85"
+        on ? "text-nb-tealb" : "text-white/85"
       }`}
     >
       <Icon icon={icon} className="text-[13px]" />

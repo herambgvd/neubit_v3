@@ -19,23 +19,23 @@ export default function FormDetail({ form, onEdit, onDelete }: Readonly<FormDeta
     <div className="flex flex-col flex-1 min-h-0">
       <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-nb-line">
         <div className="flex items-start gap-3 min-w-0">
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-[rgba(96,165,250,.1)] text-nb-blueb shrink-0">
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-nb-blue/10 text-nb-blueb shrink-0">
             <Icon icon="heroicons-outline:clipboard-document-list" className="text-lg" />
           </span>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-semibold text-nb-ink truncate">{form.name}</h2>
-              <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium ${form.is_active === false ? "bg-[rgba(96,165,250,.1)] text-nb-faint" : "bg-[rgba(52,211,153,.10)] text-nb-good"}`}>{form.is_active === false ? "Inactive" : "Active"}</span>
+              <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium ${form.is_active === false ? "bg-nb-blue/10 text-nb-faint" : "bg-nb-good/10 text-nb-good"}`}>{form.is_active === false ? "Inactive" : "Active"}</span>
             </div>
             {form.description && <p className="mt-0.5 text-xs text-nb-faint">{form.description}</p>}
             <p className="mt-0.5 text-[11px] text-nb-faint">{fields.length} field(s)</p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button onClick={onEdit} className="inline-flex items-center gap-1 rounded-md border border-nb-line px-2.5 py-1.5 text-xs text-nb-ink hover:bg-[rgba(96,165,250,.1)]">
+          <button onClick={onEdit} className="inline-flex items-center gap-1 rounded-md border border-nb-line px-2.5 py-1.5 text-xs text-nb-ink hover:bg-nb-blue/10">
             <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
           </button>
-          <button onClick={onDelete} className="inline-flex items-center gap-1 rounded-md border border-[rgba(248,113,113,.30)] bg-[rgba(248,113,113,.10)] px-2.5 py-1.5 text-xs text-nb-crit hover:bg-[rgba(248,113,113,.20)]">
+          <button onClick={onDelete} className="inline-flex items-center gap-1 rounded-md border border-nb-crit/30 bg-nb-crit/10 px-2.5 py-1.5 text-xs text-nb-crit hover:bg-nb-crit/20">
             <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
           </button>
         </div>
@@ -56,7 +56,7 @@ export default function FormDetail({ form, onEdit, onDelete }: Readonly<FormDeta
                   </div>
                   {f.placeholder && <div className="text-[11px] text-nb-faint truncate">{f.placeholder}</div>}
                 </div>
-                <span className="text-[10px] rounded-full bg-[rgba(96,165,250,.1)] px-2 py-0.5 font-medium text-nb-faint uppercase shrink-0">{titleize(f.type)}</span>
+                <span className="text-[10px] rounded-full bg-nb-blue/10 px-2 py-0.5 font-medium text-nb-faint uppercase shrink-0">{titleize(f.type)}</span>
               </li>
             ))}
           </ul>

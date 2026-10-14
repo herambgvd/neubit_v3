@@ -22,7 +22,7 @@ export default function TagListItem({ tag, selected, onSelect }: Readonly<TagLis
       <button
         onClick={onSelect}
         className={`w-full flex items-start gap-3 px-4 py-3 text-left transition ${
-          selected ? "bg-white/5" : "hover:bg-white/5"
+          selected ? "bg-nb-glint/5" : "hover:bg-nb-glint/5"
         }`}
       >
         {selected && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-500" />}
@@ -30,7 +30,7 @@ export default function TagListItem({ tag, selected, onSelect }: Readonly<TagLis
           <Icon icon="heroicons:tag" className="text-base" />
           <span
             className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-nb-line ${
-              t.is_active !== false ? "bg-green-500" : "bg-white/5"
+              t.is_active !== false ? "bg-green-500" : "bg-nb-glint/5"
             }`}
           />
         </span>

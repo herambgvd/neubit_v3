@@ -28,7 +28,7 @@ export default function FormSubmitTestModal({ open, onClose, fields, values }: R
       footer={<Button variant="secondary" onClick={onClose}>Close</Button>}
     >
       <div className="space-y-4">
-        <div className={`rounded-lg border px-3 py-2 text-sm font-medium ${valid ? "border-[rgba(52,211,153,.40)] bg-[rgba(52,211,153,.10)] text-nb-good" : "border-[rgba(248,113,113,.40)] bg-[rgba(248,113,113,.10)] text-nb-crit"}`}>
+        <div className={`rounded-lg border px-3 py-2 text-sm font-medium ${valid ? "border-nb-good/40 bg-nb-good/10 text-nb-good" : "border-nb-crit/40 bg-nb-crit/10 text-nb-crit"}`}>
           {valid ? "Valid — this form would submit." : `${errEntries.length} field(s) failed validation.`}
         </div>
 
@@ -37,7 +37,7 @@ export default function FormSubmitTestModal({ open, onClose, fields, values }: R
             <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-nb-faint">Errors</p>
             <ul className="space-y-1.5">
               {errEntries.map(([key, msg]) => (
-                <li key={key} className="rounded-md border border-nb-line bg-[rgba(96,165,250,.1)]/40 px-3 py-2 text-xs">
+                <li key={key} className="rounded-md border border-nb-line bg-nb-blue/4 px-3 py-2 text-xs">
                   <code className="font-mono text-nb-ink">{key}</code>
                   <span className="ml-2 text-nb-crit">{msg}</span>
                 </li>
@@ -51,7 +51,7 @@ export default function FormSubmitTestModal({ open, onClose, fields, values }: R
           {dataEntries.length === 0 ? (
             <div className="rounded-lg border border-dashed border-nb-line px-4 py-6 text-sm text-nb-faint">No values collected yet.</div>
           ) : (
-            <pre className="max-h-72 overflow-auto rounded-lg border border-nb-line bg-[rgba(96,165,250,.1)]/40 p-3 text-xs font-mono text-nb-ink">
+            <pre className="max-h-72 overflow-auto rounded-lg border border-nb-line bg-nb-blue/4 p-3 text-xs font-mono text-nb-ink">
               {JSON.stringify(formData, null, 2)}
             </pre>
           )}

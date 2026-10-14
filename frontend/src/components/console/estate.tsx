@@ -39,12 +39,12 @@ const tone = (t?: EstateTone) => TONES[t || "ink"] || TONES.ink;
 const CHIP_BORDERS: Partial<Record<EstateTone, string>> = {
   crit: "border-nb-crit/50 text-nb-crit",
   warn: "border-nb-warn/45 text-nb-warn",
-  good: "border-[rgba(52,211,153,.45)] text-nb-good",
+  good: "border-nb-good/45 text-nb-good",
 };
 
 const ACTION_ICONS: Partial<Record<EstateTone, string>> = {
   crit: "border-nb-crit/40 bg-nb-crit/10 text-nb-crit",
-  good: "border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.1)] text-nb-good",
+  good: "border-nb-good/40 bg-nb-good/10 text-nb-good",
   warn: "border-nb-warn/40 bg-nb-warn/10 text-nb-warn",
 };
 
@@ -93,7 +93,7 @@ export function Kpi({ icon, label, value, sub, action, tone: t = "ink", title }:
   const absent = value === null || value === undefined;
   return (
     <div
-      className="rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] px-3 py-2.5"
+      className="rounded-[10px] border border-nb-line bg-nb-surface/50 px-3 py-2.5"
       title={title}
     >
       <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[1.4px] text-nb-faint">
@@ -243,7 +243,7 @@ export function LeaderRow({
           {trend ?? "—"}
         </span>
         {href && (
-          <span className="rounded-[7px] border border-[rgba(96,165,250,.4)] px-2.5 py-1 text-[10.5px] tracking-[.5px] text-nb-blueb">
+          <span className="rounded-[7px] border border-nb-blue/40 px-2.5 py-1 text-[10.5px] tracking-[.5px] text-nb-blueb">
             {openLabel}
           </span>
         )}
@@ -252,9 +252,9 @@ export function LeaderRow({
   );
 
   const cls =
-    "flex items-center gap-3 rounded-[11px] border border-nb-line bg-[rgba(10,18,40,.45)] px-3.5 py-2.5";
+    "flex items-center gap-3 rounded-[11px] border border-nb-line bg-nb-surface/45 px-3.5 py-2.5";
   return href ? (
-    <Link href={href} className={`${cls} transition hover:border-nb-blue/60 hover:bg-white/[.03]`}>
+    <Link href={href} className={`${cls} transition hover:border-nb-blue/60 hover:bg-nb-glint/[.03]`}>
       {body}
     </Link>
   ) : (
@@ -315,7 +315,7 @@ export function ActionRow({
     </button>
   ) : null;
   return (
-    <div className="flex items-center gap-3 rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.45)] px-3 py-2">
+    <div className="flex items-center gap-3 rounded-[10px] border border-nb-line bg-nb-surface/45 px-3 py-2">
       <span className={`grid h-7 w-7 flex-none place-items-center rounded-[7px] border ${iconCls}`}>
         <Icon icon={icon} className="text-[14px]" />
       </span>

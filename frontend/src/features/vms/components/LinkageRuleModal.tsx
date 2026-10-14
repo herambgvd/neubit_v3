@@ -186,7 +186,7 @@ export default function LinkageRuleModal({ open, rule, onClose, onSave, saving =
             <button
               type="button"
               onClick={onClose}
-              className="rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-3 py-1.5 text-xs font-medium text-nb-muted hover:border-nb-blue hover:text-nb-blueb"
+              className="rounded-[8px] border border-nb-line bg-nb-surface/65 px-3 py-1.5 text-xs font-medium text-nb-muted hover:border-nb-blue hover:text-nb-blueb"
             >
               Cancel
             </button>
@@ -194,7 +194,7 @@ export default function LinkageRuleModal({ open, rule, onClose, onSave, saving =
               type="button"
               onClick={submit}
               disabled={!canSave || saving}
-              className="inline-flex items-center gap-1.5 rounded-[9px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.08)] px-3 py-1.5 text-xs font-semibold tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgba(34,211,238,.25)] disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-[9px] border border-nb-teal/50 bg-nb-teal/8 px-3 py-1.5 text-xs font-semibold tracking-[.4px] text-nb-tealb transition hover:shadow-[0_0_10px_rgb(var(--nb-c-teal)/.25)] disabled:opacity-40"
             >
               {saving && <Icon icon="svg-spinners:180-ring" className="text-sm" />}
               {rule ? "Save changes" : "Create rule"}
@@ -357,13 +357,13 @@ function PickList({ items, selected, onToggle, empty, loading }: Readonly<PickLi
     return <p className="px-1 py-3 text-[11px] text-nb-soft">{empty}</p>;
   }
   return (
-    <div className="mt-1 grid max-h-40 grid-cols-2 gap-1 overflow-y-auto rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] p-2">
+    <div className="mt-1 grid max-h-40 grid-cols-2 gap-1 overflow-y-auto rounded-[9px] border border-nb-line bg-nb-surface3/50 p-2">
       {items.map((it) => {
         const on = selected.includes(it.id);
         return (
           <label
             key={it.id}
-            className={`flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-[11px] ${on ? "bg-[rgba(96,165,250,.1)] text-nb-blueb" : "text-nb-soft hover:bg-[rgba(96,165,250,.06)]"}`}
+            className={`flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-[11px] ${on ? "bg-nb-blue/10 text-nb-blueb" : "text-nb-soft hover:bg-nb-blue/6"}`}
           >
             <input type="checkbox" checked={on} onChange={() => onToggle(it.id)} />
             <span className="truncate">{it.label}</span>

@@ -290,8 +290,8 @@ export default function PlaybackWorkspace({ onExport }: Readonly<PlaybackWorkspa
   return (
     <div
       ref={rootRef}
-      className="flex h-full min-h-0 w-full gap-3 p-3 text-[#f2f6ff] [transform:translateZ(0)]"
-      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+      className="flex h-full min-h-0 w-full gap-3 p-3 text-nb-ink [transform:translateZ(0)]"
+      style={{ background: "var(--nb-backdrop)" }}
     >
       {!fullscreen && (
         <PlaybackRail
@@ -318,7 +318,7 @@ export default function PlaybackWorkspace({ onExport }: Readonly<PlaybackWorkspa
       )}
 
       {/* ── Grid + timeline ───────────────────────────────────────────────── */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col rounded-xl border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.55)]">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col rounded-xl border border-nb-haze/22 bg-nb-surface2/55">
         <GridHeader
           camCount={cams.length}
           target={target}
@@ -382,7 +382,7 @@ export default function PlaybackWorkspace({ onExport }: Readonly<PlaybackWorkspa
                 Array.from({ length: Math.max(0, layout - shown.length) }, (_, i) => (
                   <div
                     key={`empty-${i}`}
-                    className="flex items-center justify-center rounded-lg border border-dashed border-[rgba(160,150,245,.18)] text-[11px] text-[#9db0d8]/60"
+                    className="flex items-center justify-center rounded-lg border border-dashed border-nb-haze/18 text-[11px] text-nb-dim/60"
                   >
                     Tick a camera to add it
                   </div>
@@ -392,7 +392,7 @@ export default function PlaybackWorkspace({ onExport }: Readonly<PlaybackWorkspa
         </div>
 
         {cams.length > 0 && (
-          <div className="shrink-0 space-y-2 border-t border-[rgba(160,150,245,.22)] px-3 pb-2 pt-1">
+          <div className="shrink-0 space-y-2 border-t border-nb-haze/22 px-3 pb-2 pt-1">
             <PlaybackTimeline
               win={win}
               lanes={lanes}
@@ -445,7 +445,7 @@ export default function PlaybackWorkspace({ onExport }: Readonly<PlaybackWorkspa
               onExport={exportSel}
             />
             {sync.anchorMs == null && (
-              <p className="text-center text-[11px] text-[#9db0d8]">Click the timeline to start playback.</p>
+              <p className="text-center text-[11px] text-nb-dim">Click the timeline to start playback.</p>
             )}
           </div>
         )}
@@ -505,7 +505,7 @@ interface TimelineLegendProps {
 /** The colour key under the timeline; it doubles as the filter, the way Milestone's
  *  legend does. */
 function TimelineLegend({ triggers, onToggle, showEvents, onToggleEvents }: Readonly<TimelineLegendProps>) {
-  const skin = (on: boolean) => (on ? "text-[#f2f6ff]" : "text-[#9db0d8] line-through opacity-50");
+  const skin = (on: boolean) => (on ? "text-nb-ink" : "text-nb-dim line-through opacity-50");
   return (
     <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px]">
       {TRIGGER_KEYS.map((t) => (
@@ -533,7 +533,7 @@ function TimelineLegend({ triggers, onToggle, showEvents, onToggleEvents }: Read
         <span className="h-2.5 w-1 rounded-sm bg-[#38bdf8]" />
         <span>Bookmarks</span>
       </span>
-      <span className="inline-flex items-center gap-1.5 text-[#9db0d8]">
+      <span className="inline-flex items-center gap-1.5 text-nb-dim">
         <span className="h-2.5 w-px bg-red-400" />
         <span>Now</span>
       </span>
@@ -557,13 +557,13 @@ interface GridHeaderProps {
 /** The bar over the grid: what is loaded and what drives it, the investigation
  *  panel, the 1/4/9/16 split, full screen, clear. */
 function GridHeader(p: Readonly<GridHeaderProps>) {
-  const on = "bg-[rgba(34,211,238,.15)] text-[#67e8f9]";
-  const off = "text-[#9db0d8] hover:text-[#f2f6ff]";
+  const on = "bg-nb-teal/15 text-nb-tealb";
+  const off = "text-nb-dim hover:text-nb-ink";
   return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-[rgba(160,150,245,.22)] px-3 py-1.5">
-      <Icon icon="heroicons-outline:film" className="text-sm text-[#9db0d8]" />
+    <div className="flex shrink-0 items-center gap-2 border-b border-nb-haze/22 px-3 py-1.5">
+      <Icon icon="heroicons-outline:film" className="text-sm text-nb-dim" />
       <span className="text-[13px] font-medium">Playback</span>
-      <span className="text-[11px] text-[#9db0d8]">
+      <span className="text-[11px] text-nb-dim">
         {p.camCount ? `${plural(p.camCount, "camera")} · ${p.target}` : "no cameras"}
       </span>
       <div className="ml-auto flex items-center gap-1">
@@ -604,7 +604,7 @@ function GridHeader(p: Readonly<GridHeaderProps>) {
           <Icon icon={p.fullscreen ? "heroicons-outline:arrows-pointing-in" : "heroicons-outline:arrows-pointing-out"} />
         </button>
         {p.camCount > 0 && (
-          <button type="button" onClick={p.onClear} className="ml-1 text-[12px] text-[#9db0d8] hover:text-[#67e8f9]">
+          <button type="button" onClick={p.onClear} className="ml-1 text-[12px] text-nb-dim hover:text-nb-tealb">
             Clear
           </button>
         )}
@@ -617,9 +617,9 @@ function GridHeader(p: Readonly<GridHeaderProps>) {
 function EmptyGrid({ missingId }: Readonly<{ missingId: string | null }>) {
   if (missingId) {
     return (
-      <div className="flex h-full flex-col items-center justify-center text-center text-[#9db0d8]">
+      <div className="flex h-full flex-col items-center justify-center text-center text-nb-dim">
         <Icon icon="heroicons:exclamation-triangle" className="mb-3 text-5xl text-red-400/70" />
-        <p className="font-medium text-[#f2f6ff]">That camera is not in this estate</p>
+        <p className="font-medium text-nb-ink">That camera is not in this estate</p>
         <p className="mt-1 max-w-md text-sm">
           No recorder here owns camera {missingId}. It may have been removed, or belong to a recorder this account
           cannot see.
@@ -628,9 +628,9 @@ function EmptyGrid({ missingId }: Readonly<{ missingId: string | null }>) {
     );
   }
   return (
-    <div className="flex h-full flex-col items-center justify-center text-center text-[#9db0d8]">
+    <div className="flex h-full flex-col items-center justify-center text-center text-nb-dim">
       <Icon icon="heroicons-outline:play-circle" className="mb-3 text-5xl opacity-40" />
-      <p className="font-medium text-[#f2f6ff]">Pick cameras to play back</p>
+      <p className="font-medium text-nb-ink">Pick cameras to play back</p>
       <p className="mt-1 max-w-md text-sm">
         Tick cameras on the left: up to 16 play in sync. Pick a day on the calendar, then click the timeline to jump.
       </p>

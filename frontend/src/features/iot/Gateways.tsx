@@ -82,11 +82,16 @@ function uptime(sec: number): string {
 export default function GatewaysPage() {
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // A tenant without the IoT module gets a sentence, not the API's refusal in
+  // red: nothing is broken, the module is just not on this licence.
+  const { hasModule } = useAuth();
+  const licensed = hasModule("iot");
 
   const gwQ = useQuery({
     queryKey: ["iot-gateways"],
     queryFn: () => iot.gateways.list(),
     refetchInterval: 30_000,
+    enabled: licensed,
   });
 
   const gateways = useMemo(() => gwQ.data?.gateways ?? [], [gwQ.data]);
@@ -132,44 +137,24 @@ export default function GatewaysPage() {
                 nothing this console could add. */}
             <div className="flex items-center gap-3 px-4 pb-1 pt-1 font-mono text-[10px] uppercase tracking-[1.2px]">
               <span className="flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-nb-good shadow-[0_0_5px_#34d399]" />
+                <span className="h-1.5 w-1.5 rounded-full bg-nb-good shadow-[0_0_5px_rgb(var(--nb-c-good))]" />
                 <span className="text-nb-soft">{onlineCount} online</span>
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-nb-crit shadow-[0_0_5px_rgba(248,113,113,.6)]" />
+                <span className="h-1.5 w-1.5 rounded-full bg-nb-crit shadow-[0_0_5px_rgb(var(--nb-c-crit)/.6)]" />
                 <span className="text-nb-faint">{gateways.length - onlineCount} offline</span>
               </span>
             </div>
 
-            {gwQ.isLoading ? (
-              <div className="px-4 py-6 text-center text-xs text-nb-faint">
-                <Icon icon="svg-spinners:180-ring" className="mx-auto mb-1 text-base text-nb-teal" />
-                Loading…
-              </div>
-            ) : gwQ.isError ? (
-              // The fleet server being unreachable is a sentence, not a stack
-              // trace: the API already says which host it tried.
-              <div className="px-4 py-6 text-center text-xs leading-relaxed text-nb-crit">
-                {apiError(gwQ.error, "Could not reach the gateway server")}
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="px-4 py-6 text-center text-xs text-nb-faint">
-                {gateways.length === 0
-                  ? "No gateways have enrolled yet. They appear here once they report to the gateway server."
-                  : "No matches."}
-              </div>
-            ) : (
-              <div className="space-y-1.5 px-3 py-2">
-                {filtered.map((g) => (
-                  <GatewayRow
-                    key={g.gatewayId}
-                    gw={g}
-                    selected={effectiveId === g.gatewayId}
-                    onSelect={() => setSelectedId(g.gatewayId)}
-                  />
-                ))}
-              </div>
-            )}
+            <GatewayListBody
+              licensed={licensed}
+              loading={gwQ.isLoading}
+              error={gwQ.isError ? gwQ.error : null}
+              total={gateways.length}
+              filtered={filtered}
+              selectedId={effectiveId}
+              onSelect={setSelectedId}
+            />
 
             <p className="border-t border-nb-line px-4 pb-2 pt-3 text-[11px] leading-relaxed text-nb-faint">
               Gateways enrol on the gateway server. Nothing is onboarded here.
@@ -192,6 +177,72 @@ export default function GatewaysPage() {
   );
 }
 
+/** The fleet list under the header: one sentence for each state it can be in,
+ *  or the rows themselves. */
+function GatewayListBody({
+  licensed,
+  loading,
+  error,
+  total,
+  filtered,
+  selectedId,
+  onSelect,
+}: Readonly<{
+  licensed: boolean;
+  loading: boolean;
+  error: unknown;
+  total: number;
+  filtered: IotGateway[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}>) {
+  if (!licensed) {
+    return (
+      <div className="px-4 py-6 text-center text-xs leading-relaxed text-nb-faint">
+        The IoT module is not on this licence. Ask an administrator to enable it.
+      </div>
+    );
+  }
+  if (loading) {
+    return (
+      <div className="px-4 py-6 text-center text-xs text-nb-faint">
+        <Icon icon="svg-spinners:180-ring" className="mx-auto mb-1 text-base text-nb-teal" />
+        Loading…
+      </div>
+    );
+  }
+  if (error) {
+    // The fleet server being unreachable is a sentence, not a stack trace: the
+    // API already says which host it tried.
+    return (
+      <div className="px-4 py-6 text-center text-xs leading-relaxed text-nb-crit">
+        {apiError(error, "Could not reach the gateway server")}
+      </div>
+    );
+  }
+  if (filtered.length === 0) {
+    return (
+      <div className="px-4 py-6 text-center text-xs text-nb-faint">
+        {total === 0
+          ? "No gateways have enrolled yet. They appear here once they report to the gateway server."
+          : "No matches."}
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1.5 px-3 py-2">
+      {filtered.map((g) => (
+        <GatewayRow
+          key={g.gatewayId}
+          gw={g}
+          selected={selectedId === g.gatewayId}
+          onSelect={() => onSelect(g.gatewayId)}
+        />
+      ))}
+    </div>
+  );
+}
+
 function GatewayRow({
   gw,
   selected,
@@ -204,8 +255,8 @@ function GatewayRow({
       onClick={onSelect}
       className={`relative block w-full overflow-hidden rounded-[13px] border px-3 py-2.5 text-left transition ${
         selected
-          ? "border-nb-teal bg-nb-teal/[.08] shadow-[0_0_0_1px_rgba(34,211,238,.4)]"
-          : "border-nb-line bg-[rgba(150,180,245,.04)] hover:border-nb-teal/50 hover:bg-nb-teal/[.06]"
+          ? "border-nb-teal bg-nb-teal/[.08] shadow-[0_0_0_1px_rgb(var(--nb-c-teal)/.4)]"
+          : "border-nb-line bg-nb-mist/4 hover:border-nb-teal/50 hover:bg-nb-teal/[.06]"
       }`}
     >
       {selected && <span className="absolute bottom-0 left-0 top-0 w-0.5 rounded-l-sm bg-nb-teal" />}
@@ -213,7 +264,7 @@ function GatewayRow({
         <span className="flex min-w-0 items-center gap-1.5">
           <span
             className={`h-2 w-2 shrink-0 rounded-full ${
-              online ? "bg-nb-good shadow-[0_0_5px_#34d399]" : "bg-nb-crit shadow-[0_0_5px_rgba(248,113,113,.6)]"
+              online ? "bg-nb-good shadow-[0_0_5px_rgb(var(--nb-c-good))]" : "bg-nb-crit shadow-[0_0_5px_rgb(var(--nb-c-crit)/.6)]"
             }`}
           />
           <p className="truncate font-mono text-xs font-semibold text-nb-ink">{gatewayName(gw)}</p>
@@ -260,7 +311,7 @@ function GatewayDetail({ gw }: Readonly<{ gw: IotGateway }>) {
   );
 
   return (
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[13px] border border-nb-line bg-[rgba(150,180,245,.04)]">
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[13px] border border-nb-line bg-nb-mist/4">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-nb-line px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-2.5">
           <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-nb-teal/40 bg-nb-teal/[.12] text-nb-teal">
@@ -357,7 +408,7 @@ function GatewayDetail({ gw }: Readonly<{ gw: IotGateway }>) {
               return (
                 <li
                   key={c.id}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[10px] border border-nb-line bg-[rgba(150,180,245,.04)] px-3 py-2"
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[10px] border border-nb-line bg-nb-mist/4 px-3 py-2"
                 >
                   <StatusDot status={c.arrived?.points ? "online" : "unknown"} />
                   <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-nb-ink">{c.name}</span>
@@ -397,7 +448,7 @@ function GatewayDetail({ gw }: Readonly<{ gw: IotGateway }>) {
                 }`}
               >
                 {t.label}
-                <span className="rounded-full border border-nb-line bg-[rgba(150,180,245,.06)] px-1.5 font-mono text-[10px] tabular-nums text-nb-soft">
+                <span className="rounded-full border border-nb-line bg-nb-mist/6 px-1.5 font-mono text-[10px] tabular-nums text-nb-soft">
                   {t.devices}
                 </span>
                 {/* The warning rides on the tab, so a fault in a category
@@ -410,7 +461,7 @@ function GatewayDetail({ gw }: Readonly<{ gw: IotGateway }>) {
 
         <div className="mb-2 mt-3 flex flex-wrap items-center gap-2">
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-nb-faint">Devices</p>
-          <span className="rounded-full border border-nb-line bg-[rgba(150,180,245,.06)] px-1.5 font-mono text-[10px] font-semibold tabular-nums text-nb-soft">
+          <span className="rounded-full border border-nb-line bg-nb-mist/6 px-1.5 font-mono text-[10px] font-semibold tabular-nums text-nb-soft">
             {devices.length}
           </span>
           <span className="flex-1" />
@@ -550,12 +601,12 @@ function DeviceItem({
     onError: (e) => toast.error(apiError(e, "Could not retire that device")),
   });
   return (
-    <li className="overflow-hidden rounded-[10px] border border-nb-line bg-[rgba(150,180,245,.04)]">
+    <li className="overflow-hidden rounded-[10px] border border-nb-line bg-nb-mist/4">
       <div className="flex items-center gap-2 pr-3">
       <button
         onClick={onToggle}
         aria-expanded={open}
-        className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-left transition hover:bg-white/5"
+        className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-left transition hover:bg-nb-glint/5"
       >
         <Icon
           icon={open ? "heroicons-outline:chevron-down" : "heroicons-outline:chevron-right"}
@@ -1005,7 +1056,7 @@ function GatewayAlerts({ gatewayId }: Readonly<{ gatewayId: string }>) {
     <>
       <div className="mb-2 mt-4 flex flex-wrap items-center gap-2">
         <p className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-nb-faint">Faults</p>
-        <span className="rounded-full border border-nb-line bg-[rgba(150,180,245,.06)] px-1.5 font-mono text-[10px] font-semibold tabular-nums text-nb-soft">
+        <span className="rounded-full border border-nb-line bg-nb-mist/6 px-1.5 font-mono text-[10px] font-semibold tabular-nums text-nb-soft">
           {alerts.length}
         </span>
         {open > 0 && <span className="text-[11px] text-nb-warn">{open} not acknowledged</span>}
@@ -1031,7 +1082,7 @@ function GatewayAlerts({ gatewayId }: Readonly<{ gatewayId: string }>) {
             return (
               <li
                 key={a.alert_id}
-                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[10px] border border-nb-line bg-[rgba(150,180,245,.04)] px-3 py-2"
+                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[10px] border border-nb-line bg-nb-mist/4 px-3 py-2"
               >
                 <span
                   className={`h-2 w-2 shrink-0 rounded-full ${
@@ -1094,7 +1145,7 @@ function SectionHead({ label, count }: Readonly<{ label: string; count: number |
     <div className="mb-2 mt-4 flex items-center justify-between">
       <p className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-nb-faint">{label}</p>
       {count != null && (
-        <span className="rounded-full border border-nb-line bg-[rgba(150,180,245,.06)] px-1.5 font-mono text-[10px] font-semibold tabular-nums text-nb-soft">
+        <span className="rounded-full border border-nb-line bg-nb-mist/6 px-1.5 font-mono text-[10px] font-semibold tabular-nums text-nb-soft">
           {count}
         </span>
       )}
@@ -1109,7 +1160,7 @@ function InfoCell({
   children,
 }: Readonly<{ label: string; value: React.ReactNode; hint?: string; children?: React.ReactNode }>) {
   return (
-    <div className="min-w-0 rounded-[10px] border border-nb-line bg-[rgba(150,180,245,.04)] px-3 py-1.5">
+    <div className="min-w-0 rounded-[10px] border border-nb-line bg-nb-mist/4 px-3 py-1.5">
       <p className="font-mono text-[10px] uppercase tracking-[1.4px] text-nb-faint">{label}</p>
       <p className="mt-0.5 truncate text-[13px] font-medium tabular-nums text-nb-ink">{value ?? "—"}</p>
       {hint && <p className="mt-0.5 truncate text-[10px] text-nb-faint">{hint}</p>}

@@ -80,7 +80,7 @@ export default function NotificationTemplatesTab() {
             return (
               <button key={t.template_id}
                   onClick={() => { setSelectedId(t.template_id); setMode("view"); }}
-                  className={`relative w-full flex items-start gap-3 rounded-[10px] px-3 py-2.5 text-left transition border ${isSel ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]" : "border-transparent hover:bg-[rgba(96,165,250,.06)]"}`}
+                  className={`relative w-full flex items-start gap-3 rounded-[10px] px-3 py-2.5 text-left transition border ${isSel ? "border-nb-blue/50 bg-nb-blue/10" : "border-transparent hover:bg-nb-blue/6"}`}
                 >
                   {isSel && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-nb-violet" />}
                   <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-nb-violet/10 text-nb-violetb shrink-0">
@@ -89,7 +89,7 @@ export default function NotificationTemplatesTab() {
                   <span className="flex-1 min-w-0">
                     <span className="flex items-center gap-1.5">
                       <span className="text-sm font-semibold text-nb-ink truncate">{t.name}</span>
-                      <span className="text-[9px] rounded-full px-1.5 py-0.5 font-medium bg-[rgba(10,18,40,.65)] text-nb-faint uppercase shrink-0">{titleize(t.channel_type)}</span>
+                      <span className="text-[9px] rounded-full px-1.5 py-0.5 font-medium bg-nb-surface/65 text-nb-faint uppercase shrink-0">{titleize(t.channel_type)}</span>
                     </span>
                     <span className="block text-[11px] text-nb-faint truncate mt-0.5">{t.subject || t.body?.slice(0, 80)}</span>
                   </span>

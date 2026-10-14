@@ -65,7 +65,7 @@ export default function SopSidePanel({
         {flags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {flags.map((f) => (
-              <span key={f} className="rounded-full bg-[rgba(96,165,250,.1)] px-2 py-0.5 text-[10px] font-medium text-nb-muted">{f}</span>
+              <span key={f} className="rounded-full bg-nb-blue/10 px-2 py-0.5 text-[10px] font-medium text-nb-muted">{f}</span>
             ))}
           </div>
         )}
@@ -81,7 +81,7 @@ export default function SopSidePanel({
   return (
     <Shell title="Transition" onClose={onClose} onEdit={onEdit} onDelete={onDelete}>
       <div className="flex items-center gap-3">
-        <span className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-[rgba(251,191,36,.10)] text-nb-warn shrink-0">
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-nb-warn/10 text-nb-warn shrink-0">
           <Icon icon="heroicons:bolt" className="text-base" />
         </span>
         <div className="min-w-0">
@@ -113,13 +113,13 @@ interface ShellProps {
 
 function Shell({ title, onClose, onEdit, onDelete, children }: Readonly<ShellProps>) {
   return (
-    <aside className="flex h-full w-72 shrink-0 flex-col rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)]">
+    <aside className="flex h-full w-72 shrink-0 flex-col rounded-xl border border-nb-line bg-nb-surface2/50">
       <header className="flex items-center justify-between border-b border-nb-line px-4 py-3">
         <span className="text-xs font-semibold uppercase tracking-wider text-nb-muted">{title}</span>
         <button
           onClick={onClose}
           aria-label="Close"
-          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-nb-muted hover:bg-[rgba(96,165,250,.1)] hover:text-nb-ink"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-nb-muted hover:bg-nb-blue/10 hover:text-nb-ink"
         >
           <Icon icon="heroicons-outline:x-mark" className="text-sm" />
         </button>
@@ -130,7 +130,7 @@ function Shell({ title, onClose, onEdit, onDelete, children }: Readonly<ShellPro
           {onEdit && (
             <button
               onClick={onEdit}
-              className="inline-flex items-center gap-1 rounded-md border border-nb-line px-2.5 py-1.5 text-xs text-nb-ink hover:bg-[rgba(96,165,250,.1)]"
+              className="inline-flex items-center gap-1 rounded-md border border-nb-line px-2.5 py-1.5 text-xs text-nb-ink hover:bg-nb-blue/10"
             >
               <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
             </button>
@@ -138,7 +138,7 @@ function Shell({ title, onClose, onEdit, onDelete, children }: Readonly<ShellPro
           {onDelete && (
             <button
               onClick={onDelete}
-              className="inline-flex items-center gap-1 rounded-md border border-[rgba(248,113,113,.30)] bg-[rgba(248,113,113,.10)] px-2.5 py-1.5 text-xs text-nb-crit hover:bg-[rgba(248,113,113,.20)]"
+              className="inline-flex items-center gap-1 rounded-md border border-nb-crit/30 bg-nb-crit/10 px-2.5 py-1.5 text-xs text-nb-crit hover:bg-nb-crit/20"
             >
               <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
             </button>

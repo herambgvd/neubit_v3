@@ -54,7 +54,7 @@ export default function WebhookTestPanel({ hookId }: Readonly<WebhookTestPanelPr
       </div>
 
       {res && (
-        <div className="space-y-3 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] p-4">
+        <div className="space-y-3 rounded-[10px] border border-nb-line bg-nb-surface3/50 p-4">
           <div className="flex items-center gap-2">
             <span className="text-xs text-nb-faint">Schema</span>
             <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${res.schema_valid ? OUTCOME_PILL.ok : OUTCOME_PILL.failed}`}>

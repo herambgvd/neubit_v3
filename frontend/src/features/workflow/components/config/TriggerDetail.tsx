@@ -27,7 +27,7 @@ export default function TriggerDetail({ trigger, sopName, onEdit, onDelete, onTo
     <div className="flex flex-col flex-1 min-h-0">
       <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-nb-line">
         <div className="flex items-start gap-3 min-w-0">
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-[rgba(251,191,36,.10)] text-nb-warn shrink-0">
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-nb-warn/10 text-nb-warn shrink-0">
             <Icon icon="heroicons:bolt" className="text-lg" />
           </span>
           <div className="min-w-0">
@@ -38,7 +38,7 @@ export default function TriggerDetail({ trigger, sopName, onEdit, onDelete, onTo
                 onClick={onToggle}
                 disabled={toggling}
                 title={enabled ? "Click to disable" : "Click to enable"}
-                className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium transition hover:opacity-80 disabled:opacity-50 ${enabled ? "bg-[rgba(52,211,153,.10)] text-nb-good" : "bg-[rgba(96,165,250,.1)] text-nb-faint"}`}
+                className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium transition hover:opacity-80 disabled:opacity-50 ${enabled ? "bg-nb-good/10 text-nb-good" : "bg-nb-blue/10 text-nb-faint"}`}
               >
                 {enabled ? "Enabled" : "Disabled"}
               </button>
@@ -50,14 +50,14 @@ export default function TriggerDetail({ trigger, sopName, onEdit, onDelete, onTo
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {onTest && (
-            <button onClick={onTest} title="Test trigger" className="inline-flex items-center gap-1 rounded-md border border-nb-line px-2.5 py-1.5 text-xs text-nb-ink hover:bg-[rgba(96,165,250,.1)]">
+            <button onClick={onTest} title="Test trigger" className="inline-flex items-center gap-1 rounded-md border border-nb-line px-2.5 py-1.5 text-xs text-nb-ink hover:bg-nb-blue/10">
               <Icon icon="heroicons-outline:beaker" className="text-sm" /> Test
             </button>
           )}
-          <button onClick={onEdit} className="inline-flex items-center gap-1 rounded-md border border-nb-line px-2.5 py-1.5 text-xs text-nb-ink hover:bg-[rgba(96,165,250,.1)]">
+          <button onClick={onEdit} className="inline-flex items-center gap-1 rounded-md border border-nb-line px-2.5 py-1.5 text-xs text-nb-ink hover:bg-nb-blue/10">
             <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
           </button>
-          <button onClick={onDelete} className="inline-flex items-center gap-1 rounded-md border border-[rgba(248,113,113,.30)] bg-[rgba(248,113,113,.10)] px-2.5 py-1.5 text-xs text-nb-crit hover:bg-[rgba(248,113,113,.20)]">
+          <button onClick={onDelete} className="inline-flex items-center gap-1 rounded-md border border-nb-crit/30 bg-nb-crit/10 px-2.5 py-1.5 text-xs text-nb-crit hover:bg-nb-crit/20">
             <Icon icon="heroicons-outline:trash" className="text-sm" /> Delete
           </button>
         </div>
@@ -81,7 +81,7 @@ export default function TriggerDetail({ trigger, sopName, onEdit, onDelete, onTo
               {conds.map((c, i) => (
                 <li key={i} className="px-3 py-2 text-xs font-mono text-nb-ink flex items-center gap-2 flex-wrap">
                   <span className="text-nb-faint">{c.field}</span>
-                  <span className="rounded-sm bg-[rgba(96,165,250,.1)] px-1.5 py-0.5 text-[10px] text-nb-faint">{OP_LABEL[c.operator] || c.operator}</span>
+                  <span className="rounded-sm bg-nb-blue/10 px-1.5 py-0.5 text-[10px] text-nb-faint">{OP_LABEL[c.operator] || c.operator}</span>
                   <span>{c.value == null ? "—" : stringifyValue(c.operator, c.value)}</span>
                 </li>
               ))}

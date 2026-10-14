@@ -19,9 +19,9 @@ import { isPatternItem, type PatternItem } from "./patternTypes";
  *  pattern still points at a camera that has gone — the thing an operator has to
  *  fix — where grey just says nothing was ever put there. */
 function cellSkin(resolved: boolean, assigned: boolean): string {
-  if (resolved) return "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] text-nb-blueb";
+  if (resolved) return "border-nb-blue/50 bg-nb-blue/10 text-nb-blueb";
   if (assigned) return "border-[rgba(251,146,60,.45)] bg-[rgba(251,146,60,.08)] text-nb-warn";
-  return "border-nb-line bg-[rgba(6,11,26,.3)] text-nb-faint";
+  return "border-nb-line bg-nb-surface3/30 text-nb-faint";
 }
 
 export interface PatternDetailProps {
@@ -44,10 +44,10 @@ export default function PatternDetail({ item, isPattern, groupById, cameraById, 
   const grid = getGroupLayout(group?.layout);
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)]">
+    <section className="flex min-h-0 flex-1 flex-col rounded-[14px] border border-nb-line bg-nb-surface2/50">
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-nb-line px-5 py-4">
         <div className="flex items-start gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-blueb">
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-nb-line bg-nb-surface/60 text-nb-blueb">
             <Icon icon={icon} className="text-xl" />
           </span>
           <div>
@@ -55,7 +55,7 @@ export default function PatternDetail({ item, isPattern, groupById, cameraById, 
             <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-nb-soft">
               <span
                 className={`rounded-full px-2 py-0.5 font-medium uppercase tracking-wide ${
-                  active ? "border border-[rgba(52,211,153,.4)] text-nb-good" : "border border-nb-line text-nb-faint"
+                  active ? "border border-nb-good/40 text-nb-good" : "border border-nb-line text-nb-faint"
                 }`}
               >
                 {active ? "Active" : "Inactive"}
@@ -72,7 +72,7 @@ export default function PatternDetail({ item, isPattern, groupById, cameraById, 
           {isPattern && (
             <Link
               href={`/streaming?pattern_id=${encodeURIComponent(item.id)}&autoplay=1`}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.1)] px-3 py-1.5 text-xs font-medium text-nb-blueb transition hover:bg-[rgba(96,165,250,.16)]"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-nb-blue/40 bg-nb-blue/10 px-3 py-1.5 text-xs font-medium text-nb-blueb transition hover:bg-nb-blue/16"
             >
               <Icon icon="heroicons-outline:play" className="text-sm" />
               Open in streaming
@@ -112,7 +112,7 @@ export default function PatternDetail({ item, isPattern, groupById, cameraById, 
                       key={gid}
                       className="flex items-center gap-3 rounded-lg border border-nb-line px-3 py-2"
                     >
-                      <span className="flex h-6 w-6 items-center justify-center rounded-full border border-nb-line bg-[rgba(10,18,40,.6)] text-[11px] font-semibold text-nb-blueb">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full border border-nb-line bg-nb-surface/60 text-[11px] font-semibold text-nb-blueb">
                         {i + 1}
                       </span>
                       <span className="min-w-0 flex-1">
@@ -133,7 +133,7 @@ export default function PatternDetail({ item, isPattern, groupById, cameraById, 
           </DetailField>
         ) : (
           <DetailField label="Camera layout">
-            <div className="rounded-lg border border-nb-line bg-[rgba(6,11,26,.55)] p-2">
+            <div className="rounded-lg border border-nb-line bg-nb-surface3/55 p-2">
               <div className="grid aspect-video gap-1.5" style={groupGridStyle(grid)}>
                 {Array.from({ length: grid.capacity }, (_, i) => {
                   const cid = group?.camera_ids?.[i];

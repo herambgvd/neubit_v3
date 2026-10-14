@@ -27,7 +27,7 @@ export default function StatusBadge({ status, className = "" }: Readonly<StatusB
 // Bare status dot (for dense table rows). NeuBit console dot palette — aligned to
 // nb.good/nb.crit/nb.warn (the preset .dot tokens stay for the light-theme pills).
 const NB_DOT = {
-  online: "bg-nb-good shadow-[0_0_5px_#34d399]",
+  online: "bg-nb-good shadow-[0_0_5px_rgb(var(--nb-c-good))]",
   offline: "bg-nb-crit",
   connecting: "bg-nb-warn",
   error: "bg-nb-crit",

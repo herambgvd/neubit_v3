@@ -135,7 +135,7 @@ export default function EmissionFactorsEditor({ site }: Readonly<{ site: SitePub
           {rows.map((r, i) => (
             <div
               key={r._key}
-              className="grid grid-cols-2 items-end gap-x-3 gap-y-2 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] px-3 py-2.5 md:grid-cols-[.9fr_2fr_1fr_auto]"
+              className="grid grid-cols-2 items-end gap-x-3 gap-y-2 rounded-[10px] border border-nb-line bg-nb-surface3/40 px-3 py-2.5 md:grid-cols-[.9fr_2fr_1fr_auto]"
             >
               <FInput label="kg CO₂ / kWh" mono inputMode="decimal" value={r.value} onChange={(v) => set(i, { value: v })} placeholder="0.716" />
               <FInput

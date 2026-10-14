@@ -101,7 +101,7 @@ export default function PayloadFieldsBuilder({
   const checkedCount = fields.filter((f) => f.checked).length;
 
   return (
-    <div className="space-y-4 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] p-3">
+    <div className="space-y-4 rounded-[10px] border border-nb-line bg-nb-surface3/50 p-3">
       {/* Step 1 — sample */}
       <Step number={1} title="Paste an example event from your vendor">
         <textarea
@@ -157,7 +157,7 @@ export default function PayloadFieldsBuilder({
             {Object.entries(groups).map(([groupKey, groupFields]) => {
               const collapsed = collapsedGroups[groupKey];
               return (
-                <div key={groupKey} className="rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.5)]">
+                <div key={groupKey} className="rounded-[8px] border border-nb-line bg-nb-surface/50">
                   {/* Group header */}
                   <button
                     type="button"
@@ -221,7 +221,7 @@ function Step({ number, title, hint, children }: Readonly<StepProps>) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[rgba(96,165,250,.15)] text-[10px] font-bold text-nb-blueb">
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-nb-blue/15 text-[10px] font-bold text-nb-blueb">
           {number}
         </span>
         <div>
@@ -245,7 +245,7 @@ interface FieldRowProps {
 function FieldRow({ field, preview, onCheck, onName }: Readonly<FieldRowProps>) {
   return (
     <label
-      className={`grid cursor-pointer grid-cols-[20px_1fr_1fr_110px] items-center gap-2 px-2 py-1.5 transition hover:bg-[rgba(96,165,250,.05)] ${
+      className={`grid cursor-pointer grid-cols-[20px_1fr_1fr_110px] items-center gap-2 px-2 py-1.5 transition hover:bg-nb-blue/5 ${
         !field.checked ? "opacity-60" : ""
       }`}
     >

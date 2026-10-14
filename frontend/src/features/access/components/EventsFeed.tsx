@@ -299,7 +299,7 @@ export default function EventsFeed({ instanceId, doorIndex }: Readonly<EventsFee
                       {summarize(evt, { doorLabel, cardholderLabel, cardLabel })}
                     </span>
                     {count > 1 ? (
-                      <span className="ml-auto shrink-0 rounded-sm bg-black/10 px-1.5 py-0.5 text-[10px] font-semibold dark:bg-white/10">
+                      <span className="ml-auto shrink-0 rounded-sm bg-black/10 px-1.5 py-0.5 text-[10px] font-semibold dark:bg-nb-glint/10">
                         x{count}
                       </span>
                     ) : null}

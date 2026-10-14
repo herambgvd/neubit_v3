@@ -53,7 +53,7 @@ function MapPopupStyleFix() {
           0 0 3px #fff,
           0 0 3px #fff,
           0 0 4px #fff,
-          0 1px 3px rgba(255, 255, 255, 0.95);
+          0 1px 3px rgb(var(--nb-c-glint)/.95);
       }
     `}</style>
   );

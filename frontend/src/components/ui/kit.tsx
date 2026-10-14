@@ -31,7 +31,7 @@ export interface CardProps {
 
 export function Card({ className = "", children }: Readonly<CardProps>) {
   return (
-    <div className={`rounded-lg bg-[rgba(8,15,34,.5)] border border-nb-line ${className}`}>{children}</div>
+    <div className={`rounded-lg bg-nb-surface2/50 border border-nb-line ${className}`}>{children}</div>
   );
 }
 
@@ -60,14 +60,14 @@ const VARIANTS = {
   // surface. Console's <ActionButton> is this variant, so an inline Save and a modal
   // footer's Create are the same button rather than two that merely look similar.
   action:
-    "border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.14)] text-nb-blueb hover:bg-[rgba(96,165,250,.22)]",
-  success: "bg-nb-teal text-[#062330] font-semibold hover:bg-nb-tealb", // create actions — Surveillance teal
+    "border border-nb-blue/50 bg-nb-blue/14 text-nb-blueb hover:bg-nb-blue/22",
+  success: "bg-nb-teal text-nb-onteal font-semibold hover:bg-nb-tealb", // create actions — Surveillance teal
   // Disruptive but reversible (rotate a token, force a re-sync): warns without
   // claiming the action destroys data, which is what `danger` means.
   warn: "border border-nb-warn/40 bg-nb-warn/10 text-nb-warn hover:bg-nb-warn/20",
   danger: "border border-nb-crit/40 bg-nb-crit/10 text-nb-crit hover:bg-nb-crit/20", // delete actions
-  secondary: "border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted hover:border-nb-blue hover:text-nb-blueb",
-  ghost: "bg-transparent text-nb-muted hover:text-nb-ink hover:bg-white/5",
+  secondary: "border border-nb-line bg-nb-surface/65 text-nb-muted hover:border-nb-blue hover:text-nb-blueb",
+  ghost: "bg-transparent text-nb-muted hover:text-nb-ink hover:bg-nb-glint/5",
 };
 
 export type ButtonVariant = keyof typeof VARIANTS;
@@ -249,7 +249,7 @@ export function Checkbox({ label, checked, onChange, disabled, className = "", .
     <label className={`inline-flex cursor-pointer select-none items-center gap-2 ${disabled ? "opacity-50" : ""} ${className}`}>
       <span
         className={`grid h-4 w-4 shrink-0 place-items-center rounded-[4px] border transition ${
-          checked ? "border-nb-blue bg-nb-blue text-[#0c1530]" : "border-nb-line bg-nb-field"
+          checked ? "border-nb-blue bg-nb-blue text-nb-bg" : "border-nb-line bg-nb-field"
         }`}
       >
         {checked && <Icon icon="heroicons-mini:check" className="text-[13px]" />}
@@ -293,8 +293,8 @@ export function Textarea({
 }
 
 const BADGE = {
-  slate: "bg-white/5 text-nb-muted border-nb-line",
-  neutral: "bg-white/5 text-nb-muted border-nb-line",
+  slate: "bg-nb-glint/5 text-nb-muted border-nb-line",
+  neutral: "bg-nb-glint/5 text-nb-muted border-nb-line",
   green: "bg-green-500/10 text-green-400 border-green-500/20",
   red: "bg-red-500/10 text-red-400 border-red-500/20",
   indigo: "bg-nb-teal/10 text-nb-teal border-nb-teal/25",
@@ -347,7 +347,7 @@ export function Avatar({ src, name, size = 28, className = "" }: Readonly<Avatar
   return (
     <div
       style={dim}
-      className={`rounded-full bg-white/5 border border-nb-line text-nb-ink flex items-center justify-center font-semibold shrink-0 ${className}`}
+      className={`rounded-full bg-nb-glint/5 border border-nb-line text-nb-ink flex items-center justify-center font-semibold shrink-0 ${className}`}
     >
       <span style={{ fontSize: Math.round(size * 0.42) }}>{initials}</span>
     </div>
@@ -368,7 +368,7 @@ export function FullPageLoader({ label = "Loading" }: Readonly<{ label?: ReactNo
       <div className="relative h-14 w-14">
         <div className="absolute inset-0 rounded-full border-2 border-nb-line border-t-nb-teal animate-spin" />
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="h-7 w-7 rounded-md bg-nb-teal flex items-center justify-center text-[#062330] font-bold text-sm">
+          <div className="h-7 w-7 rounded-md bg-nb-teal flex items-center justify-center text-nb-onteal font-bold text-sm">
             N
           </div>
         </div>
@@ -407,7 +407,7 @@ const _METRIC_TONE = {
   warn: "text-nb-warn bg-nb-warn/10",
   bad: "text-nb-crit bg-nb-crit/10",
   info: "text-nb-teal bg-nb-teal/10",
-  neutral: "text-nb-muted bg-white/5",
+  neutral: "text-nb-muted bg-nb-glint/5",
 };
 const _METRIC_BAR: Record<MetricTone, string> = {
   ok: "bg-nb-good/70",
@@ -434,7 +434,7 @@ export function MetricCard({ label, value, icon, tone = "info", hint, className 
   const barCls = (_METRIC_BAR as Record<string, string | undefined>)[tone] || _METRIC_BAR.info;
   return (
     <div
-      className={`relative flex items-center gap-3 overflow-hidden rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] px-4 py-3.5 ${className}`}
+      className={`relative flex items-center gap-3 overflow-hidden rounded-xl border border-nb-line bg-nb-surface2/50 px-4 py-3.5 ${className}`}
     >
       <span className={`absolute inset-y-0 left-0 w-1 ${barCls}`} />
       {icon && (
@@ -491,7 +491,7 @@ export interface ToggleProps {
  * it toggled anything, or which way it currently sat.
  *
  * THE OFF STATE IS DRAWN, and drawn strongly enough to read as a control. The
- * first version used `bg-white/10` on this navy, which was nearly invisible: "off"
+ * first version used `bg-nb-glint/10` on this navy, which was nearly invisible: "off"
  * and "there is no control here" looked identical. The second lifted it to a faint
  * tinted pill and it was still too quiet on a dense form. This one gives OFF a
  * solid track and a bright knob, so the difference from ON is the COLOUR of a
@@ -518,11 +518,11 @@ export function Toggle({ checked, onChange, disabled, label, labelledBy }: Reado
           checked
             ? "border-nb-teal bg-nb-teal"
             : "border-nb-line2 bg-[rgba(148,163,184,.35)]"
-        } group-hover:brightness-110 group-focus-visible:ring-2 group-focus-visible:ring-nb-blue group-focus-visible:ring-offset-2 group-focus-visible:ring-offset-[#0b1228]`}
+        } group-hover:brightness-110 group-focus-visible:ring-2 group-focus-visible:ring-nb-blue group-focus-visible:ring-offset-2 group-focus-visible:ring-offset-nb-field`}
       >
         <span
           className={`inline-block h-3.5 w-3.5 rounded-full shadow-sm transition-transform ${
-            checked ? "translate-x-[18px] bg-[#062330]" : "translate-x-[3px] bg-white"
+            checked ? "translate-x-[18px] bg-nb-onteal" : "translate-x-[3px] bg-white"
           }`}
         />
       </span>
@@ -671,7 +671,7 @@ export function Modal({ open, onClose, title, subtitle, children, footer, wide, 
         role="dialog"
         aria-modal="true"
         aria-labelledby={title ? MODAL_TITLE_ID : undefined}
-        className={`relative flex max-h-[85vh] w-full ${width} flex-col rounded-xl bg-[rgba(8,15,34,.93)] border border-nb-line backdrop-blur-md shadow-2xl animate-modal-in`}
+        className={`relative flex max-h-[85vh] w-full ${width} flex-col rounded-xl bg-nb-surface2/93 border border-nb-line backdrop-blur-md shadow-2xl animate-modal-in`}
       >
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-nb-line px-5 py-4">
           <div className="min-w-0">
@@ -708,7 +708,7 @@ export function Drawer({ open, onClose, title, subtitle, children, width = "max-
   if (!open) return null;
   return (
     <Overlay onClose={onClose} wrapper="justify-end">
-      <div className={`relative h-full w-full ${width} bg-[rgba(8,15,34,.93)] border-l border-nb-line backdrop-blur-md shadow-2xl flex flex-col animate-modal-in`}>
+      <div className={`relative h-full w-full ${width} bg-nb-surface2/93 border-l border-nb-line backdrop-blur-md shadow-2xl flex flex-col animate-modal-in`}>
         <div className="flex items-start justify-between border-b border-nb-line px-5 py-4 shrink-0">
           <div className="min-w-0">
             <h3 className="text-base font-semibold text-nb-ink truncate">{title}</h3>

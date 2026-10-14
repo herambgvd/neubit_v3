@@ -121,7 +121,7 @@ export default function NameplateWizard({
     <Modal open onClose={onClose} title="Machine details" subtitle={`${at + 1} of ${steps.length}`} size="md">
       <div className="px-5 py-5">
         {/* progress, as a line and not a number to decode */}
-        <div className="mb-5 h-[3px] overflow-hidden rounded-full bg-white/[.07]">
+        <div className="mb-5 h-[3px] overflow-hidden rounded-full bg-nb-glint/[.07]">
           <motion.div
             className="h-full rounded-full bg-nb-blue"
             initial={false}
@@ -184,7 +184,7 @@ export default function NameplateWizard({
                     value={low}
                     onChange={(e) => setLow(e.target.value)}
                     placeholder="5"
-                    className="h-9 w-20 rounded-[9px] border border-white/[.14] bg-transparent px-2.5 text-center font-mono text-[13px] text-nb-ink outline-none focus:border-nb-blue/60"
+                    className="h-9 w-20 rounded-[9px] border border-nb-glint/[.14] bg-transparent px-2.5 text-center font-mono text-[13px] text-nb-ink outline-none focus:border-nb-blue/60"
                   />
                   <span className="text-[13px] text-nb-muted">to</span>
                   <input
@@ -193,7 +193,7 @@ export default function NameplateWizard({
                     value={high}
                     onChange={(e) => setHigh(e.target.value)}
                     placeholder="7"
-                    className="h-9 w-20 rounded-[9px] border border-white/[.14] bg-transparent px-2.5 text-center font-mono text-[13px] text-nb-ink outline-none focus:border-nb-blue/60"
+                    className="h-9 w-20 rounded-[9px] border border-nb-glint/[.14] bg-transparent px-2.5 text-center font-mono text-[13px] text-nb-ink outline-none focus:border-nb-blue/60"
                   />
                   <span className="text-[13px] text-nb-muted">°C</span>
                 </div>
@@ -227,7 +227,7 @@ export default function NameplateWizard({
                     value={one}
                     onChange={(e) => setOne(e.target.value)}
                     placeholder="350"
-                    className="h-9 w-28 rounded-[9px] border border-white/[.14] bg-transparent px-2.5 text-center font-mono text-[13px] text-nb-ink outline-none focus:border-nb-blue/60"
+                    className="h-9 w-28 rounded-[9px] border border-nb-glint/[.14] bg-transparent px-2.5 text-center font-mono text-[13px] text-nb-ink outline-none focus:border-nb-blue/60"
                   />
                   <span className="text-[13px] text-nb-muted">{q.unit}</span>
                 </div>
@@ -250,7 +250,7 @@ export default function NameplateWizard({
             {error && <p className="mt-3 text-[12.5px] text-nb-crit">{error}</p>}
 
             {blocked && (
-              <p className="mt-5 border-t border-white/[.06] pt-3 text-[12px] text-nb-faint">
+              <p className="mt-5 border-t border-nb-glint/[.06] pt-3 text-[12px] text-nb-faint">
                 Skip it and one thing stays off: {blocked}. Everything else keeps working.
               </p>
             )}

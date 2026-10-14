@@ -94,14 +94,14 @@ export default function PlaybackChannelPicker({
       <label className="relative block">
         <Icon
           icon="heroicons-outline:magnifying-glass"
-          className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-[#9db0d8]"
+          className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-nb-dim"
         />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search channels or recorders…"
           aria-label="Search channels"
-          className="h-8 w-full rounded-lg border border-[rgba(150,180,245,.28)] bg-transparent pl-8 pr-7 text-[13px] text-[#f2f6ff] placeholder:text-[#7e93bf] outline-hidden focus:border-muted"
+          className="h-8 w-full rounded-lg border border-nb-mist/28 bg-transparent pl-8 pr-7 text-[13px] text-nb-ink placeholder:text-nb-dim2 outline-hidden focus:border-muted"
         />
         {searching && (
           <button
@@ -109,7 +109,7 @@ export default function PlaybackChannelPicker({
             onClick={() => setSearch("")}
             title="Clear search"
             aria-label="Clear search"
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-[#9db0d8] transition hover:text-[#f2f6ff]"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-nb-dim transition hover:text-nb-ink"
           >
             <Icon icon="heroicons-mini:x-mark" className="text-sm" />
           </button>
@@ -119,24 +119,24 @@ export default function PlaybackChannelPicker({
       {searching && (
         // The count is the point of searching a rail this size: it says whether the
         // channel is missing or merely further down.
-        <p className="px-1 text-[10.5px] text-[#9db0d8]">
+        <p className="px-1 text-[10.5px] text-nb-dim">
           {shown} of {total} channels match
         </p>
       )}
 
       {loading ? (
-        <p className="px-2 py-6 text-center text-xs text-[#9db0d8]">Loading channels…</p>
+        <p className="px-2 py-6 text-center text-xs text-nb-dim">Loading channels…</p>
       ) : error ? (
         // A recorder that did not answer must never read as an estate with no
         // cameras — one sends the operator to onboarding, the other to the recorder.
         <p className="px-2 py-6 text-center text-xs text-red-300">{error}</p>
       ) : total === 0 ? (
-        <p className="px-2 py-6 text-center text-xs text-[#9db0d8]">
+        <p className="px-2 py-6 text-center text-xs text-nb-dim">
           No channels. Cameras are owned by recorders — enrol one under Configurations →
           Recorders.
         </p>
       ) : shown === 0 ? (
-        <p className="px-2 py-6 text-center text-xs text-[#9db0d8]">
+        <p className="px-2 py-6 text-center text-xs text-nb-dim">
           No channel matches “{search.trim()}”.
         </p>
       ) : (
@@ -150,25 +150,25 @@ export default function PlaybackChannelPicker({
                   type="button"
                   onClick={() => toggleGroup(g.key)}
                   aria-expanded={open}
-                  className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left transition hover:bg-[rgba(150,180,245,.07)]"
+                  className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left transition hover:bg-nb-mist/7"
                 >
                   <Icon
                     icon="heroicons-mini:chevron-right"
-                    className={`shrink-0 text-sm text-[#9db0d8] transition-transform ${open ? "rotate-90" : ""}`}
+                    className={`shrink-0 text-sm text-nb-dim transition-transform ${open ? "rotate-90" : ""}`}
                   />
-                  <Icon icon={g.icon} className="shrink-0 text-sm text-[#9db0d8]" />
-                  <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-[#f2f6ff]">
+                  <Icon icon={g.icon} className="shrink-0 text-sm text-nb-dim" />
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-nb-ink">
                     {g.label}
                   </span>
                   {/* online / total, so a recorder whose channels are all down is
                       visible before an operator searches its footage. */}
-                  <span className="shrink-0 rounded-full bg-[rgba(150,180,245,.08)] px-1.5 text-[10px] font-semibold tabular-nums text-[#9db0d8]">
+                  <span className="shrink-0 rounded-full bg-nb-mist/8 px-1.5 text-[10px] font-semibold tabular-nums text-nb-dim">
                     {onlineCount}/{g.rows.length}
                   </span>
                 </button>
 
                 {open && (
-                  <div className="ml-3 space-y-0.5 border-l border-[rgba(150,180,245,.16)] pl-1.5">
+                  <div className="ml-3 space-y-0.5 border-l border-nb-mist/16 pl-1.5">
                     {g.rows.map((r) => {
                       const on = checkedKeys.has(r.key);
                       const blocked = !on && atCap;
@@ -176,10 +176,10 @@ export default function PlaybackChannelPicker({
                         <label
                           key={r.key}
                           title={blocked ? `${r.name} — uncheck one to add another` : r.name}
-                          className={`flex w-full min-w-0 items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left text-[13px] text-[#f2f6ff] transition ${
+                          className={`flex w-full min-w-0 items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left text-[13px] text-nb-ink transition ${
                             blocked
                               ? "cursor-not-allowed opacity-40"
-                              : "cursor-pointer hover:bg-[rgba(150,180,245,.07)]"
+                              : "cursor-pointer hover:bg-nb-mist/7"
                           }`}
                         >
                           <input
@@ -193,14 +193,14 @@ export default function PlaybackChannelPicker({
                             className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition ${
                               on
                                 ? "border-foreground bg-foreground text-background"
-                                : "border-[rgba(150,180,245,.28)]"
+                                : "border-nb-mist/28"
                             }`}
                           >
                             {on && <Icon icon="heroicons-solid:check" className="text-[11px]" />}
                           </span>
                           <span
                             className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                              isOnline(r.status) ? "bg-nb-good" : "bg-[#7e93bf]"
+                              isOnline(r.status) ? "bg-nb-good" : "bg-nb-dim2"
                             }`}
                             title={r.status || "unknown"}
                           />

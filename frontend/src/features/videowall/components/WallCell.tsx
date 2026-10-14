@@ -76,17 +76,17 @@ export default function WallCell({
           control ? "cursor-pointer" : ""
         } ${
           dropActive
-            ? "outline outline-2 -outline-offset-2 outline-[#22d3ee]"
-            : "outline outline-1 -outline-offset-1 outline-[rgba(160,150,245,.12)]"
+            ? "outline outline-2 -outline-offset-2 outline-nb-teal"
+            : "outline outline-1 -outline-offset-1 outline-nb-haze/12"
         }`}
       >
         <Icon
           icon="heroicons:video-camera"
-          className="text-lg text-[rgba(103,232,249,.12)] transition group-hover:text-[rgba(103,232,249,.4)]"
+          className="text-lg text-nb-tealb/12 transition group-hover:text-nb-tealb/40"
         />
         {control && (
           <span
-            className={`pointer-events-none absolute bottom-1 font-mono text-[9px] font-medium text-[#67e8f9] transition-opacity ${
+            className={`pointer-events-none absolute bottom-1 font-mono text-[9px] font-medium text-nb-tealb transition-opacity ${
               dropActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
             }`}
           >
@@ -105,7 +105,7 @@ export default function WallCell({
       onDragLeave={() => setDropActive(false)}
       onDrop={onDrop}
       className={`group relative min-h-0 overflow-hidden bg-black transition ${
-        dropActive ? "outline outline-2 -outline-offset-2 outline-[#22d3ee]" : "outline outline-1 -outline-offset-1 outline-[rgba(160,150,245,.18)]"
+        dropActive ? "outline outline-2 -outline-offset-2 outline-nb-teal" : "outline outline-1 -outline-offset-1 outline-nb-haze/18"
       }`}
     >
       <LivePlayer

@@ -66,22 +66,22 @@ export default function CameraQuickPicker({ open, cameras = [], mountedIds, tile
         onMouseDown={onClose}
       />
       <div
-        className="w-full max-w-md overflow-hidden rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.95)] shadow-2xl backdrop-blur-xs"
+        className="w-full max-w-md overflow-hidden rounded-[13px] border border-nb-haze/22 bg-nb-surface2/95 shadow-2xl backdrop-blur-xs"
       >
-        <div className="flex items-center gap-2 border-b border-[rgba(160,150,245,.22)] px-3">
-          <Icon icon="heroicons-outline:magnifying-glass" className="text-base text-[#7e93bf]" />
+        <div className="flex items-center gap-2 border-b border-nb-haze/22 px-3">
+          <Icon icon="heroicons-outline:magnifying-glass" className="text-base text-nb-dim2" />
           <input
             ref={inputRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder={`Add camera to tile ${tileIndex != null ? tileIndex + 1 : ""}…`}
-            className="h-11 flex-1 bg-transparent text-sm text-[#f2f6ff] placeholder:text-[#7e93bf] outline-hidden"
+            className="h-11 flex-1 bg-transparent text-sm text-nb-ink placeholder:text-nb-dim2 outline-hidden"
           />
-          <kbd className="rounded-sm border border-[rgba(150,180,245,.22)] px-1.5 py-0.5 font-mono text-[10px] text-[#7e93bf]">Esc</kbd>
+          <kbd className="rounded-sm border border-nb-mist/22 px-1.5 py-0.5 font-mono text-[10px] text-nb-dim2">Esc</kbd>
         </div>
         <ul className="max-h-80 overflow-y-auto p-1.5">
           {filtered.length === 0 ? (
-            <li className="px-3 py-6 text-center text-xs text-[#7e93bf]">No cameras match.</li>
+            <li className="px-3 py-6 text-center text-xs text-nb-dim2">No cameras match.</li>
           ) : (
             filtered.map((c) => {
               const onWall = mountedIds?.has(c.id);
@@ -90,15 +90,15 @@ export default function CameraQuickPicker({ open, cameras = [], mountedIds, tile
                   <button
                     type="button"
                     onClick={() => onPick?.(c.id)}
-                    className="flex w-full items-center gap-2.5 rounded-[8px] px-2.5 py-2 text-left transition hover:bg-[rgba(150,180,245,.07)]"
+                    className="flex w-full items-center gap-2.5 rounded-[8px] px-2.5 py-2 text-left transition hover:bg-nb-mist/7"
                   >
                     <StatusDot status={c.status} />
                     <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="truncate text-sm font-medium text-[#f2f6ff]">{c.name}</span>
-                      {c.site_name && <span className="truncate text-[11px] text-[#7e93bf]">{c.site_name}</span>}
+                      <span className="truncate text-sm font-medium text-nb-ink">{c.name}</span>
+                      {c.site_name && <span className="truncate text-[11px] text-nb-dim2">{c.site_name}</span>}
                     </span>
                     {onWall && (
-                      <Icon icon="heroicons:tv-solid" className="shrink-0 text-sm text-[#22d3ee]" title="Already on wall" />
+                      <Icon icon="heroicons:tv-solid" className="shrink-0 text-sm text-nb-teal" title="Already on wall" />
                     )}
                   </button>
                 </li>

@@ -41,10 +41,10 @@ export default function GlobalBrand() {
       ) : (
         <span className="flex flex-col leading-none">
           <span className="text-[17px] font-bold tracking-[0.3px]">
-            <span className="text-[#f2f6ff]">Neu</span>
-            <span className="text-[#67e8f9]">Bit</span>
+            <span className="text-nb-ink">Neu</span>
+            <span className="text-nb-tealb">Bit</span>
           </span>
-          <span className="mt-0.5 font-mono text-[7px] uppercase tracking-[1.6px] text-[#9a92c8]">
+          <span className="mt-0.5 font-mono text-[7px] uppercase tracking-[1.6px] text-nb-faint">
             Listen to your data
           </span>
         </span>

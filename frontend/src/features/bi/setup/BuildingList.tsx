@@ -50,8 +50,8 @@ export default function BuildingList({ selectedId, onSelect, meta, icon = "heroi
               onClick={() => onSelect(s.site_id)}
               className={`w-full rounded-[10px] border px-3 py-2 text-left transition ${
                 on
-                  ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.12)]"
-                  : "border-nb-line bg-[rgba(6,11,26,.45)] hover:bg-white/5"
+                  ? "border-nb-blue/50 bg-nb-blue/12"
+                  : "border-nb-line bg-nb-surface3/45 hover:bg-nb-glint/5"
               }`}
             >
               <div className="truncate text-[12.5px] text-nb-ink">{s.site_name || s.site_id}</div>

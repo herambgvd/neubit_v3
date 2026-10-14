@@ -21,8 +21,8 @@ const roleName = (r: AssignableRole): string => titleize(r.name) || roleId(r);
 const chipCls = (active: boolean): string =>
   `text-xs rounded-full border px-2.5 py-1 transition ${
     active
-      ? "border-nb-blue bg-[rgba(96,165,250,.10)] text-nb-blueb"
-      : "border-nb-line bg-[rgba(8,15,34,.5)] text-nb-muted hover:bg-[rgba(96,165,250,.1)]"
+      ? "border-nb-blue bg-nb-blue/10 text-nb-blueb"
+      : "border-nb-line bg-nb-surface2/50 text-nb-muted hover:bg-nb-blue/10"
   }`;
 const STATE_COLORS = ["#6366F1", "#10B981", "#F59E0B", "#EF4444", "#3B82F6", "#8B5CF6", "#EC4899", "#64748B"];
 

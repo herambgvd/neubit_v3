@@ -24,18 +24,18 @@ import { TONE_TEXT, isolationVerdict, stageTone } from "./format";
 /** A stage card's surface. `good` is absent deliberately: a stage that passed is
  *  not news, and painting six green cards buries the one that is not. */
 const STAGE_SURFACE: Partial<Record<string, string>> = {
-  bad: "border-[rgba(248,113,113,.45)] bg-[rgba(248,113,113,.08)]",
-  warn: "border-[rgba(251,191,36,.4)] bg-[rgba(251,191,36,.08)]",
+  bad: "border-nb-crit/45 bg-nb-crit/8",
+  warn: "border-nb-warn/40 bg-nb-warn/8",
 };
 
 /** The headline card's surface. Unlike a stage, a clean verdict IS the news, so
  *  `good` is green here — and `idle` (inconclusive) stays neutral. */
 const VERDICT_SURFACE: Partial<Record<string, string>> = {
-  bad: "border-[rgba(248,113,113,.45)] bg-[rgba(248,113,113,.08)]",
-  good: "border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.08)]",
+  bad: "border-nb-crit/45 bg-nb-crit/8",
+  good: "border-nb-good/40 bg-nb-good/8",
 };
 
-const NEUTRAL_SURFACE = "border-nb-line bg-[rgba(6,11,26,.5)]";
+const NEUTRAL_SURFACE = "border-nb-line bg-nb-surface3/50";
 
 /** Evidence is measurement, not verdict: a passing line reads as ordinary text
  *  rather than green, so the colour in this pane only ever marks a problem. */
@@ -98,7 +98,7 @@ export default function IsolationPane({ trace, loading, error, cameraName, onRet
   if (error) {
     return (
       <div className="p-5">
-        <div className="flex items-start gap-2 rounded-[10px] border border-[rgba(248,113,113,.4)] bg-[rgba(248,113,113,.08)] px-3 py-2.5">
+        <div className="flex items-start gap-2 rounded-[10px] border border-nb-crit/40 bg-nb-crit/8 px-3 py-2.5">
           <Icon icon="heroicons:signal-slash" className="mt-0.5 shrink-0 text-[15px] text-nb-crit" />
           <div className="min-w-0">
             <p className="text-[12.5px] text-nb-crit">Could not trace this camera</p>
@@ -123,7 +123,7 @@ export default function IsolationPane({ trace, loading, error, cameraName, onRet
           <Icon icon={verdict.icon} className={`text-[15px] ${TONE_TEXT[tone]}`} />
           <p className={`text-[13px] font-semibold ${TONE_TEXT[tone]}`}>{verdict.text}</p>
           {v.nvr_cleared && (
-            <span className="rounded-full border border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.1)] px-2 py-0.5 text-[10px] font-medium text-nb-good">
+            <span className="rounded-full border border-nb-good/40 bg-nb-good/10 px-2 py-0.5 text-[10px] font-medium text-nb-good">
               recorder cleared
             </span>
           )}
@@ -149,7 +149,7 @@ export default function IsolationPane({ trace, loading, error, cameraName, onRet
       {onRetest && (
         <button
           onClick={onRetest}
-          className="mt-3 inline-flex items-center gap-1.5 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1.5 text-[11.5px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+          className="mt-3 inline-flex items-center gap-1.5 rounded-[8px] border border-nb-line bg-nb-surface/65 px-2.5 py-1.5 text-[11.5px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
         >
           <Icon icon="heroicons:arrow-path" className="text-[13px]" />
           Re-test now

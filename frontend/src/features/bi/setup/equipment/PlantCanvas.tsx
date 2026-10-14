@@ -282,7 +282,7 @@ export default function PlantCanvas({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* tabs · live · actions */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-white/[.06] px-5 py-3">
+      <div className="flex flex-wrap items-center gap-2 border-b border-nb-glint/[.06] px-5 py-3">
         <div role="tablist" className="flex flex-wrap gap-1.5">
           {KINDS.map((k) => {
             const c = counts[k];
@@ -300,7 +300,7 @@ export default function PlantCanvas({
                 className={`flex h-8 items-center gap-2 rounded-[9px] border px-3 text-[12.5px] transition ${
                   on
                     ? "border-nb-blue/60 bg-nb-blue/[.14] text-nb-ink"
-                    : "border-white/[.08] text-nb-muted hover:border-white/[.18] hover:text-nb-soft"
+                    : "border-nb-glint/[.08] text-nb-muted hover:border-nb-glint/[.18] hover:text-nb-soft"
                 } ${c.total ? "" : "opacity-50"}`}
               >
                 {KIND_LABEL[k]}
@@ -389,7 +389,7 @@ export default function PlantCanvas({
                 </span>
               )}
               {notMachines.length > 0 && (
-                <span title={notMachines.map((d) => d.device_tag).join("\n")} className="rounded-full border border-white/[.1] px-2.5 py-1">
+                <span title={notMachines.map((d) => d.device_tag).join("\n")} className="rounded-full border border-nb-glint/[.1] px-2.5 py-1">
                   {notMachines.length} not machines · old copies, the gateway
                 </span>
               )}
@@ -416,7 +416,7 @@ export default function PlantCanvas({
                   nameplate={
                     openEquipment ? (
                       <div className="space-y-3">
-                        <details className="group rounded-[10px] border border-white/[.07] px-3 py-2">
+                        <details className="group rounded-[10px] border border-nb-glint/[.07] px-3 py-2">
                           <summary className="cursor-pointer list-none text-[12px] text-nb-muted hover:text-nb-ink">
                             Change which point feeds a slot
                           </summary>
@@ -494,7 +494,7 @@ function NodeBox({
       className={`relative w-[196px] shrink-0 rounded-[10px] border px-3 py-2 text-left transition-colors ${
         solid
           ? "border-nb-blue/45 bg-[rgba(30,64,175,.16)]"
-          : "border-dashed border-white/25 bg-transparent hover:border-nb-blue/60 hover:bg-nb-blue/[.05]"
+          : "border-dashed border-nb-glint/25 bg-transparent hover:border-nb-blue/60 hover:bg-nb-blue/[.05]"
       } ${active ? "ring-2 ring-nb-blue/60" : ""} ${pending ? "animate-pulse" : ""}`}
     >
       {node.warn && !solid && <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-nb-warn" title="Something here looks off" />}
@@ -519,11 +519,11 @@ function Branch({ tree, box }: Readonly<{ tree: Tree; box: Box }>) {
       {box(tree.node)}
       {tree.children.length > 0 && (
         <div className="flex items-start">
-          <span className="mt-[34px] h-px w-5 bg-white/20" />
-          <div className="flex flex-col gap-2 border-l border-white/20 py-[1px]">
+          <span className="mt-[34px] h-px w-5 bg-nb-glint/20" />
+          <div className="flex flex-col gap-2 border-l border-nb-glint/20 py-[1px]">
             {tree.children.map((c) => (
               <div key={c.node.id} className="flex items-start">
-                <span className="mt-[34px] h-px w-5 bg-white/20" />
+                <span className="mt-[34px] h-px w-5 bg-nb-glint/20" />
                 <Branch tree={c} box={box} />
               </div>
             ))}
@@ -542,7 +542,7 @@ function PowerDrawing({ nodes, box }: Readonly<{ nodes: Node[]; box: Box }>) {
         <div key={r.node.id} className="flex items-start gap-3">
           <div className="mt-[26px] flex flex-col items-center text-[10.5px] uppercase tracking-wider text-nb-faint">
             <span>grid</span>
-            <span className="mt-1 h-px w-6 bg-white/25" />
+            <span className="mt-1 h-px w-6 bg-nb-glint/25" />
           </div>
           <Branch tree={r} box={box} />
         </div>

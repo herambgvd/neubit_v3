@@ -1,8 +1,9 @@
 /**
  * Branding and Notifications were two Platform segments and one subject: the name,
  * colour and logo appear on the login page AND on every email that leaves here,
- * and the delivery channels are what carries those emails. They are one view now,
- * with the per-user Appearance card alongside them.
+ * and the delivery channels are what carries those emails. They are one view now.
+ * The per-user Appearance card is NOT here: it lives in My account → Preferences
+ * only, so one setting is on one page.
  *
  * These cases key off the cards' own CONTENT, not off section headings. The first
  * version asserted two headings I had written above the cards; the headings were
@@ -42,24 +43,21 @@ beforeEach(() => {
 });
 
 describe("the Config view", () => {
-  it("holds branding, delivery and appearance on one page", async () => {
+  it("holds branding and delivery on one page", async () => {
     renderWithProviders(<ConfigPage />);
 
-    // Branding's own field, a delivery channel, and the appearance picker —
-    // without a tab in between.
+    // Branding's own field and a delivery channel — without a tab in between.
     expect(await screen.findByDisplayValue("Acme")).toBeInTheDocument();
     expect(await screen.findByText("Email (SMTP)")).toBeInTheDocument();
-    expect(screen.getByText("Typeface")).toBeInTheDocument();
   });
 
-  it("says the appearance picker is the signed-in operator's, not the tenant's", async () => {
+  it("leaves the per-user appearance settings to My account", async () => {
     renderWithProviders(<ConfigPage />);
 
-    // The card carries its own scope; without that line an admin would read a
-    // per-user setting on a platform page as platform-wide.
-    expect(
-      await screen.findByText(/Applies to this browser straight away/i),
-    ).toBeInTheDocument();
+    // Theme, typeface and text size are the signed-in operator's: one setting,
+    // one page, and not one an admin could read as platform-wide.
+    await screen.findByText("Email (SMTP)");
+    expect(screen.queryByText(/Applies to this browser straight away/i)).not.toBeInTheDocument();
   });
 
   it("does not offer the webhook channel, even though the backend still reports it", async () => {
@@ -79,29 +77,25 @@ describe("the Config view", () => {
 });
 
 /**
- * Appearance flows WITH the delivery cards, not under them.
- *
- * A grid was the first attempt and it left the void it was meant to fix: every
- * cell in a grid row is as tall as the tallest, so the two short channel cards
- * had a band of dead space beneath them and the page ended unevenly. A column
- * flow lets the browser balance three cards of very different heights.
+ * The delivery cards flow in balanced columns, and the per-user Appearance card
+ * is not among them — it is a personal setting and lives in My account only.
  */
-describe("where the Appearance card sits", () => {
+describe("the delivery flow", () => {
   // The page has TWO of these flows now — branding's and the delivery one — so
   // this anchors on a card that is only ever in the second. Selecting the first
   // match broke the moment branding became a flow too, which is the right kind of
   // break: the test was addressing the layout by position rather than by content.
   const flow = () => screen.getByText("Email (SMTP)").closest(".lg\\:columns-2");
 
-  it("is one of the cards in the same flow as the delivery channels", async () => {
+  it("holds the delivery channels and not the per-user appearance settings", async () => {
     renderWithProviders(<ConfigPage />);
     await screen.findByText("Email (SMTP)");
 
     const el = flow();
-    expect(el, "the delivery/appearance flow").not.toBeNull();
-    // email + push + appearance, balanced across the columns by the browser.
-    expect(el!.children).toHaveLength(3);
-    expect(within(el as HTMLElement).getByText("Typeface")).toBeInTheDocument();
+    expect(el, "the delivery flow").not.toBeNull();
+    // email + push, balanced across the columns by the browser.
+    expect(el!.children).toHaveLength(2);
+    expect(screen.queryByText("Typeface")).not.toBeInTheDocument();
   });
 
   it("keeps each card whole across the column break", async () => {

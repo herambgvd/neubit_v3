@@ -245,7 +245,7 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
                   />
                 </span>
                 <input value={c.value} onChange={(e) => updateCond(i, { value: e.target.value })} placeholder="value" className="h-9 w-28 rounded-lg border border-nb-line bg-transparent px-2.5 text-sm text-nb-ink outline-hidden focus:border-nb-teal" />
-                <button type="button" onClick={() => setConditions((cs) => cs.filter((_, idx) => idx !== i))} className="h-9 w-9 inline-flex items-center justify-center rounded-sm text-nb-faint hover:bg-[rgba(96,165,250,.1)] hover:text-nb-crit"><Icon icon="heroicons-outline:x-mark" className="text-sm" /></button>
+                <button type="button" onClick={() => setConditions((cs) => cs.filter((_, idx) => idx !== i))} className="h-9 w-9 inline-flex items-center justify-center rounded-sm text-nb-faint hover:bg-nb-blue/10 hover:text-nb-crit"><Icon icon="heroicons-outline:x-mark" className="text-sm" /></button>
               </div>
             ))}
           </div>
@@ -263,7 +263,7 @@ export default function TriggerForm({ trigger, sops, pending, onCancel, onSubmit
           {DEDUP_STRATEGIES.map((s) => {
             const active = dedupStrategy === s.value;
             return (
-              <label key={s.value} className={`grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${active ? "border-[rgba(96,165,250,.50)] bg-[rgba(96,165,250,.10)]" : "border-nb-line bg-[rgba(8,15,34,.5)] hover:bg-[rgba(96,165,250,.1)]"}`}>
+              <label key={s.value} className={`grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${active ? "border-nb-blue/50 bg-nb-blue/10" : "border-nb-line bg-nb-surface2/50 hover:bg-nb-blue/10"}`}>
                 <input type="radio" name="dedup-strategy" checked={active} onChange={() => setDedupStrategy(s.value)} className="mt-0.5" />
                 <span className="block text-sm font-medium text-nb-ink">{s.label}</span>
                 <span className="col-start-2 mt-0.5 block text-[11px] text-nb-faint">{s.hint}</span>

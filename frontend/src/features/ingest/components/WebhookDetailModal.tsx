@@ -65,7 +65,7 @@ export default function WebhookDetailModal({ webhook, onClose, onChanged }: Read
           Recent events each carry far more than the Overview. With max-h the dialog
           resized on every tab switch (and cramped the tabs that actually need room);
           h-[min(…)] keeps the frame still and gives each tab the same tall body. */}
-      <div className="relative flex h-[min(86vh,820px)] w-full max-w-4xl flex-col rounded-xl border border-nb-line bg-[rgba(8,15,34,.93)] shadow-2xl backdrop-blur-md animate-modal-in">
+      <div className="relative flex h-[min(86vh,820px)] w-full max-w-4xl flex-col rounded-xl border border-nb-line bg-nb-surface2/93 shadow-2xl backdrop-blur-md animate-modal-in">
         <div className="flex shrink-0 items-center justify-between border-b border-nb-line px-5 py-4">
           <h3 className="text-base font-semibold text-nb-ink">{webhook.name}</h3>
           <button onClick={onClose} className="text-nb-muted transition hover:text-nb-ink">

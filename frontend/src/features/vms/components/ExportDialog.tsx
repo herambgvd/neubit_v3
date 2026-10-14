@@ -73,12 +73,12 @@ export interface ExportDialogProps {
  *  running, not one that finished. */
 export function exportProgress(status: string | null | undefined): { icon: string; iconCls: string; text: string } {
   if (status === "done") {
-    return { icon: "heroicons-solid:check-circle", iconCls: "text-[#22d3ee]", text: "Export ready" };
+    return { icon: "heroicons-solid:check-circle", iconCls: "text-nb-teal", text: "Export ready" };
   }
   if (status === "failed") {
     return { icon: "heroicons-solid:x-circle", iconCls: "text-red-500", text: "Export failed" };
   }
-  return { icon: "svg-spinners:180-ring", iconCls: "text-[#f2f6ff]/70", text: `Export ${status || "queued"}…` };
+  return { icon: "svg-spinners:180-ring", iconCls: "text-nb-ink/70", text: `Export ${status || "queued"}…` };
 }
 
 /** The dialog's one action button, plus Cancel.
@@ -175,12 +175,12 @@ function ExportJobPanel({
   onManifest: () => void;
 }>) {
   return (
-    <div className="rounded-lg border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.08)]/30 p-4">
+    <div className="rounded-lg border border-nb-mist/22 bg-nb-mist/[0.024] p-4">
       <div className="flex items-center gap-3">
         <Icon icon={progress.icon} className={`text-2xl ${progress.iconCls}`} />
         <div className="min-w-0">
-          <p className="text-sm font-medium capitalize text-[#f2f6ff]">{progress.text}</p>
-          <p className="truncate text-xs text-[#aec2e8]">
+          <p className="text-sm font-medium capitalize text-nb-ink">{progress.text}</p>
+          <p className="truncate text-xs text-nb-soft">
             Job {String(job.job_id).slice(0, 12)}
             {job.file_size ? ` · ${fmtBytes(job.file_size)}` : ""}
             {status === "failed" && job.error ? ` · ${job.error}` : ""}
@@ -188,26 +188,26 @@ function ExportJobPanel({
         </div>
       </div>
       {inFlight && (
-        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[rgba(150,180,245,.22)]">
-          <div className="h-full w-1/3 animate-pulse rounded-full bg-[rgba(34,211,238,.6)]" />
+        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-nb-mist/22">
+          <div className="h-full w-1/3 animate-pulse rounded-full bg-nb-teal/60" />
         </div>
       )}
 
       {/* Tamper-evidence — signed badge + verify affordance (P6-B) */}
       {status === "done" && (
-        <div className="mt-4 space-y-3 border-t border-[rgba(150,180,245,.22)] pt-3">
+        <div className="mt-4 space-y-3 border-t border-nb-mist/22 pt-3">
           <div className="flex flex-wrap items-center gap-2">
             {job.signed ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(34,211,238,.15)] px-2.5 py-1 text-xs font-medium text-[#67e8f9]">
+              <span className="inline-flex items-center gap-1 rounded-full bg-nb-teal/15 px-2.5 py-1 text-xs font-medium text-nb-tealb">
                 <Icon icon="heroicons-solid:shield-check" className="text-sm" /> Signed (Ed25519)
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(150,180,245,.08)] px-2.5 py-1 text-xs text-[#aec2e8]">
+              <span className="inline-flex items-center gap-1 rounded-full bg-nb-mist/8 px-2.5 py-1 text-xs text-nb-soft">
                 <Icon icon="heroicons-outline:shield-exclamation" className="text-sm" /> Not signed
               </span>
             )}
             {watermark && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(150,180,245,.08)] px-2.5 py-1 text-xs text-[#aec2e8]">
+              <span className="inline-flex items-center gap-1 rounded-full bg-nb-mist/8 px-2.5 py-1 text-xs text-nb-soft">
                 <Icon icon="heroicons-outline:identification" className="text-sm" /> Watermarked
               </span>
             )}
@@ -217,14 +217,14 @@ function ExportJobPanel({
                  could not be concatenated by stream copy, or a watermark was
                  drawn — which can only be done on a re-encode. The manifest
                  pins the clip either way. */
-              <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(150,180,245,.08)] px-2.5 py-1 text-xs text-[#aec2e8]">
+              <span className="inline-flex items-center gap-1 rounded-full bg-nb-mist/8 px-2.5 py-1 text-xs text-nb-soft">
                 <Icon icon="heroicons-outline:arrow-path" className="text-sm" /> Re-encoded
               </span>
             )}
             {verify && verify !== "loading" && (
               <span
                 className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${
-                  verify.valid ? "bg-[rgba(34,211,238,.15)] text-[#67e8f9]" : "bg-red-500/15 text-red-500"
+                  verify.valid ? "bg-nb-teal/15 text-nb-tealb" : "bg-red-500/15 text-red-500"
                 }`}
               >
                 <Icon icon={verify.valid ? "heroicons-solid:check-badge" : "heroicons-solid:x-circle"} className="text-sm" />
@@ -234,8 +234,8 @@ function ExportJobPanel({
           </div>
 
           {job.sha256 && (
-            <div className="text-[11px] text-[#aec2e8]">
-              SHA-256 <code className="break-all text-[#f2f6ff]">{job.sha256}</code>
+            <div className="text-[11px] text-nb-soft">
+              SHA-256 <code className="break-all text-nb-ink">{job.sha256}</code>
             </div>
           )}
 
@@ -243,13 +243,13 @@ function ExportJobPanel({
               clip does not match — both hashes, because "tampered" with no
               numbers behind it is not something anybody can act on. */}
           {verify && verify !== "loading" && !verify.valid && (
-            <div className="space-y-1 text-[11px] text-[#aec2e8]">
+            <div className="space-y-1 text-[11px] text-nb-soft">
               {verify.detail && <p>{verify.detail}</p>}
               {verify.expected_sha256 && verify.actual_sha256 && (
                 <>
                   <div>
                     Manifest says{" "}
-                    <code className="break-all text-[#f2f6ff]">{verify.expected_sha256}</code>
+                    <code className="break-all text-nb-ink">{verify.expected_sha256}</code>
                   </div>
                   <div>
                     File hashes to{" "}
@@ -436,47 +436,47 @@ export default function ExportDialog({ open, onClose, nodeId, cameraId, cameraNa
       }
     >
       <div className="space-y-4">
-        <div className="rounded-lg border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.08)]/40 px-3 py-2 text-sm">
-          <span className="text-[#aec2e8]">Camera</span>{" "}
-          <span className="font-medium text-[#f2f6ff]">{cameraName || cameraId}</span>
+        <div className="rounded-lg border border-nb-mist/22 bg-nb-mist/[0.032] px-3 py-2 text-sm">
+          <span className="text-nb-soft">Camera</span>{" "}
+          <span className="font-medium text-nb-ink">{cameraName || cameraId}</span>
         </div>
 
         {!job && (
           <>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="block">
-                <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">From</span>
+                <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-nb-soft">From</span>
                 <input
                   type="datetime-local"
                   value={from}
                   onChange={(e) => setFrom(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-hidden focus:border-[rgba(34,211,238,.5)]"
+                  className="h-9 w-full rounded-lg border border-nb-mist/22 bg-transparent px-3 text-sm text-nb-ink outline-hidden focus:border-nb-teal/50"
                 />
               </label>
               <label className="block">
-                <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">To</span>
+                <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-nb-soft">To</span>
                 <input
                   type="datetime-local"
                   value={to}
                   onChange={(e) => setTo(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-hidden focus:border-[rgba(34,211,238,.5)]"
+                  className="h-9 w-full rounded-lg border border-nb-mist/22 bg-transparent px-3 text-sm text-nb-ink outline-hidden focus:border-nb-teal/50"
                 />
               </label>
             </div>
             <label className="flex items-start gap-2">
               <Toggle checked={watermark} onChange={setWatermark} label="Burn a provenance watermark" />
-              <span className="text-xs text-[#aec2e8]">
-                Burn a provenance watermark<span className="mt-0.5 block text-[11px] text-[#8fa4c8]">
+              <span className="text-xs text-nb-soft">
+                Burn a provenance watermark<span className="mt-0.5 block text-[11px] text-nb-dim">
                   Stamps the camera, window, recorder and your name into the picture. The
                   recorder re-encodes to draw it, so the export is slower and the clip is not
                   byte-identical to the recording.
                 </span>
               </span>
             </label>
-            <p className="text-xs text-[#aec2e8]">
+            <p className="text-xs text-nb-soft">
               {rangeValid ? (
                 <>
-                  Clip length: <span className="text-[#f2f6ff]">{fmtDuration(durationSec)}</span>. Only recorded
+                  Clip length: <span className="text-nb-ink">{fmtDuration(durationSec)}</span>. Only recorded
                   spans in this range are included.
                 </>
               ) : (

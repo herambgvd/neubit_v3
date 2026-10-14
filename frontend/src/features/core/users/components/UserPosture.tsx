@@ -29,7 +29,7 @@ export default function UserPosture({ user, canManage, busyAction, onClone, onFo
         <span className="ml-auto font-mono text-[10px] text-nb-faint">IS 19319</span>
       </div>
 
-      <div className="rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-1">
+      <div className="rounded-[10px] border border-nb-line bg-nb-surface3/50 px-3 py-1">
         <Stat label="MFA" value={u.totp_enabled ? "ENROLLED" : "NOT SET"} tone={u.totp_enabled ? "good" : "warn"} />
         <Stat label="Last sign-in" value={fmtLogin(u.last_login_at)} />
         <Stat

@@ -98,7 +98,7 @@ export default function EmailTemplatesPage() {
             <>
               {overridden > 0 && (
                 <span className="flex items-center gap-1.5 text-[11px] text-nb-soft" title="Customised">
-                  <span className="h-1.5 w-1.5 rounded-full bg-nb-teal shadow-[0_0_5px_#22d3ee]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-nb-teal shadow-[0_0_5px_rgb(var(--nb-c-teal))]" />
                   {overridden}
                 </span>
               )}

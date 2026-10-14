@@ -40,7 +40,7 @@ export interface FrameProps {
 // The navy radial backdrop every console page sits on. Kept as one constant so a
 // page can spread it onto a custom wrapper instead of nesting another div.
 export const CONSOLE_BG = {
-  background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)",
+  background: "var(--nb-backdrop)",
 };
 
 // Page frame: bleeds past <main>'s padding, fills the bounded pane, never scrolls
@@ -88,7 +88,7 @@ export function ConsoleGrid({ cols = "lg:grid-cols-[25%_1fr]", className = "", c
 
 // A console column/card. This is the `col` string Users and Sites each declared.
 export const PANEL_CLS =
-  "rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] min-h-0 flex flex-col overflow-hidden";
+  "rounded-[12px] border border-nb-line bg-nb-surface2/50 min-h-0 flex flex-col overflow-hidden";
 
 export function ConsolePanel({ className = "", children }: Readonly<FrameProps>) {
   return <div className={`${PANEL_CLS} ${className}`}>{children}</div>;
@@ -128,8 +128,8 @@ export interface PanelCount {
 }
 
 const DOT_TONES: Record<string, string> = {
-  good: "bg-nb-good shadow-[0_0_5px_#34d399]",
-  crit: "bg-nb-crit shadow-[0_0_5px_rgba(248,113,113,.6)]",
+  good: "bg-nb-good shadow-[0_0_5px_rgb(var(--nb-c-good))]",
+  crit: "bg-nb-crit shadow-[0_0_5px_rgb(var(--nb-c-crit)/.6)]",
 };
 
 // The active/idle count dots Sites shows next to its header (green = active,
@@ -159,7 +159,7 @@ export interface PanelSearchProps {
 export function PanelSearch({ value, onChange, placeholder = "Search…" }: Readonly<PanelSearchProps>) {
   return (
     <div className="px-3 pb-2">
-      <div className="flex items-center gap-2 rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2">
+      <div className="flex items-center gap-2 rounded-[9px] border border-nb-line bg-nb-surface3/50 px-3 py-2">
         <Icon icon="heroicons-outline:magnifying-glass" className="text-sm text-nb-faint" />
         <input
           value={value}
@@ -236,7 +236,7 @@ export function RowAction({ icon, title, onClick, disabled, tone = "default", cl
       aria-label={title}
       {...props}
       className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-nb-faint transition disabled:opacity-50 ${
-        tone === "danger" ? "hover:bg-nb-crit/12 hover:text-nb-crit" : "hover:bg-white/5 hover:text-nb-blueb"
+        tone === "danger" ? "hover:bg-nb-crit/12 hover:text-nb-crit" : "hover:bg-nb-glint/5 hover:text-nb-blueb"
       } ${className}`}
     >
       <Icon icon={icon} className="text-sm" />
@@ -254,7 +254,7 @@ export function IconButton({ icon, title, onClick, disabled, className = "", ...
       title={title}
       aria-label={title}
       {...props}
-      className={`grid h-7 w-7 place-items-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb disabled:opacity-50 ${className}`}
+      className={`grid h-7 w-7 place-items-center rounded-[8px] border border-nb-line bg-nb-surface/65 text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb disabled:opacity-50 ${className}`}
     >
       <Icon icon={icon} className="text-sm" />
     </button>
@@ -295,7 +295,7 @@ export interface SegmentedProps<V extends string | number = string> {
 //   <Segmented value={mode} onChange={setMode} options={[{value,label,icon}]} />
 export function Segmented<V extends string | number = string>({ value, onChange, options = [], className = "" }: Readonly<SegmentedProps<V>>) {
   return (
-    <div className={`flex shrink-0 gap-0.5 rounded-[8px] border border-nb-line bg-[rgba(8,15,34,.7)] p-[3px] ${className}`}>
+    <div className={`flex shrink-0 gap-0.5 rounded-[8px] border border-nb-line bg-nb-surface2/70 p-[3px] ${className}`}>
       {options.map((o) => {
         const on = o.value === value;
         return (
@@ -305,7 +305,7 @@ export function Segmented<V extends string | number = string>({ value, onChange,
             onClick={() => onChange?.(o.value)}
             className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[6px] px-3 py-1 text-[11.5px] tracking-[.7px] transition ${
               on
-                ? "border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.16)] text-nb-blueb"
+                ? "border border-nb-blue/40 bg-nb-blue/16 text-nb-blueb"
                 : "border border-transparent text-nb-faint hover:text-nb-muted"
             }`}
           >
@@ -373,9 +373,9 @@ export function PanelStat({ label, value, tone = "ink" }: Readonly<PanelStatProp
 }
 
 const PANEL_ACTION_TONES = {
-  blue: "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] text-nb-blueb hover:bg-[rgba(96,165,250,.16)]",
+  blue: "border-nb-blue/50 bg-nb-blue/10 text-nb-blueb hover:bg-nb-blue/16",
   warn: "border-nb-warn/50 bg-nb-warn/10 text-nb-warn hover:bg-nb-warn/20",
-  good: "border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good hover:bg-[rgba(52,211,153,.16)]",
+  good: "border-nb-good/50 bg-nb-good/10 text-nb-good hover:bg-nb-good/16",
 };
 
 export interface PanelActionProps {
@@ -420,7 +420,7 @@ export interface PaneActionProps {
 // had already diverged (one labelled, one a bare icon chip).
 export function PaneAction({ icon, title, onClick, href, children }: Readonly<PaneActionProps>) {
   const cls =
-    "inline-flex items-center gap-1 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1.5 text-xs text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb";
+    "inline-flex items-center gap-1 rounded-[8px] border border-nb-line bg-nb-surface/65 px-2.5 py-1.5 text-xs text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb";
   const body = (
     <>
       <Icon icon={icon} className="text-sm" />
@@ -445,7 +445,7 @@ export function PaneDeleteAction({ title = "Delete", onClick }: Readonly<{ title
       onClick={onClick}
       title={title}
       aria-label={title}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-[rgba(248,113,113,.4)] bg-[rgba(248,113,113,.1)] text-nb-crit transition hover:bg-[rgba(248,113,113,.18)]"
+      className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-nb-crit/40 bg-nb-crit/10 text-nb-crit transition hover:bg-nb-crit/18"
     >
       <Icon icon="heroicons-outline:trash" className="text-sm" />
     </button>
@@ -490,7 +490,7 @@ export function PaneForm({ title, subtitle, action, onSubmit, footer, className 
 // Platform panels). Same surface as ConsolePanel but padded and non-flex.
 export function SectionCard({ className = "", children }: Readonly<FrameProps>) {
   return (
-    <div className={`rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-4 ${className}`}>{children}</div>
+    <div className={`rounded-[12px] border border-nb-line bg-nb-surface2/50 p-4 ${className}`}>{children}</div>
   );
 }
 
@@ -533,7 +533,7 @@ export interface EmptyPaneProps {
 export function EmptyPane({ icon = "heroicons-outline:cursor-arrow-rays", title, subtitle }: Readonly<EmptyPaneProps>) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-4 py-20 text-center">
-      <span className="grid h-12 w-12 place-items-center rounded-full border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted">
+      <span className="grid h-12 w-12 place-items-center rounded-full border border-nb-line bg-nb-surface/60 text-nb-muted">
         <Icon icon={icon} className="text-xl" />
       </span>
       <div className="mt-3 text-sm font-semibold text-nb-ink">{title}</div>
@@ -553,7 +553,7 @@ export interface InfoCellProps {
 // Read-only label/value cell used inside detail panes.
 export function InfoCell({ label, value, mono = false, title }: Readonly<InfoCellProps>) {
   return (
-    <div className="min-w-0 rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] px-3 py-1.5">
+    <div className="min-w-0 rounded-[10px] border border-nb-line bg-nb-surface/50 px-3 py-1.5">
       <p className="text-[10px] font-semibold uppercase tracking-[1.4px] text-nb-faint">{label}</p>
       <p
         className={`mt-0.5 truncate text-[13px] font-medium text-nb-ink ${mono ? "font-mono" : ""}`}

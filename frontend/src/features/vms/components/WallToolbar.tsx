@@ -25,11 +25,11 @@ interface IconBtnProps {
  *  is currently ACTIVE reads as active — the state it is in outranks the harm it
  *  could do, because the operator can see it is engaged. */
 function iconBtnSkin(active: boolean, danger: boolean): string {
-  if (active) return "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] text-[#67e8f9]";
+  if (active) return "border-nb-teal/50 bg-nb-teal/15 text-nb-tealb";
   if (danger) {
-    return "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(248,113,113,.5)] hover:bg-red-500/10 hover:text-[#f87171]";
+    return "border-nb-mist/22 text-nb-soft hover:border-nb-crit/50 hover:bg-red-500/10 hover:text-nb-crit";
   }
-  return "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.6)] hover:text-[#22d3ee]";
+  return "border-nb-mist/22 text-nb-soft hover:border-nb-teal/60 hover:text-nb-teal";
 }
 
 function IconBtn({ icon, title, onClick, active = false, spinning = false, danger = false }: Readonly<IconBtnProps>) {
@@ -153,19 +153,19 @@ export default function WallToolbar({
   const gridMode = viewMode !== "map"; // grid or split show the layout picker
 
   return (
-    <div className="relative z-30 flex flex-wrap items-center justify-between gap-2 border-b border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.7)] px-3 py-2 backdrop-blur-xs">
+    <div className="relative z-30 flex flex-wrap items-center justify-between gap-2 border-b border-nb-mist/22 bg-nb-surface2/70 px-3 py-2 backdrop-blur-xs">
       {/* Identity */}
       <div className="flex min-w-0 items-center gap-2">
         {/* Home — back to the metro launcher (the wall has no global header). */}
         <Link
           href="/home"
           title="Home"
-          className="inline-flex h-[33px] w-[33px] items-center justify-center rounded-[8px] border border-[rgba(150,180,245,.22)] text-[#aec2e8] transition hover:border-[rgba(34,211,238,.6)] hover:text-[#22d3ee]"
+          className="inline-flex h-[33px] w-[33px] items-center justify-center rounded-[8px] border border-nb-mist/22 text-nb-soft transition hover:border-nb-teal/60 hover:text-nb-teal"
         >
           <Icon icon="heroicons-outline:home" className="text-base" />
         </Link>
         {/* Live mode tab (active) — matches the mockup's mode indicator. */}
-        <span className="inline-flex h-[33px] items-center gap-1.5 rounded-[8px] border border-[rgba(34,211,238,.45)] bg-[rgba(34,211,238,.14)] px-2.5 text-[12px] font-semibold tracking-[.8px] text-[#67e8f9]">
+        <span className="inline-flex h-[33px] items-center gap-1.5 rounded-[8px] border border-nb-teal/45 bg-nb-teal/14 px-2.5 text-[12px] font-semibold tracking-[.8px] text-nb-tealb">
           <Icon icon="heroicons-solid:signal" className="text-sm" />
           LIVE
         </span>
@@ -177,12 +177,12 @@ export default function WallToolbar({
         <div className="flex min-w-0 items-center gap-2">
           <span
             title={`${liveCount} on wall · ${onlineCount} online`}
-            className="rounded-[6px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-1.5 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-[#aec2e8]"
+            className="rounded-[6px] border border-nb-mist/22 bg-nb-mist/4 px-1.5 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-nb-soft"
           >
             {liveCount}/{layout.capacity}
           </span>
           {tour?.active && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-[rgba(251,191,36,.4)] bg-[rgba(251,191,36,.12)] px-2 py-0.5 font-mono text-[10px] font-semibold text-[#fbbf24]">
+            <span className="inline-flex items-center gap-1 rounded-full border border-nb-warn/40 bg-nb-warn/12 px-2 py-0.5 font-mono text-[10px] font-semibold text-nb-warn">
               <Icon icon="svg-spinners:180-ring" className="text-xs" />
               Tour {tour.index + 1}/{tour.pages.length}
             </span>
@@ -190,7 +190,7 @@ export default function WallToolbar({
         </div>
 
         {/* GRID / MAP / SPLIT view segment (mockup) */}
-        <div className="ml-1 hidden overflow-hidden rounded-[9px] border border-[rgba(150,180,245,.22)] md:inline-flex">
+        <div className="ml-1 hidden overflow-hidden rounded-[9px] border border-nb-mist/22 md:inline-flex">
           {VIEW_MODES.map((m) => (
             <button
               key={m.key}
@@ -201,8 +201,8 @@ export default function WallToolbar({
               onClick={() => onViewMode?.(m.key)}
               className={`inline-flex h-[29px] w-[31px] items-center justify-center transition ${
                 viewMode === m.key
-                  ? "bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
-                  : "text-[#aec2e8] hover:bg-[rgba(150,180,245,.06)] hover:text-[#67e8f9]"
+                  ? "bg-nb-teal/15 text-nb-tealb"
+                  : "text-nb-soft hover:bg-nb-mist/6 hover:text-nb-tealb"
               }`}
             >
               <Icon icon={m.icon} className="text-sm" />
@@ -220,7 +220,7 @@ export default function WallToolbar({
 
         <QualitySelect quality={quality} onQuality={onQuality} />
 
-        <div className="mx-0.5 h-6 w-px bg-[rgba(150,180,245,.22)]" />
+        <div className="mx-0.5 h-6 w-px bg-nb-mist/22" />
 
         {gridMode && <LayoutPicker layoutKey={layoutKey} onChange={onLayoutChange} />}
 
@@ -235,13 +235,13 @@ export default function WallToolbar({
             aria-label="Save the current wall as a reusable group"
             disabled={!canSaveGroup}
             onClick={onSaveGroup}
-            className="inline-flex h-[33px] w-[33px] items-center justify-center rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] text-[#aec2e8] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9] disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex h-[33px] w-[33px] items-center justify-center rounded-[8px] border border-nb-mist/22 bg-nb-mist/4 text-nb-soft transition hover:border-nb-teal/50 hover:text-nb-tealb disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Icon icon="heroicons-outline:folder-plus" className="text-base" />
           </button>
         )}
 
-        <div className="mx-0.5 h-6 w-px bg-[rgba(150,180,245,.22)]" />
+        <div className="mx-0.5 h-6 w-px bg-nb-mist/22" />
 
         {gridMode && (
           <IconBtn
@@ -273,7 +273,7 @@ export default function WallToolbar({
         {alarmCount > 0 && (
           <span
             title={`${alarmCount} active alarm${alarmCount === 1 ? "" : "s"}`}
-            className="inline-flex h-[33px] items-center gap-1.5 rounded-[8px] border border-[rgba(248,113,113,.5)] bg-[rgba(248,113,113,.12)] px-2.5 font-mono text-[11px] font-semibold text-[#f87171]"
+            className="inline-flex h-[33px] items-center gap-1.5 rounded-[8px] border border-nb-crit/50 bg-nb-crit/12 px-2.5 font-mono text-[11px] font-semibold text-nb-crit"
           >
             <Icon icon="heroicons-outline:bell-alert" className="text-sm" />
             {alarmCount}
@@ -295,7 +295,7 @@ function Clock() {
   }, []);
   const t = now.toLocaleTimeString("en-GB", { hour12: false });
   return (
-    <span className="hidden items-center font-mono text-[12.5px] tabular-nums text-[#aec2e8] sm:inline-flex" title="Wall clock">
+    <span className="hidden items-center font-mono text-[12.5px] tabular-nums text-nb-soft sm:inline-flex" title="Wall clock">
       {t}
     </span>
   );
@@ -304,7 +304,7 @@ function Clock() {
 // Quality selector — global stream-profile switch (Auto/Eco/Balanced/High/Turbo).
 function QualitySelect({ quality, onQuality }: Readonly<{ quality: string; onQuality?: (key: string) => void }>) {
   return (
-    <div className="hidden overflow-hidden rounded-[9px] border border-[rgba(150,180,245,.22)] lg:inline-flex" title="Stream quality">
+    <div className="hidden overflow-hidden rounded-[9px] border border-nb-mist/22 lg:inline-flex" title="Stream quality">
       {QUALITY_LEVELS.map((lvl) => (
         <button
           key={lvl.key}
@@ -313,8 +313,8 @@ function QualitySelect({ quality, onQuality }: Readonly<{ quality: string; onQua
           title={lvl.label}
           className={`inline-flex h-[27px] w-[29px] items-center justify-center transition ${
             quality === lvl.key
-              ? "bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
-              : "text-[#aec2e8] hover:bg-[rgba(150,180,245,.06)] hover:text-[#67e8f9]"
+              ? "bg-nb-teal/15 text-nb-tealb"
+              : "text-nb-soft hover:bg-nb-mist/6 hover:text-nb-tealb"
           }`}
         >
           <Icon icon={lvl.icon} className="text-sm" />
@@ -355,8 +355,8 @@ function TourControl({ tour, onStart, onStop, onInterval }: Readonly<TourControl
         onClick={active ? onStop : onStart}
         className={`inline-flex h-8 w-[31px] items-center justify-center rounded-l-[8px] border transition ${
           active
-            ? "border-[rgba(251,191,36,.5)] bg-[rgba(251,191,36,.12)] text-[#fbbf24]"
-            : "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
+            ? "border-nb-warn/50 bg-nb-warn/12 text-nb-warn"
+            : "border-nb-mist/22 text-nb-soft hover:border-nb-teal/50 hover:text-nb-tealb"
         }`}
       >
         <Icon icon={active ? "heroicons-solid:stop" : "heroicons-solid:play"} className="text-sm" />
@@ -367,16 +367,16 @@ function TourControl({ tour, onStart, onStop, onInterval }: Readonly<TourControl
         onClick={() => setOpen((o) => !o)}
         className={`inline-flex h-8 items-center rounded-r-[8px] border-y border-r px-1.5 text-xs transition ${
           active
-            ? "border-[rgba(251,191,36,.5)] bg-[rgba(251,191,36,.12)] text-[#fbbf24]"
-            : "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
+            ? "border-nb-warn/50 bg-nb-warn/12 text-nb-warn"
+            : "border-nb-mist/22 text-nb-soft hover:border-nb-teal/50 hover:text-nb-tealb"
         }`}
       >
         <span className="font-mono tabular-nums">{seconds}s</span>
         <Icon icon="heroicons-mini:chevron-down" className="ml-0.5 text-sm" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-40 rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.93)] p-2 shadow-2xl backdrop-blur-xs">
-          <p className="px-1 pb-1 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-40 rounded-[13px] border border-nb-haze/22 bg-nb-surface2/93 p-2 shadow-2xl backdrop-blur-xs">
+          <p className="px-1 pb-1 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-nb-faint">
             Dwell per page
           </p>
           <div className="grid grid-cols-4 gap-1">
@@ -390,8 +390,8 @@ function TourControl({ tour, onStart, onStop, onInterval }: Readonly<TourControl
                 }}
                 className={`rounded-md border px-1 py-1.5 font-mono text-[11px] font-medium tabular-nums transition ${
                   seconds === s
-                    ? "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
-                    : "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
+                    ? "border-nb-teal/50 bg-nb-teal/15 text-nb-tealb"
+                    : "border-nb-mist/22 text-nb-soft hover:border-nb-teal/50 hover:text-nb-tealb"
                 }`}
               >
                 {s}s

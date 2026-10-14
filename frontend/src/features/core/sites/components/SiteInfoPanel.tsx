@@ -59,14 +59,14 @@ export default function SiteInfoPanel({ site }: Readonly<{ site: SitePublic }>) 
       </div>
 
       <div className="lg:col-span-2">
-        <div className="sticky top-4 rounded-xl border border-nb-line bg-white/5 p-3">
+        <div className="sticky top-4 rounded-xl border border-nb-line bg-nb-glint/5 p-3">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-nb-muted mb-2">Site image</div>
           {site.image_url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={fileUrl(site.image_url) ?? undefined} alt={site.name} className="h-64 w-full rounded-lg border border-nb-line object-cover" />
           ) : (
-            <div className="h-64 w-full rounded-lg border border-dashed border-nb-line bg-[rgba(8,15,34,.5)] flex flex-col items-center justify-center text-center px-4">
-              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-nb-muted">
+            <div className="h-64 w-full rounded-lg border border-dashed border-nb-line bg-nb-surface2/50 flex flex-col items-center justify-center text-center px-4">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-nb-glint/5 text-nb-muted">
                 <Icon icon="heroicons-outline:map-pin" className="text-lg text-nb-muted" />
               </span>
               <p className="mt-2 text-sm font-medium text-nb-ink">No site image</p>

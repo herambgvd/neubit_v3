@@ -108,28 +108,28 @@ export default function EvidenceLockModal({
           Recordings overlapping this range are protected from retention &amp; tiering
           deletion until the hold is released.
         </div>
-        <div className="rounded-lg border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.08)]/40 px-3 py-2 text-sm">
-          <span className="text-[#aec2e8]">Camera</span>{" "}
-          <span className="font-medium text-[#f2f6ff]">{cameraName || cameraId}</span>
+        <div className="rounded-lg border border-nb-mist/22 bg-nb-mist/[0.032] px-3 py-2 text-sm">
+          <span className="text-nb-soft">Camera</span>{" "}
+          <span className="font-medium text-nb-ink">{cameraName || cameraId}</span>
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="block">
-            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">From</span>
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-nb-soft">From</span>
             <input
               type="datetime-local"
               value={startTs}
               onChange={(e) => setStartTs(e.target.value)}
-              className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-hidden focus:border-[rgba(34,211,238,.5)]"
+              className="h-9 w-full rounded-lg border border-nb-mist/22 bg-transparent px-3 text-sm text-nb-ink outline-hidden focus:border-nb-teal/50"
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">To</span>
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-nb-soft">To</span>
             <input
               type="datetime-local"
               value={endTs}
               onChange={(e) => setEndTs(e.target.value)}
-              className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-hidden focus:border-[rgba(34,211,238,.5)]"
+              className="h-9 w-full rounded-lg border border-nb-mist/22 bg-transparent px-3 text-sm text-nb-ink outline-hidden focus:border-nb-teal/50"
             />
           </label>
         </div>
@@ -138,7 +138,7 @@ export default function EvidenceLockModal({
         )}
 
         <label className="block">
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-nb-soft">
             Case reference
           </span>
           <input
@@ -147,19 +147,19 @@ export default function EvidenceLockModal({
             onChange={(e) => setCaseRef(e.target.value)}
             placeholder="FIR-2026-0042"
             maxLength={255}
-            className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-hidden focus:border-[rgba(34,211,238,.5)]"
+            className="h-9 w-full rounded-lg border border-nb-mist/22 bg-transparent px-3 text-sm text-nb-ink outline-hidden focus:border-nb-teal/50"
           />
         </label>
 
         <label className="block">
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">Reason</span>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-nb-soft">Reason</span>
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             rows={3}
             maxLength={2000}
             placeholder="Why is this footage being held as evidence?"
-            className="w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 py-2 text-sm text-[#f2f6ff] outline-hidden focus:border-[rgba(34,211,238,.5)]"
+            className="w-full rounded-lg border border-nb-mist/22 bg-transparent px-3 py-2 text-sm text-nb-ink outline-hidden focus:border-nb-teal/50"
           />
         </label>
       </div>

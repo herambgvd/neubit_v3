@@ -115,7 +115,7 @@ export default function CameraPicker({
         </span>
       </div>
 
-      <div className="max-h-56 space-y-1 overflow-y-auto rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] p-1.5">
+      <div className="max-h-56 space-y-1 overflow-y-auto rounded-[9px] border border-nb-line bg-nb-surface3/50 p-1.5">
         {groups.length === 0 ? (
           <p className="px-1 py-3 text-center text-[11px] text-nb-soft">No camera matches that.</p>
         ) : (
@@ -128,7 +128,7 @@ export default function CameraPicker({
             const open = searching || !shut[g.key];
             return (
               <div key={g.key}>
-                <div className="flex items-center gap-1.5 rounded-[7px] px-1.5 py-1 hover:bg-[rgba(96,165,250,.06)]">
+                <div className="flex items-center gap-1.5 rounded-[7px] px-1.5 py-1 hover:bg-nb-blue/6">
                   <button
                     type="button"
                     onClick={() => setShut((s) => ({ ...s, [g.key]: !s[g.key] }))}
@@ -169,8 +169,8 @@ export default function CameraPicker({
                           key={c.id}
                           className={`flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-[11px] ${
                             checked
-                              ? "bg-[rgba(96,165,250,.1)] text-nb-blueb"
-                              : "text-nb-soft hover:bg-[rgba(96,165,250,.06)]"
+                              ? "bg-nb-blue/10 text-nb-blueb"
+                              : "text-nb-soft hover:bg-nb-blue/6"
                           }`}
                         >
                           <input type="checkbox" checked={checked} onChange={() => onToggle(c.id)} />

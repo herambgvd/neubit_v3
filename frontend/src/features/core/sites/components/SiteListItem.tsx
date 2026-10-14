@@ -20,11 +20,11 @@ export default function SiteListItem({ site, selected, onSelect }: Readonly<Site
       onClick={onSelect}
       className={`flex w-full items-center gap-2.5 rounded-[10px] border px-3 py-2.5 text-left transition ${
         selected
-          ? "border-[rgba(96,165,250,.6)] bg-[rgba(96,165,250,.1)]"
-          : "border-nb-line bg-[rgba(6,11,26,.5)] hover:border-[rgba(150,180,245,.42)]"
+          ? "border-nb-blue/60 bg-nb-blue/10"
+          : "border-nb-line bg-nb-surface3/50 hover:border-nb-mist/42"
       }`}
     >
-      <span className="relative grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-[9px] border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted">
+      <span className="relative grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-[9px] border border-nb-line bg-nb-surface/60 text-nb-muted">
         {s.image_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={fileUrl(s.image_url) ?? undefined} alt={s.name} className="h-full w-full object-cover" />
@@ -36,7 +36,7 @@ export default function SiteListItem({ site, selected, onSelect }: Readonly<Site
         <span className="flex items-center gap-2">
           <span className="truncate text-[12.5px] font-semibold text-nb-ink">{s.name}</span>
           {s.site_type && (
-            <span className="rounded-full border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.12)] px-1.5 py-px text-[9px] font-medium capitalize text-nb-blueb">
+            <span className="rounded-full border border-nb-blue/40 bg-nb-blue/12 px-1.5 py-px text-[9px] font-medium capitalize text-nb-blueb">
               {s.site_type}
             </span>
           )}
@@ -45,7 +45,7 @@ export default function SiteListItem({ site, selected, onSelect }: Readonly<Site
           {city || s.location_code || "—"}
         </span>
       </span>
-      <span className={`h-2 w-2 shrink-0 rounded-full ${s.is_active !== false ? "bg-nb-good shadow-[0_0_5px_#34d399]" : "bg-nb-faint"}`} />
+      <span className={`h-2 w-2 shrink-0 rounded-full ${s.is_active !== false ? "bg-nb-good shadow-[0_0_5px_rgb(var(--nb-c-good))]" : "bg-nb-faint"}`} />
     </button>
   );
 }

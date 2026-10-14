@@ -34,7 +34,7 @@ const hrefs = () =>
 const lit = (root: HTMLElement = document.body) =>
   within(root)
     .getAllByRole("link")
-    .filter((a) => a.className.includes("bg-[rgba(96,165,250,.16)]"))
+    .filter((a) => a.className.includes("bg-nb-blue/16"))
     .map((a) => (a.textContent || "").trim());
 
 describe("the BI segment", () => {

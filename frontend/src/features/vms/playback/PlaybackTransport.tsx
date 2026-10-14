@@ -74,7 +74,7 @@ export default function PlaybackTransport(p: Readonly<PlaybackTransportProps>) {
           onClick={p.onTogglePlay}
           title="Play / pause (Space)"
           aria-label={p.playing ? "Pause" : "Play"}
-          className="mx-1 inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#22d3ee] text-[#04111f] transition hover:bg-[#67e8f9]"
+          className="mx-1 inline-flex h-9 w-9 items-center justify-center rounded-full bg-nb-teal text-[#04111f] transition hover:bg-nb-tealb"
         >
           <Icon icon={p.playing ? "heroicons-solid:pause" : "heroicons-solid:play"} className="text-lg" />
         </button>
@@ -85,7 +85,7 @@ export default function PlaybackTransport(p: Readonly<PlaybackTransportProps>) {
       </div>
 
       {/* Speed */}
-      <div className="flex items-center gap-0.5 rounded-lg border border-[rgba(160,150,245,.22)] px-1">
+      <div className="flex items-center gap-0.5 rounded-lg border border-nb-haze/22 px-1">
         <Btn
           icon="heroicons-solid:arrow-uturn-left"
           title={p.canReverse ? "Reverse play" : "Reverse play works with up to 4 cameras"}
@@ -96,7 +96,7 @@ export default function PlaybackTransport(p: Readonly<PlaybackTransportProps>) {
         <Btn icon="heroicons-solid:minus" title="Slower (PgDn)" onClick={() => p.onSpeedStep(-1)} />
         <span
           className={`w-12 text-center text-[12px] font-semibold tabular-nums ${
-            p.speed === 1 ? "text-[#f2f6ff]" : "text-[#67e8f9]"
+            p.speed === 1 ? "text-nb-ink" : "text-nb-tealb"
           }`}
           title={`Up to ${p.maxSpeed}× with this many tiles`}
         >
@@ -107,10 +107,10 @@ export default function PlaybackTransport(p: Readonly<PlaybackTransportProps>) {
 
       {/* Date and time */}
       <div className="flex flex-col items-center leading-tight">
-        <span ref={timeRef} className="text-[15px] font-semibold tabular-nums text-[#f2f6ff]">
+        <span ref={timeRef} className="text-[15px] font-semibold tabular-nums text-nb-ink">
           --:--:--
         </span>
-        <span className="text-[10px] tabular-nums text-[#9db0d8]">
+        <span className="text-[10px] tabular-nums text-nb-dim">
           <span ref={dayRef} /> · {p.target}
         </span>
       </div>
@@ -133,8 +133,8 @@ export default function PlaybackTransport(p: Readonly<PlaybackTransportProps>) {
             onClick={() => p.onSpan(z.seconds)}
             className={`rounded px-1.5 py-0.5 text-[11px] tabular-nums transition ${
               z.label === zoomNow.label
-                ? "bg-[rgba(34,211,238,.15)] font-semibold text-[#67e8f9]"
-                : "text-[#9db0d8] hover:text-[#f2f6ff]"
+                ? "bg-nb-teal/15 font-semibold text-nb-tealb"
+                : "text-nb-dim hover:text-nb-ink"
             }`}
           >
             {z.label}
@@ -143,7 +143,7 @@ export default function PlaybackTransport(p: Readonly<PlaybackTransportProps>) {
       </div>
 
       {/* IN / OUT → export */}
-      <div className="flex items-center gap-0.5 border-l border-[rgba(160,150,245,.22)] pl-2">
+      <div className="flex items-center gap-0.5 border-l border-nb-haze/22 pl-2">
         <Btn label="IN" title="Mark in ([)" onClick={p.onMarkIn} />
         <Btn label="OUT" title="Mark out (])" onClick={p.onMarkOut} />
         {hasSel && (
@@ -194,8 +194,8 @@ function Btn({ icon, label, title, on = false, flip = false, disabled = false, o
       aria-pressed={on || undefined}
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex h-7 min-w-7 items-center justify-center rounded-md px-1 transition hover:bg-[rgba(150,180,245,.08)] disabled:pointer-events-none disabled:opacity-40 ${
-        on ? "text-[#67e8f9]" : "text-[#9db0d8] hover:text-[#f2f6ff]"
+      className={`inline-flex h-7 min-w-7 items-center justify-center rounded-md px-1 transition hover:bg-nb-mist/8 disabled:pointer-events-none disabled:opacity-40 ${
+        on ? "text-nb-tealb" : "text-nb-dim hover:text-nb-ink"
       }`}
     >
       {label ? (

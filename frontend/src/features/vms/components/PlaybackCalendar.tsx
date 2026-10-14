@@ -26,9 +26,9 @@ const dayStr = (y: number, m0: number, d: number) => `${y}-${pad(m0 + 1)}-${pad(
  *  ring or the hover — but SELECTED still wins over it, because the calendar can
  *  be opened on a selection made before midnight rolled the day over. */
 function dayCellSkin({ isSelected, isFuture, isToday }: Readonly<{ isSelected: boolean; isFuture: boolean; isToday: boolean }>): string {
-  if (isSelected) return "bg-[rgba(34,211,238,.15)] font-semibold text-[#67e8f9] ring-1 ring-inset ring-[rgba(34,211,238,.5)]";
-  if (isFuture) return "text-[#7e93bf]/40";
-  return `text-[#f2f6ff] hover:bg-[rgba(34,211,238,.08)] ${isToday ? "ring-1 ring-inset ring-[rgba(150,180,245,.22)]" : ""}`;
+  if (isSelected) return "bg-nb-teal/15 font-semibold text-nb-tealb ring-1 ring-inset ring-nb-teal/50";
+  if (isFuture) return "text-nb-dim2/40";
+  return `text-nb-ink hover:bg-nb-teal/8 ${isToday ? "ring-1 ring-inset ring-nb-mist/22" : ""}`;
 }
 
 export interface PlaybackCalendarProps {
@@ -81,19 +81,19 @@ export default function PlaybackCalendar({
         <button
           type="button"
           onClick={onPrevMonth}
-          className="rounded-md p-1 text-[#aec2e8] transition hover:bg-[rgba(34,211,238,.08)] hover:text-[#67e8f9]"
+          className="rounded-md p-1 text-nb-soft transition hover:bg-nb-teal/8 hover:text-nb-tealb"
           title="Previous month"
         >
           <Icon icon="heroicons-outline:chevron-left" className="text-sm" />
         </button>
-        <span className="text-[13px] font-medium text-[#f2f6ff]">
+        <span className="text-[13px] font-medium text-nb-ink">
           {MONTHS[viewMonth]} {viewYear}
         </span>
         <button
           type="button"
           onClick={onNextMonth}
           disabled={atCurrentMonth}
-          className="rounded-md p-1 text-[#aec2e8] transition hover:bg-[rgba(34,211,238,.08)] hover:text-[#67e8f9] disabled:opacity-30 disabled:hover:bg-transparent"
+          className="rounded-md p-1 text-nb-soft transition hover:bg-nb-teal/8 hover:text-nb-tealb disabled:opacity-30 disabled:hover:bg-transparent"
           title="Next month"
         >
           <Icon icon="heroicons-outline:chevron-right" className="text-sm" />
@@ -101,7 +101,7 @@ export default function PlaybackCalendar({
       </div>
 
       {/* weekday row */}
-      <div className="grid grid-cols-7 gap-0.5 px-0.5 text-center font-mono text-[10px] font-medium uppercase tracking-[1px] text-[#7e93bf]">
+      <div className="grid grid-cols-7 gap-0.5 px-0.5 text-center font-mono text-[10px] font-medium uppercase tracking-[1px] text-nb-dim2">
         {WEEKDAYS.map((w, i) => (
           <span key={i} className="py-0.5">
             {w}

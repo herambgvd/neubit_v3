@@ -51,7 +51,7 @@ const lngLat = (site: SiteWithCoords): [number, number] => [
 function OfflineDisabled({ reason }: Readonly<{ reason?: string }>) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-6 py-20 text-center">
-      <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-white/5 text-nb-muted">
+      <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-nb-glint/5 text-nb-muted">
         <Icon icon="heroicons-outline:map" className="text-xl" />
       </span>
       <p className="text-sm font-semibold text-nb-ink">Offline basemap not installed</p>
@@ -121,13 +121,13 @@ function OfflineMapStyleFix() {
         pointer-events: none;
       }
       .sites-map-root .maplibregl-ctrl-scale {
-        background: rgba(6, 11, 26, 0.7);
-        border-color: rgba(150, 180, 245, 0.35);
+        background: rgb(var(--nb-c-surface3)/.7);
+        border-color: rgb(var(--nb-c-mist)/.35);
         color: #cbd5e1;
       }
       .sites-map-root .maplibregl-ctrl-attrib,
       .sites-map-root .maplibregl-ctrl-attrib a {
-        background: rgba(6, 11, 26, 0.7);
+        background: rgb(var(--nb-c-surface3)/.7);
         color: #94a3b8;
       }
     `}</style>
@@ -531,7 +531,7 @@ export default function OfflineMapView({
       <div
         ref={readoutRef}
         aria-hidden="true"
-        className="pointer-events-none absolute bottom-2 right-2 rounded-md border border-nb-line bg-[rgba(6,11,26,.75)] px-2 py-1 font-mono text-[10.5px] text-nb-soft"
+        className="pointer-events-none absolute bottom-2 right-2 rounded-md border border-nb-line bg-nb-surface3/75 px-2 py-1 font-mono text-[10.5px] text-nb-soft"
       />
       {status.state === "probing" && (
         <div className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-nb-muted">

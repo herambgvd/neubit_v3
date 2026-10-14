@@ -21,8 +21,8 @@ export default function LinkageRuleListItem({ rule, selected, onSelect }: Readon
         onClick={onSelect}
         className={`w-full flex items-start gap-3 rounded-[10px] border px-4 py-3 text-left transition ${
           selected
-            ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]"
-            : "border-transparent hover:bg-[rgba(96,165,250,.06)]"
+            ? "border-nb-blue/50 bg-nb-blue/10"
+            : "border-transparent hover:bg-nb-blue/6"
         }`}
       >
         {selected && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-nb-blue" />}
@@ -30,7 +30,7 @@ export default function LinkageRuleListItem({ rule, selected, onSelect }: Readon
           <Icon icon={tp.icon} className="text-base" />
           <span
             className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-card ${
-              rule.is_active ? "bg-nb-good shadow-[0_0_5px_#34d399]" : "bg-nb-faint"
+              rule.is_active ? "bg-nb-good shadow-[0_0_5px_rgb(var(--nb-c-good))]" : "bg-nb-faint"
             }`}
           />
         </span>
@@ -38,7 +38,7 @@ export default function LinkageRuleListItem({ rule, selected, onSelect }: Readon
           <span className="flex items-center gap-2">
             <span className="text-sm font-semibold text-nb-ink truncate">{rule.name}</span>
             {!rule.is_active && (
-              <span className="text-[10px] rounded-full border border-nb-line bg-[rgba(10,18,40,.6)] px-1.5 py-0.5 font-medium text-nb-muted">Inactive</span>
+              <span className="text-[10px] rounded-full border border-nb-line bg-nb-surface/60 px-1.5 py-0.5 font-medium text-nb-muted">Inactive</span>
             )}
           </span>
           <span className="block text-xs text-nb-soft truncate">on {tp.label}</span>

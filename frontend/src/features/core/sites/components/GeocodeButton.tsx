@@ -107,7 +107,7 @@ export default function GeocodeButton({ apiKey, address, onResult }: Readonly<Ge
       onClick={run}
       disabled={disabled}
       title={title}
-      className="inline-flex items-center gap-1.5 rounded-[9px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] px-3 py-1.5 text-[11.5px] tracking-[.3px] text-nb-blueb transition hover:bg-[rgba(96,165,250,.18)] disabled:cursor-not-allowed disabled:opacity-45"
+      className="inline-flex items-center gap-1.5 rounded-[9px] border border-nb-blue/50 bg-nb-blue/10 px-3 py-1.5 text-[11.5px] tracking-[.3px] text-nb-blueb transition hover:bg-nb-blue/18 disabled:cursor-not-allowed disabled:opacity-45"
     >
       <Icon icon={busy ? "svg-spinners:180-ring" : "heroicons-outline:map-pin"} className="text-sm" />
       {busy ? "Fetching…" : "Fetch from address"}

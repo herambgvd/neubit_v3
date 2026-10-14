@@ -24,9 +24,9 @@ function toGB(bytes: number | null | undefined): string {
 
 /** Blue healthy, amber busy, red saturated — the same ramp the gauges used. */
 function meterColor(percent: number): string {
-  if (percent >= 90) return "#f87171";
-  if (percent >= 70) return "#fbbf24";
-  return "#60a5fa";
+  if (percent >= 90) return "rgb(var(--nb-c-crit))";
+  if (percent >= 70) return "rgb(var(--nb-c-warn))";
+  return "rgb(var(--nb-c-blue))";
 }
 
 function Meter({
@@ -43,7 +43,7 @@ function Meter({
   const p = Math.min(100, Math.max(0, Math.round(percent ?? 0)));
   const col = meterColor(p);
   return (
-    <div className="rounded-[10px] border border-nb-line bg-[rgba(8,15,34,.5)] px-3 py-2">
+    <div className="rounded-[10px] border border-nb-line bg-nb-surface2/50 px-3 py-2">
       <div className="flex items-center gap-1.5">
         <Icon icon={icon} className="shrink-0 text-[13px] text-nb-blueb" />
         <span className="font-mono text-[10px] uppercase tracking-[1.2px] text-nb-soft">{label}</span>
@@ -52,7 +52,7 @@ function Meter({
         </span>
       </div>
       <div
-        className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/[.08]"
+        className="mt-1.5 h-1 overflow-hidden rounded-full bg-nb-glint/[.08]"
         role="progressbar"
         aria-label={label}
         aria-valuenow={p}
@@ -61,7 +61,7 @@ function Meter({
       >
         <div
           className="h-full rounded-full transition-[width] duration-500"
-          style={{ width: `${p}%`, background: col, boxShadow: `0 0 6px ${col}66` }}
+          style={{ width: `${p}%`, background: col, boxShadow: `0 0 6px color-mix(in srgb, ${col} 40%, transparent)` }}
         />
       </div>
       {sub && <div className="mt-1 truncate font-mono text-[10px] text-nb-faint">{sub}</div>}
@@ -106,8 +106,8 @@ export default function HostStrip({ health, loading }: Readonly<HostStripProps>)
         // Windows appliance) is neither up nor down: neutral, never red.
         const unused = state.startsWith("not used");
         const calm = ok || unused;
-        let dot = "bg-nb-crit shadow-[0_0_6px_#f87171]";
-        if (ok) dot = "bg-nb-good shadow-[0_0_6px_#34d399]";
+        let dot = "bg-nb-crit shadow-[0_0_6px_rgb(var(--nb-c-crit))]";
+        if (ok) dot = "bg-nb-good shadow-[0_0_6px_rgb(var(--nb-c-good))]";
         else if (unused) dot = "bg-nb-faint";
         let text = state;
         if (loading) text = "checking…";
@@ -116,7 +116,7 @@ export default function HostStrip({ health, loading }: Readonly<HostStripProps>)
         return (
           <div
             key={key}
-            className={`rounded-[10px] border px-3 py-2 ${calm ? "border-nb-line bg-[rgba(8,15,34,.5)]" : "border-nb-crit/40 bg-nb-crit/[.07]"}`}
+            className={`rounded-[10px] border px-3 py-2 ${calm ? "border-nb-line bg-nb-surface2/50" : "border-nb-crit/40 bg-nb-crit/[.07]"}`}
             title={ok ? undefined : state}
           >
             <div className="flex items-center gap-1.5">

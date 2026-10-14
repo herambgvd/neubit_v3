@@ -32,10 +32,10 @@ export type WallPlayback = ReturnType<typeof useWallPlayback>;
 
 // Colour per recording trigger (mockup palette).
 const TRIGGER_COLOR = {
-  continuous: "#34d399",
-  motion: "#fbbf24",
-  schedule: "#60a5fa",
-  manual: "#a78bfa",
+  continuous: "rgb(var(--nb-c-good))",
+  motion: "rgb(var(--nb-c-warn))",
+  schedule: "rgb(var(--nb-c-blue))",
+  manual: "rgb(var(--nb-c-violet))",
 };
 
 const SKIP_SEC = 10;
@@ -57,8 +57,8 @@ function Btn({ icon, title, onClick, active = false, disabled = false }: Readonl
       onClick={onClick}
       className={`inline-flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[8px] border transition ${
         active
-          ? "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
-          : "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.6)] hover:text-[#22d3ee] disabled:cursor-not-allowed disabled:opacity-40"
+          ? "border-nb-teal/50 bg-nb-teal/15 text-nb-tealb"
+          : "border-nb-mist/22 text-nb-soft hover:border-nb-teal/60 hover:text-nb-teal disabled:cursor-not-allowed disabled:opacity-40"
       }`}
     >
       <Icon icon={icon} className="text-base" />
@@ -168,8 +168,8 @@ function useScrub(onCommit: (frac: number) => void) {
  *  thicker cyan one, so "where footage currently is" and "where I am looking"
  *  never read as the same mark. */
 function playheadCls(dragging: boolean, playback: boolean): string {
-  if (dragging) return "w-0.5 bg-[#67e8f9]";
-  return playback ? "w-0.5 bg-[#22d3ee]" : "w-px bg-[#f87171]";
+  if (dragging) return "w-0.5 bg-nb-tealb";
+  return playback ? "w-0.5 bg-nb-teal" : "w-px bg-nb-crit";
 }
 
 /** A recorded span in epoch ms, with the recorder's trigger for its colour. */
@@ -323,14 +323,14 @@ function TransportControls({
         type="button"
         onClick={pb.goLive}
         title="Return every tile to its live stream"
-        className="ml-0.5 inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-[8px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.14)] px-2.5 text-[11px] font-semibold tracking-[.6px] text-[#67e8f9] transition hover:border-[#22d3ee]"
+        className="ml-0.5 inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-[8px] border border-nb-teal/50 bg-nb-teal/14 px-2.5 text-[11px] font-semibold tracking-[.6px] text-nb-tealb transition hover:border-nb-teal"
       >
         <Icon icon="heroicons-outline:arrow-uturn-left" className="text-xs" />
         GO LIVE
       </button>
     ) : (
-      <span className="ml-0.5 inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-[8px] border border-[rgba(248,113,113,.5)] bg-[rgba(248,113,113,.14)] px-2.5 text-[11px] font-semibold tracking-[.6px] text-[#f87171]">
-        <span className="h-1.5 w-1.5 rounded-full bg-[#f87171]" />LIVE
+      <span className="ml-0.5 inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-[8px] border border-nb-crit/50 bg-nb-crit/14 px-2.5 text-[11px] font-semibold tracking-[.6px] text-nb-crit">
+        <span className="h-1.5 w-1.5 rounded-full bg-nb-crit" />LIVE
       </span>
     )}
 
@@ -349,8 +349,8 @@ function TransportControls({
       }
       className={`inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-[8px] border px-2.5 text-[11px] font-semibold tracking-[.6px] transition disabled:cursor-not-allowed disabled:opacity-40 ${
         sync
-          ? "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
-          : "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.6)] hover:text-[#22d3ee]"
+          ? "border-nb-teal/50 bg-nb-teal/15 text-nb-tealb"
+          : "border-nb-mist/22 text-nb-soft hover:border-nb-teal/60 hover:text-nb-teal"
       }`}
     >
       <Icon icon="heroicons-outline:squares-2x2" className="text-sm" />
@@ -377,20 +377,20 @@ function FocusedCameraLabel({
   // into one expression made a reader work out which question each answered.
   const spansInView = `${spanCount} span${spanCount === 1 ? "" : "s"} in view`;
   return (
-    <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[#aec2e8]">
+    <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-nb-soft">
       {camera ? (
         <>
-          <Icon icon="heroicons-solid:video-camera" className="mr-1 inline text-sm text-[#22d3ee]" />
+          <Icon icon="heroicons-solid:video-camera" className="mr-1 inline text-sm text-nb-teal" />
           {camera.name}
-          {camera.node_name && <span className="ml-1.5 text-[#7e93bf]">· {camera.node_name}</span>}
+          {camera.node_name && <span className="ml-1.5 text-nb-dim2">· {camera.node_name}</span>}
           {federated && (
-            <span className="ml-2 text-[#7e93bf]">
+            <span className="ml-2 text-nb-dim2">
               {loading ? "loading…" : spansInView}
             </span>
           )}
         </>
       ) : (
-        <span className="text-[#7e93bf]">Click a camera on the wall to scrub its recordings</span>
+        <span className="text-nb-dim2">Click a camera on the wall to scrub its recordings</span>
       )}
     </span>
   );
@@ -451,24 +451,24 @@ function TrackContents({
     {ticks.map((t) => (
       <div
         key={t}
-        className="pointer-events-none absolute top-0 h-full border-l border-[rgba(150,180,245,.1)]"
+        className="pointer-events-none absolute top-0 h-full border-l border-nb-mist/10"
         style={{ left: `${((t - from) / span) * 100}%` }}
       >
-        <span className="absolute left-1 top-0.5 font-mono text-[9px] text-[#7e93bf]">{hhmm(t)}</span>
+        <span className="absolute left-1 top-0.5 font-mono text-[9px] text-nb-dim2">{hhmm(t)}</span>
       </div>
     ))}
 
     {/* Honest empty states */}
     {federated && !loading && spans.length === 0 && (
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <span className="font-mono text-[10px] tracking-[.6px] text-[#7e93bf]">
+        <span className="font-mono text-[10px] tracking-[.6px] text-nb-dim2">
           No recorded footage in this window
         </span>
       </div>
     )}
     {!federated && (
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <span className="font-mono text-[10px] tracking-[.6px] text-[#7e93bf]">
+        <span className="font-mono text-[10px] tracking-[.6px] text-nb-dim2">
           {hasCamera ? "Recorder playback only" : "—"}
         </span>
       </div>
@@ -478,7 +478,7 @@ function TrackContents({
         two thirds along". */}
     {federated && hoverMs != null && (
       <div
-        className="pointer-events-none absolute top-0.5 z-10 -translate-x-1/2 rounded-[5px] border border-[rgba(150,180,245,.3)] bg-[rgba(8,15,34,.95)] px-1.5 py-px font-mono text-[10px] tabular-nums text-[#d7f7e9]"
+        className="pointer-events-none absolute top-0.5 z-10 -translate-x-1/2 rounded-[5px] border border-nb-mist/30 bg-nb-surface2/95 px-1.5 py-px font-mono text-[10px] tabular-nums text-emerald-100"
         style={{ left: `${Math.min(96, Math.max(4, (hoverFrac ?? 0) * 100))}%` }}
       >
         {clockOf(hoverMs)}
@@ -489,11 +489,11 @@ function TrackContents({
     {markerFrac != null && markerFrac >= 0 && markerFrac <= 1 && (
       <div
         className={`pointer-events-none absolute top-0 h-full ${playheadCls(dragging, playback)}`}
-        style={{ left: `${markerFrac * 100}%`, boxShadow: playback ? "0 0 6px #22d3ee" : "0 0 6px #f87171" }}
+        style={{ left: `${markerFrac * 100}%`, boxShadow: playback ? "0 0 6px rgb(var(--nb-c-teal))" : "0 0 6px rgb(var(--nb-c-crit))" }}
       >
         <span
           className={`absolute left-1/2 top-0 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 ${
-            playback ? "bg-[#22d3ee]" : "bg-[#f87171]"
+            playback ? "bg-nb-teal" : "bg-nb-crit"
           }`}
         />
       </div>
@@ -607,17 +607,17 @@ export default function PlayoutBar({ camera, pb, onClose }: Readonly<PlayoutBarP
   });
 
   return (
-    <div className="shrink-0 border-t border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.82)] px-3 py-2 backdrop-blur-xs">
+    <div className="shrink-0 border-t border-nb-mist/22 bg-nb-surface2/82 px-3 py-2 backdrop-blur-xs">
       {/* Transport row */}
       <div className="flex items-center gap-1.5">
         <TransportControls pb={pb} federated={federated} spans={spans} playback={playback} onStep={stepSpan} />
 
-        <div className="mx-0.5 h-6 w-px shrink-0 bg-[rgba(150,180,245,.22)]" />
+        <div className="mx-0.5 h-6 w-px shrink-0 bg-nb-mist/22" />
 
         {/* The absolute clock: the time under the pointer while scrubbing, else
             the playhead. A DVR bar with no clock on it answers no question. */}
-        <span className="inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-[8px] border border-[rgba(150,180,245,.22)] px-2 font-mono text-[12px] tabular-nums text-[#d7f7e9]">
-          <Icon icon="heroicons-outline:clock" className="text-xs text-[#7e93bf]" />
+        <span className="inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-[8px] border border-nb-mist/22 px-2 font-mono text-[12px] tabular-nums text-emerald-100">
+          <Icon icon="heroicons-outline:clock" className="text-xs text-nb-dim2" />
           {clockOf(marker.hoverMs ?? marker.markerMs)}
         </span>
 
@@ -631,8 +631,8 @@ export default function PlayoutBar({ camera, pb, onClose }: Readonly<PlayoutBarP
                 onClick={() => pb.setSpeed(s)}
                 className={`rounded-[7px] px-1.5 py-1 font-mono text-[11px] transition ${
                   speed === s
-                    ? "bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
-                    : "text-[#7e93bf] hover:text-[#aec2e8]"
+                    ? "bg-nb-teal/15 text-nb-tealb"
+                    : "text-nb-dim2 hover:text-nb-soft"
                 }`}
               >
                 {s}×
@@ -656,15 +656,15 @@ export default function PlayoutBar({ camera, pb, onClose }: Readonly<PlayoutBarP
             selecting a future day that cannot hold footage. */}
         <label
           title="Show a different day's recordings"
-          className="inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-[8px] border border-[rgba(150,180,245,.22)] px-2 text-[#aec2e8] transition focus-within:border-[rgba(34,211,238,.6)] hover:border-[rgba(34,211,238,.6)]"
+          className="inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-[8px] border border-nb-mist/22 px-2 text-nb-soft transition focus-within:border-nb-teal/60 hover:border-nb-teal/60"
         >
-          <Icon icon="heroicons-outline:calendar-days" className="text-sm text-[#7e93bf]" />
+          <Icon icon="heroicons-outline:calendar-days" className="text-sm text-nb-dim2" />
           <input
             type="date"
             value={dayValue(win.fromMs)}
             max={todayMax}
             onChange={(e) => e.target.value && pb.pickDay(e.target.value)}
-            className="w-[112px] bg-transparent font-mono text-[11px] tabular-nums text-[#d7f7e9] outline-none [color-scheme:dark]"
+            className="w-[112px] bg-transparent font-mono text-[11px] tabular-nums text-emerald-100 outline-none"
           />
         </label>
 
@@ -678,8 +678,8 @@ export default function PlayoutBar({ camera, pb, onClose }: Readonly<PlayoutBarP
               onClick={() => pb.setRange(r.seconds)}
               className={`rounded-[7px] px-1.5 py-1 font-mono text-[11px] transition ${
                 rangeSeconds === r.seconds
-                  ? "bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
-                  : "text-[#7e93bf] hover:text-[#aec2e8]"
+                  ? "bg-nb-teal/15 text-nb-tealb"
+                  : "text-nb-dim2 hover:text-nb-soft"
               }`}
             >
               {r.label}
@@ -693,7 +693,7 @@ export default function PlayoutBar({ camera, pb, onClose }: Readonly<PlayoutBarP
           type="button"
           onClick={onClose}
           title="Hide playback transport"
-          className="inline-flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[8px] border border-[rgba(150,180,245,.22)] text-[#aec2e8] transition hover:border-[rgba(248,113,113,.5)] hover:text-[#f87171]"
+          className="inline-flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[8px] border border-nb-mist/22 text-nb-soft transition hover:border-nb-crit/50 hover:text-nb-crit"
         >
           <Icon icon="heroicons-outline:x-mark" className="text-base" />
         </button>
@@ -704,7 +704,7 @@ export default function PlayoutBar({ camera, pb, onClose }: Readonly<PlayoutBarP
       <div
         ref={scrub.ref}
         {...scrub.handlers}
-        className={`relative mt-2 h-10 touch-none select-none overflow-hidden rounded-[9px] border border-[rgba(150,180,245,.15)] bg-[#0b1428] ${
+        className={`relative mt-2 h-10 touch-none select-none overflow-hidden rounded-[9px] border border-nb-mist/15 bg-nb-field ${
           federated ? "cursor-pointer" : ""
         }`}
       >

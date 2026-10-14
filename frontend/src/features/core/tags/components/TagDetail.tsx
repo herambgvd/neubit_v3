@@ -33,13 +33,13 @@ export default function TagDetail({ tag, onEdit, onDelete }: Readonly<TagDetailP
               <span className="font-mono">{(tag.color || DEFAULT_COLOR).toUpperCase()}</span>
               <span
                 className={`rounded-full px-2 py-0.5 font-medium ${
-                  tag.is_active !== false ? "bg-green-500/10 text-green-500" : "bg-white/5 text-nb-muted"
+                  tag.is_active !== false ? "bg-green-500/10 text-green-500" : "bg-nb-glint/5 text-nb-muted"
                 }`}
               >
                 {tag.is_active !== false ? "Active" : "Inactive"}
               </span>
               {typeof tag.usage_count === "number" && (
-                <span className="rounded-full bg-white/5 text-nb-muted px-2 py-0.5 font-medium">
+                <span className="rounded-full bg-nb-glint/5 text-nb-muted px-2 py-0.5 font-medium">
                   {tag.usage_count} use(s)
                 </span>
               )}

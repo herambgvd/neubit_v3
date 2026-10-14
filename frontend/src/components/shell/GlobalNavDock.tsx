@@ -54,11 +54,11 @@ function HomeStatusStrip() {
     else document.documentElement.requestFullscreen?.();
   };
   const tiny =
-    "grid h-[30px] w-[30px] place-items-center rounded-[7px] border border-[rgba(150,180,245,.22)] text-[#aec2e8] transition hover:border-[#22d3ee] hover:text-[#67e8f9]";
+    "grid h-[30px] w-[30px] place-items-center rounded-[7px] border border-nb-mist/22 text-nb-soft transition hover:border-nb-teal hover:text-nb-tealb";
 
   return (
     <div className="mr-1 flex items-center gap-2">
-      <span className="font-mono text-[13px] text-[#aec2e8]">{now}</span>
+      <span className="font-mono text-[13px] text-nb-soft">{now}</span>
       <button type="button" title="Lock console" className={tiny}>
         <svg viewBox="0 0 24 24" width="15" height="15" {...HSS}><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
       </button>
@@ -304,7 +304,7 @@ export default function GlobalNavDock({ home = false }: Readonly<{ home?: boolea
     // which a modal's own backdrop-blur cannot reach into: the dim/blur stopped dead
     // at the header's bottom border and the top of the screen stayed sharp, reading
     // as the page background being "cut off" above the overlay. Same for <Footer>.
-    <header className="relative z-50 flex h-14 shrink-0 items-center gap-3 border-b border-[rgba(150,180,245,.18)] bg-[rgba(10,18,40,.82)] px-3 sm:px-4">
+    <header className="relative z-50 flex h-14 shrink-0 items-center gap-3 border-b border-nb-mist/18 bg-nb-surface/82 px-3 sm:px-4">
       <div className="flex shrink-0 items-center gap-1.5">
         {/* ⊞ MENU navigator launcher — jump to any section from any screen. Sits to
             the LEFT of the brand so the navigator is the first thing in the bar. */}

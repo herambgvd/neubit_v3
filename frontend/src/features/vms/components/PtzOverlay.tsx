@@ -629,7 +629,7 @@ export function TourStrip({
   onOperate: (tour: string, operation: TourOperation) => void;
 }>) {
   return (
-    <div className="absolute bottom-full right-0 z-40 mb-2 w-64 rounded-xl border border-white/15 bg-[rgba(8,14,28,.96)] p-2.5 shadow-xl">
+    <div className="absolute bottom-full right-0 z-40 mb-2 w-64 rounded-xl border border-white/15 bg-nb-surface2/96 p-2.5 shadow-xl">
       <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[1.2px] text-white/50">
         Camera tours
       </p>

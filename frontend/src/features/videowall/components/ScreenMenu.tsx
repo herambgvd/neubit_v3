@@ -78,12 +78,12 @@ export default function ScreenMenu({ wall, monitors, screens }: Readonly<ScreenM
         onClick={() => setOpen((o) => !o)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         title="Put this wall's monitors on the screens attached to this workstation"
-        className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(10,18,40,.65)] px-2.5 text-xs font-medium text-[#aec2e8] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
+        className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-nb-mist/22 bg-nb-surface/65 px-2.5 text-xs font-medium text-nb-soft transition hover:border-nb-teal/50 hover:text-nb-tealb"
       >
-        <Icon icon="heroicons:tv" className="text-sm text-[#9a92c8]" />
+        <Icon icon="heroicons:tv" className="text-sm text-nb-faint" />
         Screens
         {openCount > 0 && (
-          <span className="rounded-full border border-[rgba(52,211,153,.45)] bg-[rgba(52,211,153,.1)] px-1.5 font-mono text-[9px] font-semibold text-[#34d399]">
+          <span className="rounded-full border border-nb-good/45 bg-nb-good/10 px-1.5 font-mono text-[9px] font-semibold text-nb-good">
             {openCount}
           </span>
         )}
@@ -94,10 +94,10 @@ export default function ScreenMenu({ wall, monitors, screens }: Readonly<ScreenM
           // onMouseDown-preventDefault on every control inside: the button above
           // closes the menu on blur, and a click that steals focus first would
           // close it before the click ever lands.
-          className="absolute right-0 top-full z-50 mt-1.5 w-[22rem] rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(12,21,44,.97)] py-1 shadow-2xl backdrop-blur-sm"
+          className="absolute right-0 top-full z-50 mt-1.5 w-[22rem] rounded-[13px] border border-nb-haze/22 bg-nb-surface/97 py-1 shadow-2xl backdrop-blur-sm"
         >
           <div className="flex items-center justify-between px-3 py-1.5">
-            <span className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-nb-faint">
               This workstation
             </span>
             <button
@@ -105,33 +105,33 @@ export default function ScreenMenu({ wall, monitors, screens }: Readonly<ScreenM
               onMouseDown={(e) => e.preventDefault()}
               onClick={screens.identify}
               title="Flash a label on every screen, so you can tell which is which"
-              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-[#67e8f9] transition hover:bg-[rgba(34,211,238,.12)]"
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-nb-tealb transition hover:bg-nb-teal/12"
             >
               <Icon icon="heroicons-outline:magnifying-glass" className="text-xs" />
               Identify
             </button>
           </div>
 
-          <ul className="max-h-80 overflow-y-auto border-t border-[rgba(160,150,245,.22)] pt-1">
+          <ul className="max-h-80 overflow-y-auto border-t border-nb-haze/22 pt-1">
             {attached.length === 0 && (
-              <li className="px-3 py-3 text-xs text-[#9a92c8]">No screens reported.</li>
+              <li className="px-3 py-3 text-xs text-nb-faint">No screens reported.</li>
             )}
             {attached.map((s) => (
               <li key={s.signature} className="px-3 py-1.5">
                 <div className="flex items-center gap-1.5">
                   <Icon
                     icon="heroicons:computer-desktop"
-                    className={`shrink-0 text-xs ${s.open ? "text-[#34d399]" : "text-[#9a92c8]"}`}
+                    className={`shrink-0 text-xs ${s.open ? "text-nb-good" : "text-nb-faint"}`}
                   />
-                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-[#f2f6ff]">
+                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-nb-ink">
                     {s.label}
                   </span>
                   {s.primary && (
-                    <span className="font-mono text-[9px] uppercase tracking-[.8px] text-[#9a92c8]">
+                    <span className="font-mono text-[9px] uppercase tracking-[.8px] text-nb-faint">
                       primary
                     </span>
                   )}
-                  <span className="font-mono text-[9px] tabular-nums text-[#9a92c8]">
+                  <span className="font-mono text-[9px] tabular-nums text-nb-faint">
                     {s.resolution}
                   </span>
                 </div>
@@ -145,7 +145,7 @@ export default function ScreenMenu({ wall, monitors, screens }: Readonly<ScreenM
                     disabled={screens.busy}
                     onMouseDown={(e) => e.stopPropagation()}
                     onChange={(e) => onPick(s.signature, e.target.value)}
-                    className="h-7 min-w-0 flex-1 rounded-[7px] border border-[rgba(150,180,245,.22)] bg-[rgba(10,18,40,.85)] px-1.5 text-[11px] text-[#f2f6ff] outline-none focus:border-[rgba(34,211,238,.5)]"
+                    className="h-7 min-w-0 flex-1 rounded-[7px] border border-nb-mist/22 bg-nb-surface/85 px-1.5 text-[11px] text-nb-ink outline-none focus:border-nb-teal/50"
                   >
                     <option value="">Nothing — leave this screen alone</option>
                     {choices.map((m) => (
@@ -160,7 +160,7 @@ export default function ScreenMenu({ wall, monitors, screens }: Readonly<ScreenM
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => screens.clear(s.signature)}
                       title="Close this panel and forget the assignment"
-                      className="shrink-0 rounded p-1 text-[#9a92c8] transition hover:bg-[rgba(248,113,113,.15)] hover:text-[#f87171]"
+                      className="shrink-0 rounded p-1 text-nb-faint transition hover:bg-nb-crit/15 hover:text-nb-crit"
                     >
                       <Icon icon="heroicons-outline:x-circle" className="text-xs" />
                     </button>
@@ -172,13 +172,13 @@ export default function ScreenMenu({ wall, monitors, screens }: Readonly<ScreenM
                     across two walls meant it, and the select above would otherwise
                     read as "Nothing" while a panel is plainly showing something. */}
                 {s.assignment && s.assignment.wallId !== wall.id && (
-                  <p className="mt-1 text-[10px] text-[#fbbf24]">
+                  <p className="mt-1 text-[10px] text-nb-warn">
                     Showing {s.assignment.wallLabel} · {s.assignment.monitorLabel} — a different
                     wall.
                   </p>
                 )}
                 {s.assignment && s.assignment.wallId === wall.id && !s.open && (
-                  <p className="mt-1 text-[10px] text-[#9a92c8]">
+                  <p className="mt-1 text-[10px] text-nb-faint">
                     Saved, but no panel is open — the server was not reachable when it was
                     restored.
                   </p>
@@ -190,8 +190,8 @@ export default function ScreenMenu({ wall, monitors, screens }: Readonly<ScreenM
           {/* Detached screens are listed, not dropped: a station gets taken apart,
               a panel dies, somebody carries the box to a one-screen desk. */}
           {screens.screens.some((s) => !s.attached) && (
-            <div className="border-t border-[rgba(160,150,245,.22)] px-3 py-1.5">
-              <span className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">
+            <div className="border-t border-nb-haze/22 px-3 py-1.5">
+              <span className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-nb-faint">
                 Not plugged in
               </span>
               <ul className="mt-1 space-y-0.5">
@@ -201,10 +201,10 @@ export default function ScreenMenu({ wall, monitors, screens }: Readonly<ScreenM
                     <li key={s.signature} className="flex items-center gap-1.5 text-[11px]">
                       <Icon
                         icon="heroicons-outline:computer-desktop"
-                        className="shrink-0 text-xs text-[#9a92c8]"
+                        className="shrink-0 text-xs text-nb-faint"
                       />
-                      <span className="min-w-0 flex-1 truncate text-[#aec2e8]">{s.label}</span>
-                      <span className="truncate text-[10px] text-[#9a92c8]">
+                      <span className="min-w-0 flex-1 truncate text-nb-soft">{s.label}</span>
+                      <span className="truncate text-[10px] text-nb-faint">
                         {s.assignment?.monitorLabel}
                       </span>
                       <button
@@ -212,7 +212,7 @@ export default function ScreenMenu({ wall, monitors, screens }: Readonly<ScreenM
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => screens.clear(s.signature)}
                         title="Forget this screen"
-                        className="shrink-0 rounded p-0.5 text-[#9a92c8] transition hover:text-[#f87171]"
+                        className="shrink-0 rounded p-0.5 text-nb-faint transition hover:text-nb-crit"
                       >
                         <Icon icon="heroicons-outline:x-mark" className="text-[11px]" />
                       </button>
@@ -223,12 +223,12 @@ export default function ScreenMenu({ wall, monitors, screens }: Readonly<ScreenM
           )}
 
           {openCount > 0 && (
-            <div className="border-t border-[rgba(160,150,245,.22)] pt-1">
+            <div className="border-t border-nb-haze/22 pt-1">
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={screens.closeAll}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-[#aec2e8] hover:bg-[rgba(150,180,245,.07)]"
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-nb-soft hover:bg-nb-mist/7"
               >
                 <Icon icon="heroicons-outline:x-circle" className="shrink-0 text-xs" />
                 Close the panels — keep the layout

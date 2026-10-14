@@ -62,7 +62,7 @@ function SsoButton({ label, Glyph, wide, onClick }: any) {
       title={SSO_MESSAGE}
       aria-label={`${label} — sign-on not configured`}
       className={
-        "flex items-center justify-center gap-[9px] rounded-[10px] border border-[rgba(160,150,245,.2)] bg-[rgba(20,14,44,.45)] px-2 py-[10px] text-[12px] text-[#cfd0f2] transition hover:border-[rgba(167,139,250,.6)] hover:text-[#f2f6ff] hover:shadow-[0_0_14px_rgba(167,139,250,.2)] " +
+        "flex items-center justify-center gap-[9px] rounded-[10px] border border-nb-haze/20 bg-[rgba(20,14,44,.45)] px-2 py-[10px] text-[12px] text-nb-muted transition hover:border-nb-violet/60 hover:text-nb-ink hover:shadow-[0_0_14px_rgba(167,139,250,.2)] " +
         (wide ? "col-span-2" : "")
       }
     >
@@ -126,8 +126,8 @@ export function LoginForm({ email, setEmail, password, setPassword, error, busy,
 
   return (
     <div>
-      <h2 className="text-[19px] font-[650] tracking-[0.2px] text-[#f2f6ff]">Sign in</h2>
-      <p className="mb-5 mt-1 text-[11.5px] text-[#9a92c8]">to your command console</p>
+      <h2 className="text-[19px] font-[650] tracking-[0.2px] text-nb-ink">Sign in</h2>
+      <p className="mb-5 mt-1 text-[11.5px] text-nb-faint">to your command console</p>
 
       <form onSubmit={handleSubmit} className="space-y-3" noValidate>
         <div>
@@ -165,7 +165,7 @@ export function LoginForm({ email, setEmail, password, setPassword, error, busy,
               type="button"
               aria-label={show ? "Hide password" : "Show password"}
               onClick={() => setShow((v) => !v)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9a92c8] transition hover:text-[#cfd0f2]"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-nb-faint transition hover:text-nb-muted"
             >
               <Icon icon={show ? "heroicons-outline:eye-slash" : "heroicons-outline:eye"} className="h-4 w-4" />
             </button>
@@ -174,16 +174,16 @@ export function LoginForm({ email, setEmail, password, setPassword, error, busy,
         </div>
 
         <div className="flex items-center justify-between pb-1 pt-0.5">
-          <label className="flex cursor-pointer items-center gap-[7px] text-[11px] text-[#9a92c8]">
+          <label className="flex cursor-pointer items-center gap-[7px] text-[11px] text-nb-faint">
             <input
               type="checkbox"
               checked={keepSignedIn}
               onChange={(e) => setKeepSignedIn(e.target.checked)}
-              style={{ accentColor: "#22d3ee" }}
+              style={{ accentColor: "rgb(var(--nb-c-teal))" }}
             />
             <span>Keep me signed in on this console</span>
           </label>
-          <Link href="/forgot-password" className="text-[11px] text-[#c4b5fd] hover:text-[#67e8f9]">
+          <Link href="/forgot-password" className="text-[11px] text-nb-violetb hover:text-nb-tealb">
             Forgot?
           </Link>
         </div>
@@ -196,10 +196,10 @@ export function LoginForm({ email, setEmail, password, setPassword, error, busy,
           Commented out with the block at the top of this file — see it for what
           each one was actually connected to and what turning them back on takes.
 
-      <div className="my-4 flex items-center gap-3 font-mono text-[10px] tracking-[1px] text-[#9a92c8]">
-        <span className="h-px flex-1 bg-[rgba(160,150,245,.2)]" />
+      <div className="my-4 flex items-center gap-3 font-mono text-[10px] tracking-[1px] text-nb-faint">
+        <span className="h-px flex-1 bg-nb-haze/20" />
         OR CONTINUE WITH
-        <span className="h-px flex-1 bg-[rgba(160,150,245,.2)]" />
+        <span className="h-px flex-1 bg-nb-haze/20" />
       </div>
 
       <div className="grid grid-cols-2 gap-[9px]">

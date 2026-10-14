@@ -40,11 +40,11 @@ export interface PlaybackRailProps {
 export default function PlaybackRail(p: Readonly<PlaybackRailProps>) {
   const count = p.checkedKeys.size;
   return (
-    <aside className="flex w-72 shrink-0 flex-col rounded-xl border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.55)]">
+    <aside className="flex w-72 shrink-0 flex-col rounded-xl border border-nb-haze/22 bg-nb-surface2/55">
       <div className="scroll-themed min-h-0 flex-1 overflow-y-auto p-3">
         <div className="mb-1.5 flex items-center justify-between">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-[#9db0d8]">Cameras</p>
-          <span className={`text-[11px] tabular-nums ${count >= MAX_TILES ? "text-amber-300" : "text-[#9db0d8]"}`}>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-nb-dim">Cameras</p>
+          <span className={`text-[11px] tabular-nums ${count >= MAX_TILES ? "text-amber-300" : "text-nb-dim"}`}>
             {count}/{MAX_TILES}
           </span>
         </div>
@@ -71,7 +71,7 @@ export default function PlaybackRail(p: Readonly<PlaybackRailProps>) {
             onPrevMonth={() => p.onPage(-1)}
             onNextMonth={() => p.onPage(1)}
           />
-          <p className="mt-1 px-1 text-[10.5px] text-[#9db0d8]">
+          <p className="mt-1 px-1 text-[10.5px] text-nb-dim">
             {p.markedFor
               ? `Marked for ${p.markedFor.name}: bar = footage, dot = events.`
               : "Add a camera to see which days hold footage."}
@@ -84,7 +84,7 @@ export default function PlaybackRail(p: Readonly<PlaybackRailProps>) {
         </div>
 
         <div className="mt-4">
-          <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-[#9db0d8]">Stream</p>
+          <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-nb-dim">Stream</p>
           <div className="flex gap-1">
             {STREAMS.map((s) => (
               <button
@@ -96,7 +96,7 @@ export default function PlaybackRail(p: Readonly<PlaybackRailProps>) {
                 className={`flex-1 rounded-lg px-2 py-1.5 text-[12px] transition ${
                   p.stream === s.value
                     ? "bg-foreground font-medium text-background"
-                    : "text-[#9db0d8] hover:bg-[rgba(150,180,245,.07)] hover:text-[#67e8f9]"
+                    : "text-nb-dim hover:bg-nb-mist/7 hover:text-nb-tealb"
                 }`}
               >
                 {s.label}
@@ -105,7 +105,7 @@ export default function PlaybackRail(p: Readonly<PlaybackRailProps>) {
           </div>
         </div>
 
-        <div className="mt-4 rounded-lg border border-[rgba(160,150,245,.18)] p-2 text-[10.5px] leading-relaxed text-[#9db0d8]">
+        <div className="mt-4 rounded-lg border border-nb-haze/18 p-2 text-[10.5px] leading-relaxed text-nb-dim">
           <p className="mb-1 font-semibold uppercase tracking-wide">
             <Icon icon="heroicons-outline:command-line" className="mr-1 inline text-[12px]" />
             Keys

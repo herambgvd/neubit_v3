@@ -1,20 +1,25 @@
-/* Vercel-style theme tokens. Light = default (:root); dark = .dark on <html>.
-   Switching themes is just a shift of these variables — components read them via
-   Tailwind semantic colors (bg-background, text-foreground, bg-card, border-card-border, …). */
-:root {
-  --background: #ffffff;
-  --foreground: #000000;
-  --card: #ffffff;
-  --card-border: #eaeaea;
-  --muted: #666666;
-  --hover: #f5f5f5;
-  --field-border: #e2e2e2;
-}
+/* ─────────────────────────────────────────────────────────────────────────────
+   THE THREE THEMES — <html data-theme="default | light | dark">, the operator's
+   choice (lib/theme.ts), set by the boot script in app/layout.tsx before first
+   paint. Page code never branches on the theme: it uses tokens, and each theme
+   redefines them here.
 
-/* NeuBit navy command-console (the VMS look). "Dark" is no longer near-black — it
-   is the navy palette the mockups use, so the app chrome (header, sub-tabs, footer,
-   cards) reads as one continuous console instead of black bars. */
-.dark {
+   Two kinds of token:
+     * the semantic ones (bg-background, text-foreground, bg-card,
+       border-card-border, text-muted, bg-hover, border-field);
+     * the console palette (`nb-*`, tailwind.css), whose colours are RGB channels
+       here so a class can add its own alpha: `bg-nb-surface/60`,
+       `border-nb-mist/20`.
+
+   Default is the console's own navy look, and its values are exactly the ones the
+   console has always drawn with. Light and Dark follow the NVR console's: Vercel's
+   Geist light (white cards, slate ink) and Geist dark (black surfaces, neutral
+   grey ink). Video stays on black in every theme. `.dark` stays on <html> for the
+   two dark themes, for the few `dark:` variants left in the code.
+   ──────────────────────────────────────────────────────────────────────────── */
+:root,
+[data-theme="default"] {
+  color-scheme: dark;
   --background: #0c1530;
   --foreground: #f2f6ff;
   --card: #0b1228;
@@ -22,6 +27,215 @@
   --muted: #aec2e8;
   --hover: rgba(150, 180, 245, 0.08);
   --field-border: #24325c;
+  /* the full-bleed pages' backdrop (launcher, live, playback, walls) */
+  --nb-backdrop: radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%);
+  /* the lift under a card that floats on the backdrop (the sign-in card) */
+  --nb-shadow-lift: 0 24px 70px rgba(3, 10, 28, 0.65);
+
+  /* surfaces: the page, a second page tone, panels, fields, and the three glass
+     tones panels are layered with */
+  --nb-c-bg: 12 21 48;
+  --nb-c-bg2: 10 16 36;
+  --nb-c-panel: 14 23 52;
+  --nb-c-field: 11 18 40;
+  --nb-c-surface: 10 18 40;
+  --nb-c-surface2: 8 15 34;
+  --nb-c-surface3: 6 11 26;
+  /* ink, strongest to faintest */
+  --nb-c-ink: 242 246 255;
+  --nb-c-muted: 207 208 242;
+  --nb-c-soft: 174 194 232;
+  --nb-c-dim: 157 176 216;
+  --nb-c-faint: 154 146 200;
+  --nb-c-dim2: 126 147 191;
+  /* hairlines (used with an alpha) and a highlight that lifts a surface */
+  --nb-c-haze: 160 150 245;
+  --nb-c-mist: 150 180 245;
+  --nb-c-glint: 255 255 255;
+  /* the soft light behind the launcher's lens */
+  --nb-c-glow: 24 48 90;
+  /* accents and status */
+  --nb-c-teal: 34 211 238;
+  --nb-c-tealb: 103 232 249;
+  --nb-c-onteal: 6 35 48;
+  --nb-c-blue: 96 165 250;
+  --nb-c-blueb: 147 197 253;
+  --nb-c-violet: 167 139 250;
+  --nb-c-violetb: 196 181 253;
+  --nb-c-good: 52 211 153;
+  --nb-c-warn: 251 191 36;
+  --nb-c-crit: 248 113 113;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --background: #f4f6fa;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-border: #e2e6ee;
+  --muted: #5b6478;
+  --hover: rgba(15, 23, 42, 0.05);
+  --field-border: #d4dae4;
+  --nb-backdrop: radial-gradient(1200px 700px at 50% 115%, #e3e9f4 0%, #f4f6fa 55%);
+  --nb-shadow-lift: 0 24px 60px rgba(15, 23, 42, 0.12);
+
+  --nb-c-bg: 244 246 250;
+  --nb-c-bg2: 236 239 245;
+  --nb-c-panel: 255 255 255;
+  --nb-c-field: 255 255 255;
+  --nb-c-surface: 255 255 255;
+  --nb-c-surface2: 248 250 252;
+  --nb-c-surface3: 241 244 249;
+  --nb-c-ink: 15 23 42;
+  --nb-c-muted: 51 65 85;
+  --nb-c-soft: 71 85 105;
+  --nb-c-dim: 71 85 105;
+  --nb-c-faint: 100 116 139;
+  --nb-c-dim2: 100 116 139;
+  --nb-c-haze: 100 116 160;
+  --nb-c-mist: 90 110 160;
+  --nb-c-glint: 15 23 42;
+  --nb-c-glow: 186 204 235;
+  --nb-c-teal: 8 145 178;
+  --nb-c-tealb: 14 116 144;
+  --nb-c-onteal: 255 255 255;
+  --nb-c-blue: 37 99 235;
+  --nb-c-blueb: 29 78 216;
+  --nb-c-violet: 124 58 237;
+  --nb-c-violetb: 109 40 217;
+  --nb-c-good: 5 150 105;
+  --nb-c-warn: 217 119 6;
+  --nb-c-crit: 220 38 38;
+
+  /* Stock Tailwind steps the dark console writes light text with (100–400, and
+     500 for the pale hues) would vanish on white: the same names draw the
+     darker step here, so `text-amber-300` stays readable. */
+  --color-red-100: oklch(44.4% 0.177 26.899); --color-red-200: oklch(50.5% 0.213 27.518); --color-red-300: oklch(50.5% 0.213 27.518); --color-red-400: oklch(57.7% 0.245 27.325);
+  --color-orange-100: oklch(47% 0.157 37.304); --color-orange-200: oklch(55.3% 0.195 38.402); --color-orange-300: oklch(55.3% 0.195 38.402); --color-orange-400: oklch(64.6% 0.222 41.116);
+  --color-amber-100: oklch(47.3% 0.137 46.201); --color-amber-200: oklch(55.5% 0.163 48.998); --color-amber-300: oklch(55.5% 0.163 48.998); --color-amber-400: oklch(66.6% 0.179 58.318); --color-amber-500: oklch(66.6% 0.179 58.318);
+  --color-yellow-100: oklch(47.6% 0.114 61.907); --color-yellow-200: oklch(55.4% 0.135 66.442); --color-yellow-300: oklch(55.4% 0.135 66.442); --color-yellow-400: oklch(68.1% 0.162 75.834); --color-yellow-500: oklch(68.1% 0.162 75.834);
+  --color-lime-100: oklch(45.3% 0.124 130.933); --color-lime-200: oklch(53.2% 0.157 131.589); --color-lime-300: oklch(53.2% 0.157 131.589); --color-lime-400: oklch(64.8% 0.2 131.684); --color-lime-500: oklch(64.8% 0.2 131.684);
+  --color-green-100: oklch(44.8% 0.119 151.328); --color-green-200: oklch(52.7% 0.154 150.069); --color-green-300: oklch(52.7% 0.154 150.069); --color-green-400: oklch(62.7% 0.194 149.214);
+  --color-emerald-100: oklch(43.2% 0.095 166.913); --color-emerald-200: oklch(50.8% 0.118 165.612); --color-emerald-300: oklch(50.8% 0.118 165.612); --color-emerald-400: oklch(59.6% 0.145 163.225);
+  --color-teal-100: oklch(43.7% 0.078 188.216); --color-teal-200: oklch(51.1% 0.096 186.391); --color-teal-300: oklch(51.1% 0.096 186.391); --color-teal-400: oklch(60% 0.118 184.704); --color-teal-500: oklch(60% 0.118 184.704);
+  --color-cyan-100: oklch(45% 0.085 224.283); --color-cyan-200: oklch(52% 0.105 223.128); --color-cyan-300: oklch(52% 0.105 223.128); --color-cyan-400: oklch(60.9% 0.126 221.723); --color-cyan-500: oklch(60.9% 0.126 221.723);
+  --color-sky-100: oklch(44.3% 0.11 240.79); --color-sky-200: oklch(50% 0.134 242.749); --color-sky-300: oklch(50% 0.134 242.749); --color-sky-400: oklch(58.8% 0.158 241.966); --color-sky-500: oklch(58.8% 0.158 241.966);
+  --color-blue-100: oklch(42.4% 0.199 265.638); --color-blue-200: oklch(48.8% 0.243 264.376); --color-blue-300: oklch(48.8% 0.243 264.376); --color-blue-400: oklch(54.6% 0.245 262.881);
+  --color-indigo-100: oklch(39.8% 0.195 277.366); --color-indigo-200: oklch(45.7% 0.24 277.023); --color-indigo-300: oklch(45.7% 0.24 277.023); --color-indigo-400: oklch(51.1% 0.262 276.966);
+  --color-violet-100: oklch(43.2% 0.232 292.759); --color-violet-200: oklch(49.1% 0.27 292.581); --color-violet-300: oklch(49.1% 0.27 292.581); --color-violet-400: oklch(54.1% 0.281 293.009);
+  --color-purple-100: oklch(43.8% 0.218 303.724); --color-purple-200: oklch(49.6% 0.265 301.924); --color-purple-300: oklch(49.6% 0.265 301.924); --color-purple-400: oklch(55.8% 0.288 302.321);
+  --color-fuchsia-100: oklch(45.2% 0.211 324.591); --color-fuchsia-200: oklch(51.8% 0.253 323.949); --color-fuchsia-300: oklch(51.8% 0.253 323.949); --color-fuchsia-400: oklch(59.1% 0.293 322.896);
+  --color-pink-100: oklch(45.9% 0.187 3.815); --color-pink-200: oklch(52.5% 0.223 3.958); --color-pink-300: oklch(52.5% 0.223 3.958); --color-pink-400: oklch(59.2% 0.249 0.584);
+  --color-rose-100: oklch(45.5% 0.188 13.697); --color-rose-200: oklch(51.4% 0.222 16.935); --color-rose-300: oklch(51.4% 0.222 16.935); --color-rose-400: oklch(58.6% 0.253 17.585);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --card: #111111;
+  --card-border: #262626;
+  --muted: #a1a1a1;
+  --hover: rgba(255, 255, 255, 0.06);
+  --field-border: #2e2e2e;
+  --nb-backdrop: radial-gradient(1200px 700px at 50% 115%, #1a1a1a 0%, #0a0a0a 55%);
+  --nb-shadow-lift: 0 24px 70px rgba(0, 0, 0, 0.6);
+
+  --nb-c-bg: 10 10 10;
+  --nb-c-bg2: 0 0 0;
+  --nb-c-panel: 17 17 17;
+  --nb-c-field: 10 10 10;
+  --nb-c-surface: 17 17 17;
+  --nb-c-surface2: 12 12 12;
+  --nb-c-surface3: 0 0 0;
+  --nb-c-ink: 237 237 237;
+  --nb-c-muted: 214 214 214;
+  --nb-c-soft: 161 161 161;
+  --nb-c-dim: 161 161 161;
+  --nb-c-faint: 136 136 136;
+  --nb-c-dim2: 128 128 128;
+  --nb-c-haze: 255 255 255;
+  --nb-c-mist: 255 255 255;
+  --nb-c-glint: 255 255 255;
+  --nb-c-glow: 38 38 38;
+  --nb-c-teal: 34 211 238;
+  --nb-c-tealb: 103 232 249;
+  --nb-c-onteal: 6 35 48;
+  --nb-c-blue: 82 168 255;
+  --nb-c-blueb: 147 197 253;
+  --nb-c-violet: 167 139 250;
+  --nb-c-violetb: 196 181 253;
+  --nb-c-good: 52 211 153;
+  --nb-c-warn: 251 191 36;
+  --nb-c-crit: 248 113 113;
+}
+
+/* The two dark themes restate the stock steps Light remaps, so an element pinned
+   to a dark theme inside a Light page (the sign-in and landing art) draws them
+   as Tailwind ships them, not as Light's darker substitutes. */
+[data-theme="default"],
+[data-theme="dark"] {
+  --color-red-100: oklch(93.6% 0.032 17.717); --color-red-200: oklch(88.5% 0.062 18.334); --color-red-300: oklch(80.8% 0.114 19.571); --color-red-400: oklch(70.4% 0.191 22.216);
+  --color-orange-100: oklch(95.4% 0.038 75.164); --color-orange-200: oklch(90.1% 0.076 70.697); --color-orange-300: oklch(83.7% 0.128 66.29); --color-orange-400: oklch(75% 0.183 55.934);
+  --color-amber-100: oklch(96.2% 0.059 95.617); --color-amber-200: oklch(92.4% 0.12 95.746); --color-amber-300: oklch(87.9% 0.169 91.605); --color-amber-400: oklch(82.8% 0.189 84.429); --color-amber-500: oklch(76.9% 0.188 70.08);
+  --color-yellow-100: oklch(97.3% 0.071 103.193); --color-yellow-200: oklch(94.5% 0.129 101.54); --color-yellow-300: oklch(90.5% 0.182 98.111); --color-yellow-400: oklch(85.2% 0.199 91.936); --color-yellow-500: oklch(79.5% 0.184 86.047);
+  --color-lime-100: oklch(96.7% 0.067 122.328); --color-lime-200: oklch(93.8% 0.127 124.321); --color-lime-300: oklch(89.7% 0.196 126.665); --color-lime-400: oklch(84.1% 0.238 128.85); --color-lime-500: oklch(76.8% 0.233 130.85);
+  --color-green-100: oklch(96.2% 0.044 156.743); --color-green-200: oklch(92.5% 0.084 155.995); --color-green-300: oklch(87.1% 0.15 154.449); --color-green-400: oklch(79.2% 0.209 151.711);
+  --color-emerald-100: oklch(95% 0.052 163.051); --color-emerald-200: oklch(90.5% 0.093 164.15); --color-emerald-300: oklch(84.5% 0.143 164.978); --color-emerald-400: oklch(76.5% 0.177 163.223);
+  --color-teal-100: oklch(95.3% 0.051 180.801); --color-teal-200: oklch(91% 0.096 180.426); --color-teal-300: oklch(85.5% 0.138 181.071); --color-teal-400: oklch(77.7% 0.152 181.912); --color-teal-500: oklch(70.4% 0.14 182.503);
+  --color-cyan-100: oklch(95.6% 0.045 203.388); --color-cyan-200: oklch(91.7% 0.08 205.041); --color-cyan-300: oklch(86.5% 0.127 207.078); --color-cyan-400: oklch(78.9% 0.154 211.53); --color-cyan-500: oklch(71.5% 0.143 215.221);
+  --color-sky-100: oklch(95.1% 0.026 236.824); --color-sky-200: oklch(90.1% 0.058 230.902); --color-sky-300: oklch(82.8% 0.111 230.318); --color-sky-400: oklch(74.6% 0.16 232.661); --color-sky-500: oklch(68.5% 0.169 237.323);
+  --color-blue-100: oklch(93.2% 0.032 255.585); --color-blue-200: oklch(88.2% 0.059 254.128); --color-blue-300: oklch(80.9% 0.105 251.813); --color-blue-400: oklch(70.7% 0.165 254.624);
+  --color-indigo-100: oklch(93% 0.034 272.788); --color-indigo-200: oklch(87% 0.065 274.039); --color-indigo-300: oklch(78.5% 0.115 274.713); --color-indigo-400: oklch(67.3% 0.182 276.935);
+  --color-violet-100: oklch(94.3% 0.029 294.588); --color-violet-200: oklch(89.4% 0.057 293.283); --color-violet-300: oklch(81.1% 0.111 293.571); --color-violet-400: oklch(70.2% 0.183 293.541);
+  --color-purple-100: oklch(94.6% 0.033 307.174); --color-purple-200: oklch(90.2% 0.063 306.703); --color-purple-300: oklch(82.7% 0.119 306.383); --color-purple-400: oklch(71.4% 0.203 305.504);
+  --color-fuchsia-100: oklch(95.2% 0.037 318.852); --color-fuchsia-200: oklch(90.3% 0.076 319.62); --color-fuchsia-300: oklch(83.3% 0.145 321.434); --color-fuchsia-400: oklch(74% 0.238 322.16);
+  --color-pink-100: oklch(94.8% 0.028 342.258); --color-pink-200: oklch(89.9% 0.061 343.231); --color-pink-300: oklch(82.3% 0.12 346.018); --color-pink-400: oklch(71.8% 0.202 349.761);
+  --color-rose-100: oklch(94.1% 0.03 12.58); --color-rose-200: oklch(89.2% 0.058 10.001); --color-rose-300: oklch(81% 0.117 11.638); --color-rose-400: oklch(71.2% 0.194 13.428);
+}
+
+/* A custom property that names another is resolved where it is declared, so the
+   colour tokens tailwind.css puts on :root would keep :root's theme inside an
+   element with its own data-theme (the theme picker's previews). Declaring them
+   again on every themed element makes each resolve against its own theme. */
+:root,
+[data-theme] {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-border: var(--card-border);
+  --color-muted: var(--muted);
+  --color-hover: var(--hover);
+  --color-field: var(--field-border);
+
+  --color-nb-bg: rgb(var(--nb-c-bg));
+  --color-nb-bg2: rgb(var(--nb-c-bg2));
+  --color-nb-panel: rgb(var(--nb-c-panel));
+  --color-nb-field: rgb(var(--nb-c-field));
+  --color-nb-surface: rgb(var(--nb-c-surface));
+  --color-nb-surface2: rgb(var(--nb-c-surface2));
+  --color-nb-surface3: rgb(var(--nb-c-surface3));
+  --color-nb-ink: rgb(var(--nb-c-ink));
+  --color-nb-muted: rgb(var(--nb-c-muted));
+  --color-nb-soft: rgb(var(--nb-c-soft));
+  --color-nb-dim: rgb(var(--nb-c-dim));
+  --color-nb-faint: rgb(var(--nb-c-faint));
+  --color-nb-dim2: rgb(var(--nb-c-dim2));
+  --color-nb-haze: rgb(var(--nb-c-haze));
+  --color-nb-mist: rgb(var(--nb-c-mist));
+  --color-nb-glint: rgb(var(--nb-c-glint));
+  --color-nb-line: rgb(var(--nb-c-haze) / 0.2);
+  --color-nb-line2: rgb(var(--nb-c-mist) / 0.42);
+  --color-nb-teal: rgb(var(--nb-c-teal));
+  --color-nb-tealb: rgb(var(--nb-c-tealb));
+  --color-nb-onteal: rgb(var(--nb-c-onteal));
+  --color-nb-blue: rgb(var(--nb-c-blue));
+  --color-nb-blueb: rgb(var(--nb-c-blueb));
+  --color-nb-violet: rgb(var(--nb-c-violet));
+  --color-nb-violetb: rgb(var(--nb-c-violetb));
+  --color-nb-good: rgb(var(--nb-c-good));
+  --color-nb-warn: rgb(var(--nb-c-warn));
+  --color-nb-crit: rgb(var(--nb-c-crit));
 }
 
 /* Modal / dropdown entrance animations */

@@ -121,16 +121,16 @@ export default function LayoutPicker({ layoutKey, onChange }: Readonly<LayoutPic
         type="button"
         onClick={() => setOpen((o) => !o)}
         title="Change layout"
-        className="inline-flex h-8 items-center gap-2 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-2.5 text-xs font-medium text-[#f2f6ff] transition hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
+        className="inline-flex h-8 items-center gap-2 rounded-[8px] border border-nb-mist/22 bg-nb-mist/4 px-2.5 text-xs font-medium text-nb-ink transition hover:border-nb-teal/50 hover:text-nb-tealb"
       >
-        <LayoutGlyph layout={active} className="h-4 w-4 text-[#22d3ee]" />
+        <LayoutGlyph layout={active} className="h-4 w-4 text-nb-teal" />
         <span className="tabular-nums">{active.label}</span>
-        <Icon icon="heroicons-mini:chevron-down" className="text-sm text-[#7e93bf]" />
+        <Icon icon="heroicons-mini:chevron-down" className="text-sm text-nb-dim2" />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-[13.5rem] rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.93)] p-2 shadow-2xl backdrop-blur-xs">
-          <p className="px-1 pb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-[13.5rem] rounded-[13px] border border-nb-haze/22 bg-nb-surface2/93 p-2 shadow-2xl backdrop-blur-xs">
+          <p className="px-1 pb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-nb-faint">
             Grid layout
           </p>
           <div className="grid grid-cols-4 gap-1.5">
@@ -147,8 +147,8 @@ export default function LayoutPicker({ layoutKey, onChange }: Readonly<LayoutPic
                   }}
                   className={`flex aspect-square flex-col items-center justify-center gap-1 rounded-[8px] border transition ${
                     on
-                      ? "border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
-                      : "border-[rgba(150,180,245,.22)] text-[#aec2e8] hover:border-[rgba(34,211,238,.5)] hover:text-[#67e8f9]"
+                      ? "border-nb-teal/50 bg-nb-teal/15 text-nb-tealb"
+                      : "border-nb-mist/22 text-nb-soft hover:border-nb-teal/50 hover:text-nb-tealb"
                   }`}
                 >
                   <LayoutGlyph layout={l} className="h-5 w-5" />

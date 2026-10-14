@@ -31,11 +31,11 @@ const CATEGORIES = [
 ];
 
 const PILL: Record<AuditColor, string> = {
-  green: "border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good",
-  red: "border-[rgba(248,113,113,.5)] bg-[rgba(248,113,113,.1)] text-nb-crit",
-  amber: "border-[rgba(251,191,36,.5)] bg-[rgba(251,191,36,.1)] text-nb-warn",
-  blue: "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] text-nb-blueb",
-  slate: "border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted",
+  green: "border-nb-good/50 bg-nb-good/10 text-nb-good",
+  red: "border-nb-crit/50 bg-nb-crit/10 text-nb-crit",
+  amber: "border-nb-warn/50 bg-nb-warn/10 text-nb-warn",
+  blue: "border-nb-blue/50 bg-nb-blue/10 text-nb-blueb",
+  slate: "border-nb-line bg-nb-surface/60 text-nb-muted",
 };
 
 function RetentionControl() {
@@ -80,14 +80,14 @@ function RetentionControl() {
         />
         <span className="text-[11px] text-nb-faint">days</span>
         <span className="flex-1" />
-        <button onClick={() => savePolicy.mutate()} disabled={savePolicy.isPending} className="rounded-[7px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] px-2.5 py-1 text-[11.5px] text-nb-blueb transition hover:bg-[rgba(96,165,250,.16)] disabled:opacity-50">
+        <button onClick={() => savePolicy.mutate()} disabled={savePolicy.isPending} className="rounded-[7px] border border-nb-blue/50 bg-nb-blue/10 px-2.5 py-1 text-[11.5px] text-nb-blueb transition hover:bg-nb-blue/16 disabled:opacity-50">
           {savePolicy.isPending ? "…" : "Save"}
         </button>
         <button
           onClick={() => setConfirm({ title: "Purge audit entries", message: `Permanently delete audit entries older than ${policyDays} days? This cannot be undone.`, confirmLabel: "Purge now", onConfirm: () => purge.mutate() })}
           disabled={purge.isPending || policyDays <= 0}
           title={policyDays <= 0 ? "Set a positive retention window first" : "Delete entries older than the window now"}
-          className="grid h-[26px] w-[26px] place-items-center rounded-[7px] border border-[rgba(248,113,113,.5)] bg-[rgba(248,113,113,.1)] text-nb-crit transition hover:bg-[rgba(248,113,113,.16)] disabled:opacity-40"
+          className="grid h-[26px] w-[26px] place-items-center rounded-[7px] border border-nb-crit/50 bg-nb-crit/10 text-nb-crit transition hover:bg-nb-crit/16 disabled:opacity-40"
         >
           <Icon icon="heroicons-outline:trash" className="text-[13px]" />
         </button>
@@ -116,12 +116,12 @@ export default function AuditPage() {
   });
   const data = audit.data;
   const items = data?.items || [];
-  const col = "rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] min-h-0 flex flex-col overflow-hidden";
+  const col = "rounded-[12px] border border-nb-line bg-nb-surface2/50 min-h-0 flex flex-col overflow-hidden";
 
   return (
     <div
       className="flex h-[calc(100%+1.5rem)] min-h-0 flex-col -mx-4 lg:-mx-5 -my-3 px-4 lg:px-5 pt-3 pb-2 text-nb-ink"
-      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+      style={{ background: "var(--nb-backdrop)" }}
     >
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[25%_1fr]">
         {/* LEFT — filter rail */}
@@ -131,7 +131,7 @@ export default function AuditPage() {
             <span className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">Filters</span>
           </div>
           <div className="px-3 pb-2">
-            <div className="flex items-center gap-2 rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2">
+            <div className="flex items-center gap-2 rounded-[9px] border border-nb-line bg-nb-surface3/50 px-3 py-2">
               <Icon icon="heroicons-outline:magnifying-glass" className="text-sm text-nb-faint" />
               <input
                 value={search}
@@ -151,8 +151,8 @@ export default function AuditPage() {
                     onClick={() => setCat(c.key)}
                     className={`flex w-full items-center gap-2.5 rounded-[9px] border px-3 py-2 text-left text-[12.5px] transition ${
                       on
-                        ? "border-[rgba(96,165,250,.6)] bg-[rgba(96,165,250,.1)] text-nb-blueb"
-                        : "border-nb-line bg-[rgba(6,11,26,.5)] text-nb-muted hover:border-[rgba(150,180,245,.42)]"
+                        ? "border-nb-blue/60 bg-nb-blue/10 text-nb-blueb"
+                        : "border-nb-line bg-nb-surface3/50 text-nb-muted hover:border-nb-mist/42"
                     }`}
                   >
                     <Icon icon={c.icon} className="text-[15px]" />
@@ -181,7 +181,7 @@ export default function AuditPage() {
               </div>
             ) : (
               items.map((r, i) => (
-                <div key={r.id ?? i} className="grid grid-cols-[25%_1fr_150px_1.4fr] items-center gap-3 border-b border-nb-line/40 px-4 py-2 text-[12.5px] last:border-b-0 hover:bg-[rgba(96,165,250,.05)]">
+                <div key={r.id ?? i} className="grid grid-cols-[25%_1fr_150px_1.4fr] items-center gap-3 border-b border-nb-line/40 px-4 py-2 text-[12.5px] last:border-b-0 hover:bg-nb-blue/5">
                   <span className="font-mono text-[11.5px] text-nb-faint">{formatTs(r.ts)}</span>
                   {/* Name is the operator-facing identity; the email is the tooltip
                       fallback for rows recorded before names were snapshotted. */}

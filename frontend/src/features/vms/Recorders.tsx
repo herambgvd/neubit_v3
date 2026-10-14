@@ -112,7 +112,7 @@ export default function RecordersPage() {
             searchPlaceholder="Search name, label or URL…"
             action={
               <div className="flex items-center gap-1.5">
-                <button onClick={invalidate} title="Refresh" className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-[rgba(150,180,245,.22)] text-[#aec2e8] transition hover:border-[#22d3ee] hover:text-[#22d3ee]">
+                <button onClick={invalidate} title="Refresh" className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-nb-mist/22 text-nb-soft transition hover:border-nb-teal hover:text-nb-teal">
                   <Icon icon="heroicons-outline:arrow-path" className="text-sm" />
                 </button>
                 {/* Icon only, like every other create in the console. A labelled
@@ -122,7 +122,7 @@ export default function RecordersPage() {
                   onClick={() => setAddOpen(true)}
                   title="New recorder"
                   aria-label="New recorder"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-[rgba(34,211,238,.5)] bg-[rgba(34,211,238,.15)] text-[#67e8f9] transition hover:border-[#22d3ee] hover:bg-[rgba(34,211,238,.25)]"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-nb-teal/50 bg-nb-teal/15 text-nb-tealb transition hover:border-nb-teal hover:bg-nb-teal/25"
                 >
                   <Icon icon="heroicons:plus" className="text-sm" />
                 </button>
@@ -130,16 +130,16 @@ export default function RecordersPage() {
             }
           >
             <div className="flex items-center gap-3 px-4 pb-1 pt-1 font-mono text-[10px] uppercase tracking-[1.2px]">
-              <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-[#34d399] shadow-[0_0_5px_#34d399]" /><span className="text-[#aec2e8]">{onlineCount} online</span></span>
-              <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-[#f87171] shadow-[0_0_5px_rgba(248,113,113,.6)]" /><span className="text-[#7e93bf]">{nodes.length - onlineCount} offline</span></span>
+              <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-nb-good shadow-[0_0_5px_rgb(var(--nb-c-good))]" /><span className="text-nb-soft">{onlineCount} online</span></span>
+              <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-nb-crit shadow-[0_0_5px_rgb(var(--nb-c-crit)/.6)]" /><span className="text-nb-dim2">{nodes.length - onlineCount} offline</span></span>
             </div>
 
             {nodesQ.isLoading ? (
-              <div className="px-4 py-6 text-center text-xs text-[#9a92c8]"><Icon icon="svg-spinners:180-ring" className="mx-auto mb-1 text-base text-[#67e8f9]" />Loading…</div>
+              <div className="px-4 py-6 text-center text-xs text-nb-faint"><Icon icon="svg-spinners:180-ring" className="mx-auto mb-1 text-base text-nb-tealb" />Loading…</div>
             ) : nodesQ.isError ? (
-              <div className="px-4 py-6 text-center text-xs text-[#f87171]">{apiError(nodesQ.error, "Failed to load recorders")}</div>
+              <div className="px-4 py-6 text-center text-xs text-nb-crit">{apiError(nodesQ.error, "Failed to load recorders")}</div>
             ) : filtered.length === 0 ? (
-              <div className="px-4 py-6 text-center text-xs text-[#9a92c8]">{nodes.length === 0 ? "No recorders yet — use ＋ above." : "No matches."}</div>
+              <div className="px-4 py-6 text-center text-xs text-nb-faint">{nodes.length === 0 ? "No recorders yet — use ＋ above." : "No matches."}</div>
             ) : (
               <div className="space-y-1.5 px-3 py-2">
                 {filtered.map((n) => {
@@ -152,13 +152,13 @@ export default function RecordersPage() {
                     <button
                       key={n.id}
                       onClick={() => setSelectedId(n.id)}
-                      className={`relative block w-full overflow-hidden rounded-[13px] border px-3 py-2.5 text-left backdrop-blur-xs transition ${isSel ? "border-[#22d3ee] bg-[rgba(34,211,238,.08)] shadow-[0_0_0_1px_rgba(34,211,238,.4)]" : "border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)] hover:border-[rgba(34,211,238,.5)] hover:bg-[rgba(34,211,238,.06)]"}`}
+                      className={`relative block w-full overflow-hidden rounded-[13px] border px-3 py-2.5 text-left backdrop-blur-xs transition ${isSel ? "border-nb-teal bg-nb-teal/8 shadow-[0_0_0_1px_rgb(var(--nb-c-teal)/.4)]" : "border-nb-haze/22 bg-nb-mist/4 hover:border-nb-teal/50 hover:bg-nb-teal/6"}`}
                     >
-                      {isSel && <span className="absolute bottom-0 left-0 top-0 w-0.5 rounded-l-sm bg-[#22d3ee]" />}
+                      {isSel && <span className="absolute bottom-0 left-0 top-0 w-0.5 rounded-l-sm bg-nb-teal" />}
                       <div className="flex items-center justify-between gap-2">
                         <span className="flex min-w-0 items-center gap-1.5">
-                          <span className={`h-2 w-2 shrink-0 rounded-full ${online ? "bg-[#34d399] shadow-[0_0_5px_#34d399]" : "bg-[#f87171] shadow-[0_0_5px_rgba(248,113,113,.6)]"}`} />
-                          <p className="truncate font-mono text-xs font-semibold text-[#f2f6ff]">{n.name}</p>
+                          <span className={`h-2 w-2 shrink-0 rounded-full ${online ? "bg-nb-good shadow-[0_0_5px_rgb(var(--nb-c-good))]" : "bg-nb-crit shadow-[0_0_5px_rgb(var(--nb-c-crit)/.6)]"}`} />
+                          <p className="truncate font-mono text-xs font-semibold text-nb-ink">{n.name}</p>
                         </span>
                         <StatusBadge status={n.status} />
                       </div>
@@ -168,18 +168,18 @@ export default function RecordersPage() {
                           mark for that reason — an operator scanning this list would
                           otherwise see a healthy node. */}
                       {n.credential_error && (
-                        <p className="mt-0.5 flex items-center gap-1 pl-3.5 text-[10px] text-[#fbbf24]">
+                        <p className="mt-0.5 flex items-center gap-1 pl-3.5 text-[10px] text-nb-warn">
                           <Icon icon="heroicons-outline:key" className="shrink-0 text-[11px]" />
                           Credential needs re-enrolling
                         </p>
                       )}
-                      {n.label && <p className="mt-0.5 truncate pl-3.5 text-[10px] text-[#9a92c8]">{n.label}</p>}
-                      <p className="mt-0.5 pl-3.5 font-mono text-[10px] tabular-nums text-[#7e93bf]">
-                        {used} / {cap != null ? cap : "∞"} channel(s)
+                      {n.label && <p className="mt-0.5 truncate pl-3.5 text-[10px] text-nb-faint">{n.label}</p>}
+                      <p className="mt-0.5 pl-3.5 font-mono text-[10px] tabular-nums text-nb-dim2">
+                        {used} / {cap ?? "∞"} channel(s)
                       </p>
                       {pct != null && (
-                        <div className="ml-3.5 mt-1.5 h-[4px] overflow-hidden rounded-full border border-[rgba(150,180,245,.22)] bg-black/40">
-                          <span className="block h-full rounded-full bg-gradient-to-r from-[#60a5fa] to-[#22d3ee]" style={{ width: `${pct}%` }} />
+                        <div className="ml-3.5 mt-1.5 h-[4px] overflow-hidden rounded-full border border-nb-mist/22 bg-black/40">
+                          <span className="block h-full rounded-full bg-gradient-to-r from-nb-blue to-nb-teal" style={{ width: `${pct}%` }} />
                         </div>
                       )}
                     </button>
@@ -234,9 +234,9 @@ interface InfoCellProps {
 
 function InfoCell({ label, value, mono = false, children }: Readonly<InfoCellProps>) {
   return (
-    <div className="min-w-0 rounded-[10px] border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)] px-3 py-1.5">
-      <p className="font-mono text-[10px] uppercase tracking-[1.4px] text-[#9a92c8]">{label}</p>
-      <p className={`mt-0.5 truncate text-[13px] font-medium text-[#f2f6ff] ${mono ? "font-mono" : ""}`} title={typeof value === "string" ? value : undefined}>{value ?? "—"}</p>
+    <div className="min-w-0 rounded-[10px] border border-nb-haze/22 bg-nb-mist/4 px-3 py-1.5">
+      <p className="font-mono text-[10px] uppercase tracking-[1.4px] text-nb-faint">{label}</p>
+      <p className={`mt-0.5 truncate text-[13px] font-medium text-nb-ink ${mono ? "font-mono" : ""}`} title={typeof value === "string" ? value : undefined}>{value ?? "—"}</p>
       {children}
     </div>
   );
@@ -303,25 +303,25 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }: Readonly<RecorderDe
   const full = cap != null && used >= cap;
 
   return (
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[13px] border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)] backdrop-blur-xs">
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[13px] border border-nb-haze/22 bg-nb-mist/4 backdrop-blur-xs">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[rgba(160,150,245,.22)] px-4 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-nb-haze/22 px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-2.5">
-          <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-[rgba(34,211,238,.4)] bg-[rgba(34,211,238,.12)] text-[#67e8f9]">
+          <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-nb-teal/40 bg-nb-teal/12 text-nb-tealb">
             <Icon icon="heroicons:cpu-chip" className="text-base" />
           </div>
           <div className="min-w-0">
-            <h1 className="truncate font-mono text-base font-semibold text-[#f2f6ff]">{node.name}</h1>
-            <p className="truncate font-mono text-[11px] text-[#9a92c8]">{node.api_url || "—"}</p>
+            <h1 className="truncate font-mono text-base font-semibold text-nb-ink">{node.name}</h1>
+            <p className="truncate font-mono text-[11px] text-nb-faint">{node.api_url || "—"}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge status={node.status} />
           <Button variant="secondary" className="!px-2.5 !py-1.5 !text-xs" icon="heroicons-outline:pencil-square" onClick={() => onEdit?.(node)}>Edit</Button>
           {node.status !== "draining" && (
-            <Button variant="ghost" className="!px-2 !py-1.5 !text-xs !text-[#fbbf24]" icon="heroicons-outline:arrow-down-tray" onClick={() => onDrain?.(node)}>Drain</Button>
+            <Button variant="ghost" className="!px-2 !py-1.5 !text-xs !text-nb-warn" icon="heroicons-outline:arrow-down-tray" onClick={() => onDrain?.(node)}>Drain</Button>
           )}
-          <Button variant="ghost" className="!px-2 !py-1.5 !text-xs !text-[#f87171]" icon="heroicons-outline:trash" onClick={() => onDelete?.(node)}>Delete</Button>
+          <Button variant="ghost" className="!px-2 !py-1.5 !text-xs !text-nb-crit" icon="heroicons-outline:trash" onClick={() => onDelete?.(node)}>Delete</Button>
         </div>
       </div>
 
@@ -332,11 +332,11 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }: Readonly<RecorderDe
             node stays online throughout. The message names the missing permission and
             the remedy; Re-enroll below is that remedy. */}
         {node.credential_error && (
-          <div className="mb-3 flex items-start gap-2 rounded-[10px] border border-[rgba(251,191,36,.35)] bg-[rgba(251,191,36,.08)] px-3 py-2.5">
-            <Icon icon="heroicons-outline:key" className="mt-0.5 shrink-0 text-sm text-[#fbbf24]" />
+          <div className="mb-3 flex items-start gap-2 rounded-[10px] border border-nb-warn/35 bg-nb-warn/8 px-3 py-2.5">
+            <Icon icon="heroicons-outline:key" className="mt-0.5 shrink-0 text-sm text-nb-warn" />
             <div className="min-w-0">
-              <p className="text-xs font-medium text-[#fbbf24]">This recorder is refusing our credential</p>
-              <p className="mt-0.5 text-[11px] leading-relaxed text-[#d6c99a]">{node.credential_error}</p>
+              <p className="text-xs font-medium text-nb-warn">This recorder is refusing our credential</p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-amber-100/80">{node.credential_error}</p>
             </div>
           </div>
         )}
@@ -347,16 +347,16 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }: Readonly<RecorderDe
           <InfoCell
             label="Capacity"
             value={
-              <span className={full ? "text-[#fbbf24]" : ""}>
+              <span className={full ? "text-nb-warn" : ""}>
                 {used}
-                <span className="text-[#7e93bf]"> / {cap != null ? cap : "∞"}</span>
+                <span className="text-nb-dim2"> / {cap ?? "∞"}</span>
               </span>
             }
           >
             {cap != null && cap > 0 && (
-              <div className="mt-1.5 h-[5px] overflow-hidden rounded-full border border-[rgba(150,180,245,.22)] bg-black/40">
+              <div className="mt-1.5 h-[5px] overflow-hidden rounded-full border border-nb-mist/22 bg-black/40">
                 <span
-                  className={`block h-full rounded-full ${full ? "bg-gradient-to-r from-[#60a5fa] to-[#fbbf24]" : "bg-gradient-to-r from-[#60a5fa] to-[#22d3ee]"}`}
+                  className={`block h-full rounded-full ${full ? "bg-gradient-to-r from-nb-blue to-nb-warn" : "bg-gradient-to-r from-nb-blue to-nb-teal"}`}
                   style={{ width: `${Math.min(100, Math.round((used / cap) * 100))}%` }}
                 />
               </div>
@@ -372,39 +372,39 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }: Readonly<RecorderDe
 
         {/* Cameras — what this recorder actually runs, as the recorder reports it */}
         <div className="mb-2 mt-4 flex items-center justify-between">
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">Cameras</p>
-          <span className="rounded-full border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1.5 font-mono text-[10px] font-semibold tabular-nums text-[#aec2e8]">{cameras.length}</span>
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-nb-faint">Cameras</p>
+          <span className="rounded-full border border-nb-mist/22 bg-nb-mist/6 px-1.5 font-mono text-[10px] font-semibold tabular-nums text-nb-soft">{cameras.length}</span>
         </div>
         {camsLoading ? (
-          <p className="px-1 py-3 text-xs text-[#9a92c8]"><Icon icon="svg-spinners:180-ring" className="mr-1 inline text-sm text-[#67e8f9]" />Loading…</p>
+          <p className="px-1 py-3 text-xs text-nb-faint"><Icon icon="svg-spinners:180-ring" className="mr-1 inline text-sm text-nb-tealb" />Loading…</p>
         ) : nodeUnreachable ? (
           // An empty list here would say the recorder runs nothing, which is a
           // different claim from "it is not answering right now".
-          <p className="rounded-[10px] border border-dashed border-[rgba(251,191,36,.35)] px-3 py-4 text-center text-xs text-[#fbbf24]">
+          <p className="rounded-[10px] border border-dashed border-nb-warn/35 px-3 py-4 text-center text-xs text-nb-warn">
             This recorder is not answering, so its cameras cannot be listed.
           </p>
         ) : cameras.length === 0 ? (
-          <p className="rounded-[10px] border border-dashed border-[rgba(160,150,245,.28)] px-3 py-4 text-center text-xs text-[#9a92c8]">
+          <p className="rounded-[10px] border border-dashed border-nb-haze/28 px-3 py-4 text-center text-xs text-nb-faint">
             This recorder runs no cameras yet. Cameras are onboarded on the recorder itself.
           </p>
         ) : (
           <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {cameras.map((c) => (
-              <li key={c.id} className="flex items-center gap-2 rounded-[10px] border border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)] px-3 py-1.5">
+              <li key={c.id} className="flex items-center gap-2 rounded-[10px] border border-nb-haze/22 bg-nb-mist/4 px-3 py-1.5">
                 <StatusDot status={c.status} />
                 {c.channel != null && (
-                  <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded-sm border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1 font-mono text-[10px] font-semibold tabular-nums text-[#aec2e8]">
+                  <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded-sm border border-nb-mist/22 bg-nb-mist/6 px-1 font-mono text-[10px] font-semibold tabular-nums text-nb-soft">
                     {c.channel}
                   </span>
                 )}
-                <span className="min-w-0 flex-1 truncate text-[13px] text-[#f2f6ff]" title={c.name}>{c.name}</span>
-                <span className="shrink-0 font-mono text-[10px] uppercase tracking-[.5px] text-[#7e93bf]">{c.status}</span>
+                <span className="min-w-0 flex-1 truncate text-[13px] text-nb-ink" title={c.name}>{c.name}</span>
+                <span className="shrink-0 font-mono text-[10px] uppercase tracking-[.5px] text-nb-dim2">{c.status}</span>
               </li>
             ))}
           </ul>
         )}
 
-        <p className="mt-3 text-[11px] text-[#7e93bf]">
+        <p className="mt-3 text-[11px] text-nb-dim2">
           These cameras record to this recorder&apos;s own storage. Drain it before deleting, so its
           footage and channels are dealt with first.
         </p>
@@ -446,7 +446,7 @@ function CredentialList({
   // error here is NOT necessarily a fault.
   if (query.isLoading) {
     return (
-      <p className="px-1 py-2 text-xs text-[#9a92c8]"><Icon icon="svg-spinners:180-ring" className="mr-1 inline text-sm text-[#67e8f9]" />Loading…</p>
+      <p className="px-1 py-2 text-xs text-nb-faint"><Icon icon="svg-spinners:180-ring" className="mr-1 inline text-sm text-nb-tealb" />Loading…</p>
     );
   }
 
@@ -457,7 +457,7 @@ function CredentialList({
   // would report a broken federation that is in fact working as designed.
   if (query.isError && hasCredential) {
     return (
-      <p className="rounded-[10px] border border-dashed border-[rgba(160,150,245,.28)] px-3 py-3 text-xs text-[#9a92c8]">
+      <p className="rounded-[10px] border border-dashed border-nb-haze/28 px-3 py-3 text-xs text-nb-faint">
         This VMS holds a credential for this recorder. The recorder&apos;s own credential list is
         managed on the recorder and is not readable from here — revoke keys on its console.
       </p>
@@ -465,12 +465,12 @@ function CredentialList({
   }
 
   if (query.isError) {
-    return <p className="px-1 py-2 text-xs text-[#f87171]">{apiError(query.error, "Failed to load credentials")}</p>;
+    return <p className="px-1 py-2 text-xs text-nb-crit">{apiError(query.error, "Failed to load credentials")}</p>;
   }
 
   if (creds.length === 0) {
     return (
-      <p className="rounded-[10px] border border-dashed border-[rgba(160,150,245,.28)] px-3 py-3 text-center text-xs text-[#9a92c8]">
+      <p className="rounded-[10px] border border-dashed border-nb-haze/28 px-3 py-3 text-center text-xs text-nb-faint">
         No credentials issued yet. Pair this recorder with a code from its console — or enroll it,
         if it shares this stack&apos;s signing secret.
       </p>
@@ -485,22 +485,22 @@ function CredentialList({
             <li
               key={c.id}
               className={`rounded-[10px] border px-3 py-2 ${
-                revoked ? "border-[rgba(160,150,245,.18)] bg-[rgba(150,180,245,.03)] opacity-70" : "border-[rgba(160,150,245,.22)] bg-[rgba(150,180,245,.04)]"
+                revoked ? "border-nb-haze/18 bg-nb-mist/3 opacity-70" : "border-nb-haze/22 bg-nb-mist/4"
               }`}
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="flex min-w-0 items-center gap-2">
-                  <Icon icon="heroicons-outline:key" className="shrink-0 text-sm text-[#aec2e8]" />
-                  <span className="truncate text-[13px] font-medium text-[#f2f6ff]">{c.label || "credential"}</span>
+                  <Icon icon="heroicons-outline:key" className="shrink-0 text-sm text-nb-soft" />
+                  <span className="truncate text-[13px] font-medium text-nb-ink">{c.label || "credential"}</span>
                   {revoked && (
-                    <span className="shrink-0 rounded-full border border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.1)] px-1.5 py-0.5 text-[9px] font-medium text-[#f87171]">Revoked</span>
+                    <span className="shrink-0 rounded-full border border-nb-crit/30 bg-nb-crit/10 px-1.5 py-0.5 text-[9px] font-medium text-nb-crit">Revoked</span>
                   )}
                 </span>
                 {canManage && !revoked && (
                   <button
                     onClick={() => onRevoke(c)}
                     disabled={revoking}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-[7px] border border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.08)] px-2 py-1 text-[11px] text-[#f87171] transition hover:bg-[rgba(248,113,113,.16)] disabled:opacity-50"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-[7px] border border-nb-crit/30 bg-nb-crit/8 px-2 py-1 text-[11px] text-nb-crit transition hover:bg-nb-crit/16 disabled:opacity-50"
                   >
                     <Icon icon="heroicons-outline:no-symbol" className="text-[13px]" /> Revoke
                   </button>
@@ -510,7 +510,7 @@ function CredentialList({
                   `vms.camera.read`-style permission keys is not something an
                   operator acts on here — and when a grant is actually MISSING,
                   the recorder says so and Federation shows the refusal. */}
-              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 pl-6 font-mono text-[10px] text-[#7e93bf]">
+              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 pl-6 font-mono text-[10px] text-nb-dim2">
                 <span>issued {c.created_at ? fmtRelative(c.created_at) : "—"}</span>
                 <span>last used {c.last_used_at ? fmtRelative(c.last_used_at) : "never"}</span>
                 {revoked && <span>revoked {fmtRelative(c.revoked_at)}</span>}
@@ -555,8 +555,8 @@ function PairModal({
       }
     >
       <div className="space-y-3">
-        <p className="text-[12px] leading-relaxed text-[#7e93bf]">
-          On the recorder&apos;s console open <span className="text-[#aec2e8]">Federation → Pair central VMS</span> and
+        <p className="text-[12px] leading-relaxed text-nb-dim2">
+          On the recorder&apos;s console open <span className="text-nb-soft">Federation → Pair central VMS</span> and
           mint a code. It is one-use and expires in 15 minutes.
         </p>
         <Field
@@ -591,14 +591,14 @@ function IssuedCredentialModal({
       footer={<Button variant="secondary" onClick={onClose}>Done</Button>}
     >
       <div className="space-y-3">
-        <div className="flex items-start gap-2 rounded-[10px] border border-[rgba(251,191,36,.3)] bg-[rgba(251,191,36,.08)] px-3 py-2 text-[12px] text-[#fbbf24]">
+        <div className="flex items-start gap-2 rounded-[10px] border border-nb-warn/30 bg-nb-warn/8 px-3 py-2 text-[12px] text-nb-warn">
           <Icon icon="heroicons:exclamation-triangle" className="mt-0.5 shrink-0 text-sm" />
           Copy this now — it is shown once and cannot be retrieved again. Store it on the recorder, then revoke + re-enroll to rotate.
         </div>
         <div>
-          <p className="mb-1 font-mono text-[10px] uppercase tracking-[1.4px] text-[#9a92c8]">Credential {issued?.label ? `· ${issued.label}` : ""}</p>
+          <p className="mb-1 font-mono text-[10px] uppercase tracking-[1.4px] text-nb-faint">Credential {issued?.label ? `· ${issued.label}` : ""}</p>
           <div className="flex items-stretch gap-2">
-            <code className="min-w-0 flex-1 select-all break-all rounded-[8px] border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.7)] px-3 py-2 font-mono text-[12px] text-[#f2f6ff]">
+            <code className="min-w-0 flex-1 select-all break-all rounded-[8px] border border-nb-haze/22 bg-nb-surface2/70 px-3 py-2 font-mono text-[12px] text-nb-ink">
               {issued?.credential}
             </code>
             <Button
@@ -614,7 +614,7 @@ function IssuedCredentialModal({
         {Array.isArray(issued?.grants) && issued.grants.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {issued.grants.map((g) => (
-              <span key={g} className="rounded-sm border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.06)] px-1.5 py-0.5 font-mono text-[9.5px] text-[#aec2e8]">{g}</span>
+              <span key={g} className="rounded-sm border border-nb-mist/22 bg-nb-mist/6 px-1.5 py-0.5 font-mono text-[9.5px] text-nb-soft">{g}</span>
             ))}
           </div>
         )}
@@ -710,12 +710,12 @@ function FederationTrust({ node }: Readonly<{ node: MediaNodePublic }>) {
   return (
     <>
       <div className="mb-2 mt-5 flex items-center justify-between">
-        <p className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-[#9a92c8]">Federation trust</p>
+        <p className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-nb-faint">Federation trust</p>
         <span
           className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${
             enrolled
-              ? "border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.1)] text-[#34d399]"
-              : "border-[rgba(160,150,245,.28)] bg-[rgba(150,180,245,.06)] text-[#9a92c8]"
+              ? "border-nb-good/40 bg-nb-good/10 text-nb-good"
+              : "border-nb-haze/28 bg-nb-mist/6 text-nb-faint"
           }`}
         >
           <Icon icon={enrolled ? "heroicons-outline:shield-check" : "heroicons-outline:shield-exclamation"} className="text-[11px]" />

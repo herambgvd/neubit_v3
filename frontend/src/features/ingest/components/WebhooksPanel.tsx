@@ -96,9 +96,9 @@ export default function WebhooksPanel({ category, catId }: Readonly<WebhooksPane
         ) : (
           <div className="space-y-2">
             {hooks.map((h) => (
-              <div key={hookId(h)} className="rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3.5 py-3 transition hover:border-[rgba(150,180,245,.42)]">
+              <div key={hookId(h)} className="rounded-[10px] border border-nb-line bg-nb-surface3/50 px-3.5 py-3 transition hover:border-nb-mist/42">
                 <div className="flex items-start gap-3">
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[8px] border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.1)] text-nb-blueb">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[8px] border border-nb-blue/40 bg-nb-blue/10 text-nb-blueb">
                     <Icon icon="heroicons-outline:bolt" className="text-base" />
                   </span>
                   <div className="min-w-0 flex-1">
@@ -107,7 +107,7 @@ export default function WebhooksPanel({ category, catId }: Readonly<WebhooksPane
                       <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${AUTH_PILL[h.auth_type] || AUTH_PILL.none}`}>
                         {authLabel(h.auth_type)}
                       </span>
-                      <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${h.is_active !== false ? "border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good" : "border-nb-line bg-[rgba(10,18,40,.6)] text-nb-faint"}`}>
+                      <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${h.is_active !== false ? "border-nb-good/50 bg-nb-good/10 text-nb-good" : "border-nb-line bg-nb-surface/60 text-nb-faint"}`}>
                         {h.is_active !== false ? "Active" : "Inactive"}
                       </span>
                     </div>
@@ -117,7 +117,7 @@ export default function WebhooksPanel({ category, catId }: Readonly<WebhooksPane
                         <button
                           onClick={() => copyToClipboard(receiverUrl(h.slug, h.ingest_url))}
                           title="Copy receiver URL"
-                          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[6px] text-nb-faint transition hover:bg-white/5 hover:text-nb-blueb"
+                          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[6px] text-nb-faint transition hover:bg-nb-glint/5 hover:text-nb-blueb"
                         >
                           <Icon icon="heroicons-outline:clipboard-document" className="text-sm" />
                         </button>
@@ -140,7 +140,7 @@ export default function WebhooksPanel({ category, catId }: Readonly<WebhooksPane
                         })
                       }
                       title="Delete"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-nb-crit transition hover:bg-[rgba(248,113,113,.12)]"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-nb-crit transition hover:bg-nb-crit/12"
                     >
                       <Icon icon="heroicons-outline:trash" className="text-sm" />
                     </button>

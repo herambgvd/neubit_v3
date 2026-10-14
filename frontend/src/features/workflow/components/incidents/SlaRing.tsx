@@ -48,11 +48,11 @@ function ringFontSize(length: number): number {
 /** The ring's colour. `done` and `none` share the grey: a stopped clock and an
  *  absent one are both "nothing to read here", and neither is a green pass. */
 const RING_STROKE: Record<string, string> = {
-  breach: "#f87171",
-  warn: "#fbbf24",
-  ok: "#34d399",
-  done: "#7f93bd",
-  none: "#7f93bd",
+  breach: "rgb(var(--nb-c-crit))",
+  warn: "rgb(var(--nb-c-warn))",
+  ok: "rgb(var(--nb-c-good))",
+  done: "rgb(var(--nb-c-dim2))",
+  none: "rgb(var(--nb-c-dim2))",
 };
 
 /** The words under the ring, which are the only thing that says what the big
@@ -109,7 +109,7 @@ export default function SlaRing({ incident, now: injected }: Readonly<SlaRingPro
           role="img"
           aria-label={sla ? `${big} ${sub}` : "No time limit on this alarm"}
         >
-          <circle cx="56" cy="56" r={R} fill="none" stroke="var(--nb-ring-track, rgba(150,180,245,.18))" strokeWidth="9" />
+          <circle cx="56" cy="56" r={R} fill="none" stroke="var(--nb-ring-track, rgb(var(--nb-c-mist)/.18))" strokeWidth="9" />
           {sla && (
             <circle
               cx="56"

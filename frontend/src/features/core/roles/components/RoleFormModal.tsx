@@ -80,7 +80,7 @@ export default function RoleFormModal({
     >
       <div className="space-y-5">
         {readOnly && (
-          <div className="flex items-center gap-2 rounded-[10px] border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.1)] px-3 py-2 text-sm text-nb-blueb">
+          <div className="flex items-center gap-2 rounded-[10px] border border-nb-blue/40 bg-nb-blue/10 px-3 py-2 text-sm text-nb-blueb">
             <Icon icon="heroicons-outline:lock-closed" className="text-base" />
             System roles are built in and cannot be edited.
           </div>

@@ -125,7 +125,7 @@ function DashboardsViewerInner({ category: fixed, crumb }: Readonly<DashboardsVi
   }
 
   const tabs = !fixed ? (
-    <div className="mb-3 flex shrink-0 flex-wrap items-center gap-1 rounded-[10px] border border-nb-line bg-[rgba(8,15,34,.7)] p-1.5">
+    <div className="mb-3 flex shrink-0 flex-wrap items-center gap-1 rounded-[10px] border border-nb-line bg-nb-surface2/70 p-1.5">
       <Tab label="All" on={!category} onClick={() => router.replace("?", { scroll: false })} />
       {CATEGORIES.map((c) => (
         <Tab
@@ -167,7 +167,7 @@ function DashboardsViewerInner({ category: fixed, crumb }: Readonly<DashboardsVi
     <ConsolePage>
       <EstateHeader crumbs={crumbs} desc={desc} right={manageLink} />
       {tabs}
-      <div className="mb-3 flex shrink-0 items-center gap-1.5 overflow-x-auto rounded-[10px] border border-nb-line bg-[rgba(8,15,34,.7)] p-1.5">
+      <div className="mb-3 flex shrink-0 items-center gap-1.5 overflow-x-auto rounded-[10px] border border-nb-line bg-nb-surface2/70 p-1.5">
         {items.map((d) => (
           <button
             key={d.id}
@@ -176,7 +176,7 @@ function DashboardsViewerInner({ category: fixed, crumb }: Readonly<DashboardsVi
             className={`shrink-0 rounded-[7px] px-3 py-1.5 text-[12px] font-semibold transition-colors ${
               d.id === active.id
                 ? "bg-nb-accent/15 text-nb-accent"
-                : "text-nb-faint hover:bg-[rgba(255,255,255,.04)] hover:text-nb-ink"
+                : "text-nb-faint hover:bg-nb-glint/4 hover:text-nb-ink"
             }`}
           >
             {d.name}
@@ -209,7 +209,7 @@ function Tab({
       className={`inline-flex shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 py-1.5 text-[11.5px] font-semibold transition-colors ${
         on
           ? "bg-nb-accent/15 text-nb-accent"
-          : "text-nb-faint hover:bg-[rgba(255,255,255,.04)] hover:text-nb-ink"
+          : "text-nb-faint hover:bg-nb-glint/4 hover:text-nb-ink"
       }`}
     >
       {icon && <Icon icon={icon} className="text-[13px]" />}

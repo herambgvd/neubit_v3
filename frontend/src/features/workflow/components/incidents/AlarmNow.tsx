@@ -63,7 +63,7 @@ export default function AlarmNow({
         {/* WHICH PICTURE, over the picture itself — one click, and it stays where
             the operator's eye already is. */}
         {hasPicture && onKindChange && (
-          <div className="absolute right-2 top-2 z-10 inline-flex overflow-hidden rounded-lg border border-card-border bg-[rgba(8,15,34,.82)] backdrop-blur-xs">
+          <div className="absolute right-2 top-2 z-10 inline-flex overflow-hidden rounded-lg border border-card-border bg-nb-surface2/82 backdrop-blur-xs">
             {(["recording", "live"] as const).map((k) => (
               <button
                 key={k}

@@ -40,7 +40,7 @@ export interface ReadinessStyle {
 export const READINESS_STYLE: Record<BiReadiness, ReadinessStyle> = {
   ambiguous: {
     label: "Ambiguous",
-    color: "#f87171",
+    color: "rgb(var(--nb-c-crit))",
     dash: "7 2 2 2",
     title: "The binding names more than one live point — pick the meter in the designer.",
     fixInDesigner: true,
@@ -54,7 +54,7 @@ export const READINESS_STYLE: Record<BiReadiness, ReadinessStyle> = {
   },
   silent: {
     label: "Silent",
-    color: "#fbbf24",
+    color: "rgb(var(--nb-c-warn))",
     title: "Bound to one point that produced no reading in the window. The fix is at the device or the gateway.",
     fixInDesigner: false,
   },
@@ -67,7 +67,7 @@ export const READINESS_STYLE: Record<BiReadiness, ReadinessStyle> = {
   },
   reporting: {
     label: "Reporting",
-    color: "#34d399",
+    color: "rgb(var(--nb-c-good))",
     title: "Every slot names one point that reported in the window. Says nothing about whether the machine is healthy.",
     fixInDesigner: false,
   },
@@ -77,7 +77,7 @@ export const READINESS_STYLE: Record<BiReadiness, ReadinessStyle> = {
  *  and never mistaken for reporting. */
 const UNKNOWN_STYLE: ReadinessStyle = {
   label: "Unknown state",
-  color: "#9a92c8",
+  color: "rgb(var(--nb-c-faint))",
   dash: "1 3",
   title: "A readiness state this console does not know.",
   fixInDesigner: false,
@@ -94,7 +94,7 @@ export const readinessOrder = (plant: BiPlant | undefined): readonly string[] =>
  *  readiness state uses, so a pipe is never read as a verdict. */
 export const PIPE = {
   condenser: "#e879f9",
-  supply: "#22d3ee",
+  supply: "rgb(var(--nb-c-teal))",
   return: "#818cf8",
 } as const;
 

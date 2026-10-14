@@ -116,11 +116,11 @@ export default function ZonesPanel({ site }: Readonly<{ site: SitePublic }>) {
           </div>
         </div>
       ) : (
-        <ul className="rounded-lg border border-nb-line divide-y divide-nb-line bg-[rgba(8,15,34,.5)]">
+        <ul className="rounded-lg border border-nb-line divide-y divide-nb-line bg-nb-surface2/50">
           {items.map((z) => {
             const f = floors.find((x) => x.floor_id === z.floor_id);
             return (
-              <li key={z.zone_id} className="flex items-start gap-3 px-4 py-3 hover:bg-white/5">
+              <li key={z.zone_id} className="flex items-start gap-3 px-4 py-3 hover:bg-nb-glint/5">
                 <span className="inline-flex h-9 w-9 items-center justify-center rounded-md shrink-0 text-white" style={{ background: z.color || "#6366F1" }}>
                   <Icon icon="heroicons-outline:square-2-stack" className="text-base" />
                 </span>
@@ -135,8 +135,8 @@ export default function ZonesPanel({ site }: Readonly<{ site: SitePublic }>) {
                     <span className={`text-[10px] rounded-full border px-1.5 py-0.5 font-medium uppercase tracking-wide ${THREAT_PILL[z.threat_level] || THREAT_PILL.normal}`}>
                       {z.threat_level || "normal"}
                     </span>
-                    {f && <span className="text-[10px] rounded-full bg-white/5 text-nb-muted px-1.5 py-0.5">{f.name}</span>}
-                    {z.is_active === false && <span className="text-[10px] rounded-full bg-white/5 text-nb-muted px-1.5 py-0.5">Inactive</span>}
+                    {f && <span className="text-[10px] rounded-full bg-nb-glint/5 text-nb-muted px-1.5 py-0.5">{f.name}</span>}
+                    {z.is_active === false && <span className="text-[10px] rounded-full bg-nb-glint/5 text-nb-muted px-1.5 py-0.5">Inactive</span>}
                   </div>
                   <div className="mt-0.5 text-xs text-nb-muted">
                     {z.max_occupancy ? `Max occupancy: ${z.max_occupancy} · ` : ""}

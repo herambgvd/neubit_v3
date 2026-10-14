@@ -17,7 +17,7 @@ function ToolBtn({ icon, title, onClick }: Readonly<ToolBtnProps>) {
       type="button"
       onClick={onClick}
       title={title}
-      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-nb-line bg-[rgba(8,15,34,.5)] text-nb-muted hover:bg-[rgba(96,165,250,.1)] hover:text-nb-ink transition"
+      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-nb-line bg-nb-surface2/50 text-nb-muted hover:bg-nb-blue/10 hover:text-nb-ink transition"
     >
       <Icon icon={icon} className="text-sm" />
     </button>
@@ -34,7 +34,7 @@ export interface CanvasToolbarProps {
 
 export default function CanvasToolbar({ scale, onAddState, onZoomIn, onZoomOut, onFit }: Readonly<CanvasToolbarProps>) {
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-nb-line px-3 py-2 bg-[rgba(8,15,34,.5)]">
+    <div className="flex flex-wrap items-center gap-2 border-b border-nb-line px-3 py-2 bg-nb-surface2/50">
       <Button variant="success" icon="heroicons-outline:plus" onClick={onAddState} className="!px-2.5 !py-1 text-xs">
         Add state
       </Button>

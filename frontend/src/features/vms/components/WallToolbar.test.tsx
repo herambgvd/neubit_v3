@@ -161,8 +161,8 @@ describe("host load", () => {
     const chip = await screen.findByTitle(/host load/i);
     const cpu = within(chip).getByText("30%");
     const ram = within(chip).getByText("95%");
-    expect(cpu.className).toContain("34d399"); // green
-    expect(ram.className).toContain("f87171"); // red
+    expect(cpu.className).toContain("nb-good"); // green
+    expect(ram.className).toContain("nb-crit"); // red
   });
 
   it("turns amber at half the host, and red past 85%", async () => {
@@ -173,16 +173,16 @@ describe("host load", () => {
     renderWithProviders(<WallToolbar {...props()} />);
 
     let chip = await screen.findByTitle(/host load/i);
-    expect(within(chip).getByText("50%").className).toContain("fbbf24");
-    expect(within(chip).getByText("49%").className).toContain("34d399");
+    expect(within(chip).getByText("50%").className).toContain("nb-warn");
+    expect(within(chip).getByText("49%").className).toContain("nb-good");
 
     cleanup();
     stubApi({ "GET /system/resources": { cpu_percent: 85, ram: { percent: 84 } } });
     renderWithProviders(<WallToolbar {...props()} />);
 
     chip = await screen.findByTitle(/host load/i);
-    expect(within(chip).getByText("85%").className).toContain("f87171");
-    expect(within(chip).getByText("84%").className).toContain("fbbf24");
+    expect(within(chip).getByText("85%").className).toContain("nb-crit");
+    expect(within(chip).getByText("84%").className).toContain("nb-warn");
   });
 
   it("sits with the stream-quality control, which is what it is read against", async () => {

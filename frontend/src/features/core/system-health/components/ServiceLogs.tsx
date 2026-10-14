@@ -126,7 +126,7 @@ export default function ServiceLogs({ service, allowed }: Readonly<ServiceLogsPr
         ref={bodyRef}
         role="log"
         aria-label={`${service.name} logs`}
-        className="min-h-0 flex-1 overflow-auto bg-[rgba(4,9,22,.6)] px-3 py-2 font-mono text-[11.5px] leading-[1.55]"
+        className="min-h-0 flex-1 overflow-auto bg-nb-surface3/60 px-3 py-2 font-mono text-[11.5px] leading-[1.55]"
       >
         {logs.isError ? (
           <p className="py-6 text-center text-xs text-nb-crit">

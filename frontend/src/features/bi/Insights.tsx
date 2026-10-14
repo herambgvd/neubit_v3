@@ -62,7 +62,7 @@ import Scatter from "./components/Scatter";
 import { bi } from "./api";
 import { categoryMeta, fmtReading } from "./constants";
 
-const ACCENT = "#a78bfa";
+const ACCENT = "rgb(var(--nb-c-violet))";
 const MAX_SERIES = 12;
 
 const RANGES = [
@@ -207,14 +207,14 @@ export default function Insights() {
                     onClick={() => setDeviceId(on ? null : d.device_id)}
                     className={`w-full rounded-[10px] border px-3 py-2 text-left transition ${
                       on
-                        ? "border-[rgba(167,139,250,.5)] bg-[rgba(167,139,250,.12)]"
-                        : "border-nb-line bg-[rgba(6,11,26,.45)] hover:bg-white/5"
+                        ? "border-nb-violet/50 bg-nb-violet/12"
+                        : "border-nb-line bg-nb-surface3/45 hover:bg-nb-glint/5"
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate text-[12.5px] text-nb-ink">{d.device_tag}</span>
                       {chosen > 0 && (
-                        <span className="shrink-0 rounded-[5px] border border-[rgba(167,139,250,.5)] px-1 font-mono text-[9.5px] text-[#c4b5fd]">
+                        <span className="shrink-0 rounded-[5px] border border-nb-violet/50 px-1 font-mono text-[9.5px] text-nb-violetb">
                           {chosen}
                         </span>
                       )}
@@ -247,8 +247,8 @@ export default function Insights() {
                               title={whyNotPickable(numeric, full)}
                               className={`flex w-full items-center gap-2 rounded-[7px] border px-2 py-1 text-left transition ${
                                 picked
-                                  ? "border-[rgba(167,139,250,.5)] bg-[rgba(167,139,250,.14)]"
-                                  : "border-transparent hover:bg-white/5"
+                                  ? "border-nb-violet/50 bg-nb-violet/14"
+                                  : "border-transparent hover:bg-nb-glint/5"
                               } ${!numeric || full ? "opacity-40" : ""}`}
                             >
                               <Icon
@@ -301,8 +301,8 @@ export default function Insights() {
             </header>
 
             {/* THE STANDING WARNING. On the screen, not in a code comment. */}
-            <div className="mx-5 mt-4 flex gap-2.5 rounded-[10px] border border-[rgba(167,139,250,.35)] bg-[rgba(167,139,250,.08)] px-3 py-2.5">
-              <Icon icon="heroicons:exclamation-triangle" className="mt-[1px] shrink-0 text-[15px] text-[#c4b5fd]" />
+            <div className="mx-5 mt-4 flex gap-2.5 rounded-[10px] border border-nb-violet/35 bg-nb-violet/8 px-3 py-2.5">
+              <Icon icon="heroicons:exclamation-triangle" className="mt-[1px] shrink-0 text-[15px] text-nb-violetb" />
               <p className="text-[11px] leading-relaxed text-nb-soft">
                 <strong className="font-semibold text-nb-ink">
                   A correlation is not a cause.
@@ -331,7 +331,7 @@ export default function Insights() {
                       key={s.point_id}
                       type="button"
                       onClick={() => setSelected((c) => c.filter((x) => x.point_id !== s.point_id))}
-                      className="flex items-center gap-1.5 rounded-[7px] border border-[rgba(167,139,250,.4)] bg-[rgba(167,139,250,.1)] px-2 py-1 text-[11px] text-nb-soft transition hover:border-nb-bad"
+                      className="flex items-center gap-1.5 rounded-[7px] border border-nb-violet/40 bg-nb-violet/10 px-2 py-1 text-[11px] text-nb-soft transition hover:border-nb-bad"
                       title="Remove from the comparison"
                     >
                       <span className="font-mono text-[10px] text-nb-faint">{i + 1}</span>
@@ -353,7 +353,7 @@ export default function Insights() {
                   <>
                     {/* ── matrix ───────────────────────────────────── */}
                     <div className="px-5 pt-4">
-                      <div className="rounded-[12px] border border-nb-line bg-[rgba(10,18,40,.45)] p-3">
+                      <div className="rounded-[12px] border border-nb-line bg-nb-surface/45 p-3">
                         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                           <div className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">
                             Coefficient matrix
@@ -384,7 +384,7 @@ export default function Insights() {
 
                     {/* ── the chosen pair ──────────────────────────── */}
                     <div className="px-5 pt-3">
-                      <div className="rounded-[12px] border border-nb-line bg-[rgba(10,18,40,.45)] p-3">
+                      <div className="rounded-[12px] border border-nb-line bg-nb-surface/45 p-3">
                         <div className="mb-2 text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">
                           Pair detail
                         </div>
@@ -422,7 +422,7 @@ export default function Insights() {
                             </div>
 
                             <div className="space-y-2">
-                              <div className="rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2">
+                              <div className="rounded-[10px] border border-nb-line bg-nb-surface3/50 px-3 py-2">
                                 <p className="text-[10px] font-semibold uppercase tracking-[1.4px] text-nb-faint">
                                   Pearson r
                                 </p>
@@ -478,7 +478,7 @@ export default function Insights() {
                       <div className="overflow-x-auto rounded-[10px] border border-nb-line">
                         <table className="w-full min-w-[640px] text-left">
                           <thead>
-                            <tr className="bg-[rgba(6,11,26,.6)] text-[10px] uppercase tracking-[1.2px] text-nb-faint">
+                            <tr className="bg-nb-surface3/60 text-[10px] uppercase tracking-[1.2px] text-nb-faint">
                               <th className="px-3 py-2 font-semibold">#</th>
                               <th className="px-3 py-2 font-semibold">Series</th>
                               <th className="px-3 py-2 text-right font-semibold">Buckets</th>

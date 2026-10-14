@@ -56,7 +56,7 @@ export default function PointPicker({ siteId, busy, onPick, onCancel }: Readonly
   const ready = device.trim() !== "" && point.trim() !== "";
 
   return (
-    <div className="mt-2 space-y-2 rounded-[10px] border border-[rgba(96,165,250,.35)] bg-[rgba(96,165,250,.06)] p-3">
+    <div className="mt-2 space-y-2 rounded-[10px] border border-nb-blue/35 bg-nb-blue/6 p-3">
       {listable ? (
         <>
           <Segmented<Scope>

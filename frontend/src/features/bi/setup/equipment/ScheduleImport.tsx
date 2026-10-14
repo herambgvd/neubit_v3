@@ -27,9 +27,9 @@ export interface ScheduleImportProps {
 }
 
 const REASON_CLS: Record<string, string> = {
-  invalid: "border-[rgba(248,113,113,.45)] text-nb-crit",
-  ambiguous: "border-[rgba(251,191,36,.45)] text-nb-warn",
-  conflict: "border-[rgba(251,191,36,.45)] text-nb-warn",
+  invalid: "border-nb-crit/45 text-nb-crit",
+  ambiguous: "border-nb-warn/45 text-nb-warn",
+  conflict: "border-nb-warn/45 text-nb-warn",
   exists: "border-nb-line text-nb-soft",
   duplicate: "border-nb-line text-nb-faint",
 };
@@ -134,7 +134,7 @@ function Plan({ report, ix, title }: Readonly<{ report: InfraImportReport; ix: V
         <span className="rounded-[6px] border border-nb-line px-2 py-0.5 text-nb-soft">{c.equipment_created} equipment</span>
         <span className="rounded-[6px] border border-nb-line px-2 py-0.5 text-nb-soft">{c.slots_created} slot(s)</span>
         <span
-          className={`rounded-[6px] border px-2 py-0.5 ${c.rows_skipped ? "border-[rgba(251,191,36,.45)] text-nb-warn" : "border-nb-line text-nb-faint"}`}
+          className={`rounded-[6px] border px-2 py-0.5 ${c.rows_skipped ? "border-nb-warn/45 text-nb-warn" : "border-nb-line text-nb-faint"}`}
         >
           {c.rows_skipped} row(s) skipped
         </span>

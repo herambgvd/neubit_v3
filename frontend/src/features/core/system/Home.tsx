@@ -65,26 +65,26 @@ function Soul() {
     >
       <defs>
         <radialGradient id="nbv" cx="70%" cy="36%" r="85%">
-          <stop offset="0" stopColor="#18305a" stopOpacity=".5" />
-          <stop offset="60%" stopColor="#0c1530" stopOpacity="0" />
+          <stop offset="0" stopColor="rgb(var(--nb-c-glow))" stopOpacity=".5" />
+          <stop offset="60%" stopColor="rgb(var(--nb-c-bg))" stopOpacity="0" />
         </radialGradient>
         <radialGradient id="nblens" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#22d3ee" stopOpacity=".13" />
+          <stop offset="0%" stopColor="rgb(var(--nb-c-teal))" stopOpacity=".13" />
           <stop offset="60%" stopColor="#4c6ef5" stopOpacity=".05" />
-          <stop offset="100%" stopColor="#0c1530" stopOpacity="0" />
+          <stop offset="100%" stopColor="rgb(var(--nb-c-bg))" stopOpacity="0" />
         </radialGradient>
         <pattern id="nbdots" width="84" height="84" patternUnits="userSpaceOnUse">
-          <circle cx="14" cy="18" r="1" fill="#8fb0e8" opacity=".1" />
-          <circle cx="58" cy="60" r="1" fill="#8fb0e8" opacity=".07" />
+          <circle cx="14" cy="18" r="1" fill="rgb(var(--nb-c-mist))" opacity=".1" />
+          <circle cx="58" cy="60" r="1" fill="rgb(var(--nb-c-mist))" opacity=".07" />
         </pattern>
       </defs>
       <rect width="1600" height="900" fill="url(#nbv)" />
       <rect width="1600" height="900" fill="url(#nbdots)" />
-      <g transform="translate(1210,350)" fill="none" stroke="#8fb0e8" opacity=".09">
+      <g transform="translate(1210,350)" fill="none" stroke="rgb(var(--nb-c-mist))" opacity=".09">
         <circle r="300" strokeWidth="1" />
         <circle r="430" strokeWidth="1" />
       </g>
-      <g transform="translate(1210,350)" fill="none" stroke="#22d3ee" opacity=".26">
+      <g transform="translate(1210,350)" fill="none" stroke="rgb(var(--nb-c-teal))" opacity=".26">
         {/* The glass, so the middle is optics rather than a hole. */}
         <circle r="140" fill="url(#nblens)" stroke="none" className="nb-iris" />
         <g className="nb-iris">
@@ -109,12 +109,12 @@ function Soul() {
           <path d="M 0 -88 A 88 88 0 0 1 62 -62" strokeWidth="1.8" opacity=".7" />
         </g>
       </g>
-      <g stroke="#8fb0e8" fill="none" opacity=".12" strokeLinecap="round">
+      <g stroke="rgb(var(--nb-c-mist))" fill="none" opacity=".12" strokeLinecap="round">
         <path d="M150 250 Q 680 300 1160 340" strokeDasharray="1 16" strokeWidth="1.5" />
         <path d="M120 560 Q 720 500 1176 372" strokeDasharray="1 16" strokeWidth="1.5" />
         <path d="M260 780 Q 780 640 1188 392" strokeDasharray="1 18" strokeWidth="1.5" />
       </g>
-      <line x1="0" y1="652" x2="1600" y2="652" stroke="#22d3ee" strokeWidth="1" opacity=".08" />
+      <line x1="0" y1="652" x2="1600" y2="652" stroke="rgb(var(--nb-c-teal))" strokeWidth="1" opacity=".08" />
     </svg>
   );
 }
@@ -122,19 +122,19 @@ function Soul() {
 /* ── One metro tile ───────────────────────────────────────────────────── */
 function Tile({ icon, label, href, tone = "teal", count, sub, stats, soon }: Readonly<TileProps>) {
   const toneRing: Record<LauncherTone, string> = {
-    teal: "hover:border-[rgba(34,211,238,.65)] hover:shadow-[0_14px_44px_rgba(3,10,28,.6),0_0_26px_rgba(34,211,238,.3)]",
-    blue: "hover:border-[rgba(96,165,250,.65)] hover:shadow-[0_14px_44px_rgba(3,10,28,.6),0_0_26px_rgba(96,165,250,.3)]",
-    hot: "border-[rgba(248,113,113,.5)] hover:border-[rgba(248,113,113,.75)] hover:shadow-[0_14px_44px_rgba(3,10,28,.6),0_0_26px_rgba(248,113,113,.35)]",
-    att: "border-[rgba(251,191,36,.45)] hover:border-[rgba(251,191,36,.7)] hover:shadow-[0_14px_44px_rgba(3,10,28,.6),0_0_26px_rgba(251,191,36,.3)]",
+    teal: "hover:border-nb-teal/65 hover:shadow-[0_14px_44px_rgba(3,10,28,.6),0_0_26px_rgb(var(--nb-c-teal)/.3)]",
+    blue: "hover:border-nb-blue/65 hover:shadow-[0_14px_44px_rgba(3,10,28,.6),0_0_26px_rgb(var(--nb-c-blue)/.3)]",
+    hot: "border-nb-crit/50 hover:border-nb-crit/75 hover:shadow-[0_14px_44px_rgba(3,10,28,.6),0_0_26px_rgb(var(--nb-c-crit)/.35)]",
+    att: "border-nb-warn/45 hover:border-nb-warn/70 hover:shadow-[0_14px_44px_rgba(3,10,28,.6),0_0_26px_rgb(var(--nb-c-warn)/.3)]",
   };
   const toneBg: Record<LauncherTone, string> = {
-    teal: "linear-gradient(155deg,rgba(34,211,238,.13),rgba(150,180,245,.05) 65%)",
-    blue: "linear-gradient(155deg,rgba(96,165,250,.14),rgba(167,139,250,.06) 65%)",
-    hot: "linear-gradient(155deg,rgba(248,113,113,.24),rgba(248,113,113,.07) 70%)",
-    att: "linear-gradient(155deg,rgba(251,191,36,.20),rgba(251,191,36,.06) 70%)",
+    teal: "linear-gradient(155deg,rgb(var(--nb-c-teal)/.13),rgb(var(--nb-c-mist)/.05) 65%)",
+    blue: "linear-gradient(155deg,rgb(var(--nb-c-blue)/.14),rgb(var(--nb-c-violet)/.06) 65%)",
+    hot: "linear-gradient(155deg,rgb(var(--nb-c-crit)/.24),rgb(var(--nb-c-crit)/.07) 70%)",
+    att: "linear-gradient(155deg,rgb(var(--nb-c-warn)/.2),rgb(var(--nb-c-warn)/.06) 70%)",
   };
-  const toneIcon: Record<LauncherTone, string> = { teal: "#67e8f9", blue: "#93c5fd", hot: "#fca5a5", att: "#fcd34d" };
-  const countColor: Record<LauncherTone, string> = { teal: "#67e8f9", blue: "#93c5fd", hot: "#f87171", att: "#fbbf24" };
+  const toneIcon: Record<LauncherTone, string> = { teal: "rgb(var(--nb-c-tealb))", blue: "rgb(var(--nb-c-blueb))", hot: "var(--color-red-300)", att: "var(--color-amber-300)" };
+  const countColor: Record<LauncherTone, string> = { teal: "rgb(var(--nb-c-tealb))", blue: "rgb(var(--nb-c-blueb))", hot: "rgb(var(--nb-c-crit))", att: "rgb(var(--nb-c-warn))" };
 
   // No destination is the SOON state too (config/launcher: "never a broken link").
   if (soon || !href) {
@@ -142,13 +142,13 @@ function Tile({ icon, label, href, tone = "teal", count, sub, stats, soon }: Rea
       <div
         aria-disabled="true"
         title="Coming soon"
-        className="relative h-[186px] w-[186px] select-none rounded-[16px] border border-[rgba(167,139,250,.28)] opacity-50 backdrop-blur-xs"
-        style={{ background: "linear-gradient(155deg,rgba(167,139,250,.12),rgba(34,211,238,.04) 70%)" }}
+        className="relative h-[186px] w-[186px] select-none rounded-[16px] border border-nb-violet/28 opacity-50 backdrop-blur-xs"
+        style={{ background: "linear-gradient(155deg,rgb(var(--nb-c-violet)/.12),rgb(var(--nb-c-teal)/.04) 70%)" }}
       >
-        <Icon icon={icon} className="absolute left-1/2 top-7 -translate-x-1/2 text-[58px] text-[#c4b5fd]" />
-        <div className="absolute inset-x-3.5 bottom-3 flex items-baseline gap-2 text-[13px] tracking-[.3px] text-[#aec2e8]">
+        <Icon icon={icon} className="absolute left-1/2 top-7 -translate-x-1/2 text-[58px] text-nb-violetb" />
+        <div className="absolute inset-x-3.5 bottom-3 flex items-baseline gap-2 text-[13px] tracking-[.3px] text-nb-soft">
           <span className="truncate">{label}</span>
-          <span className="ml-auto rounded-[5px] border border-[rgba(160,150,245,.3)] px-1.5 py-px font-mono text-[9px] uppercase tracking-[.6px] text-[#8f8ac0]">
+          <span className="ml-auto rounded-[5px] border border-nb-haze/30 px-1.5 py-px font-mono text-[9px] uppercase tracking-[.6px] text-nb-faint">
             Soon
           </span>
         </div>
@@ -159,7 +159,7 @@ function Tile({ icon, label, href, tone = "teal", count, sub, stats, soon }: Rea
   return (
     <Link
       href={href}
-      className={`group relative block h-[186px] w-[186px] rounded-[16px] border border-[rgba(160,150,245,.22)] backdrop-blur-xs transition-[transform,box-shadow,border-color,background] duration-150 hover:z-10 hover:scale-[1.1] ${toneRing[tone]}`}
+      className={`group relative block h-[186px] w-[186px] rounded-[16px] border border-nb-haze/22 backdrop-blur-xs transition-[transform,box-shadow,border-color,background] duration-150 hover:z-10 hover:scale-[1.1] ${toneRing[tone]}`}
       style={{ background: toneBg[tone] }}
     >
       <Icon
@@ -168,7 +168,7 @@ function Tile({ icon, label, href, tone = "teal", count, sub, stats, soon }: Rea
         style={{ color: toneIcon[tone] }}
       />
       <div className="absolute inset-x-3.5 bottom-3">
-        <div className="flex items-baseline gap-2 text-[13px] tracking-[.3px] text-[#aec2e8] transition group-hover:text-[#f2f6ff]">
+        <div className="flex items-baseline gap-2 text-[13px] tracking-[.3px] text-nb-soft transition group-hover:text-nb-ink">
           <span className="truncate">{label}</span>
           {count != null && (
             <span className="ml-auto font-mono text-[15px] font-bold" style={{ color: countColor[tone] }}>
@@ -179,17 +179,17 @@ function Tile({ icon, label, href, tone = "teal", count, sub, stats, soon }: Rea
         {stats && (
           <div className="mt-1 flex items-center gap-1.5">
             <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-px font-mono text-[10px] font-semibold text-emerald-300">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_5px_#34d399]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_5px_rgb(var(--nb-c-good))]" />
               {stats.online}
             </span>
-            <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-px font-mono text-[10px] font-semibold ${stats.offline > 0 ? "border-red-500/40 bg-red-500/10 text-red-300" : "border-white/10 bg-white/5 text-[#7e93bf]"}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${stats.offline > 0 ? "bg-red-500 shadow-[0_0_5px_#ef4444]" : "bg-white/25"}`} />
+            <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-px font-mono text-[10px] font-semibold ${stats.offline > 0 ? "border-red-500/40 bg-red-500/10 text-red-300" : "border-nb-glint/10 bg-nb-glint/5 text-nb-dim2"}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${stats.offline > 0 ? "bg-red-500 shadow-[0_0_5px_#ef4444]" : "bg-nb-glint/25"}`} />
               {stats.offline}
             </span>
           </div>
         )}
         {sub && !stats && (
-          <div className="mt-0.5 truncate font-mono text-[10px] tracking-[.3px] text-[#7e93bf]">{sub}</div>
+          <div className="mt-0.5 truncate font-mono text-[10px] tracking-[.3px] text-nb-dim2">{sub}</div>
         )}
       </div>
     </Link>
@@ -228,11 +228,11 @@ function NeuBitAiButton() {
         toast("NeuBit AI", { description: "The AI assistant is coming soon." })
       }
       title="NeuBit AI — coming soon"
-      className="fixed bottom-14 right-6 z-30 flex items-center gap-2 rounded-full border border-[rgba(103,232,249,.4)] bg-[rgba(8,15,34,.7)] px-4 py-2.5 text-[13px] font-medium text-[#cfeffb] backdrop-blur-md transition hover:border-[#67e8f9] hover:shadow-[0_0_22px_rgba(34,211,238,.35)]"
+      className="fixed bottom-14 right-6 z-30 flex items-center gap-2 rounded-full border border-nb-tealb/40 bg-nb-surface2/70 px-4 py-2.5 text-[13px] font-medium text-cyan-100 backdrop-blur-md transition hover:border-nb-tealb hover:shadow-[0_0_22px_rgb(var(--nb-c-teal)/.35)]"
     >
-      <IconSpark width="16" height="16" className="text-[#67e8f9]" />
+      <IconSpark width="16" height="16" className="text-nb-tealb" />
       NeuBit AI
-      <span className="ml-0.5 h-1.5 w-1.5 rounded-full bg-[#34d399] shadow-[0_0_6px_#34d399]" />
+      <span className="ml-0.5 h-1.5 w-1.5 rounded-full bg-nb-good shadow-[0_0_6px_rgb(var(--nb-c-good))]" />
     </button>
   );
 }
@@ -303,8 +303,8 @@ export default function HomePage() {
 
   return (
     <div
-      className="relative flex h-full min-h-0 w-full flex-col overflow-hidden text-[#f2f6ff]"
-      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+      className="relative flex h-full min-h-0 w-full flex-col overflow-hidden text-nb-ink"
+      style={{ background: "var(--nb-backdrop)" }}
     >
       <Soul />
 
@@ -318,7 +318,7 @@ export default function HomePage() {
               type="button"
               onClick={() => setMode(m.id)}
               className="bg-transparent text-[42px] font-thin tracking-[1px] transition-[color,text-shadow] duration-200"
-              style={on ? { color: "#f2f6ff", textShadow: `0 0 24px ${m.glow}` } : { color: "#7e93bf" }}
+              style={on ? { color: "rgb(var(--nb-c-ink))", textShadow: `0 0 24px ${m.glow}` } : { color: "rgb(var(--nb-c-dim2))" }}
             >
               {m.label}
             </button>
@@ -351,7 +351,7 @@ export default function HomePage() {
 
       {/* GVD lockup — bottom-right */}
       <div className="pointer-events-none absolute bottom-4 right-6 z-10 flex items-center gap-2.5 opacity-80">
-        <span className="text-[10px] font-medium uppercase tracking-[2.5px] text-[#9fb2d8]">
+        <span className="text-[10px] font-medium uppercase tracking-[2.5px] text-nb-dim">
           Genius Vision Digital
         </span>
         {/* eslint-disable-next-line @next/next/no-img-element */}

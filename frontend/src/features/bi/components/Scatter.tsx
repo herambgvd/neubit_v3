@@ -48,7 +48,7 @@ export default function Scatter({
   samples = [],
   xLabel,
   yLabel,
-  accent = "#a78bfa",
+  accent = "rgb(var(--nb-c-violet))",
 }: Readonly<{
   samples: ScatterSample[];
   xLabel?: string;

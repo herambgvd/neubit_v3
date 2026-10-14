@@ -41,7 +41,7 @@ export default function RolePanel({ role, groups, canManage, onClone }: Readonly
         </span>
       </div>
 
-      <div className="rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-1">
+      <div className="rounded-[10px] border border-nb-line bg-nb-surface3/50 px-3 py-1">
         <Stat label="Capabilities granted" value={all ? "ALL" : `${full} / ${totalCaps}`} tone="good" />
         <Stat label="Areas touched" value={`${areas} / ${Object.keys(groups).length}`} tone="blue" />
         <Stat label="Scope" value={scopeLabel(all, full)} tone="ink" />

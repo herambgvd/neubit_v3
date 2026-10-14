@@ -22,8 +22,8 @@ export type { AccountStatus };
  *  triple, so as a chain the reader had to count colons to see which one a
  *  disabled account gets. */
 const STATUS_BADGE: Record<AccountStatus, string> = {
-  locked: "border-[rgba(248,113,113,.5)] bg-[rgba(248,113,113,.1)] text-nb-crit",
-  active: "border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good",
+  locked: "border-nb-crit/50 bg-nb-crit/10 text-nb-crit",
+  active: "border-nb-good/50 bg-nb-good/10 text-nb-good",
   disabled: "border-nb-line text-nb-faint",
 };
 
@@ -103,9 +103,9 @@ export default function UserDetail({
     const adminLockout = isAdminAccount && val !== "active";
     const blocked = selfLockout || adminLockout;
     const activeCls: Record<AccountStatus, string> = {
-      active: "bg-[rgba(52,211,153,.18)] text-nb-good",
-      disabled: "bg-[rgba(120,140,180,.2)] text-nb-muted",
-      locked: "bg-[rgba(248,113,113,.18)] text-nb-crit",
+      active: "bg-nb-good/18 text-nb-good",
+      disabled: "bg-nb-mist/20 text-nb-muted",
+      locked: "bg-nb-crit/18 text-nb-crit",
     };
     return (
       <button
@@ -154,7 +154,7 @@ export default function UserDetail({
         </Row>
         <Row label="Role">
           <div className="flex flex-wrap items-center gap-2 py-0.5">
-            <span className="inline-flex items-center gap-2 rounded-[8px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] px-3 py-1.5 text-[12px] text-nb-blueb">
+            <span className="inline-flex items-center gap-2 rounded-[8px] border border-nb-blue/50 bg-nb-blue/10 px-3 py-1.5 text-[12px] text-nb-blueb">
               <Icon icon="heroicons-outline:shield-check" className="text-[13px]" />
               {u.role?.name || "—"}
             </span>
@@ -169,7 +169,7 @@ export default function UserDetail({
               {scopeNames.map((n) => (
                 <span
                   key={n}
-                  className="rounded-[8px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] px-2.5 py-1 text-[11px] text-nb-blueb"
+                  className="rounded-[8px] border border-nb-blue/50 bg-nb-blue/10 px-2.5 py-1 text-[11px] text-nb-blueb"
                 >
                   {n}
                 </span>
@@ -194,8 +194,8 @@ export default function UserDetail({
               aria-label={u.totp_enabled ? "Reset multi-factor authentication" : "Multi-factor authentication is not enrolled"}
               className={`inline-flex h-[21px] w-[38px] items-center rounded-full border px-0.5 ${
                 u.totp_enabled
-                  ? "justify-end border-[rgba(52,211,153,.6)] bg-[rgba(52,211,153,.2)]"
-                  : "justify-start border-nb-line bg-[rgba(90,110,150,.15)]"
+                  ? "justify-end border-nb-good/60 bg-nb-good/20"
+                  : "justify-start border-nb-line bg-nb-mist/15"
               } ${canManage && u.totp_enabled ? "cursor-pointer" : "cursor-default"}`}
               title={u.totp_enabled ? "Reset (disable) MFA" : "The user enrols MFA from their device"}
             >

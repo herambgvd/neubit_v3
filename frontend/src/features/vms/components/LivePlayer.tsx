@@ -944,7 +944,7 @@ function LivePlayer({
                 e.stopPropagation();
                 retry();
               }}
-              className="mt-1 inline-flex items-center gap-1 rounded-[7px] border border-white/15 px-2 py-0.5 text-[10px] font-medium text-white/60 transition hover:border-[#22d3ee] hover:text-[#67e8f9]"
+              className="mt-1 inline-flex items-center gap-1 rounded-[7px] border border-white/15 px-2 py-0.5 text-[10px] font-medium text-white/60 transition hover:border-nb-teal hover:text-nb-tealb"
             >
               <Icon icon="heroicons-outline:arrow-path" className="text-[11px]" />
               Retry

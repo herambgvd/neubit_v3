@@ -147,7 +147,7 @@ export default function AlarmMap({
         {unmappable.length > 0 && (
           <span
             title="Raised with no site, or at a site with no coordinates. They are in the queue."
-            className="absolute bottom-2 left-2 z-10 inline-flex items-center gap-1.5 rounded-full border border-card-border bg-[rgba(8,15,34,.85)] px-2.5 py-1 text-[11px] text-amber-300 backdrop-blur-xs"
+            className="absolute bottom-2 left-2 z-10 inline-flex items-center gap-1.5 rounded-full border border-card-border bg-nb-surface2/85 px-2.5 py-1 text-[11px] text-amber-300 backdrop-blur-xs"
           >
             <Icon icon="heroicons-outline:map-pin" className="text-[11px]" />
             {unmappable.length} unplaced

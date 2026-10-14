@@ -158,7 +158,7 @@ export default function AssignDevices({ devices, open, onClose, onDone }: Readon
           return (
             <li
               key={d.device_id ?? d.device_tag}
-              className="flex flex-wrap items-baseline gap-x-2 rounded-[7px] border border-nb-line bg-[rgba(6,11,26,.5)] px-2 py-1 text-[11.5px]"
+              className="flex flex-wrap items-baseline gap-x-2 rounded-[7px] border border-nb-line bg-nb-surface3/50 px-2 py-1 text-[11.5px]"
             >
               <span className="font-mono text-nb-ink">{d.device_tag ?? d.device_id}</span>
               <span className="text-nb-faint">{d.category ?? "unclassified"}</span>
@@ -203,8 +203,8 @@ function Outcome({
             key={r.deviceId}
             className={`flex flex-wrap items-baseline gap-x-2 rounded-[8px] border px-2.5 py-1.5 text-[11.5px] ${
               r.tone === "warn"
-                ? "border-[rgba(251,191,36,.45)] bg-[rgba(251,191,36,.08)]"
-                : "border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.07)]"
+                ? "border-nb-warn/45 bg-nb-warn/8"
+                : "border-nb-good/40 bg-nb-good/7"
             }`}
           >
             <Icon

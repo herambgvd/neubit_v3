@@ -200,7 +200,7 @@ export default function SelectMenu({
             ref={panelRef}
             role="listbox"
             style={{ position: "fixed", left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, zIndex: 70 }}
-            className="max-h-64 overflow-auto rounded-lg border border-nb-line bg-[rgba(8,15,34,.93)] backdrop-blur-md py-1 shadow-2xl animate-fade-in"
+            className="max-h-64 overflow-auto rounded-lg border border-nb-line bg-nb-surface2/93 backdrop-blur-md py-1 shadow-2xl animate-fade-in"
           >
             {options.length === 0 ? (
               <div className="px-3 py-2 text-sm text-nb-muted">No options</div>
@@ -218,7 +218,7 @@ export default function SelectMenu({
                     onMouseEnter={() => setActiveIdx(i)}
                     onClick={() => pick(o.value)}
                     className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition ${
-                      highlighted ? "bg-white/5" : ""
+                      highlighted ? "bg-nb-glint/5" : ""
                     } ${active ? "text-nb-ink" : "text-nb-muted hover:text-nb-ink"}`}
                   >
                     <span className="truncate">{o.label}</span>

@@ -235,7 +235,7 @@ export default function PlaceSearch({ onGo, near }: Readonly<PlaceSearchProps>) 
 
   return (
     <div ref={boxRef} className="relative w-full max-w-sm">
-      <div className="flex items-center gap-2 rounded-lg border border-nb-line bg-[rgba(6,11,26,.92)] px-3 py-2 backdrop-blur-sm focus-within:border-[rgba(96,165,250,.6)]">
+      <div className="flex items-center gap-2 rounded-lg border border-nb-line bg-nb-surface3/92 px-3 py-2 backdrop-blur-sm focus-within:border-nb-blue/60">
         <Icon
           icon={loading ? "svg-spinners:180-ring" : "heroicons-outline:magnifying-glass"}
           className="shrink-0 text-sm text-nb-muted"
@@ -272,12 +272,12 @@ export default function PlaceSearch({ onGo, near }: Readonly<PlaceSearchProps>) 
       </div>
 
       {showList && (
-        <div className="absolute inset-x-0 top-full z-10 mt-1 max-h-72 overflow-y-auto rounded-lg border border-nb-line bg-[rgba(6,11,26,.96)] shadow-2xl backdrop-blur-sm">
+        <div className="absolute inset-x-0 top-full z-10 mt-1 max-h-72 overflow-y-auto rounded-lg border border-nb-line bg-nb-surface3/96 shadow-2xl backdrop-blur-sm">
           {coordinate ? (
             <button
               type="button"
               onClick={submit}
-              className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition hover:bg-[rgba(96,165,250,.12)]"
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition hover:bg-nb-blue/12"
             >
               <Icon icon="heroicons-outline:map-pin" className="shrink-0 text-sm text-nb-blueb" />
               <span className="text-[12.5px] text-nb-ink">
@@ -292,7 +292,7 @@ export default function PlaceSearch({ onGo, near }: Readonly<PlaceSearchProps>) 
                 onMouseEnter={() => setHighlight({ query, index: i })}
                 onClick={() => go(row)}
                 className={`block w-full px-3 py-2 text-left transition ${
-                  i === active ? "bg-[rgba(96,165,250,.14)]" : "hover:bg-[rgba(96,165,250,.08)]"
+                  i === active ? "bg-nb-blue/14" : "hover:bg-nb-blue/8"
                 }`}
               >
                 <div className="text-[12.5px] text-nb-ink">{row.title}</div>

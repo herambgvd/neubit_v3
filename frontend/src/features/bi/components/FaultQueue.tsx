@@ -37,14 +37,14 @@ import { fmtRelative } from "@/lib/format";
 // because the gateway is free to add one and a queue that hid the unknown row
 // would be hiding a fault.
 const SEVERITY: Record<string, { label: string; accent: string; icon: string }> = {
-  critical: { label: "Critical", accent: "#f87171", icon: "heroicons:exclamation-triangle" },
-  warning: { label: "Warning", accent: "#fbbf24", icon: "heroicons:exclamation-circle" },
-  info: { label: "Info", accent: "#93c5fd", icon: "heroicons:information-circle" },
+  critical: { label: "Critical", accent: "rgb(var(--nb-c-crit))", icon: "heroicons:exclamation-triangle" },
+  warning: { label: "Warning", accent: "rgb(var(--nb-c-warn))", icon: "heroicons:exclamation-circle" },
+  info: { label: "Info", accent: "rgb(var(--nb-c-blueb))", icon: "heroicons:information-circle" },
 };
 
 function severityMeta(key: string | null | undefined) {
-  if (!key) return { label: "Unspecified", accent: "#9a92c8", icon: "heroicons:question-mark-circle" };
-  return SEVERITY[key] || { label: key, accent: "#a78bfa", icon: "heroicons:bell-alert" };
+  if (!key) return { label: "Unspecified", accent: "rgb(var(--nb-c-faint))", icon: "heroicons:question-mark-circle" };
+  return SEVERITY[key] || { label: key, accent: "rgb(var(--nb-c-violet))", icon: "heroicons:bell-alert" };
 }
 
 // conflux's `AlertType` vocabulary, prettified only. `rule` is what the rule
@@ -73,7 +73,7 @@ function SeverityChip({ severity, count }: Readonly<{ severity: string | null; c
   return (
     <span
       className="inline-flex items-center gap-1.5 rounded-[6px] border px-2 py-0.5 text-[10.5px] uppercase tracking-[1.1px]"
-      style={{ borderColor: `${m.accent}55`, background: `${m.accent}18`, color: m.accent }}
+      style={{ borderColor: `color-mix(in srgb, ${m.accent} 33%, transparent)`, background: `color-mix(in srgb, ${m.accent} 9%, transparent)`, color: m.accent }}
     >
       <Icon icon={m.icon} className="text-[12px]" />
       {m.label}
@@ -91,7 +91,7 @@ function FaultItem({ row }: any) {
     <span className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap">
       <span
         className="grid h-5 w-5 shrink-0 place-items-center rounded-[6px] border"
-        style={{ borderColor: `${m.accent}55`, background: `${m.accent}18`, color: m.accent }}
+        style={{ borderColor: `color-mix(in srgb, ${m.accent} 33%, transparent)`, background: `color-mix(in srgb, ${m.accent} 9%, transparent)`, color: m.accent }}
         title={m.label}
       >
         <Icon icon={m.icon} className="text-[12px]" />
@@ -215,7 +215,7 @@ export default function FaultQueue({ query, hours }: any) {
   // on a screen that draws an empty list, and they mean opposite things.
   if (data && !data.available)
     return (
-      <div className="rounded-[10px] border border-nb-warn/40 bg-[rgba(251,191,36,.08)] px-3 py-2.5 text-[11.5px] text-nb-soft">
+      <div className="rounded-[10px] border border-nb-warn/40 bg-nb-warn/8 px-3 py-2.5 text-[11.5px] text-nb-soft">
         <span className="font-semibold text-nb-warn">No collector.</span>{" "}
         {data.unavailable_reason}. This is not the same as “no faults”, so nothing
         is claimed here either way.

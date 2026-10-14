@@ -19,7 +19,7 @@ export default function CategoryDetail({ category, catId, onEdit, onDelete }: Re
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex items-center gap-3 border-b border-nb-line px-5 py-3">
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[10px] border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.1)] text-nb-blueb">
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[10px] border border-nb-blue/40 bg-nb-blue/10 text-nb-blueb">
           <Icon icon="heroicons-outline:squares-2x2" className="text-xl" />
         </span>
         <div className="min-w-0 flex-1">

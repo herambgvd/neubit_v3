@@ -66,15 +66,15 @@ export default function FormPreview({ name, description, fields }: Readonly<Form
   const update = (key: string, v: FormFieldValue) => setValues((prev) => ({ ...prev, [key]: v }));
 
   return (
-    <div className="rounded-lg border border-nb-line bg-[rgba(8,15,34,.5)]">
+    <div className="rounded-lg border border-nb-line bg-nb-surface2/50">
       <header className="flex items-center gap-2 border-b border-nb-line px-4 py-2.5">
-        <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-[rgba(96,165,250,.1)] text-nb-blueb">
+        <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-nb-blue/10 text-nb-blueb">
           <Icon icon="heroicons-outline:eye" className="text-sm" />
         </span>
         <span className="text-xs font-semibold uppercase tracking-wider text-nb-faint">Live preview</span>
       </header>
       <div className="p-4">
-        <div className="rounded-lg border border-nb-line bg-[rgba(96,165,250,.1)]/30 p-4">
+        <div className="rounded-lg border border-nb-line bg-nb-blue/3 p-4">
           <h3 className="text-base font-semibold text-nb-ink">{name?.trim() || "Untitled form"}</h3>
           {description && <p className="mt-0.5 text-xs text-nb-faint">{description}</p>}
 

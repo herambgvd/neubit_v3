@@ -57,7 +57,7 @@ export default function NotReportingChallenge({
   const points = detail.points || [];
   const silentHours = detail.thresholds?.silent_after_hours ?? 24;
   return (
-    <div className="space-y-2 rounded-[12px] border border-[rgba(251,191,36,.45)] bg-[rgba(251,191,36,.07)] px-3 py-2.5">
+    <div className="space-y-2 rounded-[12px] border border-nb-warn/45 bg-nb-warn/7 px-3 py-2.5">
       <div className="text-[11.5px] text-nb-warn">
         {message ||
           `Not stored: ${points.length} of the selected point(s) are carrying no readings.`}
@@ -66,7 +66,7 @@ export default function NotReportingChallenge({
       <div className="overflow-x-auto rounded-[8px] border border-nb-line">
         <table className="w-full min-w-[620px] text-left">
           <thead>
-            <tr className="bg-[rgba(6,11,26,.6)] text-[10px] uppercase tracking-[1.2px] text-nb-faint">
+            <tr className="bg-nb-surface3/60 text-[10px] uppercase tracking-[1.2px] text-nb-faint">
               <th className="px-3 py-1.5 font-semibold">Point</th>
               <th className="px-3 py-1.5 font-semibold">State</th>
               <th className="px-3 py-1.5 font-semibold">Last reading</th>

@@ -106,7 +106,7 @@ export default function FormatsTab() {
             return (
               <button key={fmtId(f)}
                   onClick={() => { setSelectedId(fmtId(f)); setMode("view"); }}
-                  className={`relative w-full flex items-start gap-3 rounded-[10px] px-3 py-2.5 text-left transition border ${isSel ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]" : "border-transparent hover:bg-[rgba(96,165,250,.06)]"}`}
+                  className={`relative w-full flex items-start gap-3 rounded-[10px] px-3 py-2.5 text-left transition border ${isSel ? "border-nb-blue/50 bg-nb-blue/10" : "border-transparent hover:bg-nb-blue/6"}`}
                 >
                   {isSel && <span className="absolute left-0 top-0 bottom-0 w-0.5" style={{ background: f.color_code || "#ef4444" }} />}
                   <span className="inline-flex h-8 w-8 items-center justify-center rounded-md text-white shrink-0" style={{ background: f.color_code || "#ef4444" }}>

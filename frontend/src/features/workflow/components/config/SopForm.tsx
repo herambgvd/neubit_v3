@@ -148,7 +148,7 @@ export default function SopForm({ sop, onCancel, onSaved }: Readonly<SopFormProp
               </p>
             )}
             {rules.map((r, i) => (
-              <div key={r._key} className="flex flex-wrap items-center gap-2 rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] px-3 py-2">
+              <div key={r._key} className="flex flex-wrap items-center gap-2 rounded-[10px] border border-nb-line bg-nb-surface/50 px-3 py-2">
                 <span className="text-[11.5px] text-nb-soft">After</span>
                 <Input
                   type="number"

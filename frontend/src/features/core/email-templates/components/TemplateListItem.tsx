@@ -35,7 +35,7 @@ export default function TemplateListItem({
       className={`flex w-full items-start gap-3 rounded-[10px] border px-3 py-2.5 text-left transition ${
         selected
           ? "border-nb-blue bg-nb-blue/10"
-          : "border-nb-line hover:border-nb-line2 hover:bg-white/5"
+          : "border-nb-line hover:border-nb-line2 hover:bg-nb-glint/5"
       }`}
     >
       {/* An explicit label: without one the accessible name is the title and the
@@ -59,7 +59,7 @@ export default function TemplateListItem({
             // changed" is the only question it has to answer at a glance.
             <span
               title="Customised for this deployment"
-              className="h-1.5 w-1.5 shrink-0 rounded-full bg-nb-teal shadow-[0_0_5px_#22d3ee]"
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-nb-teal shadow-[0_0_5px_rgb(var(--nb-c-teal))]"
             />
           )}
         </span>

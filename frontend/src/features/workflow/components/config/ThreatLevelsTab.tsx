@@ -21,11 +21,15 @@ import type { SetThreatLevelRequest, ThreatLevelPublic } from "../../types";
 // offered from this picker).
 const THREAT_LEVELS: ThreatLevel[] = ["normal", "elevated", "high", "critical"];
 const THREAT_COLOR: Record<string, string> = {
-  normal: "bg-[rgba(52,211,153,.10)] text-nb-good",
-  elevated: "bg-[rgba(96,165,250,.10)] text-nb-blueb",
-  high: "bg-[rgba(251,191,36,.10)] text-nb-warn",
-  critical: "bg-[rgba(248,113,113,.10)] text-nb-crit",
+  normal: "bg-nb-good/10 text-nb-good",
+  elevated: "bg-nb-blue/10 text-nb-blueb",
+  high: "bg-nb-warn/10 text-nb-warn",
+  critical: "bg-nb-crit/10 text-nb-crit",
 };
+
+function levelTone(lv: string, active: boolean) {
+  return active ? THREAT_COLOR[lv] + " border-transparent" : "border-nb-line text-nb-faint hover:bg-nb-blue/6";
+}
 
 export default function ThreatLevelsTab() {
   const qc = useQueryClient();
@@ -52,7 +56,7 @@ export default function ThreatLevelsTab() {
 
   return (
     <div className="grid h-full min-h-0 grid-cols-1 gap-3 lg:grid-cols-[25%_1fr]">
-      <form onSubmit={submit} className="rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-5 space-y-4 h-fit">
+      <form onSubmit={submit} className="rounded-[12px] border border-nb-line bg-nb-surface2/50 p-5 space-y-4 h-fit">
         <h3 className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">Set threat level</h3>
         <Field
           as="select"
@@ -65,7 +69,7 @@ export default function ThreatLevelsTab() {
           <span className="text-[10px] font-semibold uppercase tracking-[1.4px] text-nb-faint">Level</span>
           <div className="mt-1 grid grid-cols-2 gap-2">
             {THREAT_LEVELS.map((lv) => (
-              <button key={lv} type="button" onClick={() => setLevel(lv)} className={`rounded-lg border px-3 py-2 text-sm font-medium capitalize transition ${level === lv ? `${THREAT_COLOR[lv]} border-transparent` : "border-nb-line text-nb-faint hover:bg-[rgba(96,165,250,.06)]"}`}>{lv}</button>
+              <button key={lv} type="button" onClick={() => setLevel(lv)} className={`rounded-lg border px-3 py-2 text-sm font-medium capitalize transition ${levelTone(lv, level === lv)}`}>{lv}</button>
             ))}
           </div>
         </div>
@@ -77,10 +81,10 @@ export default function ThreatLevelsTab() {
           onChange={(e) => setReason(e.target.value)}
           placeholder="Optional context for the change"
         />
-        <button type="submit" disabled={set.isPending} className="w-full inline-flex items-center justify-center gap-1.5 rounded-[9px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.14)] px-3 py-2 text-[12.5px] tracking-[.4px] text-nb-blueb transition hover:bg-[rgba(96,165,250,.22)] disabled:opacity-50">{set.isPending ? "Setting…" : "Set threat level"}</button>
+        <button type="submit" disabled={set.isPending} className="w-full inline-flex items-center justify-center gap-1.5 rounded-[9px] border border-nb-blue/50 bg-nb-blue/14 px-3 py-2 text-[12.5px] tracking-[.4px] text-nb-blueb transition hover:bg-nb-blue/22 disabled:opacity-50">{set.isPending ? "Setting…" : "Set threat level"}</button>
       </form>
 
-      <div className="flex min-h-0 flex-col rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden">
+      <div className="flex min-h-0 flex-col rounded-[12px] border border-nb-line bg-nb-surface2/50 overflow-hidden">
         <header className="shrink-0 px-5 py-4 border-b border-nb-line">
           <h3 className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">Current posture</h3>
         </header>
@@ -93,7 +97,7 @@ export default function ThreatLevelsTab() {
           <ul className="divide-y divide-nb-line">
             {levels.map((r) => (
               <li key={r.id} className="flex items-start gap-3 px-5 py-3">
-                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${THREAT_COLOR[r.level] || "bg-[rgba(10,18,40,.65)] text-nb-faint"}`}>{r.level}</span>
+                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${THREAT_COLOR[r.level] || "bg-nb-surface/65 text-nb-faint"}`}>{r.level}</span>
                 <span className="flex-1 min-w-0">
                   <span className="block text-sm font-medium text-nb-ink">{siteName(r.site_id)}</span>
                   {r.reason && <span className="block text-[11px] text-nb-soft">{r.reason}</span>}

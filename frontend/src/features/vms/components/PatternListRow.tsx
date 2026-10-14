@@ -50,18 +50,18 @@ export default function PatternListRow({
       }}
       className={`group relative flex cursor-pointer items-center gap-3 rounded-[10px] border px-2.5 py-2.5 outline-hidden transition ${
         isSelected
-          ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]"
-          : "border-transparent hover:bg-[rgba(96,165,250,.06)]"
+          ? "border-nb-blue/50 bg-nb-blue/10"
+          : "border-transparent hover:bg-nb-blue/6"
       }`}
     >
       {isSelected && <span className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-nb-blue" />}
       <div className="relative shrink-0">
-        <span className="flex h-9 w-9 items-center justify-center rounded-md border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-blueb">
+        <span className="flex h-9 w-9 items-center justify-center rounded-md border border-nb-line bg-nb-surface/60 text-nb-blueb">
           <Icon icon={icon} className="text-base" />
         </span>
         <span
-          className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-[#0c1530] ${
-            active ? "bg-nb-good shadow-[0_0_5px_#34d399]" : "bg-nb-faint"
+          className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-nb-bg ${
+            active ? "bg-nb-good shadow-[0_0_5px_rgb(var(--nb-c-good))]" : "bg-nb-faint"
           }`}
         />
       </div>
@@ -114,7 +114,7 @@ function RowBtn({ icon, title, onClick, danger }: Readonly<RowBtnProps>) {
       title={title}
       onClick={onClick}
       className={`inline-flex h-7 w-7 items-center justify-center rounded-sm text-nb-muted transition ${
-        danger ? "hover:bg-[rgba(248,113,113,.1)] hover:text-nb-crit" : "hover:bg-[rgba(96,165,250,.1)] hover:text-nb-blueb"
+        danger ? "hover:bg-nb-crit/10 hover:text-nb-crit" : "hover:bg-nb-blue/10 hover:text-nb-blueb"
       }`}
     >
       <Icon icon={icon} className="text-sm" />

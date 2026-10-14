@@ -23,9 +23,17 @@ import {
 } from "@/lib/fonts/catalog";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import {
+  DEFAULT_THEME,
+  THEME_PREF_KEY,
+  THEME_STORAGE_KEY,
+  applyTheme,
+  parseTheme,
+  type Theme,
+} from "@/lib/theme";
 
 /**
- * Typeface + UI scale, chosen by the operator.
+ * Colour theme, typeface and UI scale, chosen by the operator.
  *
  * TWO stores, on purpose, and they are not equal:
  *
@@ -45,15 +53,19 @@ export const FONT_PREF_KEY = "ui_font";
 export const SCALE_PREF_KEY = "ui_scale";
 
 type Appearance = {
+  theme: Theme;
   font: FontKey;
   scale: ScaleKey;
+  setTheme: (theme: Theme) => void;
   setFont: (font: FontKey) => void;
   setScale: (scale: ScaleKey) => void;
 };
 
 const AppearanceContext = createContext<Appearance>({
+  theme: DEFAULT_THEME,
   font: DEFAULT_FONT,
   scale: DEFAULT_SCALE,
+  setTheme: () => {},
   setFont: () => {},
   setScale: () => {},
 });
@@ -80,12 +92,19 @@ export function AppearanceProvider({ children }: Readonly<{ children?: ReactNode
   // Lazy initialisers, so the very first client render already agrees with what
   // the boot script painted. On the server both fall back to the defaults, which
   // is exactly what `layout.tsx` renders into the markup.
-  const [font, setFontState] = useState<FontKey>(() =>
+  const [theme, setTheme] = useState<Theme>(() =>
+    typeof window === "undefined" ? DEFAULT_THEME : parseTheme(read(THEME_STORAGE_KEY)),
+  );
+  const [font, setFont] = useState<FontKey>(() =>
     typeof window === "undefined" ? DEFAULT_FONT : parseFont(read(FONT_STORAGE_KEY)),
   );
-  const [scale, setScaleState] = useState<ScaleKey>(() =>
+  const [scale, setScale] = useState<ScaleKey>(() =>
     typeof window === "undefined" ? DEFAULT_SCALE : parseScale(read(SCALE_STORAGE_KEY)),
   );
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
 
   useEffect(() => {
     document.documentElement.dataset.font = font;
@@ -109,18 +128,27 @@ export function AppearanceProvider({ children }: Readonly<{ children?: ReactNode
     [user],
   );
 
-  const setFont = useCallback(
+  const chooseTheme = useCallback(
+    (next: Theme) => {
+      setTheme(next);
+      write(THEME_STORAGE_KEY, next);
+      remember(THEME_PREF_KEY, next);
+    },
+    [remember],
+  );
+
+  const chooseFont = useCallback(
     (next: FontKey) => {
-      setFontState(next);
+      setFont(next);
       write(FONT_STORAGE_KEY, next);
       remember(FONT_PREF_KEY, next);
     },
     [remember],
   );
 
-  const setScale = useCallback(
+  const chooseScale = useCallback(
     (next: ScaleKey) => {
-      setScaleState(next);
+      setScale(next);
       write(SCALE_STORAGE_KEY, next);
       remember(SCALE_PREF_KEY, next);
     },
@@ -139,14 +167,19 @@ export function AppearanceProvider({ children }: Readonly<{ children?: ReactNode
     // Deriving it instead would revert the console to the default font the moment
     // the operator signs out, which is worse than one extra render at login.
     /* eslint-disable react-hooks/set-state-in-effect */
+    if (read(THEME_STORAGE_KEY) === null && prefs[THEME_PREF_KEY] !== undefined) {
+      const next = parseTheme(prefs[THEME_PREF_KEY]);
+      setTheme(next);
+      write(THEME_STORAGE_KEY, next);
+    }
     if (read(FONT_STORAGE_KEY) === null && prefs[FONT_PREF_KEY] !== undefined) {
       const next = parseFont(prefs[FONT_PREF_KEY]);
-      setFontState(next);
+      setFont(next);
       write(FONT_STORAGE_KEY, next);
     }
     if (read(SCALE_STORAGE_KEY) === null && prefs[SCALE_PREF_KEY] !== undefined) {
       const next = parseScale(prefs[SCALE_PREF_KEY]);
-      setScaleState(next);
+      setScale(next);
       write(SCALE_STORAGE_KEY, next);
     }
     /* eslint-enable react-hooks/set-state-in-effect */
@@ -154,8 +187,11 @@ export function AppearanceProvider({ children }: Readonly<{ children?: ReactNode
 
   // A stable identity here matters more than it looks: `children` is one element
   // the provider never rebuilds, so React skips the subtree on a re-render and
-  // this value is the only thing that tells consumers the font or scale moved.
-  const value = useMemo(() => ({ font, scale, setFont, setScale }), [font, scale, setFont, setScale]);
+  // this value is the only thing that tells consumers the theme, font or scale moved.
+  const value = useMemo(
+    () => ({ theme, font, scale, setTheme: chooseTheme, setFont: chooseFont, setScale: chooseScale }),
+    [theme, font, scale, chooseTheme, chooseFont, chooseScale],
+  );
 
   return <AppearanceContext.Provider value={value}>{children}</AppearanceContext.Provider>;
 }

@@ -8,14 +8,11 @@
 // that leaves here, and the delivery channels are what carries those emails. An
 // admin white-labelling a deployment was switching tabs to finish one job.
 //
-// APPEARANCE IS HERE TOO, AND IT IS NOT PLATFORM-WIDE. The typeface and text size
-// are a PER-USER preference — they change the console of whoever is signed in,
-// not the tenant's. It sits here because an admin dressing a deployment reaches
-// for it in the same sitting, and it stays in My account → Preferences as well,
-// because an operator without `settings.manage` cannot open this page at all and
-// still has to be able to set their own. Same component in both places, so the
-// two cannot drift.
-import AppearanceCard from "@/features/core/account/components/AppearanceCard";
+// APPEARANCE IS NOT HERE. Theme, typeface and text size are a PER-USER
+// preference — they change the console of whoever is signed in, not the
+// tenant's — so they live in one place, My account → Preferences, which every
+// operator can open. Showing the same card here too put one setting on two pages
+// and made this one read as if it dressed the whole deployment.
 import Branding from "@/features/core/branding/Branding";
 import Channels from "@/features/core/notifications/Channels";
 
@@ -23,12 +20,7 @@ export default function ConfigPage() {
   return (
     <div className="space-y-4">
       <Branding />
-      {/* Appearance sits INSIDE the channel grid, as the cell after the last
-          channel. Below it, it was a full-width card under a row that was itself
-          a third empty — two blocks of dead space stacked. */}
-      <Channels>
-        <AppearanceCard />
-      </Channels>
+      <Channels />
     </div>
   );
 }

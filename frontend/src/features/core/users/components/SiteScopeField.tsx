@@ -39,15 +39,15 @@ export default function SiteScopeField({ sites, value, onChange, disabled }: Rea
         <span
           className={`rounded-[5px] border px-1.5 py-px font-mono text-[9px] uppercase tracking-[.5px] ${
             unrestricted
-              ? "border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.08)] text-nb-good"
-              : "border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.1)] text-nb-blueb"
+              ? "border-nb-good/40 bg-nb-good/8 text-nb-good"
+              : "border-nb-blue/40 bg-nb-blue/10 text-nb-blueb"
           }`}
         >
           {unrestricted ? "All sites" : plural(selected.size, "site")}
         </span>
       </div>
       {sites.length === 0 ? (
-        <div className="rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2 text-xs text-nb-faint">
+        <div className="rounded-[9px] border border-nb-line bg-nb-surface3/50 px-3 py-2 text-xs text-nb-faint">
           No sites yet — the user can see everything until sites exist.
         </div>
       ) : (
@@ -62,8 +62,8 @@ export default function SiteScopeField({ sites, value, onChange, disabled }: Rea
                 disabled={disabled}
                 className={`inline-flex items-center gap-1.5 rounded-[8px] border px-2.5 py-1 text-[11px] tracking-[.3px] transition disabled:opacity-60 ${
                   on
-                    ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] text-nb-blueb"
-                    : "border-nb-line bg-[rgba(10,18,40,.5)] text-nb-muted hover:border-nb-blue"
+                    ? "border-nb-blue/50 bg-nb-blue/10 text-nb-blueb"
+                    : "border-nb-line bg-nb-surface/50 text-nb-muted hover:border-nb-blue"
                 }`}
               >
                 {on && <Icon icon="heroicons-mini:check" className="text-[12px]" />}

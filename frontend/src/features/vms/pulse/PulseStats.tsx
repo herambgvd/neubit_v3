@@ -27,7 +27,7 @@ function Stat({
   icon: string;
 }>) {
   return (
-    <div className="min-w-0 flex-1 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2.5">
+    <div className="min-w-0 flex-1 rounded-[10px] border border-nb-line bg-nb-surface3/50 px-3 py-2.5">
       <div className="flex items-center gap-1.5">
         <Icon icon={icon} className="text-[13px] text-nb-faint" />
         <p className="truncate text-[10px] font-semibold uppercase tracking-[1.3px] text-nb-faint">
@@ -57,7 +57,7 @@ export default function PulseStats({
   return (
     <div className="mb-3 shrink-0 space-y-2">
       {partial && (
-        <div className="flex items-start gap-2 rounded-[10px] border border-[rgba(251,191,36,.4)] bg-[rgba(251,191,36,.1)] px-3 py-2">
+        <div className="flex items-start gap-2 rounded-[10px] border border-nb-warn/40 bg-nb-warn/10 px-3 py-2">
           <Icon icon="heroicons:exclamation-triangle" className="mt-0.5 shrink-0 text-[14px] text-nb-warn" />
           <p className="text-[11.5px] leading-relaxed text-nb-warn">{partial}</p>
         </div>

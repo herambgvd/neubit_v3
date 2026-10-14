@@ -99,7 +99,7 @@ export default function PickOnMapButton({ tilesUrl = DEFAULT_TILES_URL, value, o
         type="button"
         onClick={openPicker}
         title="Drop a pin on the offline map to set this site's coordinates"
-        className="inline-flex items-center gap-1.5 rounded-[9px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)] px-3 py-1.5 text-[11.5px] tracking-[.3px] text-nb-blueb transition hover:bg-[rgba(96,165,250,.18)]"
+        className="inline-flex items-center gap-1.5 rounded-[9px] border border-nb-blue/50 bg-nb-blue/10 px-3 py-1.5 text-[11.5px] tracking-[.3px] text-nb-blueb transition hover:bg-nb-blue/18"
       >
         <Icon icon="heroicons-outline:map-pin" className="text-sm" />
         Pick on map

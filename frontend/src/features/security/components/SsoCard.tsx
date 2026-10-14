@@ -143,7 +143,7 @@ export default function SsoCard({ canManage }: Readonly<SsoCardProps>) {
         )
       }
       enable={
-        <label className="flex items-center justify-between rounded-lg border border-nb-line bg-white/[.04] px-3 py-2.5">
+        <label className="flex items-center justify-between rounded-lg border border-nb-line bg-nb-glint/[.04] px-3 py-2.5">
           <span className="text-sm text-nb-ink">SSO enabled</span>
           <Toggle checked={form.enabled} onChange={(v) => set({ enabled: v })} disabled={!canManage} label="Enable single sign-on" />
         </label>
@@ -189,7 +189,7 @@ export default function SsoCard({ canManage }: Readonly<SsoCardProps>) {
           disabled={!canManage}
         />
 
-        <label className="flex items-center justify-between rounded-lg border border-nb-line bg-white/[.04] px-3 py-2.5">
+        <label className="flex items-center justify-between rounded-lg border border-nb-line bg-nb-glint/[.04] px-3 py-2.5">
           <div>
             <span className="text-sm text-nb-ink">Auto-provision users</span>
             <p className="text-xs text-nb-muted">Create a user on first successful SSO login.</p>
@@ -198,7 +198,7 @@ export default function SsoCard({ canManage }: Readonly<SsoCardProps>) {
         </label>
 
         {/* IdP app-registration hints */}
-        <div className="rounded-lg border border-nb-line bg-white/[.04] p-3">
+        <div className="rounded-lg border border-nb-line bg-nb-glint/[.04] p-3">
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-nb-muted">Configure these in your IdP</p>
           <UrlRow label="Login URL" value={loginUrl} />
           <UrlRow label="Redirect / callback URL" value={callbackUrl} />
@@ -254,7 +254,7 @@ function UrlRow({ label, value }: Readonly<UrlRowProps>) {
   return (
     <div className="mt-1.5 flex items-center gap-3">
       <span className="w-44 shrink-0 text-xs text-nb-muted">{label}</span>
-      <code className="flex-1 truncate rounded-md border border-nb-line bg-[rgba(8,15,34,.5)] px-2.5 py-1.5 text-xs text-nb-ink">
+      <code className="flex-1 truncate rounded-md border border-nb-line bg-nb-surface2/50 px-2.5 py-1.5 text-xs text-nb-ink">
         {value}
       </code>
       <button className="text-nb-muted transition hover:text-nb-ink" title="Copy" onClick={copy}>

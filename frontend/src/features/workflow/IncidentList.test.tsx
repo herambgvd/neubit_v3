@@ -285,7 +285,7 @@ describe("the bento", () => {
     const arc = container.querySelector("circle[stroke-dasharray]") as SVGCircleElement;
     const [drawn, whole] = (arc.getAttribute("stroke-dasharray") || "").split(" ").map(Number);
     expect(drawn).toBeCloseTo(whole, 1);
-    expect(arc.getAttribute("stroke")).toBe("#f87171");
+    expect(arc.getAttribute("stroke")).toBe("rgb(var(--nb-c-crit))");
   });
 
   it("says there is no limit rather than drawing an empty ring", async () => {

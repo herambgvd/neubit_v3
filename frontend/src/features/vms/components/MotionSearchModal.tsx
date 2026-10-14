@@ -380,15 +380,15 @@ export default function MotionSearchModal({
       }
     >
       <div className="space-y-4">
-        <div className="rounded-lg border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.08)]/40 px-3 py-2 text-sm">
-          <span className="text-[#aec2e8]">Camera</span>{" "}
-          <span className="font-medium text-[#f2f6ff]">{cameraName || cameraId}</span>
+        <div className="rounded-lg border border-nb-mist/22 bg-nb-mist/[0.032] px-3 py-2 text-sm">
+          <span className="text-nb-soft">Camera</span>{" "}
+          <span className="font-medium text-nb-ink">{cameraName || cameraId}</span>
         </div>
 
         {/* Reference frame + draw layer */}
         <div>
           <div className="mb-1 flex items-center justify-between">
-            <span className="text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-nb-soft">
               Draw region(s) to search — {regionSummary}
             </span>
             {regions.length > 0 && (
@@ -396,13 +396,13 @@ export default function MotionSearchModal({
                 type="button"
                 onClick={clearRegions}
                 disabled={running}
-                className="text-[11px] text-[#aec2e8] hover:text-[#67e8f9] disabled:opacity-40"
+                className="text-[11px] text-nb-soft hover:text-nb-tealb disabled:opacity-40"
               >
                 Clear all
               </button>
             )}
           </div>
-          <div className="relative aspect-video w-full select-none overflow-hidden rounded-lg border border-[rgba(150,180,245,.22)] bg-black">
+          <div className="relative aspect-video w-full select-none overflow-hidden rounded-lg border border-nb-mist/22 bg-black">
             {frameLoading ? (
               <div className="absolute inset-0 flex items-center justify-center text-white/70">
                 <Icon icon="svg-spinners:180-ring" className="text-2xl" />
@@ -484,7 +484,7 @@ export default function MotionSearchModal({
               />
             )}
           </div>
-          <p className="mt-1 text-[10px] text-[#aec2e8]">
+          <p className="mt-1 text-[10px] text-nb-soft">
             Drag on the frame to add a search box, or focus it and press Enter — arrow keys move the
             box, Shift with an arrow key resizes it. No box = the whole frame is searched.
           </p>
@@ -493,23 +493,23 @@ export default function MotionSearchModal({
         {/* Time window */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="block">
-            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">From</span>
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-nb-soft">From</span>
             <input
               type="datetime-local"
               value={from}
               onChange={(e) => setFrom(e.target.value)}
               disabled={running}
-              className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-hidden focus:border-[rgba(34,211,238,.5)] disabled:opacity-60"
+              className="h-9 w-full rounded-lg border border-nb-mist/22 bg-transparent px-3 text-sm text-nb-ink outline-hidden focus:border-nb-teal/50 disabled:opacity-60"
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">To</span>
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-nb-soft">To</span>
             <input
               type="datetime-local"
               value={to}
               onChange={(e) => setTo(e.target.value)}
               disabled={running}
-              className="h-9 w-full rounded-lg border border-[rgba(150,180,245,.22)] bg-transparent px-3 text-sm text-[#f2f6ff] outline-hidden focus:border-[rgba(34,211,238,.5)] disabled:opacity-60"
+              className="h-9 w-full rounded-lg border border-nb-mist/22 bg-transparent px-3 text-sm text-nb-ink outline-hidden focus:border-nb-teal/50 disabled:opacity-60"
             />
           </label>
         </div>
@@ -522,9 +522,9 @@ export default function MotionSearchModal({
             the whole block in a <label> whose words sat two spans deep left the
             slider announced as an unnamed range. */}
         <div className="block">
-          <div className="mb-1 flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">
+          <div className="mb-1 flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-nb-soft">
             <label htmlFor="motion-sensitivity">Sensitivity</label>
-            <span className="font-mono text-[#f2f6ff]">{sensitivity.toFixed(2)}</span>
+            <span className="font-mono text-nb-ink">{sensitivity.toFixed(2)}</span>
           </div>
           <input
             id="motion-sensitivity"
@@ -537,7 +537,7 @@ export default function MotionSearchModal({
             disabled={running}
             className="w-full accent-fuchsia-500"
           />
-          <div className="mt-0.5 flex justify-between text-[10px] text-[#aec2e8]">
+          <div className="mt-0.5 flex justify-between text-[10px] text-nb-soft">
             <span>Less (only big motion)</span>
             <span>More (subtle motion)</span>
           </div>
@@ -548,7 +548,7 @@ export default function MotionSearchModal({
           <button
             type="button"
             onClick={() => setShowAdvanced((v) => !v)}
-            className="inline-flex items-center gap-1 text-[11px] text-[#aec2e8] hover:text-[#67e8f9]"
+            className="inline-flex items-center gap-1 text-[11px] text-nb-soft hover:text-nb-tealb"
           >
             <Icon
               icon={showAdvanced ? "heroicons-outline:chevron-down" : "heroicons-outline:chevron-right"}
@@ -558,9 +558,9 @@ export default function MotionSearchModal({
           </button>
           {showAdvanced && (
             <label className="mt-2 block">
-              <span className="mb-1 flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">
+              <span className="mb-1 flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-nb-soft">
                 <span>Sample rate (fps)</span>
-                <span className="font-mono text-[#f2f6ff]">{sampleFps.toFixed(1)}</span>
+                <span className="font-mono text-nb-ink">{sampleFps.toFixed(1)}</span>
               </span>
               <input
                 type="range"
@@ -572,7 +572,7 @@ export default function MotionSearchModal({
                 disabled={running}
                 className="w-full accent-fuchsia-500"
               />
-              <p className="mt-0.5 text-[10px] text-[#aec2e8]">
+              <p className="mt-0.5 text-[10px] text-nb-soft">
                 Frames analysed per second. Higher = more precise hits, slower search.
               </p>
             </label>
@@ -582,8 +582,8 @@ export default function MotionSearchModal({
         {/* Working. Indeterminate on purpose: the recorder runs the search in one
             call and reports no progress, so a percentage here would be invented. */}
         {running && (
-          <div className="rounded-lg border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.08)]/40 px-3 py-2.5">
-            <div className="flex items-center gap-2 text-xs text-[#f2f6ff]">
+          <div className="rounded-lg border border-nb-mist/22 bg-nb-mist/[0.032] px-3 py-2.5">
+            <div className="flex items-center gap-2 text-xs text-nb-ink">
               <Icon icon="svg-spinners:180-ring" className="text-sm text-fuchsia-400" />
               Searching the recorded footage…
             </div>
@@ -602,7 +602,7 @@ export default function MotionSearchModal({
         {hits != null && !running && !jobError && (
           <div>
             <div className="mb-1 flex items-center justify-between">
-              <span className="text-[11px] font-medium uppercase tracking-wide text-[#aec2e8]">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-nb-soft">
                 {hits.length ? `${hits.length} hit${hits.length === 1 ? "" : "s"}` : "No motion found"}
               </span>
             </div>
@@ -633,40 +633,40 @@ export default function MotionSearchModal({
                 cannot be searched, and an operator reading an empty result needs to
                 know which minutes were never on disk. */}
             {!!result?.gaps?.length && (
-              <p className="mb-1.5 flex items-start gap-1 text-[11px] text-[#aec2e8]">
+              <p className="mb-1.5 flex items-start gap-1 text-[11px] text-nb-soft">
                 <Icon icon="heroicons-outline:information-circle" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 {result.gaps.length} recording gap{result.gaps.length === 1 ? "" : "s"} inside this window — there is
                 no footage there to search.
               </p>
             )}
             {hits.length > 0 ? (
-              <ul className="max-h-44 space-y-1 overflow-y-auto rounded-lg border border-[rgba(150,180,245,.22)]">
+              <ul className="max-h-44 space-y-1 overflow-y-auto rounded-lg border border-nb-mist/22">
                 {hits.map((h, i) => (
                   <li key={`${h.start}-${i}`}>
                     <button
                       type="button"
                       onClick={() => onSeekHit?.(h.start)}
-                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[rgba(34,211,238,.08)]"
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-nb-teal/8"
                     >
                       <span className="flex h-5 w-5 items-center justify-center rounded-sm bg-fuchsia-500/20 text-[10px] font-medium text-fuchsia-300">
                         {i + 1}
                       </span>
-                      <span className="font-mono tabular-nums text-[#f2f6ff]">
+                      <span className="font-mono tabular-nums text-nb-ink">
                         {fmtTime(h.start)}
                         {h.end ? ` – ${fmtTime(h.end)}` : ""}
                       </span>
                       {typeof h.score === "number" && (
-                        <span className="ml-auto font-mono text-[10px] text-[#aec2e8]">
+                        <span className="ml-auto font-mono text-[10px] text-nb-soft">
                           {(h.score * 100).toFixed(0)}%
                         </span>
                       )}
-                      <Icon icon="heroicons-outline:play" className="h-3.5 w-3.5 text-[#aec2e8]" />
+                      <Icon icon="heroicons-outline:play" className="h-3.5 w-3.5 text-nb-soft" />
                     </button>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="rounded-lg border border-dashed border-[rgba(150,180,245,.22)] px-3 py-3 text-center text-xs text-[#aec2e8]">
+              <p className="rounded-lg border border-dashed border-nb-mist/22 px-3 py-3 text-center text-xs text-nb-soft">
                 No motion detected in the selected region and window.
               </p>
             )}
@@ -676,7 +676,7 @@ export default function MotionSearchModal({
                 "three intruders" — this is pixel change, and it says so itself
                 rather than being paraphrased here. */}
             {result?.method && (
-              <p className="mt-2 border-t border-[rgba(150,180,245,.22)] pt-2 text-[10px] leading-relaxed text-[#aec2e8]">
+              <p className="mt-2 border-t border-nb-mist/22 pt-2 text-[10px] leading-relaxed text-nb-soft">
                 {result.method}
               </p>
             )}

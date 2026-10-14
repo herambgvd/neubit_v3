@@ -74,7 +74,7 @@ export default function PolicyCard({ canManage }: Readonly<PolicyCardProps>) {
     >
       {form && (
         <div className="space-y-4">
-          <label className="flex items-center justify-between rounded-lg border border-nb-line bg-white/[.04] px-3 py-2.5">
+          <label className="flex items-center justify-between rounded-lg border border-nb-line bg-nb-glint/[.04] px-3 py-2.5">
             <div>
               <span className="text-sm text-nb-ink">Require 2FA</span>
               <p className="text-xs text-nb-muted">Force all users (or the roles below) to enroll a second factor.</p>

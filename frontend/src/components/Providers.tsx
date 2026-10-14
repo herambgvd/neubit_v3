@@ -10,10 +10,9 @@ import { Toaster } from "sonner";
 // whole console renders with no icons at all and says nothing. See lib/icons/.
 import "@/lib/icons";
 
-import { AppearanceProvider } from "@/lib/appearance";
+import { AppearanceProvider, useAppearance } from "@/lib/appearance";
 import { AuthProvider } from "@/lib/auth";
 import { useToastInset } from "@/lib/toastInset";
-import { ThemeProvider } from "@/components/theme";
 import TitleSync from "@/components/TitleSync";
 
 // Sonner's own figures: its viewport offsets (desktop, phone) and stack gap.
@@ -21,14 +20,15 @@ const TOAST_OFFSET = 24;
 const TOAST_OFFSET_MOBILE = 16;
 const TOAST_GAP = 14;
 
-// Dark-only console — the toasts are pinned to match. They sit above whatever
-// holds the bottom of the corner (the VMS alarm card), not on top of it.
+// The toasts follow the operator's theme. They sit above whatever holds the
+// bottom of the corner (the VMS alarm card), not on top of it.
 function ThemedToaster() {
   const inset = useToastInset();
+  const { theme } = useAppearance();
   const lift = inset ? inset + TOAST_GAP : 0;
   return (
     <Toaster
-      theme="dark"
+      theme={theme === "light" ? "light" : "dark"}
       position="bottom-right"
       richColors
       closeButton
@@ -38,7 +38,8 @@ function ThemedToaster() {
   );
 }
 
-// App-wide client providers: theme + TanStack Query + Auth + sonner toasts.
+// App-wide client providers: TanStack Query + Auth + appearance (theme, typeface,
+// scale) + sonner toasts.
 export default function Providers({ children }: Readonly<{ children?: ReactNode }>) {
   const [client] = useState(
     () =>
@@ -47,16 +48,16 @@ export default function Providers({ children }: Readonly<{ children?: ReactNode 
       })
   );
   return (
-    <ThemeProvider>
-      <QueryClientProvider client={client}>
-        <TitleSync />
-        {/* Inside AuthProvider: the appearance store adopts the signed-in user's
-            saved choice when this device has none, and saves changes back. */}
-        <AuthProvider>
-          <AppearanceProvider>{children}</AppearanceProvider>
-        </AuthProvider>
-        <ThemedToaster />
-      </QueryClientProvider>
-    </ThemeProvider>
+    <QueryClientProvider client={client}>
+      <TitleSync />
+      {/* Inside AuthProvider: the appearance store adopts the signed-in user's
+          saved choice when this device has none, and saves changes back. */}
+      <AuthProvider>
+        <AppearanceProvider>
+          {children}
+          <ThemedToaster />
+        </AppearanceProvider>
+      </AuthProvider>
+    </QueryClientProvider>
   );
 }

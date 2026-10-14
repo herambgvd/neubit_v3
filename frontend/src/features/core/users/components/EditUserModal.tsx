@@ -127,7 +127,7 @@ export default function EditUserModal({
           onChange={(ids) => setForm({ ...form, site_ids: ids })}
         />
         <div
-          className={`flex items-center justify-between rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2.5 ${
+          className={`flex items-center justify-between rounded-[9px] border border-nb-line bg-nb-surface3/50 px-3 py-2.5 ${
             statusLocked ? "opacity-60" : ""
           }`}
         >

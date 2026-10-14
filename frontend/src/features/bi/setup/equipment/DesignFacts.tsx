@@ -125,7 +125,7 @@ export default function DesignFacts({ equipment, facts, mayWrite }: Readonly<Des
         </form>
       ) : (
         <div className="flex items-start gap-2">
-          <dl className="grid flex-1 grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 rounded-[10px] border border-nb-line bg-[rgba(8,15,34,.5)] px-3 py-2">
+          <dl className="grid flex-1 grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 rounded-[10px] border border-nb-line bg-nb-surface2/50 px-3 py-2">
             {facts.map((f) => {
               const v = factText(equipment.design[f.key]);
               return (

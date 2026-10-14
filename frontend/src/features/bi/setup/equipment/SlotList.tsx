@@ -58,7 +58,7 @@ export default function SlotList({ equipment, defs, mayWrite }: Readonly<SlotLis
   if (!defs.length) return <p className="text-[11.5px] text-nb-faint">This class has no point slots.</p>;
 
   return (
-    <ul className="divide-y divide-nb-line rounded-[10px] border border-nb-line bg-[rgba(8,15,34,.5)]">
+    <ul className="divide-y divide-nb-line rounded-[10px] border border-nb-line bg-nb-surface2/50">
       {defs.map((d) => {
         const s = bySlot.get(d.key);
         return (

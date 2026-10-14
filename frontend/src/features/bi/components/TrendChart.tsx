@@ -85,7 +85,7 @@ const fmtTick = (v: number) => {
 
 export default function TrendChart({
   buckets = [],
-  accent = "#67e8f9",
+  accent = "rgb(var(--nb-c-tealb))",
   label,
 }: Readonly<{
   buckets: Bucket[];
@@ -165,7 +165,7 @@ export default function TrendChart({
             x2={W - PAD_R}
             y1={t.y}
             y2={t.y}
-            stroke="rgba(160,150,245,.16)"
+            stroke="rgb(var(--nb-c-haze)/.16)"
             strokeWidth={1}
             vectorEffect="non-scaling-stroke"
           />

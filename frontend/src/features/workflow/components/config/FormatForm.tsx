@@ -154,11 +154,11 @@ export default function FormatForm({ format, sops, pending, onCancel, onSubmit }
               type="button"
               onClick={() => setColorCode(c)}
               title={c}
-              className={`h-7 w-7 rounded-md border transition ${colorCode.toLowerCase() === c ? "ring-2 ring-offset-1 ring-offset-[rgba(8,15,34,.5)] ring-nb-blue border-transparent" : "border-nb-line"}`}
+              className={`h-7 w-7 rounded-md border transition ${colorCode.toLowerCase() === c ? "ring-2 ring-offset-1 ring-offset-nb-surface2/50 ring-nb-blue border-transparent" : "border-nb-line"}`}
               style={{ background: c }}
             />
           ))}
-          <span className="mx-1 h-5 w-px bg-[rgba(8,15,34,.5)]-border" />
+          <span className="mx-1 h-5 w-px bg-nb-surface2/50-border" />
           <input
             type="color"
             value={/^#[0-9a-fA-F]{6}$/.test(colorCode) ? colorCode : "#ef4444"}

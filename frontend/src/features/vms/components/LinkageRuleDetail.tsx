@@ -74,7 +74,7 @@ export default function LinkageRuleDetail({ rule, onToggle, onClose, onEdit, onD
               <span>on {tp.label}</span>
               <span
                 className={`rounded-full px-2 py-0.5 font-medium ${
-                  rule.is_active ? "bg-[rgba(52,211,153,.12)] text-nb-good" : "border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted"
+                  rule.is_active ? "bg-nb-good/12 text-nb-good" : "border border-nb-line bg-nb-surface/60 text-nb-muted"
                 }`}
               >
                 {rule.is_active ? "Active" : "Inactive"}
@@ -87,13 +87,13 @@ export default function LinkageRuleDetail({ rule, onToggle, onClose, onEdit, onD
           <button
             onClick={onClose}
             title="Close"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted hover:border-nb-blue hover:text-nb-blueb"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-nb-line bg-nb-surface/65 text-nb-muted hover:border-nb-blue hover:text-nb-blueb"
           >
             <Icon icon="heroicons-outline:x-mark" className="text-base" />
           </button>
           <button
             onClick={onEdit}
-            className="inline-flex items-center gap-1 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1.5 text-xs text-nb-muted hover:border-nb-blue hover:text-nb-blueb"
+            className="inline-flex items-center gap-1 rounded-[8px] border border-nb-line bg-nb-surface/65 px-2.5 py-1.5 text-xs text-nb-muted hover:border-nb-blue hover:text-nb-blueb"
           >
             <Icon icon="heroicons-outline:pencil-square" className="text-sm" /> Edit
           </button>
@@ -123,7 +123,7 @@ export default function LinkageRuleDetail({ rule, onToggle, onClose, onEdit, onD
               {actions.map((a, i) => (
                 <div
                   key={i}
-                  className="flex items-center gap-3 rounded-lg border border-nb-line bg-[rgba(10,18,40,.6)] px-3 py-2"
+                  className="flex items-center gap-3 rounded-lg border border-nb-line bg-nb-surface/60 px-3 py-2"
                 >
                   <Icon icon="heroicons-outline:bolt" className="text-base text-nb-muted shrink-0" />
                   <span className="text-sm text-nb-ink">{actionLabel(a.type)}</span>
@@ -166,11 +166,11 @@ export default function LinkageRuleDetail({ rule, onToggle, onClose, onEdit, onD
                 return (
                   <li
                     key={f.id}
-                    className="flex items-center gap-3 rounded-lg border border-nb-line bg-[rgba(10,18,40,.6)] px-3 py-2"
+                    className="flex items-center gap-3 rounded-lg border border-nb-line bg-nb-surface/60 px-3 py-2"
                   >
                     <span
                       className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                        failed.length ? "bg-nb-crit shadow-[0_0_5px_#f87171]" : "bg-nb-good shadow-[0_0_5px_#34d399]"
+                        failed.length ? "bg-nb-crit shadow-[0_0_5px_rgb(var(--nb-c-crit))]" : "bg-nb-good shadow-[0_0_5px_rgb(var(--nb-c-good))]"
                       }`}
                     />
                     <span className="min-w-0 flex-1">

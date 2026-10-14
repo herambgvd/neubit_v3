@@ -43,22 +43,22 @@ export default function MonitorTile({
   const profile = capacity <= 1 ? "main" : "sub";
 
   return (
-    <div className="flex min-h-0 flex-col overflow-hidden rounded-[8px] border border-[rgba(160,150,245,.22)] bg-[#05080f]">
+    <div className="flex min-h-0 flex-col overflow-hidden rounded-[8px] border border-nb-haze/22 bg-[#05080f]">
       {/* Monitor header */}
-      <div className="flex shrink-0 items-center gap-1.5 border-b border-[rgba(160,150,245,.18)] bg-[rgba(10,18,40,.65)] px-2 py-1">
+      <div className="flex shrink-0 items-center gap-1.5 border-b border-nb-haze/18 bg-nb-surface/65 px-2 py-1">
         <Icon
           icon={isDecoder ? "heroicons:cpu-chip" : "heroicons:computer-desktop"}
-          className={`text-xs ${isDecoder ? "text-[#fbbf24]" : "text-[#67e8f9]"}`}
+          className={`text-xs ${isDecoder ? "text-nb-warn" : "text-nb-tealb"}`}
         />
-        <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-[#f2f6ff]">
+        <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-nb-ink">
           {monitor.name}
         </span>
         {isDecoder && (
-          <span className="rounded-sm border border-[rgba(251,191,36,.45)] bg-[rgba(251,191,36,.12)] px-1 font-mono text-[8px] font-semibold uppercase tracking-[.8px] text-[#fbbf24]">
+          <span className="rounded-sm border border-nb-warn/45 bg-nb-warn/12 px-1 font-mono text-[8px] font-semibold uppercase tracking-[.8px] text-nb-warn">
             Decoder
           </span>
         )}
-        <span className="font-mono text-[9px] tabular-nums text-[#9a92c8]">
+        <span className="font-mono text-[9px] tabular-nums text-nb-faint">
           {filled}/{capacity}
         </span>
         {control && filled > 0 && (
@@ -66,7 +66,7 @@ export default function MonitorTile({
             type="button"
             title="Clear monitor"
             onClick={onClearMonitor}
-            className="rounded-sm p-0.5 text-[#9a92c8] transition hover:bg-[rgba(248,113,113,.15)] hover:text-[#f87171]"
+            className="rounded-sm p-0.5 text-nb-faint transition hover:bg-nb-crit/15 hover:text-nb-crit"
           >
             <Icon icon="heroicons-outline:x-circle" className="text-[11px]" />
           </button>

@@ -39,8 +39,8 @@ interface CameraPin {
  *  red: red is a camera the estate CAN see and reports as down, and an operator
  *  reading the floor plan needs those two to be different colours. */
 function placementDot(known: boolean, online: boolean): string {
-  if (!known) return "bg-[#7e93bf]";
-  return online ? "bg-[#34d399]" : "bg-[#f87171]";
+  if (!known) return "bg-nb-dim2";
+  return online ? "bg-nb-good" : "bg-nb-crit";
 }
 
 export default function MapView({ cameras = [], onPick }: Readonly<MapViewProps>) {
@@ -107,25 +107,25 @@ export default function MapView({ cameras = [], onPick }: Readonly<MapViewProps>
   const floorplanUrl = floor?.floorplan_url ? fileUrl(floor.floorplan_url) : null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[11px] border border-[rgba(150,180,245,.22)] bg-[#0b1428]">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[11px] border border-nb-mist/22 bg-nb-field">
       {/* Breadcrumb + site/floor pickers */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-[rgba(150,180,245,.15)] px-3 py-2 font-mono text-[11px] tracking-[.6px] text-[#aec2e8]">
-        <Icon icon="heroicons-solid:map-pin" className="text-sm text-[#22d3ee]" />
+      <div className="flex flex-wrap items-center gap-2 border-b border-nb-mist/15 px-3 py-2 font-mono text-[11px] tracking-[.6px] text-nb-soft">
+        <Icon icon="heroicons-solid:map-pin" className="text-sm text-nb-teal" />
         <Picker
           value={effectiveSiteId || ""}
           onChange={setSiteId}
           options={siteList.map((s) => ({ value: s.site_id, label: s.name }))}
           placeholder={sitesQ.isLoading ? "loading…" : "No sites"}
         />
-        <span className="text-[#7e93bf]">›</span>
+        <span className="text-nb-dim2">›</span>
         <Picker
           value={floorId || ""}
           onChange={setFloorId}
           options={floorList.map((f) => ({ value: f.floor_id, label: f.name }))}
           placeholder={floorsQ.isLoading ? "loading…" : "No floors"}
         />
-        <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.1)] px-2 py-0.5 text-[10px] font-semibold text-[#34d399]">
-          <span className="h-1.5 w-1.5 rounded-full bg-[#34d399]" />
+        <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-nb-good/40 bg-nb-good/10 px-2 py-0.5 text-[10px] font-semibold text-nb-good">
+          <span className="h-1.5 w-1.5 rounded-full bg-nb-good" />
           {online} online
         </span>
       </div>
@@ -156,9 +156,9 @@ export default function MapView({ cameras = [], onPick }: Readonly<MapViewProps>
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-3 border-t border-[rgba(150,180,245,.15)] px-3 py-1.5 font-mono text-[10px] text-[#7e93bf]">
-        <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-[#34d399]" /> Online</span>
-        <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-[#f87171]" /> Offline</span>
+      <div className="flex items-center gap-3 border-t border-nb-mist/15 px-3 py-1.5 font-mono text-[10px] text-nb-dim2">
+        <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-nb-good" /> Online</span>
+        <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-nb-crit" /> Offline</span>
         <span className="ml-auto">{placements.length} placed · {cameras.length} cameras</span>
       </div>
     </div>
@@ -175,16 +175,16 @@ interface PickerProps {
 
 function Picker({ value, onChange, options, placeholder }: Readonly<PickerProps>) {
   if (options.length === 0) {
-    return <span className="text-[#7e93bf]">{placeholder}</span>;
+    return <span className="text-nb-dim2">{placeholder}</span>;
   }
   return (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="rounded-[6px] border border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.6)] px-1.5 py-0.5 font-mono text-[11px] text-[#d7f7e9] outline-hidden focus:border-[rgba(34,211,238,.5)]"
+      className="rounded-[6px] border border-nb-mist/22 bg-nb-surface2/60 px-1.5 py-0.5 font-mono text-[11px] text-[#d7f7e9] outline-hidden focus:border-nb-teal/50"
     >
       {options.map((o) => (
-        <option key={o.value} value={o.value} className="bg-[#0b1428]">
+        <option key={o.value} value={o.value} className="bg-nb-field">
           {o.label}
         </option>
       ))}
@@ -195,9 +195,9 @@ function Picker({ value, onChange, options, placeholder }: Readonly<PickerProps>
 function Empty({ title, body }: Readonly<{ title: string; body: string }>) {
   return (
     <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-      <Icon icon="heroicons-outline:map" className="text-4xl text-[rgba(103,232,249,.35)]" />
-      <div className="mt-3 text-sm font-medium text-[#f2f6ff]">{title}</div>
-      <p className="mt-1 max-w-md text-xs text-[#7e93bf]">{body}</p>
+      <Icon icon="heroicons-outline:map" className="text-4xl text-nb-tealb/35" />
+      <div className="mt-3 text-sm font-medium text-nb-ink">{title}</div>
+      <p className="mt-1 max-w-md text-xs text-nb-dim2">{body}</p>
     </div>
   );
 }
@@ -285,7 +285,7 @@ function FloorPlan({ url, placements, statusById, onPick, emptyPlacements }: Rea
 
       {emptyPlacements && (
         <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
-          <span className="rounded-full border border-[rgba(150,180,245,.2)] bg-black/50 px-3 py-1 font-mono text-[10px] text-[#7e93bf]">
+          <span className="rounded-full border border-nb-mist/20 bg-black/50 px-3 py-1 font-mono text-[10px] text-nb-dim2">
             No cameras placed on this floor — add them in Sites → Floors → floor-plan editor
           </span>
         </div>

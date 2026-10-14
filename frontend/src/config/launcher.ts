@@ -79,12 +79,12 @@ export const LAUNCHER_MODES: LauncherMode[] = [
   {
     id: "surv",
     label: "Surveillance",
-    glow: "rgba(34,211,238,.5)",
+    glow: "rgb(var(--nb-c-teal)/.5)",
     layout: "row",
     groups: [
       {
         title: "Watch",
-        accent: "#67e8f9",
+        accent: "rgb(var(--nb-c-tealb))",
         tiles: [
           { icon: "heroicons:play-circle", label: "Live", href: "/streaming", tone: "teal", perm: "vms.live.view", module: "vms" },
           { icon: "heroicons:backward", label: "Playback", href: "/playback", tone: "teal", perm: "vms.playback.view", module: "vms" },
@@ -102,7 +102,7 @@ export const LAUNCHER_MODES: LauncherMode[] = [
       },
       {
         title: "Act",
-        accent: "#67e8f9",
+        accent: "rgb(var(--nb-c-tealb))",
         tiles: [
           // EVENTS COMES FIRST, and that order is the workflow: a recorder reports
           // an event, an operator decides whether it is an incident, and only then
@@ -127,7 +127,7 @@ export const LAUNCHER_MODES: LauncherMode[] = [
         // Alarms — those are what an operator reaches for while something is
         // happening, and a dashboard is not.
         title: "Review",
-        accent: "#67e8f9",
+        accent: "rgb(var(--nb-c-tealb))",
         tiles: [
           // The surveillance-category dashboards. Same viewer as Building
           // Intelligence's tile, pinned to `vms` — which is what stops one strip
@@ -244,12 +244,12 @@ export const LAUNCHER_MODES: LauncherMode[] = [
     // behind. A caller without either sees SOON rather than a 403.
     id: "int",
     label: "Building Intelligence",
-    glow: "rgba(167,139,250,.55)",
+    glow: "rgb(var(--nb-c-violet)/.55)",
     layout: "row",
     groups: [
       {
         title: "Sense",
-        accent: "#67e8f9",
+        accent: "rgb(var(--nb-c-tealb))",
         tiles: [
           // THE ONE DOOR INTO THE PIPELINE. It was "Portfolio", a leaderboard,
           // sitting as the first of ten flat tiles; it is now L1 BUILDING — the
@@ -296,7 +296,7 @@ export const LAUNCHER_MODES: LauncherMode[] = [
       },
       {
         title: "Think",
-        accent: "#c4b5fd",
+        accent: "rgb(var(--nb-c-violetb))",
         tiles: [
           // (A note here claimed the Dashboards tile "has moved to Configurations
           // → Reporting & Dashboards". It did not: no such group exists in this
@@ -348,7 +348,7 @@ export const LAUNCHER_MODES: LauncherMode[] = [
         // task's own business (`bi.manage`, `devices.create`, `sites.update` —
         // whatever the endpoint behind the control enforces).
         title: "Set up",
-        accent: "#c4b5fd",
+        accent: "rgb(var(--nb-c-violetb))",
         tiles: [
           { icon: "heroicons:adjustments-horizontal", label: "Setup", href: "/bi/setup", tone: "att", perm: "bi.read", module: "analytics" },
         ],
@@ -358,12 +358,12 @@ export const LAUNCHER_MODES: LauncherMode[] = [
   {
     id: "conf",
     label: "Configurations",
-    glow: "rgba(96,165,250,.5)",
+    glow: "rgb(var(--nb-c-blue)/.5)",
     layout: "column",
     groups: [
       {
         title: "System & Policy",
-        accent: "#93c5fd",
+        accent: "rgb(var(--nb-c-blueb))",
         tiles: [
           { icon: "heroicons:users", label: "Users & Roles", href: "/users", tone: "blue", perm: "user.read" },
           { icon: "heroicons:map-pin", label: "Sites", href: "/sites", tone: "blue", perm: "sites.read" },
@@ -382,7 +382,7 @@ export const LAUNCHER_MODES: LauncherMode[] = [
       },
       {
         title: "Devices & Automation",
-        accent: "#93c5fd",
+        accent: "rgb(var(--nb-c-blueb))",
         tiles: [
           { icon: "heroicons:video-camera", label: "Devices", href: "/devices/cameras", tone: "blue", perm: "vms.camera.read", module: "vms" },
           { icon: "heroicons:circle-stack", label: "Storage", href: "/storage", tone: "blue", perm: "vms.camera.read", module: "vms" },

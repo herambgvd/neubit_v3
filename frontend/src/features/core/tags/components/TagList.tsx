@@ -39,7 +39,7 @@ export default function TagList({ items, loading, error, query, selectedId, mode
   if (items.length === 0) {
     return (
       <div className="px-4 py-12 text-center">
-        <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/5">
+        <div className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-nb-glint/5">
           <Icon icon="heroicons:tag" className="text-lg text-nb-muted" />
         </div>
         <div className="text-sm font-medium text-nb-ink">

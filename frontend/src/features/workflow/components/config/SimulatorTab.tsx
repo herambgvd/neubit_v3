@@ -152,7 +152,7 @@ export default function SimulatorTab() {
   return (
     <div className="grid h-full min-h-0 grid-cols-1 gap-3 lg:grid-cols-2">
       {/* ── Composer ─────────────────────────────────────────────── */}
-      <form onSubmit={submit} className="flex min-h-0 flex-col rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)]">
+      <form onSubmit={submit} className="flex min-h-0 flex-col rounded-[12px] border border-nb-line bg-nb-surface2/50">
         <header className="shrink-0 px-5 py-4 border-b border-nb-line">
           <h3 className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">Event composer</h3>
           <p className="text-xs text-nb-faint">Compose a synthetic event and run it through trigger + format matching.</p>
@@ -166,7 +166,7 @@ export default function SimulatorTab() {
                   key={p.id}
                   type="button"
                   onClick={() => applyPreset(p)}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1.5 text-xs font-medium text-nb-soft transition hover:border-nb-blue hover:text-nb-blueb"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-nb-line bg-nb-surface/65 px-2.5 py-1.5 text-xs font-medium text-nb-soft transition hover:border-nb-blue hover:text-nb-blueb"
                 >
                   <Icon icon={p.icon} className="text-sm" /> {p.label}
                 </button>
@@ -212,7 +212,7 @@ export default function SimulatorTab() {
             error={errors.payload}
           />
 
-          <label className={`grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2.5 rounded-lg border px-3 py-2.5 cursor-pointer transition ${dryRun ? "border-nb-line bg-[rgba(6,11,26,.5)]" : "border-nb-warn/40 bg-nb-warn/10"}`} htmlFor="simulator-dry-run">
+          <label className={`grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2.5 rounded-lg border px-3 py-2.5 cursor-pointer transition ${dryRun ? "border-nb-line bg-nb-surface3/50" : "border-nb-warn/40 bg-nb-warn/10"}`} htmlFor="simulator-dry-run">
             <input id="simulator-dry-run" type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} className={`${checkboxClass} mt-0.5`} />
             <span className="block text-sm font-medium text-nb-ink">Dry run</span>
             <span className="col-start-2 block text-[11px] text-nb-faint">
@@ -223,7 +223,7 @@ export default function SimulatorTab() {
           </label>
 
           <div className="flex items-center justify-end">
-            <button type="submit" disabled={simulate.isPending} className={`inline-flex items-center gap-1.5 rounded-[9px] border px-3.5 py-2 text-sm tracking-[.4px] transition disabled:opacity-50 ${dryRun ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.14)] text-nb-blueb hover:bg-[rgba(96,165,250,.22)]" : "border-nb-crit/50 bg-nb-crit/10 text-nb-crit hover:shadow-[0_0_10px_rgba(248,113,113,.25)]"}`}>
+            <button type="submit" disabled={simulate.isPending} className={`inline-flex items-center gap-1.5 rounded-[9px] border px-3.5 py-2 text-sm tracking-[.4px] transition disabled:opacity-50 ${dryRun ? "border-nb-blue/50 bg-nb-blue/14 text-nb-blueb hover:bg-nb-blue/22" : "border-nb-crit/50 bg-nb-crit/10 text-nb-crit hover:shadow-[0_0_10px_rgb(var(--nb-c-crit)/.25)]"}`}>
               <Icon icon={dryRun ? "heroicons-outline:beaker" : "heroicons-outline:bolt"} className="text-sm" />
               {simulate.isPending ? "Simulating…" : dryRun ? "Simulate" : "Run live"}
             </button>
@@ -232,7 +232,7 @@ export default function SimulatorTab() {
       </form>
 
       {/* ── Result ───────────────────────────────────────────────── */}
-      <div className="flex min-h-0 flex-col rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)]">
+      <div className="flex min-h-0 flex-col rounded-[12px] border border-nb-line bg-nb-surface2/50">
         <header className="shrink-0 px-5 py-4 border-b border-nb-line flex items-center justify-between">
           <div>
             <h3 className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">Result</h3>
@@ -276,8 +276,8 @@ function ResultPanel({ result }: Readonly<{ result: SimulateEventResponse }>) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-nb-faint font-mono">
-        <span className="rounded-sm bg-[rgba(96,165,250,.1)] px-1.5 py-0.5">{result.event_type || "—"}</span>
-        {result.alert_code && <span className="rounded-sm bg-[rgba(96,165,250,.1)] px-1.5 py-0.5">code: {result.alert_code}</span>}
+        <span className="rounded-sm bg-nb-blue/10 px-1.5 py-0.5">{result.event_type || "—"}</span>
+        {result.alert_code && <span className="rounded-sm bg-nb-blue/10 px-1.5 py-0.5">code: {result.alert_code}</span>}
       </div>
 
       {/* Matched triggers */}
@@ -351,7 +351,7 @@ function ResultPanel({ result }: Readonly<{ result: SimulateEventResponse }>) {
 
       {/* Created incident (live) */}
       {createdIds.length > 0 && (
-        <section className="rounded-lg border border-[rgba(52,211,153,.30)] bg-[rgba(52,211,153,.10)] px-3 py-2.5">
+        <section className="rounded-lg border border-nb-good/30 bg-nb-good/10 px-3 py-2.5">
           <h4 className="text-xs font-medium uppercase tracking-wide text-nb-good mb-1.5">Incident created</h4>
           <ul className="space-y-1">
             {createdIds.map((id) => (

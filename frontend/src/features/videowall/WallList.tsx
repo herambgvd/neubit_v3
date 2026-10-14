@@ -39,7 +39,7 @@ export default function WallList() {
   return (
     <div
       className="-mx-4 lg:-mx-5 -my-3 min-h-full px-4 lg:px-5 py-3 text-nb-ink"
-      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+      style={{ background: "var(--nb-backdrop)" }}
     >
       <PageHeader
         title="Video walls"
@@ -80,17 +80,17 @@ export default function WallList() {
             <Link
               key={w.id}
               href={`/wall/${w.id}`}
-              className="group flex flex-col rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)] p-4 transition hover:border-[rgba(96,165,250,.5)] hover:bg-[rgba(96,165,250,.06)]"
+              className="group flex flex-col rounded-[14px] border border-nb-line bg-nb-surface2/50 p-4 transition hover:border-nb-blue/50 hover:bg-nb-blue/6"
             >
               <div className="mb-3 flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.12)] text-nb-blueb">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-nb-blue/40 bg-nb-blue/12 text-nb-blueb">
                   <Icon icon="heroicons:computer-desktop" className="text-lg" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-semibold text-nb-ink">{w.name}</span>
                     {!w.is_active && (
-                      <span className="rounded-sm border border-nb-line bg-[rgba(10,18,40,.6)] px-1.5 py-0.5 text-[9px] font-medium text-nb-faint">inactive</span>
+                      <span className="rounded-sm border border-nb-line bg-nb-surface/60 px-1.5 py-0.5 text-[9px] font-medium text-nb-faint">inactive</span>
                     )}
                   </div>
                   {w.description && <p className="mt-0.5 truncate text-xs text-nb-soft">{w.description}</p>}

@@ -114,13 +114,13 @@ export default function DataTable<TData>({
   const rows = table.getRowModel().rows;
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)]">
+    <div className="overflow-x-auto rounded-xl border border-nb-line bg-nb-surface2/50">
       <table className="w-full text-sm">
         <thead>
           {table.getHeaderGroups().map((hg) => (
             <tr
               key={hg.id}
-              className="border-b border-nb-line bg-white/[.03] text-left text-[11px] font-semibold uppercase tracking-wide text-nb-muted"
+              className="border-b border-nb-line bg-nb-glint/[.03] text-left text-[11px] font-semibold uppercase tracking-wide text-nb-muted"
             >
               {hg.headers.map((header) => {
                 const canSort = header.column.getCanSort();
@@ -164,7 +164,7 @@ export default function DataTable<TData>({
               <tr
                 key={row.id}
                 onClick={onRowClick ? () => onRowClick(row.original) : undefined}
-                className={`border-b border-nb-line/60 transition last:border-0 hover:bg-white/5 ${
+                className={`border-b border-nb-line/60 transition last:border-0 hover:bg-nb-glint/5 ${
                   onRowClick ? "cursor-pointer" : ""
                 } ${row.getIsSelected() ? "bg-nb-teal/10" : ""}`}
               >

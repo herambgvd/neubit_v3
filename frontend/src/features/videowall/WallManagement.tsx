@@ -152,11 +152,11 @@ export default function WallManagement() {
   return (
     <div
       className="flex h-[calc(100%+1.5rem)] min-h-0 flex-col -mx-4 lg:-mx-5 -my-3 px-4 lg:px-5 pt-3 pb-2 text-nb-ink"
-      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+      style={{ background: "var(--nb-backdrop)" }}
     >
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[25%_1fr]">
         {/* LEFT — walls rail */}
-        <div className="flex min-h-0 flex-col overflow-hidden rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)]">
+        <div className="flex min-h-0 flex-col overflow-hidden rounded-[12px] border border-nb-line bg-nb-surface2/50">
           <div className="flex items-center justify-between px-4 pb-2 pt-3.5">
             <div className="flex items-center gap-2">
               <Icon icon="heroicons:computer-desktop" className="text-sm text-nb-blueb" />
@@ -167,7 +167,7 @@ export default function WallManagement() {
               <Link
                 href="/wall"
                 title="Open console"
-                className="inline-flex h-7 items-center gap-1 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2 text-[11px] font-medium text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+                className="inline-flex h-7 items-center gap-1 rounded-[8px] border border-nb-line bg-nb-surface/65 px-2 text-[11px] font-medium text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
               >
                 <Icon icon="heroicons-outline:play" className="text-sm" /> Console
               </Link>
@@ -179,7 +179,7 @@ export default function WallManagement() {
                   title="New wall"
                   aria-label="New wall"
                   onClick={() => setWallModal({})}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-nb-line bg-nb-surface/65 text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
                 >
                   <Icon icon="heroicons:plus" className="text-sm" />
                 </button>
@@ -188,7 +188,7 @@ export default function WallManagement() {
           </div>
 
           <div className="px-3 pb-2">
-            <div className="flex items-center gap-2 rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2">
+            <div className="flex items-center gap-2 rounded-[9px] border border-nb-line bg-nb-surface3/50 px-3 py-2">
               <Icon icon="heroicons-outline:magnifying-glass" className="text-sm text-nb-faint" />
               <input
                 value={q}
@@ -226,11 +226,11 @@ export default function WallManagement() {
                       onClick={() => setSelectedId(w.id)}
                       className={`flex w-full items-center gap-2.5 rounded-[10px] border px-3 py-2.5 text-left transition ${
                         sel
-                          ? "border-[rgba(96,165,250,.6)] bg-[rgba(96,165,250,.1)]"
-                          : "border-nb-line bg-[rgba(6,11,26,.5)] hover:border-[rgba(150,180,245,.42)]"
+                          ? "border-nb-blue/60 bg-nb-blue/10"
+                          : "border-nb-line bg-nb-surface3/50 hover:border-nb-mist/42"
                       }`}
                     >
-                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] border border-nb-line bg-[rgba(10,18,40,.6)]">
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] border border-nb-line bg-nb-surface/60">
                         <Icon icon="heroicons:computer-desktop" className={`text-base ${sel ? "text-nb-blueb" : "text-nb-muted"}`} />
                       </span>
                       <span className="min-w-0 flex-1">
@@ -239,7 +239,7 @@ export default function WallManagement() {
                           {w.rows}×{w.cols} grid{!w.is_active && " · inactive"}
                         </span>
                       </span>
-                      <span className={`h-2 w-2 shrink-0 rounded-full ${w.is_active ? "bg-nb-good shadow-[0_0_5px_#34d399]" : "bg-nb-faint"}`} />
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${w.is_active ? "bg-nb-good shadow-[0_0_5px_rgb(var(--nb-c-good))]" : "bg-nb-faint"}`} />
                     </button>
                   );
                 })}
@@ -270,8 +270,8 @@ export default function WallManagement() {
             refetchDecoders={() => qc.invalidateQueries({ queryKey: ["wall-decoders"] })}
           />
         ) : (
-          <div className="flex min-h-0 flex-col items-center justify-center rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] py-20 text-center">
-            <span className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted">
+          <div className="flex min-h-0 flex-col items-center justify-center rounded-[12px] border border-nb-line bg-nb-surface2/50 py-20 text-center">
+            <span className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-nb-line bg-nb-surface/60 text-nb-muted">
               <Icon icon="heroicons:computer-desktop" className="text-xl" />
             </span>
             <div className="mt-3 text-sm font-semibold text-nb-ink">No wall selected</div>
@@ -510,13 +510,13 @@ function WallDetail({
     });
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)]">
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] border border-nb-line bg-nb-surface2/50">
       {/* Detail header */}
       <header className="flex flex-wrap items-start justify-between gap-2 border-b border-nb-line px-4 py-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h2 className="truncate text-base font-semibold text-nb-ink">{wall.name}</h2>
-            {!wall.is_active && <span className="rounded-sm border border-nb-line bg-[rgba(10,18,40,.6)] px-1.5 py-0.5 text-[10px] font-medium text-nb-faint">inactive</span>}
+            {!wall.is_active && <span className="rounded-sm border border-nb-line bg-nb-surface/60 px-1.5 py-0.5 text-[10px] font-medium text-nb-faint">inactive</span>}
           </div>
           <p className="mt-0.5 text-xs text-nb-soft">
             {wall.rows}×{wall.cols} monitor grid{wall.description ? ` · ${wall.description}` : ""}
@@ -536,7 +536,7 @@ function WallDetail({
 
       {/* Tabs — navy segmented control */}
       <div className="border-b border-nb-line px-3 py-2.5">
-        <div className="inline-flex flex-wrap gap-1 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.5)] p-1">
+        <div className="inline-flex flex-wrap gap-1 rounded-[10px] border border-nb-line bg-nb-surface3/50 p-1">
           {TABS.map((t) => {
             const active = tab === t.key;
             return (
@@ -546,7 +546,7 @@ function WallDetail({
                 onClick={() => setTab(t.key)}
                 className={`inline-flex items-center gap-1.5 rounded-[8px] px-3 py-1.5 text-xs font-medium transition ${
                   active
-                    ? "border border-[rgba(34,211,238,.45)] bg-[rgba(34,211,238,.12)] text-nb-tealb"
+                    ? "border border-nb-teal/45 bg-nb-teal/12 text-nb-tealb"
                     : "border border-transparent text-nb-faint hover:text-nb-ink"
                 }`}
               >
@@ -626,7 +626,7 @@ function WallDetail({
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-sm font-medium text-nb-ink">
                     {t.name}
-                    {t.is_running && <span className="ml-1.5 rounded-sm border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.12)] px-1 text-[9px] font-semibold text-nb-blueb">RUNNING</span>}
+                    {t.is_running && <span className="ml-1.5 rounded-sm border border-nb-blue/40 bg-nb-blue/12 px-1 text-[9px] font-semibold text-nb-blueb">RUNNING</span>}
                   </span>
                   <span className="text-[11px] text-nb-faint">
                     {(t.preset_ids || []).length} presets · {t.dwell_seconds}s dwell
@@ -667,7 +667,7 @@ function WallDetail({
                 type="button"
                 title="Test connection"
                 onClick={() => testDecoder(d)}
-                className="rounded-sm p-1.5 text-nb-muted transition hover:bg-[rgba(96,165,250,.06)] hover:text-nb-blueb"
+                className="rounded-sm p-1.5 text-nb-muted transition hover:bg-nb-blue/6 hover:text-nb-blueb"
               >
                 <Icon icon="heroicons-outline:signal" className="text-sm" />
               </button>
@@ -731,18 +731,18 @@ function TabList<T extends TabRow>({ loading, items, emptyIcon, emptyText, addLa
       ) : (
         <ul className="space-y-1.5">
           {items.map((it) => (
-            <li key={it.id} className="flex items-center gap-2.5 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] px-3 py-2">
+            <li key={it.id} className="flex items-center gap-2.5 rounded-[10px] border border-nb-line bg-nb-surface3/40 px-3 py-2">
               {renderRow(it)}
               {canManage && (
                 <div className="flex shrink-0 items-center gap-0.5">
                   {extraAction && extraAction(it)}
                   {onEdit && (
-                    <button type="button" title="Edit" onClick={() => onEdit(it)} className="rounded-sm p-1.5 text-nb-muted transition hover:bg-[rgba(96,165,250,.06)] hover:text-nb-blueb">
+                    <button type="button" title="Edit" onClick={() => onEdit(it)} className="rounded-sm p-1.5 text-nb-muted transition hover:bg-nb-blue/6 hover:text-nb-blueb">
                       <Icon icon="heroicons-outline:pencil-square" className="text-sm" />
                     </button>
                   )}
                   {onDelete && (
-                    <button type="button" title="Delete" onClick={() => onDelete(it)} className="rounded-sm p-1.5 text-nb-muted transition hover:bg-[rgba(248,113,113,.12)] hover:text-nb-crit">
+                    <button type="button" title="Delete" onClick={() => onDelete(it)} className="rounded-sm p-1.5 text-nb-muted transition hover:bg-nb-crit/12 hover:text-nb-crit">
                       <Icon icon="heroicons-outline:trash" className="text-sm" />
                     </button>
                   )}

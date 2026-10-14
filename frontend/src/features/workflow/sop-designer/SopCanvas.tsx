@@ -236,7 +236,7 @@ export default function SopCanvas({ sopId }: Readonly<SopCanvasProps>) {
   const connectFrom = connect ? stateById.get(connect.fromId) : null;
 
   return (
-    <div className="rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] overflow-hidden flex flex-col" style={{ height: "clamp(440px, 64vh, 760px)" }}>
+    <div className="rounded-xl border border-nb-line bg-nb-surface2/50 overflow-hidden flex flex-col" style={{ height: "clamp(440px, 64vh, 760px)" }}>
       <CanvasToolbar
         scale={scale}
         onAddState={addState}
@@ -313,7 +313,7 @@ export default function SopCanvas({ sopId }: Readonly<SopCanvasProps>) {
         {/* Overlays */}
         {busy && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <span className="inline-flex items-center gap-2 rounded-md bg-[rgba(8,15,34,.8)] px-3 py-1.5 text-xs text-nb-muted border border-nb-line">
+            <span className="inline-flex items-center gap-2 rounded-md bg-nb-surface2/80 px-3 py-1.5 text-xs text-nb-muted border border-nb-line">
               <Spinner className="!h-4 !w-4" /> Loading…
             </span>
           </div>

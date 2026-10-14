@@ -93,7 +93,7 @@ const PERM_WORK_READ = "workflow.instance.read";
  *  put six alarms above a console with one problem. */
 const SEG_TONE: Record<GateState, string> = {
   pass: "border-nb-line text-nb-faint",
-  shut: "border-[rgba(251,191,36,.45)] bg-[rgba(251,191,36,.08)] text-nb-warn",
+  shut: "border-nb-warn/45 bg-nb-warn/8 text-nb-warn",
   waiting: "border-nb-line text-nb-faint",
   unknown: "border-nb-line text-nb-faint",
 };
@@ -246,7 +246,7 @@ export default function GateStrip({ subject, className = "" }: Readonly<GateStri
   const panel = gates.find((g) => g.id === openId) ?? null;
 
   return (
-    <section className={`rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.45)] ${className}`}>
+    <section className={`rounded-[10px] border border-nb-line bg-nb-surface/45 ${className}`}>
       <div className="nav-scroll flex items-center gap-1 overflow-x-auto px-2 py-1.5">
         {gates.map((g) => (
           <Segment
@@ -281,7 +281,7 @@ function Segment({
   );
   const cls = `flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border px-2 py-1 text-[10.5px] ${
     SEG_TONE[gate.state]
-  } ${open ? "ring-1 ring-[rgba(251,191,36,.45)]" : ""}`;
+  } ${open ? "ring-1 ring-nb-warn/45" : ""}`;
 
   if (!onOpen) {
     return (
@@ -296,7 +296,7 @@ function Segment({
       onClick={onOpen}
       aria-expanded={open}
       title={`${gate.verb} — ${gate.label}. ${SEG_TITLE[gate.state]}`}
-      className={`${cls} transition hover:border-[rgba(251,191,36,.7)]`}
+      className={`${cls} transition hover:border-nb-warn/70`}
     >
       {body}
     </button>
@@ -334,7 +334,7 @@ function GatePanel({ gate, subject }: Readonly<{ gate: GateView; subject: GateSu
           {gate.rows.map((r) => (
             <li
               key={r.key}
-              className="flex flex-wrap items-baseline gap-x-2 rounded-[7px] border border-nb-line bg-[rgba(6,11,26,.5)] px-2 py-1 text-[11px]"
+              className="flex flex-wrap items-baseline gap-x-2 rounded-[7px] border border-nb-line bg-nb-surface3/50 px-2 py-1 text-[11px]"
             >
               <span className="font-mono text-nb-ink">{r.title}</span>
               <span className="text-nb-faint">{r.meta}</span>

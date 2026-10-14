@@ -87,9 +87,9 @@ export default function FloorsPanel({ site }: Readonly<{ site: SitePublic }>) {
             No floors yet. Click <b>Add floor</b> to create one.
           </div>
         ) : (
-          <ul className="rounded-lg border border-nb-line divide-y divide-nb-line bg-[rgba(8,15,34,.5)]">
+          <ul className="rounded-lg border border-nb-line divide-y divide-nb-line bg-nb-surface2/50">
             {items.map((f) => (
-              <li key={f.floor_id} className="flex items-start gap-3 px-4 py-3 hover:bg-white/5">
+              <li key={f.floor_id} className="flex items-start gap-3 px-4 py-3 hover:bg-nb-glint/5">
                 <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-blue-500/10 text-blue-500 shrink-0 overflow-hidden border border-nb-line">
                   {f.floorplan_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -102,13 +102,13 @@ export default function FloorsPanel({ site }: Readonly<{ site: SitePublic }>) {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-semibold text-nb-ink">{f.name}</span>
                     {typeof f.floor_number === "number" && (
-                      <span className="text-[10px] rounded-full bg-white/5 text-nb-muted px-1.5 py-0.5 font-medium">L{f.floor_number}</span>
+                      <span className="text-[10px] rounded-full bg-nb-glint/5 text-nb-muted px-1.5 py-0.5 font-medium">L{f.floor_number}</span>
                     )}
                     <span className="text-[10px] rounded-full bg-green-500/10 text-green-500 px-1.5 py-0.5 font-medium">
                       {f.zone_count ?? 0} zone(s)
                     </span>
                     {f.is_active === false && (
-                      <span className="text-[10px] rounded-full bg-white/5 text-nb-muted px-1.5 py-0.5 font-medium">Inactive</span>
+                      <span className="text-[10px] rounded-full bg-nb-glint/5 text-nb-muted px-1.5 py-0.5 font-medium">Inactive</span>
                     )}
                   </div>
                   <div className="mt-0.5 text-xs text-nb-muted">

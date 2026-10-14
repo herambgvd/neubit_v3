@@ -36,7 +36,7 @@ export function StatsStrip<K extends string = string>({ stats = [], active, onSe
             type="button"
             onClick={() => onSelect?.(s.key)}
             className={`rounded-xl border px-3 py-2.5 text-left transition ${
-              isActive ? "border-nb-teal bg-nb-teal/10" : "border-nb-line bg-[rgba(8,15,34,.5)] hover:bg-white/5"
+              isActive ? "border-nb-teal bg-nb-teal/10" : "border-nb-line bg-nb-surface2/50 hover:bg-nb-glint/5"
             }`}
           >
             <div className={`text-lg font-semibold ${s.color || "text-nb-ink"}`}>{s.count ?? 0}</div>

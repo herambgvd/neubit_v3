@@ -65,9 +65,9 @@ function fmtBytes(n: number | null | undefined): string {
 }
 
 function meterColor(pct: number): string {
-  if (pct >= 90) return "#f87171";
-  if (pct >= 75) return "#fbbf24";
-  return "#60a5fa";
+  if (pct >= 90) return "rgb(var(--nb-c-crit))";
+  if (pct >= 75) return "rgb(var(--nb-c-warn))";
+  return "rgb(var(--nb-c-blue))";
 }
 
 function Meter({ percent, label }: Readonly<{ percent: number; label: string }>) {
@@ -75,7 +75,7 @@ function Meter({ percent, label }: Readonly<{ percent: number; label: string }>)
   const color = meterColor(p);
   return (
     <div
-      className="h-1.5 overflow-hidden rounded-full bg-white/[.08]"
+      className="h-1.5 overflow-hidden rounded-full bg-nb-glint/[.08]"
       role="progressbar"
       aria-label={label}
       aria-valuenow={p}
@@ -145,7 +145,7 @@ export default function FederationNodeDetail({
     <>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-nb-line px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-2.5">
-          <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-nb-blue/40 bg-[rgba(96,165,250,.12)] text-nb-blueb">
+          <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-nb-blue/40 bg-nb-blue/12 text-nb-blueb">
             <Icon icon="heroicons-outline:share" className="text-base" />
           </div>
           <div className="min-w-0">
@@ -297,7 +297,7 @@ export default function FederationNodeDetail({
               return (
                 <li
                   key={a.device || i}
-                  className="flex items-center gap-2 rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] px-3 py-1.5 text-[12px]"
+                  className="flex items-center gap-2 rounded-[10px] border border-nb-line bg-nb-surface/50 px-3 py-1.5 text-[12px]"
                 >
                   <span
                     className={`h-1.5 w-1.5 shrink-0 rounded-full ${healthy ? "bg-nb-good" : "bg-nb-crit"}`}
@@ -315,7 +315,7 @@ export default function FederationNodeDetail({
 
         <SectionLabel
           right={
-            <span className="rounded-full border border-nb-line bg-white/5 px-2 font-mono text-[10px] font-semibold tabular-nums text-nb-soft">
+            <span className="rounded-full border border-nb-line bg-nb-glint/5 px-2 font-mono text-[10px] font-semibold tabular-nums text-nb-soft">
               {online}/{cameras.length} online
             </span>
           }
@@ -338,7 +338,7 @@ export default function FederationNodeDetail({
             {cameras.map((c) => (
               <li
                 key={c.id}
-                className="flex items-center gap-2 rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] px-3 py-1.5"
+                className="flex items-center gap-2 rounded-[10px] border border-nb-line bg-nb-surface/50 px-3 py-1.5"
               >
                 <StatusDot status={c.status} />
                 <span className="min-w-0 flex-1 truncate text-[13px] text-nb-ink" title={c.name}>
@@ -361,7 +361,7 @@ export default function FederationNodeDetail({
               {nvrs.map((n) => (
                 <li
                   key={n.id}
-                  className="flex items-center gap-2 rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] px-3 py-1.5"
+                  className="flex items-center gap-2 rounded-[10px] border border-nb-line bg-nb-surface/50 px-3 py-1.5"
                 >
                   <StatusDot status={String(n.status || "unknown")} />
                   <span className="min-w-0 flex-1 truncate text-[13px] text-nb-ink">

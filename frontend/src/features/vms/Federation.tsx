@@ -140,7 +140,7 @@ export default function FederationPage() {
                 href="/devices/recorders"
                 title="Manage recorders"
                 aria-label="Manage recorders"
-                className="grid h-7 w-7 place-items-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+                className="grid h-7 w-7 place-items-center rounded-[8px] border border-nb-line bg-nb-surface/65 text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
               >
                 <Icon icon="heroicons-outline:cog-6-tooth" className="text-sm" />
               </Link>
@@ -170,8 +170,8 @@ export default function FederationPage() {
                   onClick={() => setSelectedId(n.id)}
                   className={`relative block w-full overflow-hidden rounded-[10px] border px-3 py-2.5 text-left transition ${
                     isSel
-                      ? "border-nb-blue bg-[rgba(96,165,250,.1)]"
-                      : "border-nb-line bg-[rgba(10,18,40,.5)] hover:border-nb-blue/60 hover:bg-[rgba(96,165,250,.06)]"
+                      ? "border-nb-blue bg-nb-blue/10"
+                      : "border-nb-line bg-nb-surface/50 hover:border-nb-blue/60 hover:bg-nb-blue/6"
                   }`}
                 >
                   {isSel && <span className="absolute inset-y-0 left-0 w-0.5 rounded-l-sm bg-nb-blue" />}
@@ -180,8 +180,8 @@ export default function FederationPage() {
                       <span
                         className={`h-2 w-2 shrink-0 rounded-full ${
                           !isUnreachable
-                            ? "bg-nb-good shadow-[0_0_5px_#34d399]"
-                            : "bg-nb-crit shadow-[0_0_5px_rgba(248,113,113,.6)]"
+                            ? "bg-nb-good shadow-[0_0_5px_rgb(var(--nb-c-good))]"
+                            : "bg-nb-crit shadow-[0_0_5px_rgb(var(--nb-c-crit)/.6)]"
                         }`}
                       />
                       <p className="truncate text-[13px] font-semibold text-nb-ink">{n.name}</p>
@@ -290,7 +290,7 @@ function EstateStrip({
       {cells.map((c) => (
         <div
           key={c.label}
-          className="rounded-[10px] border border-nb-line bg-[rgba(8,15,34,.5)] px-3 py-2"
+          className="rounded-[10px] border border-nb-line bg-nb-surface2/50 px-3 py-2"
           title={c.title}
         >
           <p className="text-[10px] font-semibold uppercase tracking-[1.2px] text-nb-muted">

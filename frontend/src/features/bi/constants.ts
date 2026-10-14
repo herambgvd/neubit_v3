@@ -48,21 +48,21 @@ export const CATEGORY_META: Record<string, CategoryMeta> = {
     key: "energy",
     label: "Energy & Metering",
     icon: "heroicons:bolt",
-    accent: "#fbbf24",
+    accent: "rgb(var(--nb-c-warn))",
     href: "/bi/energy",
   },
   hvac: {
     key: "hvac",
     label: "HVAC & Assets",
     icon: "heroicons:cog-8-tooth",
-    accent: "#67e8f9",
+    accent: "rgb(var(--nb-c-tealb))",
     href: "/bi/hvac",
   },
   water: {
     key: "water",
     label: "Water",
     icon: "heroicons:beaker",
-    accent: "#60a5fa",
+    accent: "rgb(var(--nb-c-blue))",
     // A console since 2026-08-31. This one line is what flips Portfolio's card
     // from inert, captioned "no console yet", to a link — the card was never
     // hiding the category, it just had nowhere to send anyone. `fire` still has
@@ -73,7 +73,7 @@ export const CATEGORY_META: Record<string, CategoryMeta> = {
     key: "fire",
     label: "Fire & Safety",
     icon: "heroicons:fire",
-    accent: "#f87171",
+    accent: "rgb(var(--nb-c-crit))",
   },
 };
 
@@ -83,7 +83,7 @@ export function categoryMeta(key: string | null | undefined): CategoryMeta {
       key: "",
       label: "Unclassified",
       icon: "heroicons:question-mark-circle",
-      accent: "#9a92c8",
+      accent: "rgb(var(--nb-c-faint))",
     };
   }
   return (
@@ -91,7 +91,7 @@ export function categoryMeta(key: string | null | undefined): CategoryMeta {
       key,
       label: key,
       icon: "heroicons:cube",
-      accent: "#a78bfa",
+      accent: "rgb(var(--nb-c-violet))",
     }
   );
 }

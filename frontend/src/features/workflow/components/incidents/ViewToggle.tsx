@@ -23,7 +23,7 @@ export interface ViewToggleProps {
 
 export default function ViewToggle({ view = "board", onChange }: Readonly<ViewToggleProps>) {
   return (
-    <div className="inline-flex items-center gap-0.5 rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(10,18,40,.55)] p-0.5">
+    <div className="inline-flex items-center gap-0.5 rounded-[8px] border border-nb-mist/22 bg-nb-surface/55 p-0.5">
       {OPTS.map((o) => {
         const active = view === o.key;
         return (
@@ -36,8 +36,8 @@ export default function ViewToggle({ view = "board", onChange }: Readonly<ViewTo
             aria-label={o.label}
             className={`inline-flex h-6 w-7 items-center justify-center rounded-[6px] transition ${
               active
-                ? "bg-[rgba(34,211,238,.15)] text-[#67e8f9]"
-                : "text-[#7e93bf] hover:text-[#aec2e8]"
+                ? "bg-nb-teal/15 text-nb-tealb"
+                : "text-nb-dim2 hover:text-nb-soft"
             }`}
           >
             <Icon icon={o.icon} className="text-sm" />

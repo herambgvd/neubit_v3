@@ -93,7 +93,7 @@ export default function AssignModal({ open, onClose, instanceId, currentAssignee
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search users…"
             autoFocus
-            className="h-10 w-full rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(0,0,0,.28)] pl-9 pr-3 text-sm text-foreground placeholder:text-muted outline-hidden transition focus:border-[rgba(34,211,238,.5)]"
+            className="h-10 w-full rounded-[8px] border border-nb-mist/22 bg-[rgba(0,0,0,.28)] pl-9 pr-3 text-sm text-foreground placeholder:text-muted outline-hidden transition focus:border-nb-teal/50"
           />
         </div>
 
@@ -110,7 +110,7 @@ export default function AssignModal({ open, onClose, instanceId, currentAssignee
               <Icon icon="heroicons:user-minus" className="text-sm" />
             </div>
             <span className="flex-1 text-sm text-foreground">Unassigned</span>
-            {!selected && <Icon icon="heroicons-solid:check-circle" className="text-[#22d3ee] text-lg shrink-0" />}
+            {!selected && <Icon icon="heroicons-solid:check-circle" className="text-nb-teal text-lg shrink-0" />}
           </button>
 
           {usersQ.isLoading ? (
@@ -137,12 +137,12 @@ export default function AssignModal({ open, onClose, instanceId, currentAssignee
                     <span className="truncate text-sm font-medium text-foreground">
                       {userName(u)}
                       {String(uid) === String(currentAssigneeId) && (
-                        <span className="ml-2 font-mono text-[10px] font-semibold uppercase tracking-[1px] text-[#67e8f9]">Current</span>
+                        <span className="ml-2 font-mono text-[10px] font-semibold uppercase tracking-[1px] text-nb-tealb">Current</span>
                       )}
                     </span>
                     {u.email && <span className="truncate text-xs text-muted">{u.email}</span>}
                   </span>
-                  {sel && <Icon icon="heroicons-solid:check-circle" className="text-[#22d3ee] text-lg shrink-0" />}
+                  {sel && <Icon icon="heroicons-solid:check-circle" className="text-nb-teal text-lg shrink-0" />}
                 </button>
               );
             })

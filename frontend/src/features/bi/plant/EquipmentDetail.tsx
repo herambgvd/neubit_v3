@@ -38,7 +38,7 @@ function StateChip({ state }: Readonly<{ state: string }>) {
   return (
     <span
       className="inline-flex shrink-0 items-center gap-1 rounded-[5px] border px-1.5 py-px font-mono text-[9.5px] font-semibold tracking-[.5px]"
-      style={{ color: s.color, borderColor: `${s.color}66`, borderStyle: s.dash ? "dashed" : "solid" }}
+      style={{ color: s.color, borderColor: `color-mix(in srgb, ${s.color} 40%, transparent)`, borderStyle: s.dash ? "dashed" : "solid" }}
       title={s.title}
       data-state={state}
     >
@@ -101,7 +101,7 @@ function MetricRow({ def, eq, siteId }: Readonly<{ def: BiPlantMetricDef; eq: Bi
   const view = metricView(def, eq.metrics?.[def.metric], eq);
   return (
     <li
-      className="rounded-[8px] border border-nb-line bg-[rgba(6,11,26,.45)] px-2.5 py-1.5"
+      className="rounded-[8px] border border-nb-line bg-nb-surface3/45 px-2.5 py-1.5"
       data-metric={def.metric}
       data-metric-kind={view.kind}
     >
@@ -148,7 +148,7 @@ function SlotRow({ slot }: Readonly<{ slot: BiPlantSlot }>) {
   const needs = slot.required_by.length ? `read by ${slot.required_by.join(", ")}` : undefined;
   return (
     <li
-      className="rounded-[8px] border border-nb-line bg-[rgba(6,11,26,.45)] px-2.5 py-1.5"
+      className="rounded-[8px] border border-nb-line bg-nb-surface3/45 px-2.5 py-1.5"
       data-slot={slot.slot}
       data-readiness={slot.readiness}
     >

@@ -212,7 +212,7 @@ export default function TariffSlabsEditor({ site }: Readonly<{ site: SitePublic 
           {rows.map((r, i) => (
             <div
               key={r._key}
-              className="grid grid-cols-2 items-end gap-x-3 gap-y-2 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] px-3 py-2.5 md:grid-cols-[1.4fr_.8fr_.8fr_.8fr_.7fr_1fr_auto]"
+              className="grid grid-cols-2 items-end gap-x-3 gap-y-2 rounded-[10px] border border-nb-line bg-nb-surface3/40 px-3 py-2.5 md:grid-cols-[1.4fr_.8fr_.8fr_.8fr_.7fr_1fr_auto]"
             >
               <FInput label="Slab name" value={r.name} onChange={(v) => set(i, { name: v })} placeholder="Off-Peak" />
               <FInput label="From" mono value={r.start} onChange={(v) => set(i, { start: v })} placeholder="22:00" />
@@ -238,7 +238,7 @@ export default function TariffSlabsEditor({ site }: Readonly<{ site: SitePublic 
       )}
 
       {cov && (cov.gaps.length > 0 || cov.overlaps.length > 0) && (
-        <div className="flex gap-2.5 rounded-[10px] border border-[rgba(251,191,36,.35)] bg-[rgba(251,191,36,.08)] px-3 py-2.5">
+        <div className="flex gap-2.5 rounded-[10px] border border-nb-warn/35 bg-nb-warn/8 px-3 py-2.5">
           <Icon icon="heroicons:exclamation-triangle" className="mt-[1px] shrink-0 text-[15px] text-nb-warn" />
           <div className="text-[11px] leading-relaxed text-nb-soft">
             {cov.gaps.length > 0 && (

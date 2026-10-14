@@ -31,7 +31,7 @@ export default function RevealKeyModal({ revealed, onClose, copied, onCopy }: Re
         <div>
           <FieldLabel className="mb-1.5 block">Secret key</FieldLabel>
           <div className="flex items-stretch gap-2">
-            <div className="flex-1 min-w-0 rounded-lg border border-nb-line bg-[rgba(8,15,34,.4)] px-3 py-2.5">
+            <div className="flex-1 min-w-0 rounded-lg border border-nb-line bg-nb-surface2/40 px-3 py-2.5">
               <code className="block font-mono text-xs text-nb-ink break-all">
                 {revealed?.key}
               </code>

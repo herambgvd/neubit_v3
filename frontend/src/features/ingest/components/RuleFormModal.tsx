@@ -311,7 +311,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: Rea
         <Checkbox label="Enabled" checked={enabled} onChange={setEnabled} />
 
         {/* ── Match conditions ─────────────────────────────────── */}
-        <section className="space-y-3 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] p-4">
+        <section className="space-y-3 rounded-[10px] border border-nb-line bg-nb-surface3/40 p-4">
           <div>
             <h4 className="text-sm font-semibold text-nb-ink">When should this rule fire?</h4>
             <p className="text-[11px] text-nb-faint">ALL conditions must hold. Most rules just need one: &quot;this field is present.&quot;</p>
@@ -346,7 +346,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: Rea
         </section>
 
         {/* ── Field map ────────────────────────────────────────── */}
-        <section className="space-y-3 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] p-4">
+        <section className="space-y-3 rounded-[10px] border border-nb-line bg-nb-surface3/40 p-4">
           <div>
             <h4 className="text-sm font-semibold text-nb-ink">Fields to extract</h4>
             <p className="text-[11px] text-nb-faint">When this rule fires, each output key is filled from a JMESPath expression over the payload.</p>
@@ -382,7 +382,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: Rea
                   <button
                     type="button"
                     onClick={() => setFieldRows(fieldRows.filter((_, idx) => idx !== i))}
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-[rgba(248,113,113,.12)] hover:text-nb-crit"
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-nb-crit/12 hover:text-nb-crit"
                     aria-label="Remove field"
                   >
                     <Icon icon="heroicons-outline:trash" className="text-sm" />
@@ -403,7 +403,7 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: Rea
         </section>
 
         {/* ── Test ─────────────────────────────────────────────── */}
-        <section className="space-y-3 rounded-[10px] border border-nb-line bg-[rgba(6,11,26,.4)] p-4">
+        <section className="space-y-3 rounded-[10px] border border-nb-line bg-nb-surface3/40 p-4">
           <div>
             <h4 className="text-sm font-semibold text-nb-ink">Test this rule</h4>
             <p className="text-[11px] text-nb-faint">
@@ -436,8 +436,8 @@ export default function RuleFormModal({ webhookId, rule, onClose, onSaved }: Rea
               <span
                 className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
                   testResult.matched
-                    ? "border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good"
-                    : "border-[rgba(248,113,113,.5)] bg-[rgba(248,113,113,.1)] text-nb-crit"
+                    ? "border-nb-good/50 bg-nb-good/10 text-nb-good"
+                    : "border-nb-crit/50 bg-nb-crit/10 text-nb-crit"
                 }`}
               >
                 <Icon icon={testResult.matched ? "heroicons-outline:check-circle" : "heroicons-outline:x-circle"} className="text-sm" />
@@ -520,7 +520,7 @@ function ConditionRow({ condition, onChange, onRemove }: Readonly<ConditionRowPr
       <button
         type="button"
         onClick={onRemove}
-        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-[rgba(248,113,113,.12)] hover:text-nb-crit"
+        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] text-nb-faint transition hover:bg-nb-crit/12 hover:text-nb-crit"
         aria-label="Remove condition"
       >
         <Icon icon="heroicons-outline:trash" className="text-sm" />

@@ -48,7 +48,7 @@ export default function ModulesCard({ licenseModules }: Readonly<ModulesCardProp
               <span className={m.enabled ? "text-nb-ink" : "text-nb-faint"}>{m.name}</span>
               {m.inLicense && (
                 <span
-                  className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-nb-teal shadow-[0_0_5px_#22d3ee]"
+                  className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-nb-teal shadow-[0_0_5px_rgb(var(--nb-c-teal))]"
                   title="Named by the platform license"
                 />
               )}

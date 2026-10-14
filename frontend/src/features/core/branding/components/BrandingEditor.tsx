@@ -55,7 +55,7 @@ function ImageUpload({
 
   return (
     <div className="flex items-center gap-4">
-      <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-[10px] border border-nb-line bg-white/5">
+      <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-[10px] border border-nb-line bg-nb-glint/5">
         {url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={url} alt={alt} className="h-full w-full object-contain" />

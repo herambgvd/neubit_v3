@@ -193,13 +193,13 @@ export default function FactsRecord({
       {/* what is on file — the record */}
       {rec.on_file.length > 0 && (
         <div className="mt-5 overflow-hidden rounded-[13px] border border-nb-line">
-          <div className="flex items-center gap-2.5 border-b border-white/[.06] bg-white/[.02] px-4 py-2.5">
+          <div className="flex items-center gap-2.5 border-b border-nb-glint/[.06] bg-nb-glint/[.02] px-4 py-2.5">
             <span className="h-1.5 w-1.5 rounded-full bg-nb-ok" />
             <h3 className="text-[13.5px] font-semibold text-nb-ink">On file</h3>
             <span className="text-[12px] text-nb-faint">each one with where it came from</span>
           </div>
           {rec.on_file.map((f) => (
-            <div key={f.key} className="border-t border-white/[.05] px-4 py-3 first:border-t-0">
+            <div key={f.key} className="border-t border-nb-glint/[.05] px-4 py-3 first:border-t-0">
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                 <span className="w-[210px] shrink-0 text-[13px] text-nb-soft">{titleOf(f)}</span>
                 <span className="w-[150px] shrink-0 font-mono text-[13.5px] text-nb-ink">
@@ -215,14 +215,14 @@ export default function FactsRecord({
                       setEditing(f.key);
                       setError(null);
                     }}
-                    className="h-8 shrink-0 rounded-[8px] border border-white/[.14] px-3 text-[12.5px] text-nb-soft transition hover:border-nb-blue/50 hover:text-nb-ink"
+                    className="h-8 shrink-0 rounded-[8px] border border-nb-glint/[.14] px-3 text-[12.5px] text-nb-soft transition hover:border-nb-blue/50 hover:text-nb-ink"
                   >
                     Change
                   </button>
                 )}
               </div>
               {f.key === "tariff" && siteQ.data && mayWrite && (
-                <details className="mt-2 rounded-[10px] border border-white/[.07] px-3 py-2">
+                <details className="mt-2 rounded-[10px] border border-nb-glint/[.07] px-3 py-2">
                   <summary className="cursor-pointer list-none text-[12px] text-nb-muted hover:text-nb-ink">
                     Slab-wise rates, when the bill has them
                   </summary>
@@ -232,7 +232,7 @@ export default function FactsRecord({
                 </details>
               )}
               {f.key === "emission_factor" && siteQ.data && mayWrite && (
-                <details className="mt-2 rounded-[10px] border border-white/[.07] px-3 py-2">
+                <details className="mt-2 rounded-[10px] border border-nb-glint/[.07] px-3 py-2">
                   <summary className="cursor-pointer list-none text-[12px] text-nb-muted hover:text-nb-ink">
                     Every figure on file, and the years they apply from
                   </summary>
@@ -312,7 +312,7 @@ function Editor({
   const [local, setLocal] = useState<string | null>(null);
 
   const field =
-    "h-9 rounded-[9px] border border-white/[.16] bg-transparent px-2.5 font-mono text-[13px] text-nb-ink outline-none focus:border-nb-blue/60";
+    "h-9 rounded-[9px] border border-nb-glint/[.16] bg-transparent px-2.5 font-mono text-[13px] text-nb-ink outline-none focus:border-nb-blue/60";
 
   const save = () => {
     setLocal(null);
@@ -344,7 +344,7 @@ function Editor({
   };
 
   return (
-    <div className="mt-3 border-t border-white/[.07] pt-3">
+    <div className="mt-3 border-t border-nb-glint/[.07] pt-3">
       {fact.key === "area" && (
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1.5 text-[11.5px] text-nb-muted">
@@ -396,7 +396,7 @@ function Editor({
               value={source}
               onChange={(e) => setSource(e.target.value)}
               placeholder="CEA CO2 Baseline Database, version 20.0"
-              className="h-9 rounded-[9px] border border-white/[.16] bg-transparent px-2.5 text-[13px] text-nb-ink outline-none focus:border-nb-blue/60"
+              className="h-9 rounded-[9px] border border-nb-glint/[.16] bg-transparent px-2.5 text-[13px] text-nb-ink outline-none focus:border-nb-blue/60"
             />
           </label>
         </div>
@@ -406,8 +406,8 @@ function Editor({
         <div className="flex flex-wrap items-end gap-3">
           {(fact.zone_options?.length ?? 0) > 0 && (
             <label className="flex flex-col gap-1.5 text-[11.5px] text-nb-muted">
-              Climate zone
-              <select aria-label="Climate zone" value={zone} onChange={(e) => setZone(e.target.value)} className="h-9 rounded-[9px] border border-white/[.16] bg-transparent px-2 text-[13px] text-nb-blueb outline-none">
+              <span>Climate zone</span>
+              <select aria-label="Climate zone" value={zone} onChange={(e) => setZone(e.target.value)} className="h-9 rounded-[9px] border border-nb-glint/[.16] bg-transparent px-2 text-[13px] text-nb-blueb outline-none">
                 <option value="">not recorded</option>
                 {fact.zone_options!.map((z) => (
                   <option key={z} value={z}>

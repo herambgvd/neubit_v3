@@ -95,7 +95,7 @@ export default function SettingsGeneralPage() {
             return (
               <div
                 key={group}
-                className={`rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-4 ${
+                className={`rounded-[12px] border border-nb-line bg-nb-surface2/50 p-4 ${
                   wide ? "md:col-span-2 lg:col-span-6" : "lg:col-span-2"
                 }`}
               >

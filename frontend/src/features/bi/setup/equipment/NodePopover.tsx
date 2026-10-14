@@ -112,7 +112,7 @@ export default function NodePopover({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={still ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
       transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-      className="w-[min(560px,calc(100vw-48px))] rounded-[14px] border border-nb-blue/45 bg-[#0e1a3c] p-4 shadow-[0_20px_50px_rgba(0,0,0,.5)]"
+      className="w-[min(560px,calc(100vw-48px))] rounded-[14px] border border-nb-blue/45 bg-nb-panel p-4 shadow-[0_20px_50px_rgba(0,0,0,.5)]"
     >
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
@@ -178,10 +178,10 @@ export default function NodePopover({
       </div>
 
       {/* the slots */}
-      <div className="mt-3 overflow-hidden rounded-[10px] border border-white/[.07]">
+      <div className="mt-3 overflow-hidden rounded-[10px] border border-nb-glint/[.07]">
         {node.saved
           ? (e?.slots ?? []).map((s) => (
-              <div key={s.slot} className="grid grid-cols-[120px_1fr_90px] gap-3 border-t border-white/[.05] px-3 py-2 text-[12.5px] first:border-t-0">
+              <div key={s.slot} className="grid grid-cols-[120px_1fr_90px] gap-3 border-t border-nb-glint/[.05] px-3 py-2 text-[12.5px] first:border-t-0">
                 <span className="text-nb-muted">{ix.slots.get(s.slot)?.label ?? s.slot}</span>
                 <span className="truncate font-mono text-[11.5px] text-nb-blueb">{s.binding?.point_tag ?? "not bound"}</span>
                 <span className="text-right tabular-nums text-nb-ink">{fmtVal(s.latest?.value)}</span>
@@ -192,7 +192,7 @@ export default function NodePopover({
               return (
                 <label
                   key={s.slot}
-                  className={`grid grid-cols-[18px_110px_1fr_80px] items-center gap-3 border-t border-white/[.05] px-3 py-2 text-[12.5px] first:border-t-0 ${
+                  className={`grid grid-cols-[18px_110px_1fr_80px] items-center gap-3 border-t border-nb-glint/[.05] px-3 py-2 text-[12.5px] first:border-t-0 ${
                     s.warning ? "bg-nb-warn/[.05]" : ""
                   } ${fits ? "" : "opacity-40"}`}
                 >
@@ -253,7 +253,7 @@ export default function NodePopover({
                   type="button"
                   disabled={busy || !cls}
                   onClick={() => onSaveAllLike(choice())}
-                  className="h-9 rounded-[9px] border border-white/[.14] px-3.5 text-[13px] text-nb-soft transition hover:border-nb-blue/50 hover:text-nb-ink disabled:opacity-50"
+                  className="h-9 rounded-[9px] border border-nb-glint/[.14] px-3.5 text-[13px] text-nb-soft transition hover:border-nb-blue/50 hover:text-nb-ink disabled:opacity-50"
                 >
                   Save all {likeCount + 1} like this
                 </button>

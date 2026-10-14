@@ -54,18 +54,18 @@ export default function WebhookEventsPanel({ hookId }: Readonly<WebhookEventsPan
         const open = expanded === r.id;
         return (
           <li key={r.id} className="text-sm">
-            <div className="flex items-center gap-2 px-3 py-2.5 transition hover:bg-[rgba(96,165,250,.05)]">
+            <div className="flex items-center gap-2 px-3 py-2.5 transition hover:bg-nb-blue/5">
               <button onClick={() => setExpanded(open ? null : r.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
                 <Icon icon={open ? "heroicons-outline:chevron-down" : "heroicons-outline:chevron-right"} className="shrink-0 text-sm text-nb-faint" />
                 <span className="shrink-0 font-mono text-xs text-nb-faint">{fmt(r.received_at)}</span>
                 <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${OUTCOME_PILL[r.auth_outcome] || OUTCOME_PILL.skipped}`}>auth {r.auth_outcome}</span>
                 <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${OUTCOME_PILL[r.schema_outcome] || OUTCOME_PILL.skipped}`}>schema {r.schema_outcome}</span>
                 {r.published ? (
-                  <span className="rounded-full border border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] px-1.5 py-0.5 text-[10px] font-medium text-nb-good">published</span>
+                  <span className="rounded-full border border-nb-good/50 bg-nb-good/10 px-1.5 py-0.5 text-[10px] font-medium text-nb-good">published</span>
                 ) : (
-                  <span className="rounded-full border border-nb-line bg-[rgba(10,18,40,.6)] px-1.5 py-0.5 text-[10px] font-medium text-nb-faint">not published</span>
+                  <span className="rounded-full border border-nb-line bg-nb-surface/60 px-1.5 py-0.5 text-[10px] font-medium text-nb-faint">not published</span>
                 )}
-                {r.is_replay && <span className="rounded-full border border-[rgba(96,165,250,.35)] bg-[rgba(96,165,250,.1)] px-1.5 py-0.5 text-[10px] font-medium text-nb-blueb">replay</span>}
+                {r.is_replay && <span className="rounded-full border border-nb-blue/35 bg-nb-blue/10 px-1.5 py-0.5 text-[10px] font-medium text-nb-blueb">replay</span>}
               </button>
               <RowAction icon="heroicons-outline:arrow-path" title="Replay" disabled={replay.isPending} onClick={() => replay.mutate(r.id)} />
             </div>

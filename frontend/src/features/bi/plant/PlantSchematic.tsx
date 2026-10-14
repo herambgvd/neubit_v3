@@ -32,9 +32,9 @@ import {
 } from "./readiness";
 
 const INK = "#eaf0ff";
-const MUTED = "#9fb2d8";
+const MUTED = "rgb(var(--nb-c-dim))";
 const FAINT = "#6c7fa6";
-const BUS = "rgba(130,165,235,.45)";
+const BUS = "rgb(var(--nb-c-mist)/.45)";
 const MONO = "ui-monospace, Menlo, Consolas, monospace";
 
 export interface SchematicProps {
@@ -198,7 +198,7 @@ function Frame({
         width={w}
         height={h}
         rx={rx}
-        fill={`${s.color}1a`}
+        fill={`color-mix(in srgb, ${s.color} 10%, transparent)`}
         stroke={s.color}
         strokeWidth={1.6}
         strokeDasharray={s.dash}
@@ -597,7 +597,7 @@ export default function PlantSchematic({ plant, selectedId, onSelect }: Readonly
             count={system.equipment.length}
             title={system.description ?? undefined}
           />
-          <div className="nav-scroll overflow-x-auto rounded-[10px] border border-nb-line/60 bg-[rgba(6,11,26,.35)] p-2">
+          <div className="nav-scroll overflow-x-auto rounded-[10px] border border-nb-line/60 bg-nb-surface3/35 p-2">
             {system.equipment.length ? (
               system.kind === "chw_plant" ? (
                 <ChwLoop system={system} {...shared} />
@@ -619,7 +619,7 @@ export default function PlantSchematic({ plant, selectedId, onSelect }: Readonly
             state={null}
             count={plant.unassigned_equipment.length}
           />
-          <div className="nav-scroll overflow-x-auto rounded-[10px] border border-nb-line/60 bg-[rgba(6,11,26,.35)] p-2">
+          <div className="nav-scroll overflow-x-auto rounded-[10px] border border-nb-line/60 bg-nb-surface3/35 p-2">
             <BusLayout equipment={plant.unassigned_equipment} label="Not in any system" {...shared} />
           </div>
         </section>

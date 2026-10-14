@@ -40,7 +40,7 @@ export default function ConditionsPreview({ conditions }: Readonly<ConditionsPre
     () =>
       (conditions || [])
         .filter((c) => (c.path || "").trim())
-        .map((c) => ({ path: c.path, op: c.op, value: coerceValue(c.op, c.value) })),
+        .map((c) => ({ _key: c._key, path: c.path, op: c.op, value: coerceValue(c.op, c.value) })),
     [conditions],
   );
 
@@ -59,7 +59,7 @@ export default function ConditionsPreview({ conditions }: Readonly<ConditionsPre
   );
 
   return (
-    <div className="rounded-lg border border-nb-line bg-[rgba(8,15,34,.5)]">
+    <div className="rounded-lg border border-nb-line bg-nb-surface2/50">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -88,16 +88,16 @@ export default function ConditionsPreview({ conditions }: Readonly<ConditionsPre
               <p className="mt-2 text-[11px] text-nb-faint/70">Fix the JSON to preview.</p>
             ) : (
               <div className="mt-1 space-y-2">
-                <div className={`rounded-md border px-2.5 py-1.5 text-xs font-medium ${result.allMatch ? "border-[rgba(52,211,153,.40)] bg-[rgba(52,211,153,.10)] text-nb-good" : "border-[rgba(248,113,113,.40)] bg-[rgba(248,113,113,.10)] text-nb-crit"}`}>
+                <div className={`rounded-md border px-2.5 py-1.5 text-xs font-medium ${result.allMatch ? "border-nb-good/40 bg-nb-good/10 text-nb-good" : "border-nb-crit/40 bg-nb-crit/10 text-nb-crit"}`}>
                   {result.allMatch ? "Matched — all conditions pass." : "No match — a condition failed."}
                 </div>
                 {result.rows.length === 0 ? (
                   <p className="text-[11px] text-nb-faint/70">No conditions — fires on every matching event type.</p>
                 ) : (
                   <ul className="space-y-1.5">
-                    {result.rows.map((r, i) => (
-                      <li key={i} className="flex items-start gap-2 rounded-md border border-nb-line bg-[rgba(96,165,250,.1)]/40 px-2 py-1.5">
-                        <span className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${r.matched ? "bg-[rgba(52,211,153,.15)] text-nb-good" : "bg-[rgba(248,113,113,.15)] text-nb-crit"}`}>
+                    {result.rows.map((r) => (
+                      <li key={r.condition._key} className="flex items-start gap-2 rounded-md border border-nb-line bg-nb-blue/4 px-2 py-1.5">
+                        <span className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${r.matched ? "bg-nb-good/15 text-nb-good" : "bg-nb-crit/15 text-nb-crit"}`}>
                           <Icon icon={r.matched ? "heroicons-outline:check" : "heroicons-outline:x-mark"} className="text-[10px]" />
                         </span>
                         <span className="min-w-0 text-[11px]">

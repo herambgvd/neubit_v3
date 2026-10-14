@@ -19,14 +19,14 @@ export default function Footer() {
   return (
     // No backdrop-blur — see GlobalNavDock: in-flow chrome with nothing behind it,
     // and the blur only made the bar a backdrop root an overlay could not dim through.
-    <footer className="shrink-0 border-t border-[rgba(150,180,245,.14)] bg-[rgba(8,15,34,.55)]">
+    <footer className="shrink-0 border-t border-nb-mist/14 bg-nb-surface2/55">
       <div className="w-full px-6 lg:px-8 py-2.5 flex items-center justify-between">
         <span className="text-[11px] tracking-[.2px] text-nb-faint">
           © {year} {name}. All rights reserved.
         </span>
         {/* GVD lockup — right corner, matching the VMS console mockup. */}
         <div className="flex items-center gap-2.5 opacity-80">
-          <span className="hidden text-[10px] font-medium uppercase tracking-[2.5px] text-[#9fb2d8] sm:inline">
+          <span className="hidden text-[10px] font-medium uppercase tracking-[2.5px] text-nb-dim sm:inline">
             Genius Vision Digital
           </span>
           {/* eslint-disable-next-line @next/next/no-img-element */}

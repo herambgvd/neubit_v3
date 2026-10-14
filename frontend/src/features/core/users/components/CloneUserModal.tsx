@@ -34,7 +34,7 @@ export default function CloneUserModal({ source, onClose, form, setForm, onClone
       }
     >
       <div className="space-y-4">
-        <div className="rounded-[9px] border border-[rgba(96,165,250,.35)] bg-[rgba(96,165,250,.07)] px-3 py-2.5 text-xs text-nb-soft">
+        <div className="rounded-[9px] border border-nb-blue/35 bg-nb-blue/7 px-3 py-2.5 text-xs text-nb-soft">
           Inherits <b className="text-nb-blueb">{source?.role?.name}</b>&rsquo;s permissions, the
           account status and site scope. No password is copied — the new user sets their own.
         </div>
@@ -52,7 +52,7 @@ export default function CloneUserModal({ source, onClose, form, setForm, onClone
           onChange={(e) => setForm({ ...form, email: e.target.value })}
           placeholder="Enter email address"
         />
-        <div className="flex items-center justify-between rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2.5">
+        <div className="flex items-center justify-between rounded-[9px] border border-nb-line bg-nb-surface3/50 px-3 py-2.5">
           <div>
             <div className="text-sm font-medium text-nb-ink">Send invite email</div>
             <div className="text-xs text-nb-faint">Secure link to set their own password.</div>

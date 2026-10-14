@@ -834,7 +834,7 @@ function TilePlayback({
       )}
       {/* Out of step with the wall, and saying so. */}
       {!!skew && !loading && !failed && !noFootage && !waiting && (
-        <div className="pointer-events-none absolute left-1/2 top-1.5 z-[5] -translate-x-1/2 rounded-[6px] border border-[rgba(251,191,36,.45)] bg-[rgba(20,14,0,.72)] px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-[.5px] text-[#fbbf24]">
+        <div className="pointer-events-none absolute left-1/2 top-1.5 z-[5] -translate-x-1/2 rounded-[6px] border border-nb-warn/45 bg-[rgba(20,14,0,.72)] px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-[.5px] text-nb-warn">
           OUT OF SYNC {skew > 0 ? "\u2212" : "+"}
           {Math.abs(skew)}s
         </div>
@@ -873,8 +873,8 @@ interface PlaceholderProps {
 function Placeholder({ icon, label, compact, danger = false, onRetry }: Readonly<PlaceholderProps>) {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-[#05070f] px-3 text-center">
-      <Icon icon={icon} className={`${danger ? "text-[#f87171]/70" : "text-white/25"} ${compact ? "text-lg" : "text-2xl"}`} />
-      <p className={`font-mono ${compact ? "text-[9px]" : "text-[10px]"} leading-tight ${danger ? "text-[#f87171]/80" : "text-white/35"}`}>
+      <Icon icon={icon} className={`${danger ? "text-nb-crit/70" : "text-white/25"} ${compact ? "text-lg" : "text-2xl"}`} />
+      <p className={`font-mono ${compact ? "text-[9px]" : "text-[10px]"} leading-tight ${danger ? "text-nb-crit/80" : "text-white/35"}`}>
         {label}
       </p>
       {onRetry && (
@@ -884,7 +884,7 @@ function Placeholder({ icon, label, compact, danger = false, onRetry }: Readonly
             e.stopPropagation();
             onRetry();
           }}
-          className="mt-1 inline-flex items-center gap-1 rounded-[7px] border border-white/15 px-2 py-0.5 text-[10px] font-medium text-white/60 transition hover:border-[#22d3ee] hover:text-[#67e8f9]"
+          className="mt-1 inline-flex items-center gap-1 rounded-[7px] border border-white/15 px-2 py-0.5 text-[10px] font-medium text-white/60 transition hover:border-nb-teal hover:text-nb-tealb"
         >
           <Icon icon="heroicons-outline:arrow-path" className="text-[11px]" />
           Retry

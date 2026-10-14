@@ -15,8 +15,8 @@ import type { NavItem } from "@/config/menu";
 // unbuilt tabs render greyed with a "Soon" pill and unlicensed modules render LOCKED.
 // The group scrolls horizontally when it overflows.
 const modtab =
-  "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.15)] px-2.5 py-1 text-[12px] tracking-[.3px] text-nb-blueb";
-const segBox = "flex shrink-0 gap-0.5 rounded-[8px] border border-nb-line bg-[rgba(8,15,34,.7)] p-[3px]";
+  "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-nb-blue/50 bg-nb-blue/15 px-2.5 py-1 text-[12px] tracking-[.3px] text-nb-blueb";
+const segBox = "flex shrink-0 gap-0.5 rounded-[8px] border border-nb-line bg-nb-surface2/70 p-[3px]";
 const segBase =
   "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[6px] px-3 py-1 text-[11.5px] tracking-[.7px] transition";
 
@@ -63,7 +63,7 @@ export default function SectionTabs({ tabs, label, icon }: Readonly<SectionTabsP
               >
                 <Icon icon={t.icon} className="text-[14px]" />
                 {t.title}
-                <span className="rounded-sm px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide bg-[rgba(150,180,245,.1)] text-nb-faint">
+                <span className="rounded-sm px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide bg-nb-mist/10 text-nb-faint">
                   Soon
                 </span>
               </span>
@@ -95,7 +95,7 @@ export default function SectionTabs({ tabs, label, icon }: Readonly<SectionTabsP
               href={link}
               className={`${segBase} ${
                 active
-                  ? "border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.16)] text-nb-blueb"
+                  ? "border border-nb-blue/40 bg-nb-blue/16 text-nb-blueb"
                   : "border border-transparent text-nb-faint hover:text-nb-muted"
               }`}
             >

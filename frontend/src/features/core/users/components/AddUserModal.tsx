@@ -90,7 +90,7 @@ export default function AddUserModal({ open, onClose, form, setForm, roleOptions
           value={form.site_ids || []}
           onChange={(ids) => setForm({ ...form, site_ids: ids })}
         />
-        <div className="flex items-center justify-between rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 py-2.5">
+        <div className="flex items-center justify-between rounded-[9px] border border-nb-line bg-nb-surface3/50 px-3 py-2.5">
           <div>
             <div className="text-sm font-medium text-nb-ink">Send invite email</div>
             <div className="text-xs text-nb-faint">

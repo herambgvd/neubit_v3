@@ -84,7 +84,7 @@ export default function LicenseStrip({ lic }: Readonly<{ lic: LicenseStatus | un
       </div>
 
       {lic?.dev && (
-        <div className="flex items-start gap-2 border-t border-nb-line bg-white/[.03] px-4 py-2.5 text-[12px] text-nb-muted">
+        <div className="flex items-start gap-2 border-t border-nb-line bg-nb-glint/[.03] px-4 py-2.5 text-[12px] text-nb-muted">
           <Icon icon="heroicons-outline:information-circle" className="mt-0.5 shrink-0 text-sm" />
           <span>
             Development mode — this deployment is unlicensed and every limit above is

@@ -73,14 +73,14 @@ export default function LensAperture({ size = 520, className = "" }: Readonly<Le
     >
       <defs>
         <radialGradient id="nb-lens-glass" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#22d3ee" stopOpacity=".16" />
-          <stop offset="55%" stopColor="#4c6ef5" stopOpacity=".06" />
-          <stop offset="100%" stopColor="#0c1530" stopOpacity="0" />
+          <stop offset="0%" stopColor="rgb(var(--nb-c-teal))" stopOpacity=".16" />
+          <stop offset="55%" stopColor="rgb(var(--nb-c-blue))" stopOpacity=".06" />
+          <stop offset="100%" stopColor="rgb(var(--nb-c-bg))" stopOpacity="0" />
         </radialGradient>
         <linearGradient id="nb-lens-flare" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#67e8f9" stopOpacity="0" />
-          <stop offset="50%" stopColor="#a5f3fc" stopOpacity=".9" />
-          <stop offset="100%" stopColor="#67e8f9" stopOpacity="0" />
+          <stop offset="0%" stopColor="rgb(var(--nb-c-tealb))" stopOpacity="0" />
+          <stop offset="50%" stopColor="var(--color-cyan-200)" stopOpacity=".9" />
+          <stop offset="100%" stopColor="rgb(var(--nb-c-tealb))" stopOpacity="0" />
         </linearGradient>
       </defs>
 
@@ -95,20 +95,20 @@ export default function LensAperture({ size = 520, className = "" }: Readonly<Le
 
       {/* THE BARREL — two wide, quiet rings that do not move. Something has to
           stay still, or the whole drawing swims. */}
-      <g stroke="#8fb0e8" opacity=".08">
+      <g stroke="rgb(var(--nb-c-mist))" opacity=".08">
         <circle r="196" strokeWidth="1" />
         <circle r="228" strokeWidth="1" />
       </g>
 
       {/* THE IRIS: rings and blades on ONE timeline, so they hunt together. */}
       <motion.g animate={hunt} style={{ originX: "0px", originY: "0px" }}>
-        <g stroke="#22d3ee">
+        <g stroke="rgb(var(--nb-c-teal))">
           <circle r="58" strokeWidth="1.6" opacity=".3" />
           <circle r="104" strokeWidth="1.2" opacity=".2" />
           <circle r="158" strokeWidth="1" opacity=".13" />
         </g>
         <motion.g
-          stroke="#9fb9ec"
+          stroke="rgb(var(--nb-c-mist))"
           strokeWidth="1.6"
           strokeLinecap="round"
           opacity=".42"
@@ -152,7 +152,7 @@ export default function LensAperture({ size = 520, className = "" }: Readonly<Le
 
       {/* The focus marks an operator would see on a barrel — still, and the only
           hard edges in the drawing. */}
-      <g stroke="#67e8f9" opacity=".22" strokeWidth="1.4" strokeLinecap="round">
+      <g stroke="rgb(var(--nb-c-tealb))" opacity=".22" strokeWidth="1.4" strokeLinecap="round">
         <path d="M0 -228 L0 -212" />
         <path d="M228 0 L212 0" />
         <path d="M0 228 L0 212" />

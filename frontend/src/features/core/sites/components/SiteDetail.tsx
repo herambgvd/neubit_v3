@@ -70,7 +70,7 @@ export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, on
     <div className="flex flex-col flex-1 min-h-0">
       <header className="flex items-start justify-between gap-4 px-6 py-5 border-b border-nb-line">
         <div className="flex items-start gap-3 min-w-0">
-          <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.12)] text-nb-blueb shrink-0">
+          <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl border border-nb-blue/40 bg-nb-blue/12 text-nb-blueb shrink-0">
             <Icon icon="heroicons-outline:building-office-2" className="text-2xl" />
           </span>
           <div className="min-w-0">
@@ -78,13 +78,13 @@ export default function SiteDetail({ site, tab, onTabChange, onClose, onEdit, on
             <div className="mt-0.5 flex items-center gap-2 text-xs text-nb-soft flex-wrap">
               {site.location_code && <span className="font-mono text-nb-faint">{site.location_code}</span>}
               {site.site_type && (
-                <span className="rounded-full border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.12)] text-nb-blueb px-2 py-0.5 font-medium capitalize">
+                <span className="rounded-full border border-nb-blue/40 bg-nb-blue/12 text-nb-blueb px-2 py-0.5 font-medium capitalize">
                   {capitalize(site.site_type)}
                 </span>
               )}
               <span
                 className={`rounded-full px-2 py-0.5 font-medium border ${
-                  site.is_active !== false ? "border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.1)] text-nb-good" : "border-nb-line bg-[rgba(10,18,40,.6)] text-nb-faint"
+                  site.is_active !== false ? "border-nb-good/40 bg-nb-good/10 text-nb-good" : "border-nb-line bg-nb-surface/60 text-nb-faint"
                 }`}
               >
                 {site.is_active !== false ? "Active" : "Inactive"}

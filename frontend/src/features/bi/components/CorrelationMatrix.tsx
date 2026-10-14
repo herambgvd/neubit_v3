@@ -50,12 +50,12 @@ export const fmtR = (r: number | null | undefined): string => {
 
 /** Cell background for a DEFINED coefficient. Undefined cells get none. */
 function cellTone(r: number | null, status: string): string {
-  if (status !== "ok" || r === null) return "bg-[rgba(6,11,26,.55)]";
+  if (status !== "ok" || r === null) return "bg-nb-surface3/55";
   const m = Math.min(1, Math.abs(r));
   const alpha = 0.08 + m * 0.32;
   return r >= 0
-    ? `rgba(52,211,153,${alpha})`
-    : `rgba(248,113,113,${alpha})`;
+    ? `rgb(var(--nb-c-good) / ${alpha})`
+    : `rgb(var(--nb-c-crit) / ${alpha})`;
 }
 
 const SHORT: Record<string, string> = {
@@ -88,7 +88,7 @@ export default function CorrelationMatrix({
       <table className="border-collapse text-left">
         <thead>
           <tr>
-            <th className="sticky left-0 z-[1] bg-[rgba(10,18,40,.92)] px-2 py-2" />
+            <th className="sticky left-0 z-[1] bg-nb-surface/92 px-2 py-2" />
             {series.map((s, i) => (
               <th
                 key={s.point_id}
@@ -111,13 +111,13 @@ export default function CorrelationMatrix({
             <tr key={row.point_id}>
               <th
                 scope="row"
-                className="sticky left-0 z-[1] max-w-[240px] truncate bg-[rgba(10,18,40,.92)] px-2 py-1.5 text-[11px] font-normal text-nb-soft"
+                className="sticky left-0 z-[1] max-w-[240px] truncate bg-nb-surface/92 px-2 py-1.5 text-[11px] font-normal text-nb-soft"
                 title={label(row)}
               >
                 <span className="mr-1.5 font-mono text-nb-faint">{ri + 1}</span>
                 {label(row)}
                 {row.frozen && (
-                  <span className="ml-1 rounded-[4px] border border-[rgba(251,191,36,.4)] px-1 text-[9px] uppercase tracking-[.6px] text-nb-warn">
+                  <span className="ml-1 rounded-[4px] border border-nb-warn/40 px-1 text-[9px] uppercase tracking-[.6px] text-nb-warn">
                     frozen
                   </span>
                 )}
@@ -127,7 +127,7 @@ export default function CorrelationMatrix({
                   return (
                     <td
                       key={col.point_id}
-                      className="border border-nb-line/60 bg-[rgba(96,165,250,.06)] px-1 py-1.5 text-center font-mono text-[11px] text-nb-faint"
+                      className="border border-nb-line/60 bg-nb-blue/6 px-1 py-1.5 text-center font-mono text-[11px] text-nb-faint"
                     >
                       ·
                     </td>
@@ -154,8 +154,8 @@ export default function CorrelationMatrix({
                     title={p.reason}
                     style={defined ? { background: tone } : undefined}
                     className={`cursor-pointer border px-1 py-1.5 text-center transition ${
-                      on ? "border-[rgba(167,139,250,.85)]" : "border-nb-line/60 hover:border-nb-blue"
-                    } ${defined ? "" : "bg-[rgba(6,11,26,.55)]"}`}
+                      on ? "border-nb-violet/85" : "border-nb-line/60 hover:border-nb-blue"
+                    } ${defined ? "" : "bg-nb-surface3/55"}`}
                   >
                     {defined ? (
                       <>

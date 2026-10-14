@@ -58,11 +58,11 @@ function Cell({ item, onGo }: Readonly<{ item: NavCell; onGo: (link: string) => 
       <span
         aria-disabled="true"
         title="Coming soon"
-        className={`${base} cursor-default select-none border-[rgba(160,150,245,.2)] text-[#7e93bf] opacity-60`}
+        className={`${base} cursor-default select-none border-nb-haze/20 text-nb-dim2 opacity-60`}
       >
         <Icon icon={item.icon} className="text-[17px] shrink-0" />
         <span className="truncate">{item.title}</span>
-        <span className="ml-auto rounded-sm border border-[rgba(160,150,245,.3)] px-1.5 py-px font-mono text-[9px] uppercase tracking-[.6px] text-[#8f8ac0]">
+        <span className="ml-auto rounded-sm border border-nb-haze/30 px-1.5 py-px font-mono text-[9px] uppercase tracking-[.6px] text-nb-faint">
           Soon
         </span>
       </span>
@@ -72,9 +72,9 @@ function Cell({ item, onGo }: Readonly<{ item: NavCell; onGo: (link: string) => 
     <button
       type="button"
       onClick={() => onGo(link)}
-      className={`${base} border-[rgba(160,150,245,.2)] bg-[linear-gradient(155deg,rgba(34,211,238,.10),rgba(150,180,245,.04)_65%)] text-[#cfd0f2] hover:border-[rgba(34,211,238,.6)] hover:text-[#f2f6ff] hover:shadow-[0_0_22px_rgba(34,211,238,.22)]`}
+      className={`${base} border-nb-haze/20 bg-[linear-gradient(155deg,rgb(var(--nb-c-teal)/.1),rgb(var(--nb-c-mist)/.04)_65%)] text-nb-muted hover:border-nb-teal/60 hover:text-nb-ink hover:shadow-[0_0_22px_rgb(var(--nb-c-teal)/.22)]`}
     >
-      <Icon icon={item.icon} className="text-[17px] shrink-0 text-[#67e8f9]" />
+      <Icon icon={item.icon} className="text-[17px] shrink-0 text-nb-tealb" />
       <span className="truncate text-left">{item.title}</span>
     </button>
   );
@@ -144,7 +144,7 @@ export default function MenuNavigator() {
       onClick={() => setOpen(true)}
       title="Open menu navigator"
       aria-label="Open menu navigator"
-      className="grid h-9 w-9 place-items-center rounded-[7px] border border-[rgba(150,180,245,.22)] text-[#aec2e8] transition hover:border-[#22d3ee] hover:text-[#67e8f9]"
+      className="grid h-9 w-9 place-items-center rounded-[7px] border border-nb-mist/22 text-nb-soft transition hover:border-nb-teal hover:text-nb-tealb"
     >
       <svg
         viewBox="0 0 24 24"
@@ -174,10 +174,10 @@ export default function MenuNavigator() {
           // to cancel it. Splitting them means the backdrop is a real <button>
           // announcing "close", and the content needs no handler at all.
           <div
-            className="fixed inset-0 z-[100] overflow-y-auto text-[#f2f6ff] antialiased"
+            className="fixed inset-0 z-[100] overflow-y-auto text-nb-ink antialiased"
             style={{
               background:
-                "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)",
+                "var(--nb-backdrop)",
             }}
           >
             <button
@@ -188,19 +188,19 @@ export default function MenuNavigator() {
             />
             <div className="mx-auto w-full max-w-6xl px-6 py-8">
               <div className="mb-8 flex items-center gap-3">
-                <span className="grid h-9 w-9 place-items-center rounded-[8px] border border-[rgba(34,211,238,.4)] bg-[rgba(34,211,238,.13)] text-[#67e8f9]">
+                <span className="grid h-9 w-9 place-items-center rounded-[8px] border border-nb-teal/40 bg-nb-teal/13 text-nb-tealb">
                   <Icon icon="heroicons-outline:home" className="text-[18px]" />
                 </span>
                 <span className="text-[15px] font-bold tracking-[0.5px]">
-                  Neu<i className="not-italic text-[#67e8f9]">Bit</i>
+                  Neu<i className="not-italic text-nb-tealb">Bit</i>
                 </span>
-                <span className="border-l border-[rgba(160,150,245,.2)] pl-3 font-mono text-[10px] tracking-[2px] text-[#9a92c8]">
+                <span className="border-l border-nb-haze/20 pl-3 font-mono text-[10px] tracking-[2px] text-nb-faint">
                   MENU NAVIGATOR
                 </span>
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
-                  className="ml-auto grid h-8 w-8 place-items-center rounded-[8px] border border-[rgba(160,150,245,.2)] text-[#cfd0f2] transition hover:border-[rgba(34,211,238,.6)] hover:text-[#f2f6ff]"
+                  className="ml-auto grid h-8 w-8 place-items-center rounded-[8px] border border-nb-haze/20 text-nb-muted transition hover:border-nb-teal/60 hover:text-nb-ink"
                   aria-label="Close"
                 >
                   <Icon icon="heroicons:x-mark" className="text-[18px]" />
@@ -208,7 +208,7 @@ export default function MenuNavigator() {
               </div>
 
               <div className="grid gap-8">
-                <Group title="Jump to" accent="#67e8f9">
+                <Group title="Jump to" accent="rgb(var(--nb-c-tealb))">
                   {topLinks.map((i) => (
                     <Cell key={i.title} item={i} onGo={go} />
                   ))}

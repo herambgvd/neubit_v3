@@ -30,7 +30,7 @@ export interface WeekPainterProps {
 const FILL: Record<Slot, string> = {
   record: "bg-nb-blue",
   motion: "bg-amber-500",
-  off: "bg-[rgba(120,150,200,.10)]",
+  off: "bg-nb-mist/10",
 };
 
 const LABEL: Record<Slot, string> = {

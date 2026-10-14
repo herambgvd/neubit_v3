@@ -30,8 +30,8 @@ const STATUS_STYLE: Record<string, string> = {
   pending: "bg-amber-500/15 text-amber-500",
   approved: "bg-emerald-500/15 text-emerald-500",
   denied: "bg-red-500/15 text-red-500",
-  consumed: "bg-white/5 text-nb-muted",
-  expired: "bg-white/5 text-nb-muted",
+  consumed: "bg-nb-glint/5 text-nb-muted",
+  expired: "bg-nb-glint/5 text-nb-muted",
 };
 
 /** What a decided request says happened. An outcome this console does not
@@ -76,9 +76,9 @@ export default function DualAuthPanel() {
   });
 
   return (
-    <div className="rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] p-5">
+    <div className="rounded-xl border border-nb-line bg-nb-surface2/50 p-5">
       <div className="mb-4 flex items-start gap-3">
-        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-nb-line bg-white/5">
+        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-nb-line bg-nb-glint/5">
           <Icon icon="heroicons-outline:user-group" className="text-lg text-nb-ink" />
         </div>
         <div className="min-w-0 flex-1">
@@ -99,7 +99,7 @@ export default function DualAuthPanel() {
             key={t.value || "all"}
             onClick={() => setStatus(t.value)}
             className={`rounded-md px-2.5 py-1 text-xs transition ${
-              status === t.value ? "bg-white/5 text-nb-ink" : "text-nb-muted hover:text-nb-ink"
+              status === t.value ? "bg-nb-glint/5 text-nb-ink" : "text-nb-muted hover:text-nb-ink"
             }`}
           >
             {t.label}
@@ -108,7 +108,7 @@ export default function DualAuthPanel() {
       </div>
 
       {!canApprove && (
-        <div className="mb-3 flex items-start gap-2 rounded-lg border border-nb-line bg-white/[.04] px-3 py-2 text-xs text-nb-muted">
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-nb-line bg-nb-glint/[.04] px-3 py-2 text-xs text-nb-muted">
           <Icon icon="heroicons-outline:lock-closed" className="mt-0.5 shrink-0" />
           You can view requests, but approving/denying requires the <code className="mx-1">dualauth.approve</code> permission.
         </div>
@@ -136,7 +136,7 @@ export default function DualAuthPanel() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-nb-ink">{r.action}</span>
-                    <span className={`rounded-sm px-1.5 py-0.5 text-[11px] font-medium capitalize ${STATUS_STYLE[r.status] || "bg-white/5 text-nb-muted"}`}>
+                    <span className={`rounded-sm px-1.5 py-0.5 text-[11px] font-medium capitalize ${STATUS_STYLE[r.status] || "bg-nb-glint/5 text-nb-muted"}`}>
                       {r.status}
                     </span>
                   </div>

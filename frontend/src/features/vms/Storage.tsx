@@ -93,10 +93,10 @@ const RAID_HEALTH: Record<string, { tone: RaidTone; label: string; icon: string 
   unknown: { tone: "muted", label: "Unknown", icon: "heroicons-outline:question-mark-circle" },
 };
 const RAID_TONE: Record<RaidTone, string> = {
-  emerald: "border-[rgba(34,211,238,.4)] bg-[rgba(34,211,238,.08)] text-nb-tealb",
-  red: "border-[rgba(248,113,113,.3)] bg-[rgba(248,113,113,.1)] text-nb-crit",
-  amber: "border-[rgba(251,191,36,.3)] bg-[rgba(251,191,36,.1)] text-nb-warn",
-  muted: "border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted",
+  emerald: "border-nb-teal/40 bg-nb-teal/8 text-nb-tealb",
+  red: "border-nb-crit/30 bg-nb-crit/10 text-nb-crit",
+  amber: "border-nb-warn/30 bg-nb-warn/10 text-nb-warn",
+  muted: "border-nb-line bg-nb-surface/60 text-nb-muted",
 };
 
 // A used% → bar gradient, shared by every usage bar on the page. Ordered
@@ -193,7 +193,7 @@ export default function StoragePage() {
                   href="/devices/recorders"
                   title="Manage recorders"
                   aria-label="Manage recorders"
-                  className="grid h-7 w-7 place-items-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+                  className="grid h-7 w-7 place-items-center rounded-[8px] border border-nb-line bg-nb-surface/65 text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
                 >
                   <Icon icon="heroicons-outline:cog-6-tooth" className="text-sm" />
                 </Link>
@@ -221,8 +221,8 @@ export default function StoragePage() {
                   onClick={() => setSelectedId(n.id)}
                   className={`relative block w-full overflow-hidden rounded-[10px] border px-3 py-2.5 text-left transition ${
                     isSel
-                      ? "border-nb-blue bg-[rgba(96,165,250,.1)]"
-                      : "border-nb-line bg-[rgba(10,18,40,.5)] hover:border-nb-blue/60 hover:bg-[rgba(96,165,250,.06)]"
+                      ? "border-nb-blue bg-nb-blue/10"
+                      : "border-nb-line bg-nb-surface/50 hover:border-nb-blue/60 hover:bg-nb-blue/6"
                   }`}
                 >
                   {isSel && <span className="absolute inset-y-0 left-0 w-0.5 rounded-l-sm bg-nb-blue" />}
@@ -231,8 +231,8 @@ export default function StoragePage() {
                       <span
                         className={`h-2 w-2 shrink-0 rounded-full ${
                           online
-                            ? "bg-nb-good shadow-[0_0_5px_#34d399]"
-                            : "bg-nb-crit shadow-[0_0_5px_rgba(248,113,113,.6)]"
+                            ? "bg-nb-good shadow-[0_0_5px_rgb(var(--nb-c-good))]"
+                            : "bg-nb-crit shadow-[0_0_5px_rgb(var(--nb-c-crit)/.6)]"
                         }`}
                       />
                       <p className="truncate text-[13px] font-semibold text-nb-ink">{n.name}</p>
@@ -312,7 +312,7 @@ function DiskUsageCard({
   if (query.isError) return <InlineError error={query.error} fallback="Failed to load disk usage" />;
 
   return (
-        <div className="rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] p-3">
+        <div className="rounded-[10px] border border-nb-line bg-nb-surface/50 p-3">
           {total > 0 ? (
             <>
               <div className="mb-2 h-2 overflow-hidden rounded-full border border-nb-line bg-black/40">
@@ -383,7 +383,7 @@ function NodeStorageDetail({ node, nvrs }: Readonly<{ node: FederationNode; nvrs
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-nb-line px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-2.5">
-          <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-nb-blue/40 bg-[rgba(96,165,250,.12)] text-nb-blueb">
+          <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-nb-blue/40 bg-nb-blue/12 text-nb-blueb">
             <Icon icon="heroicons-outline:circle-stack" className="text-base" />
           </div>
           <div className="min-w-0">
@@ -505,7 +505,7 @@ function RaidArrayCard({ arr }: Readonly<{ arr: NodeRaidArray }>) {
   const alarm = arr.health === "degraded" || arr.health === "failed";
   const pct = arr.rebuild_percent;
   return (
-    <div className={`rounded-[10px] border bg-[rgba(10,18,40,.5)] p-3 ${alarm ? "border-[rgba(248,113,113,.3)]" : "border-nb-line"}`}>
+    <div className={`rounded-[10px] border bg-nb-surface/50 p-3 ${alarm ? "border-nb-crit/30" : "border-nb-line"}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5 font-mono text-[13px] font-medium text-nb-ink">
           <Icon icon="heroicons-outline:server-stack" className="text-sm text-nb-faint" />
@@ -516,17 +516,17 @@ function RaidArrayCard({ arr }: Readonly<{ arr: NodeRaidArray }>) {
         </span>
       </div>
       <div className="mt-2 grid grid-cols-3 gap-1.5 text-center">
-        <div className="rounded-lg border border-nb-line bg-[rgba(10,18,40,.6)] py-1.5">
+        <div className="rounded-lg border border-nb-line bg-nb-surface/60 py-1.5">
           <div className="text-[13px] font-semibold tabular-nums text-nb-ink">{(arr.level || "—").toString().toUpperCase()}</div>
           <div className="mt-0.5 text-[9px] uppercase tracking-wide text-nb-faint">Level</div>
         </div>
-        <div className="rounded-lg border border-nb-line bg-[rgba(10,18,40,.6)] py-1.5">
+        <div className="rounded-lg border border-nb-line bg-nb-surface/60 py-1.5">
           <div className="text-[13px] font-semibold tabular-nums text-nb-good">
             {arr.working_devices ?? "—"}/{arr.total_devices ?? "—"}
           </div>
           <div className="mt-0.5 text-[9px] uppercase tracking-wide text-nb-faint">Working</div>
         </div>
-        <div className="rounded-lg border border-nb-line bg-[rgba(10,18,40,.6)] py-1.5">
+        <div className="rounded-lg border border-nb-line bg-nb-surface/60 py-1.5">
           <div className={`text-[13px] font-semibold tabular-nums ${arr.failed_devices ? "text-nb-crit" : "text-nb-ink"}`}>
             {arr.failed_devices ?? 0}
           </div>
@@ -561,16 +561,16 @@ function PoolCard({ pool }: Readonly<{ pool: NodeStoragePool }>) {
   const used = u.used_bytes ?? 0;
   const pct = cap > 0 ? Math.min(100, (used / cap) * 100) : 0;
   return (
-    <div className="rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] p-3">
+    <div className="rounded-[10px] border border-nb-line bg-nb-surface/50 p-3">
       <div className="flex items-center gap-2">
-        <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted">
+        <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-nb-line bg-nb-surface/60 text-nb-muted">
           <Icon icon={kind.icon} className="text-sm" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <p className="truncate text-[13px] font-semibold text-nb-ink">{pool.name}</p>
             {pool.is_default && (
-              <span className="rounded-full bg-[rgba(96,165,250,.1)] px-1.5 py-0.5 text-[9px] font-medium text-nb-blueb">Default</span>
+              <span className="rounded-full bg-nb-blue/10 px-1.5 py-0.5 text-[9px] font-medium text-nb-blueb">Default</span>
             )}
           </div>
           <p className="text-[11px] text-nb-soft">{kind.label}</p>
@@ -603,7 +603,7 @@ function TierRuleRow({ rule, poolNames }: Readonly<{ rule: NodeTierRuleRow; pool
   const dst = poolNames[rule.target_pool_id ?? ""] || rule.target_pool_name || rule.target || "—";
   const hours = rule.after_age_hours ?? rule.after_hours ?? rule.hours;
   return (
-    <li className="flex items-center gap-2 rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] px-3 py-2">
+    <li className="flex items-center gap-2 rounded-[10px] border border-nb-line bg-nb-surface/50 px-3 py-2">
       <Icon icon="heroicons-outline:arrows-right-left" className="shrink-0 text-sm text-nb-blueb" />
       {rule.name && <span className="shrink-0 text-[13px] font-medium text-nb-ink">{rule.name}</span>}
       <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[12px] text-nb-soft">
@@ -630,13 +630,13 @@ function UpstreamNvrCard({ nodeId, nvr }: Readonly<{ nodeId: string; nvr: Upstre
   const available = data.available !== false;
 
   return (
-    <div className="rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] p-3">
+    <div className="rounded-[10px] border border-nb-line bg-nb-surface/50 p-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <Icon icon="heroicons-outline:circle-stack" className="shrink-0 text-sm text-nb-faint" />
           <p className="truncate text-[13px] font-medium text-nb-ink">{nvr.name}</p>
         </div>
-        <span className="shrink-0 rounded-full border border-nb-line bg-[rgba(10,18,40,.6)] px-2 py-0.5 text-[9.5px] uppercase tracking-wide text-nb-faint">
+        <span className="shrink-0 rounded-full border border-nb-line bg-nb-surface/60 px-2 py-0.5 text-[9.5px] uppercase tracking-wide text-nb-faint">
           reported by recorder
         </span>
       </div>
@@ -655,7 +655,7 @@ function UpstreamNvrCard({ nodeId, nvr }: Readonly<{ nodeId: string; nvr: Upstre
             const used = d.used_bytes ?? 0;
             const pct = cap > 0 ? Math.min(100, (used / cap) * 100) : 0;
             return (
-              <li key={d.id || d.name || i} className="rounded-lg border border-nb-line bg-[rgba(10,18,40,.6)] px-2.5 py-1.5">
+              <li key={d.id || d.name || i} className="rounded-lg border border-nb-line bg-nb-surface/60 px-2.5 py-1.5">
                 <div className="flex items-center justify-between gap-2 text-[11.5px]">
                   <span className="truncate font-mono text-nb-soft">{d.name || d.model || `Disk ${i + 1}`}</span>
                   <span className="shrink-0 text-nb-faint">
@@ -690,7 +690,7 @@ function SectionLabel({
     <div className={`mb-2 flex items-center gap-2 ${className}`}>
       <span className="text-[11px] font-semibold uppercase tracking-[1.3px] text-nb-muted">{children}</span>
       {count != null && (
-        <span className="rounded-full border border-nb-line bg-white/5 px-1.5 font-mono text-[10px] font-semibold tabular-nums text-nb-soft">
+        <span className="rounded-full border border-nb-line bg-nb-glint/5 px-1.5 font-mono text-[10px] font-semibold tabular-nums text-nb-soft">
           {count}
         </span>
       )}

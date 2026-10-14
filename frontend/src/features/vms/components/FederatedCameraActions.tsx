@@ -519,7 +519,7 @@ function FedExportModal({ camera, onClose }: Readonly<FedModalProps>) {
       }
     >
       <div className="space-y-4">
-        <div className="rounded-lg border border-[rgba(96,165,250,.3)] bg-[rgba(96,165,250,.08)] px-3 py-2 text-xs text-nb-blueb">
+        <div className="rounded-lg border border-nb-blue/30 bg-nb-blue/8 px-3 py-2 text-xs text-nb-blueb">
           The clip is cut on{" "}
           <span className="font-medium">{camera.node_name || "the recorder"}</span> and streamed back
           through it — nothing leaves the node until you download.

@@ -169,27 +169,27 @@ export default function CameraRail({
           }}
           title={c.status === "online" ? "Double-click to add to wall" : `${c.name} · ${c.status}`}
           className={`group flex w-full items-center gap-2 rounded-[7px] py-1.5 pl-7 pr-2 text-left transition ${
-            onWall ? "bg-[rgba(34,211,238,.08)] hover:bg-[rgba(34,211,238,.12)]" : "hover:bg-[rgba(150,180,245,.07)]"
+            onWall ? "bg-nb-teal/8 hover:bg-nb-teal/12" : "hover:bg-nb-mist/7"
           }`}
         >
           <Icon
             icon="heroicons-outline:bars-2"
-            className="shrink-0 cursor-grab text-sm text-[#7e93bf]/50 group-hover:text-[#aec2e8]"
+            className="shrink-0 cursor-grab text-sm text-nb-dim2/50 group-hover:text-nb-soft"
           />
           <StatusDot status={c.status} />
-          <span className="min-w-0 flex-1 truncate text-xs font-medium text-[#cfd0f2] group-hover:text-[#f2f6ff]">
+          <span className="min-w-0 flex-1 truncate text-xs font-medium text-nb-muted group-hover:text-nb-ink">
             {c.name}
           </span>
           {onWall ? (
             <Icon
               icon="heroicons:tv-solid"
-              className="shrink-0 text-sm text-[#22d3ee]"
+              className="shrink-0 text-sm text-nb-teal"
               title="On wall"
             />
           ) : (
             <Icon
               icon="heroicons-mini:plus"
-              className="shrink-0 text-sm text-transparent group-hover:text-[#7e93bf]"
+              className="shrink-0 text-sm text-transparent group-hover:text-nb-dim2"
             />
           )}
         </div>
@@ -198,19 +198,19 @@ export default function CameraRail({
   };
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-[rgba(150,180,245,.22)] bg-[rgba(8,15,34,.55)] backdrop-blur-xs">
+    <aside className="flex w-64 shrink-0 flex-col border-r border-nb-mist/22 bg-nb-surface2/55 backdrop-blur-xs">
       {/* Search (centered, label-free) */}
-      <div className="border-b border-[rgba(150,180,245,.22)] p-3">
+      <div className="border-b border-nb-mist/22 p-3">
         <label className="relative block">
           <Icon
             icon="heroicons-outline:magnifying-glass"
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#7e93bf]"
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-nb-dim2"
           />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search cameras…"
-            className="h-9 w-full rounded-[8px] border border-[rgba(150,180,245,.22)] bg-[rgba(150,180,245,.04)] px-8 text-center text-sm text-[#f2f6ff] placeholder:text-[#7e93bf] outline-hidden focus:border-[rgba(34,211,238,.5)]"
+            className="h-9 w-full rounded-[8px] border border-nb-mist/22 bg-nb-mist/4 px-8 text-center text-sm text-nb-ink placeholder:text-nb-dim2 outline-hidden focus:border-nb-teal/50"
           />
         </label>
       </div>
@@ -218,11 +218,11 @@ export default function CameraRail({
       {/* Camera tree — Default › Site › Camera */}
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {isLoading ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-xs text-[#aec2e8]">
+          <div className="flex items-center justify-center gap-2 py-10 text-xs text-nb-soft">
             <Icon icon="svg-spinners:180-ring" className="text-base" /> Loading…
           </div>
         ) : filtered.length === 0 ? (
-          <div className="px-3 py-10 text-center text-xs text-[#7e93bf]">
+          <div className="px-3 py-10 text-center text-xs text-nb-dim2">
             No cameras match.
           </div>
         ) : (
@@ -231,23 +231,23 @@ export default function CameraRail({
             <button
               type="button"
               onClick={() => toggle(ROOT)}
-              className="flex w-full items-center gap-1.5 rounded-[7px] px-1.5 py-1.5 text-left transition hover:bg-[rgba(150,180,245,.07)]"
+              className="flex w-full items-center gap-1.5 rounded-[7px] px-1.5 py-1.5 text-left transition hover:bg-nb-mist/7"
             >
               <Icon
                 icon="heroicons-mini:chevron-right"
-                className={`shrink-0 text-sm text-[#7e93bf] transition-transform ${rootOpen ? "rotate-90" : ""}`}
+                className={`shrink-0 text-sm text-nb-dim2 transition-transform ${rootOpen ? "rotate-90" : ""}`}
               />
-              <Icon icon="heroicons-outline:building-office-2" className="shrink-0 text-sm text-[#aec2e8]" />
-              <span className="min-w-0 flex-1 truncate text-xs font-semibold text-[#f2f6ff]">
+              <Icon icon="heroicons-outline:building-office-2" className="shrink-0 text-sm text-nb-soft" />
+              <span className="min-w-0 flex-1 truncate text-xs font-semibold text-nb-ink">
                 Default
               </span>
-              <span className="shrink-0 rounded-full bg-[rgba(150,180,245,.1)] px-1.5 font-mono text-[10px] font-semibold tabular-nums text-[#aec2e8]">
+              <span className="shrink-0 rounded-full bg-nb-mist/10 px-1.5 font-mono text-[10px] font-semibold tabular-nums text-nb-soft">
                 {filtered.length}
               </span>
             </button>
 
             {rootOpen && (
-              <ul className="mt-0.5 space-y-0.5 border-l border-[rgba(150,180,245,.15)] pl-1.5">
+              <ul className="mt-0.5 space-y-0.5 border-l border-nb-mist/15 pl-1.5">
                 {sites.map((site) => {
                   const open = isOpen(site.id);
                   return (
@@ -281,35 +281,35 @@ export default function CameraRail({
                           }
                         }}
                         title={`${site.name} — double-click or drag to put all ${site.cameras.length} on the wall`}
-                        className="flex w-full cursor-pointer items-center gap-1.5 rounded-[7px] px-1.5 py-1.5 text-left transition hover:bg-[rgba(150,180,245,.07)]"
+                        className="flex w-full cursor-pointer items-center gap-1.5 rounded-[7px] px-1.5 py-1.5 text-left transition hover:bg-nb-mist/7"
                       >
                         <Icon
                           icon="heroicons-mini:chevron-right"
-                          className={`shrink-0 text-sm text-[#7e93bf] transition-transform ${open ? "rotate-90" : ""}`}
+                          className={`shrink-0 text-sm text-nb-dim2 transition-transform ${open ? "rotate-90" : ""}`}
                         />
                         <Icon
                           icon={branchIcon(site.kind, site.id)}
-                          className={`shrink-0 text-sm ${site.kind === "recorder" ? "text-nb-blueb" : "text-[#aec2e8]"}`}
+                          className={`shrink-0 text-sm ${site.kind === "recorder" ? "text-nb-blueb" : "text-nb-soft"}`}
                         />
                         {site.kind === "recorder" ? (
                           // Recorder branch (mockup): mono, uppercase, "· N CH".
-                          <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] uppercase tracking-[.4px] text-[#7e93bf]">
+                          <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] uppercase tracking-[.4px] text-nb-dim2">
                             {site.name}
-                            <span className="text-[#5f7099]"> · {site.cameras.length} CH</span>
+                            <span className="text-nb-dim2"> · {site.cameras.length} CH</span>
                           </span>
                         ) : (
                           <>
-                            <span className="min-w-0 flex-1 truncate text-xs font-medium text-[#cfd0f2]">
+                            <span className="min-w-0 flex-1 truncate text-xs font-medium text-nb-muted">
                               {site.name}
                             </span>
-                            <span className="shrink-0 rounded-full bg-[rgba(150,180,245,.1)] px-1.5 font-mono text-[10px] font-semibold tabular-nums text-[#aec2e8]">
+                            <span className="shrink-0 rounded-full bg-nb-mist/10 px-1.5 font-mono text-[10px] font-semibold tabular-nums text-nb-soft">
                               {site.cameras.length}
                             </span>
                           </>
                         )}
                       </div>
                       {open && (
-                        <ul className="space-y-0.5 border-l border-[rgba(150,180,245,.15)] pl-1.5">
+                        <ul className="space-y-0.5 border-l border-nb-mist/15 pl-1.5">
                           {site.cameras.map(renderCameraRow)}
                         </ul>
                       )}

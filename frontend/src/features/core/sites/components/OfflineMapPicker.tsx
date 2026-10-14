@@ -22,7 +22,7 @@ import PlaceSearch from "./PlaceSearch";
 import { DEFAULT_TILES_URL, offlineStyle, probeTiles } from "@/lib/map";
 import { PIN_H, PIN_SCALE, PIN_TIP_Y, PIN_W, pinSvg } from "./pin";
 
-const PICK_COLOR = "#60a5fa";
+const PICK_COLOR = "rgb(var(--nb-c-blue))";
 
 function pickerMarkerElement() {
   const el = document.createElement("div");
@@ -190,7 +190,7 @@ export default function OfflineMapPicker({
         </div>
       )}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-6">
-        <span className="rounded-full border border-nb-line bg-[rgba(6,11,26,.85)] px-3 py-1 text-[11px] text-nb-muted">
+        <span className="rounded-full border border-nb-line bg-nb-surface3/85 px-3 py-1 text-[11px] text-nb-muted">
           {value
             ? `${value.lat.toFixed(6)}, ${value.lng.toFixed(6)} — click again to move the pin`
             : "Click the map to drop a pin"}

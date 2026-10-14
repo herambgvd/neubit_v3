@@ -68,13 +68,13 @@ export function ListPanel({
   className = "",
 }: Readonly<ListPanelProps>) {
   return (
-    <aside className={`flex min-h-0 flex-col rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] ${className}`}>
+    <aside className={`flex min-h-0 flex-col rounded-xl border border-nb-line bg-nb-surface2/50 ${className}`}>
       <header className="flex shrink-0 items-center justify-between border-b border-nb-line px-3 py-2">
         <div className="flex items-center gap-2">
           {icon && <Icon icon={icon} className="text-sm text-nb-muted" />}
           <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-nb-muted">{title}</span>
           {count != null && (
-            <span className="rounded-full bg-white/5 px-1.5 py-0.5 text-[10px] font-medium text-nb-muted">{count}</span>
+            <span className="rounded-full bg-nb-glint/5 px-1.5 py-0.5 text-[10px] font-medium text-nb-muted">{count}</span>
           )}
         </div>
         {action}
@@ -111,7 +111,7 @@ export interface EmptyDetailProps {
 // Right-hand empty placeholder for when nothing is selected.
 export function EmptyDetail({ icon = "heroicons-outline:cursor-arrow-rays", title = "Nothing selected", subtitle }: Readonly<EmptyDetailProps>) {
   return (
-    <section className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-xl border border-nb-line bg-[rgba(8,15,34,.5)] py-20 text-center">
+    <section className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-xl border border-nb-line bg-nb-surface2/50 py-20 text-center">
       <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-nb-teal/10 text-nb-teal">
         <Icon icon={icon} className="text-xl" />
       </span>

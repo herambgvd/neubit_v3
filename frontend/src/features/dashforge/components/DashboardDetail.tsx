@@ -49,21 +49,21 @@ export default function DashboardDetail({ dashboard, canManage, onEdit, onDelete
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex items-start justify-between gap-4 border-b border-nb-line px-6 py-5">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.12)] text-nb-blueb">
+          <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-nb-blue/40 bg-nb-blue/12 text-nb-blueb">
             <Icon icon={icon} className="text-2xl" />
           </span>
           <div className="min-w-0">
             <h2 className="truncate text-xl font-semibold text-nb-ink">{d.name}</h2>
             <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-nb-soft">
               <span className="font-mono text-nb-faint">{d.dashboard_ref}</span>
-              <span className="rounded-full border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.12)] px-2 py-0.5 font-medium text-nb-blueb">
+              <span className="rounded-full border border-nb-blue/40 bg-nb-blue/12 px-2 py-0.5 font-medium text-nb-blueb">
                 {categoryLabel(d.category)}
               </span>
               <span
                 className={`rounded-full border px-2 py-0.5 font-medium ${
                   locks.length
-                    ? "border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.1)] text-nb-good"
-                    : "border-nb-line bg-[rgba(10,18,40,.6)] text-nb-faint"
+                    ? "border-nb-good/40 bg-nb-good/10 text-nb-good"
+                    : "border-nb-line bg-nb-surface/60 text-nb-faint"
                 }`}
               >
                 {locks.length ? `${locks.length} locked filter${locks.length === 1 ? "" : "s"}` : "No filter lock"}

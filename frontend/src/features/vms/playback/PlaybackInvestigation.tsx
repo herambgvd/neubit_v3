@@ -98,20 +98,20 @@ export default function PlaybackInvestigation(p: Readonly<PlaybackInvestigationP
   };
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col rounded-xl border border-[rgba(160,150,245,.22)] bg-[rgba(8,15,34,.55)]">
-      <div className="flex items-center gap-1 border-b border-[rgba(160,150,245,.22)] px-2 py-1.5">
-        <Icon icon="heroicons-outline:magnifying-glass-circle" className="text-sm text-[#9db0d8]" />
+    <aside className="flex w-72 shrink-0 flex-col rounded-xl border border-nb-haze/22 bg-nb-surface2/55">
+      <div className="flex items-center gap-1 border-b border-nb-haze/22 px-2 py-1.5">
+        <Icon icon="heroicons-outline:magnifying-glass-circle" className="text-sm text-nb-dim" />
         <span className="text-[12px] font-medium">Investigate</span>
         <button
           type="button"
           aria-label="Close the investigation panel"
           onClick={p.onClose}
-          className="ml-auto rounded p-0.5 text-[#9db0d8] hover:text-[#f2f6ff]"
+          className="ml-auto rounded p-0.5 text-nb-dim hover:text-nb-ink"
         >
           <Icon icon="heroicons-outline:x-mark" className="text-sm" />
         </button>
       </div>
-      <div className="flex border-b border-[rgba(160,150,245,.22)]" role="tablist">
+      <div className="flex border-b border-nb-haze/22" role="tablist">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -120,7 +120,7 @@ export default function PlaybackInvestigation(p: Readonly<PlaybackInvestigationP
             aria-selected={tab === t.id}
             onClick={() => setTab(t.id)}
             className={`flex-1 px-1 py-1.5 text-[11px] transition ${
-              tab === t.id ? "border-b-2 border-[#22d3ee] text-[#67e8f9]" : "text-[#9db0d8] hover:text-[#f2f6ff]"
+              tab === t.id ? "border-b-2 border-nb-teal text-nb-tealb" : "text-nb-dim hover:text-nb-ink"
             }`}
           >
             {t.label}
@@ -136,10 +136,10 @@ export default function PlaybackInvestigation(p: Readonly<PlaybackInvestigationP
               <Row key={e.key} onClick={() => p.onSeek(e.at - 5_000, e.camKey)}>
                 <span className="h-2 w-2 shrink-0 rounded-full bg-[#fde047]" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[#f2f6ff]">{e.type}</span>
-                  <span className="block truncate text-[10.5px] text-[#9db0d8]">{e.camName}</span>
+                  <span className="block truncate text-nb-ink">{e.type}</span>
+                  <span className="block truncate text-[10.5px] text-nb-dim">{e.camName}</span>
                 </span>
-                <span className="shrink-0 tabular-nums text-[10.5px] text-[#9db0d8]">{when(e.at)}</span>
+                <span className="shrink-0 tabular-nums text-[10.5px] text-nb-dim">{when(e.at)}</span>
               </Row>
             ))}
           </List>
@@ -147,8 +147,8 @@ export default function PlaybackInvestigation(p: Readonly<PlaybackInvestigationP
 
         {tab === "bookmarks" && (
           <div className="space-y-2">
-            <div className="rounded-lg border border-[rgba(160,150,245,.18)] p-2">
-              <p className="mb-1 text-[10.5px] text-[#9db0d8]">
+            <div className="rounded-lg border border-nb-haze/18 p-2">
+              <p className="mb-1 text-[10.5px] text-nb-dim">
                 {p.activeCamName
                   ? `Bookmark ${p.activeCamName} at the playhead — stored on its recorder.`
                   : "Click a tile to choose the camera to bookmark."}
@@ -159,7 +159,7 @@ export default function PlaybackInvestigation(p: Readonly<PlaybackInvestigationP
                 maxLength={200}
                 placeholder="What happened (required)"
                 aria-label="Bookmark label"
-                className="mb-1 w-full rounded-md border border-[rgba(160,150,245,.22)] bg-transparent px-2 py-1 text-[12px] outline-none focus:border-[#22d3ee]"
+                className="mb-1 w-full rounded-md border border-nb-haze/22 bg-transparent px-2 py-1 text-[12px] outline-none focus:border-nb-teal"
               />
               <textarea
                 value={note}
@@ -168,13 +168,13 @@ export default function PlaybackInvestigation(p: Readonly<PlaybackInvestigationP
                 rows={2}
                 placeholder="Note (optional)"
                 aria-label="Bookmark note"
-                className="mb-1 w-full resize-none rounded-md border border-[rgba(160,150,245,.22)] bg-transparent px-2 py-1 text-[12px] outline-none focus:border-[#22d3ee]"
+                className="mb-1 w-full resize-none rounded-md border border-nb-haze/22 bg-transparent px-2 py-1 text-[12px] outline-none focus:border-nb-teal"
               />
               <button
                 type="button"
                 disabled={!label.trim() || !p.activeCamName || saving}
                 onClick={() => void save()}
-                className="w-full rounded-md bg-[#22d3ee] py-1 text-[12px] font-semibold text-[#04111f] disabled:opacity-40"
+                className="w-full rounded-md bg-nb-teal py-1 text-[12px] font-semibold text-[#04111f] disabled:opacity-40"
               >
                 {saving ? "Saving…" : "Add bookmark"}
               </button>
@@ -195,7 +195,7 @@ export default function PlaybackInvestigation(p: Readonly<PlaybackInvestigationP
                       type="button"
                       aria-label={`Delete bookmark ${b.label}`}
                       onClick={() => p.onDeleteBookmark(b)}
-                      className="shrink-0 rounded p-0.5 text-[#9db0d8] hover:text-red-300"
+                      className="shrink-0 rounded p-0.5 text-nb-dim hover:text-red-300"
                     >
                       <Icon icon="heroicons-outline:trash" className="text-[12px]" />
                     </button>
@@ -203,13 +203,13 @@ export default function PlaybackInvestigation(p: Readonly<PlaybackInvestigationP
                 >
                   <Icon icon="heroicons-solid:bookmark" className="shrink-0 text-[#38bdf8]" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[#f2f6ff]">{b.label}</span>
-                    <span className="block truncate text-[10.5px] text-[#9db0d8]">
+                    <span className="block truncate text-nb-ink">{b.label}</span>
+                    <span className="block truncate text-[10.5px] text-nb-dim">
                       {b.camName}
                       {b.note ? ` · ${b.note}` : ""}
                     </span>
                   </span>
-                  <span className="shrink-0 tabular-nums text-[10.5px] text-[#9db0d8]">{when(b.at)}</span>
+                  <span className="shrink-0 tabular-nums text-[10.5px] text-nb-dim">{when(b.at)}</span>
                 </Row>
               ))}
             </List>
@@ -222,22 +222,22 @@ export default function PlaybackInvestigation(p: Readonly<PlaybackInvestigationP
               type="button"
               disabled={!p.activeCamName}
               onClick={p.onMotionSearch}
-              className="w-full rounded-md border border-[rgba(34,211,238,.45)] py-1.5 text-[12px] text-[#67e8f9] transition hover:bg-[rgba(34,211,238,.08)] disabled:opacity-40"
+              className="w-full rounded-md border border-nb-teal/45 py-1.5 text-[12px] text-nb-tealb transition hover:bg-nb-teal/8 disabled:opacity-40"
             >
               {p.activeCamName ? `Search motion on ${p.activeCamName}…` : "Click a tile to search its motion"}
             </button>
-            <p className="text-[10.5px] leading-relaxed text-[#9db0d8]">
+            <p className="text-[10.5px] leading-relaxed text-nb-dim">
               Draw a region; the recorder scans its own footage for pixel change there — the IN/OUT
               range if one is marked{p.selectionText ? ` (${p.selectionText})` : ""}, else the visible
               window, up to 6 hours. Pixel change, not object detection.
             </p>
             {p.motion && (
               <>
-                <div className="flex items-center justify-between text-[10.5px] text-[#9db0d8]">
+                <div className="flex items-center justify-between text-[10.5px] text-nb-dim">
                   <span>
                     {p.motion.camName}: {p.motion.hits.length} hit{p.motion.hits.length === 1 ? "" : "s"}
                   </span>
-                  <button type="button" onClick={p.onClearMotion} className="hover:text-[#f2f6ff]">
+                  <button type="button" onClick={p.onClearMotion} className="hover:text-nb-ink">
                     Clear
                   </button>
                 </div>
@@ -246,8 +246,8 @@ export default function PlaybackInvestigation(p: Readonly<PlaybackInvestigationP
                   {p.motion.hits.map((h) => (
                     <Row key={h.s} onClick={() => p.onSeek(h.s - 2_000)}>
                       <span className="h-2 w-2 shrink-0 rounded-sm border border-[#4ade80]" />
-                      <span className="flex-1 tabular-nums text-[#f2f6ff]">{when(h.s)}</span>
-                      <span className="shrink-0 tabular-nums text-[10.5px] text-[#9db0d8]">
+                      <span className="flex-1 tabular-nums text-nb-ink">{when(h.s)}</span>
+                      <span className="shrink-0 tabular-nums text-[10.5px] text-nb-dim">
                         {Math.max(1, Math.round((h.e - h.s) / 1000))}s
                       </span>
                     </Row>
@@ -265,11 +265,11 @@ export default function PlaybackInvestigation(p: Readonly<PlaybackInvestigationP
               disabled={!p.canExportAll}
               onClick={p.onExportAll}
               title={p.canExportAll ? undefined : "Mark IN and OUT on the timeline first"}
-              className="w-full rounded-md border border-[rgba(34,211,238,.45)] py-1.5 text-[12px] text-[#67e8f9] transition hover:bg-[rgba(34,211,238,.08)] disabled:opacity-40"
+              className="w-full rounded-md border border-nb-teal/45 py-1.5 text-[12px] text-nb-tealb transition hover:bg-nb-teal/8 disabled:opacity-40"
             >
               Export every camera in the grid{p.selectionText ? ` · ${p.selectionText}` : ""}
             </button>
-            <p className="text-[10.5px] leading-relaxed text-[#9db0d8]">
+            <p className="text-[10.5px] leading-relaxed text-nb-dim">
               Each recorder cuts its own cameras&apos; clips and signs a chain-of-custody manifest. The
               download icon on the transport exports just the active camera, with verify and watermark
               options.
@@ -279,8 +279,8 @@ export default function PlaybackInvestigation(p: Readonly<PlaybackInvestigationP
                 <div key={`${x.nodeId}:${x.id}`} className="flex items-center gap-2 rounded-md px-1.5 py-1">
                   <ExportIcon status={x.status} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[#f2f6ff]">{x.camName}</span>
-                    <span className="block truncate text-[10.5px] text-[#9db0d8]">
+                    <span className="block truncate text-nb-ink">{x.camName}</span>
+                    <span className="block truncate text-[10.5px] text-nb-dim">
                       {clockText(new Date(x.from).getTime())}–{clockText(new Date(x.to).getTime())} · {x.status}
                       {x.error ? ` · ${x.error}` : ""}
                     </span>
@@ -290,7 +290,7 @@ export default function PlaybackInvestigation(p: Readonly<PlaybackInvestigationP
                       type="button"
                       aria-label={`Download the ${x.camName} clip`}
                       onClick={() => p.onDownload(x)}
-                      className="shrink-0 rounded p-0.5 text-[#67e8f9] hover:text-[#f2f6ff]"
+                      className="shrink-0 rounded p-0.5 text-nb-tealb hover:text-nb-ink"
                     >
                       <Icon icon="heroicons-outline:arrow-down-tray" className="text-[13px]" />
                     </button>
@@ -306,7 +306,7 @@ export default function PlaybackInvestigation(p: Readonly<PlaybackInvestigationP
 }
 
 function List({ empty, children }: Readonly<{ empty: string; children: React.ReactNode[] }>) {
-  if (!children.length) return <p className="px-1 py-3 text-center text-[11px] text-[#9db0d8]">{empty}</p>;
+  if (!children.length) return <p className="px-1 py-3 text-center text-[11px] text-nb-dim">{empty}</p>;
   return <div className="space-y-0.5">{children}</div>;
 }
 
@@ -319,7 +319,7 @@ interface RowProps {
 
 function Row({ onClick, children, trailing }: Readonly<RowProps>) {
   return (
-    <div className="flex items-center gap-1 rounded-md pr-1 transition hover:bg-[rgba(150,180,245,.08)]">
+    <div className="flex items-center gap-1 rounded-md pr-1 transition hover:bg-nb-mist/8">
       <button type="button" onClick={onClick} className="flex min-w-0 flex-1 items-center gap-2 px-1.5 py-1 text-left">
         {children}
       </button>
@@ -331,5 +331,5 @@ function Row({ onClick, children, trailing }: Readonly<RowProps>) {
 function ExportIcon({ status }: Readonly<{ status: string }>) {
   if (status === "done") return <Icon icon="heroicons-solid:check-circle" className="shrink-0 text-emerald-400" />;
   if (status === "failed") return <Icon icon="heroicons-solid:x-circle" className="shrink-0 text-red-400" />;
-  return <Icon icon="svg-spinners:180-ring" className="shrink-0 text-[#9db0d8]" />;
+  return <Icon icon="svg-spinners:180-ring" className="shrink-0 text-nb-dim" />;
 }

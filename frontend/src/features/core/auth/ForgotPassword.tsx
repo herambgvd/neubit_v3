@@ -63,10 +63,10 @@ export default function ForgotPasswordPage() {
 
   return (
     <NeubitAuthShell>
-      <h2 className="text-[19px] font-[650] tracking-[0.2px] text-[#f2f6ff]">
+      <h2 className="text-[19px] font-[650] tracking-[0.2px] text-nb-ink">
         Reset your password
       </h2>
-      <p className="mb-5 mt-1 text-[11.5px] text-[#9a92c8]">
+      <p className="mb-5 mt-1 text-[11.5px] text-nb-faint">
         {step === "request"
           ? "Enter your work email — we'll send a reset token."
           : "Enter the token from your email and choose a new password."}
@@ -121,17 +121,17 @@ export default function ForgotPasswordPage() {
           <button
             type="button"
             onClick={() => setStep("request")}
-            className="mt-3 w-full text-center text-[11px] text-[#9a92c8] transition hover:text-[#cfd0f2]"
+            className="mt-3 w-full text-center text-[11px] text-nb-faint transition hover:text-nb-muted"
           >
             Didn&apos;t get it? Request again
           </button>
         </form>
       )}
 
-      <div className="mt-5 border-t border-[rgba(160,150,245,.2)] pt-4 text-center">
+      <div className="mt-5 border-t border-nb-haze/20 pt-4 text-center">
         <Link
           href="/login"
-          className="font-mono text-[11px] text-[#c4b5fd] transition hover:text-[#f2f6ff]"
+          className="font-mono text-[11px] text-nb-violetb transition hover:text-nb-ink"
         >
           ← Back to sign in
         </Link>

@@ -31,7 +31,7 @@ export function NotificationItem({ notification, onMarkRead, marking }: Readonly
   return (
     <Card
       className={`p-4 flex items-start justify-between gap-4 ${
-        n.read ? "" : "border-l-2 !border-l-foreground bg-white/5"
+        n.read ? "" : "border-l-2 !border-l-foreground bg-nb-glint/5"
       }`}
     >
       <div className="min-w-0">

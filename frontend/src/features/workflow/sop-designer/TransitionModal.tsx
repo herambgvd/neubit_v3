@@ -50,8 +50,8 @@ function Section({ title, children }: Readonly<{ title: ReactNode; children?: Re
 const chipCls = (active: boolean): string =>
   `text-xs rounded-full border px-2.5 py-1 transition ${
     active
-      ? "border-nb-blue bg-[rgba(96,165,250,.10)] text-nb-blueb"
-      : "border-nb-line bg-[rgba(8,15,34,.5)] text-nb-muted hover:bg-[rgba(96,165,250,.1)]"
+      ? "border-nb-blue bg-nb-blue/10 text-nb-blueb"
+      : "border-nb-line bg-nb-surface2/50 text-nb-muted hover:bg-nb-blue/10"
   }`;
 
 /** Edit sends a PATCH body; create needs the endpoints too. */
@@ -224,9 +224,9 @@ export default function TransitionModal({ sopId, states = [], transition, defaul
                 <div>
                   <FieldLabel>Linked form (optional)</FieldLabel>
                   <select value={formId} onChange={(e) => setFormId(e.target.value)} className={fieldClass}>
-                    <option value="" className="bg-[rgba(8,15,34,.5)]">No form required</option>
+                    <option value="" className="bg-nb-surface2/50">No form required</option>
                     {forms.map((f) => (
-                      <option key={f.form_id} value={f.form_id} className="bg-[rgba(8,15,34,.5)]">{f.name}</option>
+                      <option key={f.form_id} value={f.form_id} className="bg-nb-surface2/50">{f.name}</option>
                     ))}
                   </select>
                 </div>
@@ -265,7 +265,7 @@ export default function TransitionModal({ sopId, states = [], transition, defaul
                 <div>
                   <FieldLabel>Type</FieldLabel>
                   <select value={notifyType} onChange={(e) => { if (isNotifyType(e.target.value)) setNotifyType(e.target.value); }} className={fieldClass}>
-                    {NOTIFY_TYPES.map((t) => <option key={t.value} value={t.value} className="bg-[rgba(8,15,34,.5)]">{t.label}</option>)}
+                    {NOTIFY_TYPES.map((t) => <option key={t.value} value={t.value} className="bg-nb-surface2/50">{t.label}</option>)}
                   </select>
                 </div>
                 <div />
@@ -328,7 +328,7 @@ export default function TransitionModal({ sopId, states = [], transition, defaul
                           <p className="text-[11px] text-nb-muted">
                             Available placeholders:{" "}
                             {["{instance_name}", "{from_state}", "{to_state}", "{priority}"].map((p) => (
-                              <code key={p} className="mr-1 rounded-sm bg-[rgba(96,165,250,.1)] px-1">{p}</code>
+                              <code key={p} className="mr-1 rounded-sm bg-nb-blue/10 px-1">{p}</code>
                             ))}
                           </p>
                         </>

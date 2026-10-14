@@ -72,15 +72,15 @@ export default function CategoryList({
                   onClick={() => onSelect(catId(c) ?? "")}
                   className={`flex w-full items-start gap-3 rounded-[10px] border px-3 py-2.5 text-left transition ${
                     isSelected
-                      ? "border-[rgba(96,165,250,.6)] bg-[rgba(96,165,250,.1)]"
-                      : "border-nb-line bg-[rgba(6,11,26,.5)] hover:border-[rgba(150,180,245,.42)]"
+                      ? "border-nb-blue/60 bg-nb-blue/10"
+                      : "border-nb-line bg-nb-surface3/50 hover:border-nb-mist/42"
                   }`}
                 >
                   <span
                     className={`grid h-9 w-9 shrink-0 place-items-center rounded-[8px] border ${
                       isSelected
-                        ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.12)] text-nb-blueb"
-                        : "border-nb-line bg-[rgba(10,18,40,.6)] text-nb-muted"
+                        ? "border-nb-blue/50 bg-nb-blue/12 text-nb-blueb"
+                        : "border-nb-line bg-nb-surface/60 text-nb-muted"
                     }`}
                   >
                     <Icon icon="heroicons-outline:squares-2x2" className="text-base" />

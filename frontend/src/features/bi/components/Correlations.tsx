@@ -131,8 +131,8 @@ function SignalChip({ signal }: Readonly<{ signal: any }>) {
       title={title}
       className={`flex shrink-0 items-center gap-1 rounded-[6px] border px-1.5 py-0.5 text-[10.5px] ${
         ok
-          ? "border-[rgba(52,211,153,.4)] bg-[rgba(52,211,153,.08)] text-nb-good"
-          : "border-[rgba(251,191,36,.45)] bg-[rgba(251,191,36,.07)] text-nb-warn"
+          ? "border-nb-good/40 bg-nb-good/8 text-nb-good"
+          : "border-nb-warn/45 bg-nb-warn/7 text-nb-warn"
       }`}
     >
       <Icon
@@ -158,8 +158,8 @@ function CorrelationCard({ row }: Readonly<{ row: any }>) {
       aria-label={row.name}
       className={`flex min-w-[268px] flex-1 flex-col rounded-[12px] border p-3.5 transition ${
         live
-          ? "border-[rgba(52,211,153,.45)] bg-[rgba(52,211,153,.06)]"
-          : "border-nb-line bg-[rgba(8,15,34,.5)]"
+          ? "border-nb-good/45 bg-nb-good/6"
+          : "border-nb-line bg-nb-surface2/50"
       }`}
     >
       <div className="flex items-start justify-between gap-2">
@@ -174,8 +174,8 @@ function CorrelationCard({ row }: Readonly<{ row: any }>) {
         <span
           className={`shrink-0 rounded-[6px] border px-1.5 py-0.5 text-[10px] uppercase tracking-[1px] ${
             live
-              ? "border-[rgba(52,211,153,.45)] text-nb-good"
-              : "border-[rgba(251,191,36,.45)] text-nb-warn"
+              ? "border-nb-good/45 text-nb-good"
+              : "border-nb-warn/45 text-nb-warn"
           }`}
           title={row.unlocks}
         >
@@ -313,7 +313,7 @@ export default function Correlations({ className = "" }: Readonly<{ className?: 
               buckets beside it because it is only true in the company of them.
               All three are `totals` reads. */}
           <div className="mt-2 flex flex-wrap items-stretch gap-2">
-            <div className="flex min-w-[210px] flex-1 items-center gap-3 rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] px-3 py-2.5">
+            <div className="flex min-w-[210px] flex-1 items-center gap-3 rounded-[10px] border border-nb-line bg-nb-surface/50 px-3 py-2.5">
               <span className="font-mono text-[26px] leading-none text-nb-ink">
                 {t.correlations}
               </span>
@@ -328,7 +328,7 @@ export default function Correlations({ className = "" }: Readonly<{ className?: 
               </span>
             </div>
 
-            <div className="flex min-w-[300px] flex-[2] items-center gap-3 rounded-[10px] border border-[rgba(52,211,153,.35)] bg-[rgba(52,211,153,.06)] px-3 py-2.5">
+            <div className="flex min-w-[300px] flex-[2] items-center gap-3 rounded-[10px] border border-nb-good/35 bg-nb-good/6 px-3 py-2.5">
               <span className="font-mono text-[26px] leading-none text-nb-good">
                 {t.needs_new_hardware}
               </span>
@@ -363,7 +363,7 @@ export default function Correlations({ className = "" }: Readonly<{ className?: 
                 <span
                   key={kind}
                   title={kindTitle[kind]}
-                  className="rounded-[6px] border border-nb-line bg-[rgba(6,11,26,.5)] px-2 py-0.5 text-[10.5px] text-nb-soft"
+                  className="rounded-[6px] border border-nb-line bg-nb-surface3/50 px-2 py-0.5 text-[10.5px] text-nb-soft"
                 >
                   <span className="font-mono text-nb-ink">{String(n)}</span> {kindLabel(kind)}
                 </span>

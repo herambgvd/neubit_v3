@@ -165,14 +165,14 @@ export default function ChannelsTab() {
                 onClick={() => setSelectedId(c.channel_id)}
                 className={`block w-full rounded-[10px] border px-3 py-2.5 text-left transition ${
                   openId === c.channel_id
-                    ? "border-nb-blue bg-[rgba(96,165,250,.1)]"
-                    : "border-nb-line bg-[rgba(10,18,40,.5)] hover:border-nb-blue/60"
+                    ? "border-nb-blue bg-nb-blue/10"
+                    : "border-nb-line bg-nb-surface/50 hover:border-nb-blue/60"
                 }`}
               >
                 <div className="flex items-center gap-2">
                   <span
                     className={`h-2 w-2 shrink-0 rounded-full ${
-                      c.is_enabled ? "bg-nb-good shadow-[0_0_5px_#34d399]" : "bg-nb-faint"
+                      c.is_enabled ? "bg-nb-good shadow-[0_0_5px_rgb(var(--nb-c-good))]" : "bg-nb-faint"
                     }`}
                   />
                   <Icon icon={meta?.icon || "heroicons-outline:paper-airplane"} className="shrink-0 text-sm text-nb-blueb" />
@@ -250,7 +250,7 @@ function ChannelDetail({
     <>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-nb-line px-4 py-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-nb-blue/40 bg-[rgba(96,165,250,.12)] text-nb-blueb">
+          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-nb-blue/40 bg-nb-blue/12 text-nb-blueb">
             <Icon icon={meta?.icon || "heroicons-outline:paper-airplane"} className="text-base" />
           </span>
           <div className="min-w-0">
@@ -275,7 +275,7 @@ function ChannelDetail({
             const raw = cfg[f.key];
             const value = raw === undefined || raw === null || raw === "" ? "—" : configText(raw);
             return (
-              <div key={f.key} className="rounded-[10px] border border-nb-line bg-[rgba(10,18,40,.5)] px-3 py-1.5">
+              <div key={f.key} className="rounded-[10px] border border-nb-line bg-nb-surface/50 px-3 py-1.5">
                 <p className="text-[10px] font-semibold uppercase tracking-[1.4px] text-nb-faint">{f.label}</p>
                 <p className="mt-0.5 truncate font-mono text-[12.5px] text-nb-ink">{value}</p>
               </div>

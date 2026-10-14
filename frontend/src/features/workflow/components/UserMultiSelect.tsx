@@ -70,7 +70,7 @@ export default function UserMultiSelect({ label, selectedIds, onToggle, onClear 
                 const checked = selectedIds.includes(uid(u));
                 return (
                   <li key={uid(u)}>
-                    <label className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer text-xs ${checked ? "bg-[rgba(96,165,250,.10)]" : "hover:bg-[rgba(96,165,250,.1)]"}`}>
+                    <label className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer text-xs ${checked ? "bg-nb-blue/10" : "hover:bg-nb-blue/10"}`}>
                       <input type="checkbox" checked={checked} onChange={() => onToggle(uid(u))} className={checkboxClass} />
                       <span className="flex-1 min-w-0">
                         <span className="block font-medium text-nb-ink truncate">{display(u)}</span>
@@ -102,7 +102,7 @@ export default function UserMultiSelect({ label, selectedIds, onToggle, onClear 
       {selectedUsers.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-1.5">
           {selectedUsers.map((u) => (
-            <span key={uid(u)} className="inline-flex items-center gap-1 rounded-full border border-[rgba(96,165,250,.30)] bg-[rgba(96,165,250,.10)] px-2.5 py-1 text-xs text-nb-blueb">
+            <span key={uid(u)} className="inline-flex items-center gap-1 rounded-full border border-nb-blue/30 bg-nb-blue/10 px-2.5 py-1 text-xs text-nb-blueb">
               {display(u)}
               <button type="button" onClick={() => onToggle(uid(u))} aria-label={`Remove ${display(u)}`}>×</button>
             </span>
@@ -110,7 +110,7 @@ export default function UserMultiSelect({ label, selectedIds, onToggle, onClear 
         </div>
       )}
 
-      <div className="rounded-lg border border-nb-line bg-[rgba(8,15,34,.5)]">
+      <div className="rounded-lg border border-nb-line bg-nb-surface2/50">
         <label className="relative block border-b border-nb-line">
           <Icon icon="heroicons-outline:magnifying-glass" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-nb-faint" />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search users by name or email…" className="h-9 w-full bg-transparent pl-7 pr-3 text-xs text-nb-ink outline-hidden" />

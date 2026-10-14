@@ -20,7 +20,7 @@ import { Icon } from "@iconify/react";
 import type { ChecklistRow, ChecklistState } from "./checklist";
 
 const STATE_STYLE: Record<ChecklistState, { icon: string; cls: string }> = {
-  done: { icon: "heroicons:check-circle", cls: "border-[rgba(52,211,153,.45)] text-nb-good" },
+  done: { icon: "heroicons:check-circle", cls: "border-nb-good/45 text-nb-good" },
   partly: { icon: "heroicons:exclamation-circle", cls: "border-nb-warn/45 text-nb-warn" },
   todo: { icon: "heroicons-outline:minus-circle", cls: "border-nb-line text-nb-muted" },
   unknown: { icon: "heroicons:question-mark-circle", cls: "border-nb-line text-nb-faint" },
@@ -32,7 +32,7 @@ function Marker({ state, n, open }: Readonly<{ state: ChecklistState; n: number;
   if (state === "done") {
     return (
       <span
-        className={`flex flex-none items-center justify-center rounded-full border border-[rgba(52,211,153,.5)] bg-[rgba(52,211,153,.1)] text-nb-good ${size}`}
+        className={`flex flex-none items-center justify-center rounded-full border border-nb-good/50 bg-nb-good/10 text-nb-good ${size}`}
       >
         <Icon icon="heroicons-outline:check" className={open ? "text-[19px]" : "text-[14px]"} />
       </span>
@@ -59,7 +59,7 @@ function Bar({ done, total }: Readonly<{ done: number; total: number }>) {
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
   return (
     <div
-      className="h-1 w-full overflow-hidden rounded-full bg-[rgba(140,165,220,.16)]"
+      className="h-1 w-full overflow-hidden rounded-full bg-nb-mist/16"
       role="img"
       aria-label={`${done} of ${total}`}
     >
@@ -79,11 +79,11 @@ export function OpenStep({ row, n }: Readonly<{ row: ChecklistRow; n: number }>)
     <li
       aria-label={task.label}
       aria-current="step"
-      className="flex gap-4 rounded-[14px] border border-nb-blue/35 bg-[linear-gradient(180deg,rgba(18,32,68,.85),rgba(10,18,44,.7))] px-4 py-4"
+      className="flex gap-4 rounded-[14px] border border-nb-blue/35 bg-[linear-gradient(180deg,rgb(var(--nb-c-panel)/.85),rgb(var(--nb-c-surface)/.7))] px-4 py-4"
     >
       <div className="flex flex-none flex-col items-center gap-2">
         <Marker state={row.state} n={n} open />
-        <span className="w-px flex-1 bg-[linear-gradient(180deg,rgba(78,163,255,.45),rgba(140,165,220,.08))]" />
+        <span className="w-px flex-1 bg-[linear-gradient(180deg,rgb(var(--nb-c-blue)/.45),rgb(var(--nb-c-mist)/.08))]" />
       </div>
 
       <div className="min-w-0 flex-1">

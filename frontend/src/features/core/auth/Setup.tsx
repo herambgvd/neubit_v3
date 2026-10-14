@@ -72,17 +72,17 @@ export default function SetupPage() {
   if (elsewhere) {
     return (
       <NeubitAuthShell hint="Only the server itself can create the first administrator.">
-        <p className="font-mono text-[10px] tracking-[1.6px] text-[#67e8f9]">FIRST-RUN SETUP</p>
-        <h2 className="mt-1 text-[19px] font-[650] tracking-[0.2px] text-[#f2f6ff]">
+        <p className="font-mono text-[10px] tracking-[1.6px] text-nb-tealb">FIRST-RUN SETUP</p>
+        <h2 className="mt-1 text-[19px] font-[650] tracking-[0.2px] text-nb-ink">
           Finish setting up on the server
         </h2>
-        <p className="mt-3 text-[12.5px] leading-relaxed text-[#cfd0f2]">
+        <p className="mt-3 text-[12.5px] leading-relaxed text-nb-muted">
           This Neubit VMS has no administrator yet. For security, the first one can only be created on the
           server itself.
         </p>
-        <p className="mt-3 text-[12.5px] leading-relaxed text-[#cfd0f2]">
+        <p className="mt-3 text-[12.5px] leading-relaxed text-nb-muted">
           On the server, open the Neubit VMS app, or a browser at{" "}
-          <span className="font-semibold text-[#f2f6ff]">http://localhost</span>. Create the administrator
+          <span className="font-semibold text-nb-ink">http://localhost</span>. Create the administrator
           there, then sign in from here.
         </p>
       </NeubitAuthShell>
@@ -91,9 +91,9 @@ export default function SetupPage() {
 
   return (
     <NeubitAuthShell hint="This account is created once, when the system is new.">
-      <p className="font-mono text-[10px] tracking-[1.6px] text-[#67e8f9]">FIRST-RUN SETUP</p>
-      <h2 className="mt-1 text-[19px] font-[650] tracking-[0.2px] text-[#f2f6ff]">Create the administrator</h2>
-      <p className="mb-5 mt-1 text-[11.5px] text-[#9a92c8]">
+      <p className="font-mono text-[10px] tracking-[1.6px] text-nb-tealb">FIRST-RUN SETUP</p>
+      <h2 className="mt-1 text-[19px] font-[650] tracking-[0.2px] text-nb-ink">Create the administrator</h2>
+      <p className="mb-5 mt-1 text-[11.5px] text-nb-faint">
         The first account on this Neubit VMS. It can manage everything, including other users.
       </p>
 
@@ -136,7 +136,7 @@ export default function SetupPage() {
             <button
               type="button"
               onClick={() => setShow((s) => !s)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9a92c8] hover:text-[#cfd0f2]"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-nb-faint hover:text-nb-muted"
               aria-label={show ? "Hide password" : "Show password"}
             >
               <Icon icon={show ? "heroicons-outline:eye-slash" : "heroicons-outline:eye"} className="h-4 w-4" />

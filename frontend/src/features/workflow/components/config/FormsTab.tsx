@@ -80,16 +80,16 @@ export default function FormsTab() {
             return (
               <button key={f.form_id}
                   onClick={() => { setSelectedId(f.form_id); setMode("view"); }}
-                  className={`relative w-full flex items-start gap-3 rounded-[10px] px-3 py-2.5 text-left transition border ${isSel ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]" : "border-transparent hover:bg-[rgba(96,165,250,.06)]"}`}
+                  className={`relative w-full flex items-start gap-3 rounded-[10px] px-3 py-2.5 text-left transition border ${isSel ? "border-nb-blue/50 bg-nb-blue/10" : "border-transparent hover:bg-nb-blue/6"}`}
                 >
                   {isSel && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-nb-blue" />}
-                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[rgba(96,165,250,.12)] text-nb-blueb shrink-0">
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-nb-blue/12 text-nb-blueb shrink-0">
                     <Icon icon="heroicons-outline:clipboard-document-list" className="text-base" />
                   </span>
                   <span className="flex-1 min-w-0">
                     <span className="flex items-center gap-1.5">
                       <span className="text-sm font-semibold text-nb-ink truncate">{f.name}</span>
-                      {f.is_active === false && <span className="text-[9px] rounded-full px-1.5 py-0.5 font-medium uppercase bg-[rgba(10,18,40,.65)] text-nb-faint shrink-0">Off</span>}
+                      {f.is_active === false && <span className="text-[9px] rounded-full px-1.5 py-0.5 font-medium uppercase bg-nb-surface/65 text-nb-faint shrink-0">Off</span>}
                     </span>
                     <span className="block text-[11px] text-nb-faint truncate mt-0.5">{(f.fields?.length || 0)} field(s){f.description ? ` · ${f.description}` : ""}</span>
                   </span>

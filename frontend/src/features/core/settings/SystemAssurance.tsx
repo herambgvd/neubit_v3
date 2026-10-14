@@ -97,7 +97,7 @@ function Tile({
 }>) {
   return (
     <div
-      className={`flex flex-col rounded-[12px] border border-nb-line bg-[rgba(8,15,34,.5)] p-3 ${span}`}
+      className={`flex flex-col rounded-[12px] border border-nb-line bg-nb-surface2/50 p-3 ${span}`}
     >
       <div className="mb-1.5 flex items-center gap-2">
         <Icon icon={icon} className="text-sm text-nb-blueb" />
@@ -138,7 +138,7 @@ function Stat({
       {sub && <div className="mt-0.5 text-[10.5px] text-nb-faint">{sub}</div>}
     </>
   );
-  const cls = "block rounded-[10px] border border-nb-line/60 bg-[rgba(6,11,26,.45)] px-3 py-1.5";
+  const cls = "block rounded-[10px] border border-nb-line/60 bg-nb-surface3/45 px-3 py-1.5";
   return href ? (
     <Link href={href} className={`${cls} transition hover:border-nb-blue`}>
       {body}

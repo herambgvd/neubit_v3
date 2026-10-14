@@ -199,7 +199,7 @@ export default function AppLayout({ children }: Readonly<{ children?: ReactNode 
   return (
     <div
       className="fixed inset-0 flex flex-col overflow-hidden bg-background"
-      style={home ? { background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" } : undefined}
+      style={home ? { background: "var(--nb-backdrop)" } : undefined}
     >
       {/* Global header BAR — a real in-flow slim bar (⊞ MENU navigator · NeuBit brand
           → Home · THE PAGE'S OWN SECTION NAV · search · notifications · account). NOT

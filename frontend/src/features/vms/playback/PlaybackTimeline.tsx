@@ -216,12 +216,12 @@ export default function PlaybackTimeline({
   else if (lanes.length > 4) laneH = "h-3";
 
   return (
-    <div className="select-none text-[11px] text-[#9db0d8]">
+    <div className="select-none text-[11px] text-nb-dim">
       <div className="flex">
         {/* Lane labels */}
         <div className="shrink-0 pr-2" style={{ width: LABEL_W }}>
           <div className="h-6" />
-          <div className="flex h-4 items-center text-[10.5px] font-semibold uppercase tracking-wide text-[#f2f6ff]">
+          <div className="flex h-4 items-center text-[10.5px] font-semibold uppercase tracking-wide text-nb-ink">
             All cameras
           </div>
           <div>
@@ -234,7 +234,7 @@ export default function PlaybackTimeline({
                 className={`mt-0.5 flex w-full items-center gap-1 truncate text-left ${laneH} ${
                   lanes.length > 9 ? "text-[9px] leading-none" : ""
                 } ${
-                  l.active ? "text-[#67e8f9]" : "hover:text-[#f2f6ff]"
+                  l.active ? "text-nb-tealb" : "hover:text-nb-ink"
                 }`}
               >
                 {l.independent && <span className="text-[9px] font-bold text-amber-300">IND</span>}
@@ -261,7 +261,7 @@ export default function PlaybackTimeline({
           onPointerLeave={() => setHoverX(null)}
         >
           {/* Ruler */}
-          <div className="relative h-6 border-b border-[rgba(160,150,245,.22)]">
+          <div className="relative h-6 border-b border-nb-haze/22">
             {ticks.map((t) => (
               <div
                 key={t.t}
@@ -270,12 +270,12 @@ export default function PlaybackTimeline({
               >
                 <span
                   className={`-translate-x-1/2 whitespace-nowrap tabular-nums ${
-                    t.major ? "font-semibold text-[#f2f6ff]" : ""
+                    t.major ? "font-semibold text-nb-ink" : ""
                   }`}
                 >
                   {t.label}
                 </span>
-                <span className={`w-px ${t.major ? "h-2 bg-[#f2f6ff]/60" : "h-1.5 bg-[#9db0d8]/50"}`} />
+                <span className={`w-px ${t.major ? "h-2 bg-nb-ink/60" : "h-1.5 bg-nb-dim/50"}`} />
               </div>
             ))}
           </div>
@@ -312,7 +312,7 @@ export default function PlaybackTimeline({
           {/* The future: nothing is recorded there yet. */}
           {nowF < 1 && (
             <div
-              className="pointer-events-none absolute bottom-0 top-6 bg-[repeating-linear-gradient(135deg,rgba(150,180,245,.06)_0_4px,transparent_4px_8px)]"
+              className="pointer-events-none absolute bottom-0 top-6 bg-[repeating-linear-gradient(135deg,rgb(var(--nb-c-mist)/.06)_0_4px,transparent_4px_8px)]"
               style={{ left: `${Math.max(0, nowF) * 100}%`, right: 0 }}
             />
           )}
@@ -344,7 +344,7 @@ export default function PlaybackTimeline({
           {/* Hover readout */}
           {hoverMs != null && (
             <div className="pointer-events-none absolute bottom-0 top-0" style={{ left: hoverX ?? 0 }}>
-              <div className="absolute bottom-0 top-6 w-px bg-white/30" />
+              <div className="absolute bottom-0 top-6 w-px bg-nb-glint/30" />
               <span className="absolute -top-5 -translate-x-1/2 whitespace-nowrap rounded bg-black/80 px-1.5 py-0.5 tabular-nums text-white">
                 {clockText(hoverMs)}
               </span>
@@ -353,10 +353,10 @@ export default function PlaybackTimeline({
 
           {/* Playhead */}
           <div ref={headRef} className="pointer-events-none absolute bottom-0 top-0 hidden">
-            <div className="absolute bottom-0 top-5 w-0.5 -translate-x-1/2 bg-[#22d3ee]" />
+            <div className="absolute bottom-0 top-5 w-0.5 -translate-x-1/2 bg-nb-teal" />
             <span
               ref={headLabelRef}
-              className="absolute top-0 -translate-x-1/2 rounded bg-[#22d3ee] px-1 text-[10px] font-semibold tabular-nums text-[#04111f]"
+              className="absolute top-0 -translate-x-1/2 rounded bg-nb-teal px-1 text-[10px] font-semibold tabular-nums text-[#04111f]"
             />
           </div>
         </div>
@@ -392,7 +392,7 @@ function Lane({
     <div
       data-lane={laneKey}
       className={`relative overflow-hidden rounded-[3px] ${
-        active ? "bg-[rgba(34,211,238,.12)] ring-1 ring-inset ring-[rgba(34,211,238,.45)]" : "bg-[rgba(150,180,245,.06)]"
+        active ? "bg-nb-teal/12 ring-1 ring-inset ring-nb-teal/45" : "bg-nb-mist/6"
       } ${className}`}
     >
       {spans.map((sp) => {

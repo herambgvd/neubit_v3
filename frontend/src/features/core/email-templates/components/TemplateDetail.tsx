@@ -124,7 +124,7 @@ export default function TemplateDetail({
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex items-start justify-between gap-4 border-b border-nb-line px-6 py-5">
         <div className="flex items-start gap-3 min-w-0">
-          <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.12)] text-nb-blueb shrink-0">
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-nb-blue/40 bg-nb-blue/12 text-nb-blueb shrink-0">
             <Icon icon={meta?.icon || "heroicons-outline:envelope"} className="text-xl" />
           </span>
           <div className="min-w-0">
@@ -213,7 +213,7 @@ export default function TemplateDetail({
               // built-in default with `{% if %}` branches; approximating it as
               // blocks would silently drop whatever they cannot represent the
               // moment it is saved. Starting fresh is an explicit choice.
-              <div className="rounded-[10px] border border-nb-line bg-[rgba(255,255,255,.02)] p-5 text-center">
+              <div className="rounded-[10px] border border-nb-line bg-nb-glint/2 p-5 text-center">
                 <p className="text-sm text-nb-ink">This template was not built in the designer.</p>
                 <p className="mx-auto mt-1 max-w-md text-[12px] text-nb-faint">
                   Its HTML has logic the designer cannot represent, so opening it as blocks
@@ -274,7 +274,7 @@ export default function TemplateDetail({
             )}
             <div>
               <span className="mb-1 block text-xs font-medium text-nb-muted">Subject</span>
-              <div className="rounded-lg border border-nb-line bg-white/5 px-3 py-2 text-sm text-nb-ink">
+              <div className="rounded-lg border border-nb-line bg-nb-glint/5 px-3 py-2 text-sm text-nb-ink">
                 {preview.data?.subject || "—"}
               </div>
             </div>

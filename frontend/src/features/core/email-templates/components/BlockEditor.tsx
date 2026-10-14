@@ -63,7 +63,7 @@ export default function BlockEditor({ blocks, onChange, variables }: Readonly<Bl
         )}
 
         {blocks.map((b, i) => (
-          <div key={b.id} className="rounded-[10px] border border-nb-line bg-[rgba(255,255,255,.02)] p-3">
+          <div key={b.id} className="rounded-[10px] border border-nb-line bg-nb-glint/2 p-3">
             <div className="mb-2 flex items-center gap-2">
               <Icon icon={BLOCK_LABELS[b.type].icon} className="text-sm text-nb-blueb" />
               <span className="text-[11px] font-semibold uppercase tracking-[1.2px] text-nb-muted">

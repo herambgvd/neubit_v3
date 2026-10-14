@@ -129,28 +129,28 @@ export default function CamerasPage() {
   }, [cameras, selectedId]);
 
   const fieldCls =
-    "h-8 w-full rounded-[9px] border border-nb-line bg-[rgba(6,11,26,.5)] px-3 text-[13px] text-nb-ink placeholder:text-nb-faint outline-hidden focus:border-nb-blue";
+    "h-8 w-full rounded-[9px] border border-nb-line bg-nb-surface3/50 px-3 text-[13px] text-nb-ink placeholder:text-nb-faint outline-hidden focus:border-nb-blue";
 
   return (
     <div
       className="flex h-[calc(100%+1.5rem)] min-h-0 flex-col -mx-4 lg:-mx-5 -my-3 px-4 lg:px-5 pt-3 pb-2 text-nb-ink"
-      style={{ background: "radial-gradient(1200px 700px at 50% 115%, #14284f 0%, #0c1530 55%)" }}
+      style={{ background: "var(--nb-backdrop)" }}
     >
       {/* Two-card master/detail — fills the whole body. */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[25%_1fr]">
         {/* ── Left: camera list ── */}
-        <aside className="flex min-h-0 flex-col rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)]">
+        <aside className="flex min-h-0 flex-col rounded-[14px] border border-nb-line bg-nb-surface2/50">
           <header className="flex shrink-0 items-center justify-between gap-2 border-b border-nb-line px-3 py-2">
             <div className="flex min-w-0 items-center gap-2">
               <Icon icon="heroicons-outline:video-camera" className="text-sm text-nb-muted" />
               <span className="text-[11px] font-semibold uppercase tracking-[1.6px] text-nb-muted">Cameras</span>
-              <span className="rounded-full border border-nb-line bg-[rgba(10,18,40,.65)] px-1.5 py-0.5 font-mono text-[10px] font-medium text-nb-faint">{statusCounts.total}</span>
+              <span className="rounded-full border border-nb-line bg-nb-surface/65 px-1.5 py-0.5 font-mono text-[10px] font-medium text-nb-faint">{statusCounts.total}</span>
             </div>
             <div className="flex shrink-0 items-center gap-1">
               <button
                 onClick={() => fedQ.refetch()}
                 title="Refresh"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-nb-line bg-nb-surface/65 text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
               >
                 <Icon icon="heroicons-outline:arrow-path" className="text-sm" />
               </button>
@@ -191,7 +191,7 @@ export default function CamerasPage() {
               className="!h-8 !py-1"
             />
             <div className="flex items-center gap-3 px-0.5 pt-0.5 text-[11px]">
-              <span className="flex items-center gap-1 text-nb-soft"><span className="h-1.5 w-1.5 rounded-full bg-nb-good shadow-[0_0_5px_#34d399]" />{statusCounts.online} online</span>
+              <span className="flex items-center gap-1 text-nb-soft"><span className="h-1.5 w-1.5 rounded-full bg-nb-good shadow-[0_0_5px_rgb(var(--nb-c-good))]" />{statusCounts.online} online</span>
               <span className="flex items-center gap-1 text-nb-soft"><span className="h-1.5 w-1.5 rounded-full bg-nb-faint" />{statusCounts.offline} offline</span>
             </div>
           </div>
@@ -223,7 +223,7 @@ export default function CamerasPage() {
 
         {/* ── Right: inline read-only detail ── */}
         {selected ? (
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-[14px] border border-nb-line bg-[rgba(8,15,34,.5)]">
+          <section className="flex min-h-0 flex-col overflow-hidden rounded-[14px] border border-nb-line bg-nb-surface2/50">
             {/* Recorder-owned camera → live view + read-only facts. Management (config,
                 recording, maintenance) lives on the owning recorder. */}
             <FederatedCameraDetail key={selected.id} camera={selected} />
@@ -258,8 +258,8 @@ function CameraListItem({ camera, selected, onSelect }: Readonly<CameraListItemP
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect()}
       className={`group flex cursor-pointer items-center gap-2.5 rounded-[10px] border px-2.5 py-2 transition ${
         selected
-          ? "border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.1)]"
-          : "border-transparent hover:bg-[rgba(96,165,250,.06)]"
+          ? "border-nb-blue/50 bg-nb-blue/10"
+          : "border-transparent hover:bg-nb-blue/6"
       }`}
     >
       <StatusDot status={camera.status} />

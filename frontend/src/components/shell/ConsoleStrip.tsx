@@ -49,12 +49,12 @@ export function hasConsoleStrip(pathname: string | null | undefined): boolean {
 }
 
 const modtab =
-  "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-[rgba(96,165,250,.5)] bg-[rgba(96,165,250,.15)] px-2.5 py-1 text-[12px] tracking-[.3px] text-nb-blueb";
+  "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border border-nb-blue/50 bg-nb-blue/15 px-2.5 py-1 text-[12px] tracking-[.3px] text-nb-blueb";
 const seg = (on: boolean) =>
   `flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[6px] px-3 py-1 text-[11.5px] tracking-[.7px] transition ${
-    on ? "border border-[rgba(96,165,250,.4)] bg-[rgba(96,165,250,.16)] text-nb-blueb" : "border border-transparent text-nb-faint hover:text-nb-muted"
+    on ? "border border-nb-blue/40 bg-nb-blue/16 text-nb-blueb" : "border border-transparent text-nb-faint hover:text-nb-muted"
   }`;
-const segBox = "flex shrink-0 gap-0.5 rounded-[8px] border border-nb-line bg-[rgba(8,15,34,.7)] p-[3px]";
+const segBox = "flex shrink-0 gap-0.5 rounded-[8px] border border-nb-line bg-nb-surface2/70 p-[3px]";
 
 /** Setup's own segment: the checklist, then the tasks in pipeline order. */
 const SETUP_CELLS = [
@@ -115,7 +115,7 @@ export default function ConsoleStrip() {
             <Link
               href="/audit"
               title="Access change log — who / when / what, audit-signed"
-              className="flex shrink-0 items-center gap-1.5 rounded-[8px] border border-nb-line bg-[rgba(10,18,40,.65)] px-3 py-1 text-[12px] tracking-[.4px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+              className="flex shrink-0 items-center gap-1.5 rounded-[8px] border border-nb-line bg-nb-surface/65 px-3 py-1 text-[12px] tracking-[.4px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
             >
               <Icon icon="heroicons-outline:clipboard-document-list" className="text-[15px]" />
               Audit
@@ -171,7 +171,7 @@ export default function ConsoleStrip() {
               <Link
                 href="/bi/portfolio"
                 title="Back to Building"
-                className="flex shrink-0 items-center gap-1 rounded-[7px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1 text-[12px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+                className="flex shrink-0 items-center gap-1 rounded-[7px] border border-nb-line bg-nb-surface/65 px-2.5 py-1 text-[12px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
               >
                 <Icon icon="heroicons-mini:chevron-left" className="text-[14px]" /> Building
               </Link>
@@ -243,7 +243,7 @@ export default function ConsoleStrip() {
                       ? "Leave the building — back to every building"
                       : "Leave the building scope — the same domain across the whole estate"
                   }
-                  className="flex shrink-0 items-center gap-1 rounded-[7px] border border-[rgba(96,165,250,.45)] bg-[rgba(96,165,250,.12)] px-2.5 py-1 text-[11.5px] text-nb-blueb transition hover:border-nb-blue"
+                  className="flex shrink-0 items-center gap-1 rounded-[7px] border border-nb-blue/45 bg-nb-blue/12 px-2.5 py-1 text-[11.5px] text-nb-blueb transition hover:border-nb-blue"
                 >
                   <Icon icon="heroicons-outline:map-pin" className="text-[13px]" /> ONE BUILDING
                   <Icon icon="heroicons-mini:x-mark" className="text-[13px]" />
@@ -263,7 +263,7 @@ export default function ConsoleStrip() {
           <Link
             href="/wall"
             title="Open the live Wall Console"
-            className="flex shrink-0 items-center gap-1.5 rounded-[7px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1 text-[11.5px] tracking-[.5px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+            className="flex shrink-0 items-center gap-1.5 rounded-[7px] border border-nb-line bg-nb-surface/65 px-2.5 py-1 text-[11.5px] tracking-[.5px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
           >
             <Icon icon="heroicons:tv" className="text-[14px]" /> LIVE WALL
           </Link>
@@ -296,7 +296,7 @@ export default function ConsoleStrip() {
           <Link
             href="/streaming"
             title="Open the live wall"
-            className="flex shrink-0 items-center gap-1.5 rounded-[7px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1 text-[11.5px] tracking-[.5px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+            className="flex shrink-0 items-center gap-1.5 rounded-[7px] border border-nb-line bg-nb-surface/65 px-2.5 py-1 text-[11.5px] tracking-[.5px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
           >
             <Icon icon="heroicons:tv" className="text-[14px]" /> LIVE WALL
           </Link>
@@ -384,7 +384,7 @@ export default function ConsoleStrip() {
           <Link
             href="/users"
             title="Back to Users & Roles"
-            className="flex shrink-0 items-center gap-1 rounded-[7px] border border-nb-line bg-[rgba(10,18,40,.65)] px-2.5 py-1 text-[12px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
+            className="flex shrink-0 items-center gap-1 rounded-[7px] border border-nb-line bg-nb-surface/65 px-2.5 py-1 text-[12px] text-nb-muted transition hover:border-nb-blue hover:text-nb-blueb"
           >
             <Icon icon="heroicons-mini:chevron-left" className="text-[14px]" /> Users &amp; Roles
           </Link>
