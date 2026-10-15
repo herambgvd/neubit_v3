@@ -33,10 +33,12 @@ import { toast } from "sonner";
 
 import { Button, ConfirmDialog, Input, Modal, type ConfirmState } from "@/components/ui/kit";
 import { asItems } from "@/lib/format";
+import { useAuth } from "@/lib/auth";
 import { vms } from "./api";
 import type { CameraGroupPublic, EstateCamera, PatternPublic, PatternStop, WallPreset } from "./types";
 import {
   DEFAULT_LAYOUT_KEY,
+  dockSideFor,
   getLayout,
   gridStyle,
   tileStyle,
@@ -53,6 +55,7 @@ import WallToolbar, { QUALITY_LEVELS } from "./components/WallToolbar";
 import EstateMapView from "./components/EstateMapView";
 import PlayoutBar from "./components/PlayoutBar";
 import SpotlightOverlay from "./components/SpotlightOverlay";
+import PtzOverlay from "./components/PtzOverlay";
 import CameraQuickPicker from "./components/CameraQuickPicker";
 import PatternPickerMenu from "./components/PatternPickerMenu";
 import PatternHud from "./components/PatternHud";
@@ -403,6 +406,10 @@ export default function Streaming() {
   const handleClose = useCallback((index: number) => closeCell(index), [closeCell]);
   const handleSpotlight = useCallback((index: number) => setSpotlight(index), []);
   const handleFocus = useCallback((index: number) => setFocusIndex(index), []);
+  // The live PTZ control: open on at most one tile, from that tile's PTZ key; the
+  // same key on the same tile closes it (SCRUM-331).
+  const [ptzTile, setPtzTile] = useState<number | null>(null);
+  const handleTogglePtz = useCallback((index: number) => setPtzTile((cur) => (cur === index ? null : index)), []);
   // The focused tile searched a whole window and found NO footage — the wall is
   // sitting in a gap. Re-anchor past it: the node clamps forward, so this lands
   // on the next recording there is instead of stopping at every gap.
@@ -748,6 +755,26 @@ export default function Streaming() {
   const focusCameraId = focusTile != null ? cells[focusTile]?.cameraId : null;
   const focusCamera = focusCameraId ? cameraById.get(focusCameraId) : null;
 
+  // PTZ commands go through the camera's recorder and need vms.ptz.control there and
+  // here; a viewer without it gets no key rather than a panel of refusals.
+  const { can } = useAuth();
+  const canPtz = can("vms.ptz.control");
+  // The tile the PTZ panel serves, while it can still be served: its cell still holds
+  // a federated PTZ camera, the tile is on screen (a spotlight shows only its own),
+  // the wall is not handed to a pattern, and it is live, not playing back.
+  const ptzCameraId = ptzTile != null ? cells[ptzTile]?.cameraId : null;
+  const ptzCamera = ptzCameraId ? cameraById.get(ptzCameraId) : null;
+  const ptzOpenTile =
+    canPtz &&
+    ptzTile != null &&
+    ptzCamera?.federated &&
+    ptzCamera.ptz_capable &&
+    (!isSpotlightActive || spotlight === ptzTile) &&
+    !rotation.active &&
+    !(pb.isPlayback && (pb.sync || ptzTile === focusTile))
+      ? ptzTile
+      : null;
+
   // A tile shows the RECORDING when the wall is in playback and either it is the
   // focused tile or Sync is on (Sync = the whole wall at one instant).
   const playbackFor = useCallback(
@@ -792,6 +819,9 @@ export default function Streaming() {
       onClose={handleClose}
       onSpotlight={handleSpotlight}
       onPickHere={handlePickHere}
+      ptzAvailable={canPtz && !!cell.cameraId && !!cameraById.get(cell.cameraId)?.federated && !!cameraById.get(cell.cameraId)?.ptz_capable}
+      ptzOpen={i === ptzOpenTile}
+      onTogglePtz={handleTogglePtz}
     />
   );
 
@@ -896,6 +926,24 @@ export default function Streaming() {
                     {isSpotlightActive && spotlight != null
                       ? renderTile(cells[spotlight], spotlight, { spotlightMode: true })
                       : cells.map((cell, i) => renderTile(cell, i, { isHero: i === hero }))}
+                  </div>
+                )}
+                {/* The live PTZ panel, docked on the side away from the tile it
+                    serves so the picture being steered stays in view. */}
+                {ptzOpenTile != null && ptzCamera?.node_id && ptzCamera.real_id && (
+                  <div
+                    className={`absolute bottom-3 z-30 ${
+                      dockSideFor(layout, ptzOpenTile, isSpotlightActive) === "left" ? "left-3" : "right-3"
+                    }`}
+                  >
+                    <PtzOverlay
+                      key={ptzCamera.id}
+                      nodeId={ptzCamera.node_id}
+                      cameraId={ptzCamera.real_id}
+                      canControl={canPtz}
+                      title={ptzCamera.name}
+                      onClose={() => setPtzTile(null)}
+                    />
                   </div>
                 )}
                 {isSpotlightActive && (

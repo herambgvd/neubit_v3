@@ -1078,19 +1078,25 @@ export interface PlayerBtnProps {
   title: string;
   onClick?: () => void;
   disabled?: boolean;
+  /** An on/off control's state; set, the button announces itself as pressed. */
+  active?: boolean;
 }
 
-export function PlayerBtn({ icon, title, onClick, disabled = false }: Readonly<PlayerBtnProps>) {
+export function PlayerBtn({ icon, title, onClick, disabled = false, active }: Readonly<PlayerBtnProps>) {
   return (
     <button
       type="button"
       title={title}
+      aria-label={title}
+      aria-pressed={active}
       disabled={disabled}
       onClick={(e) => {
         e.stopPropagation();
         onClick?.();
       }}
-      className="rounded-[6px] p-1 text-white/90 transition hover:bg-white/15 hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+      className={`rounded-[6px] p-1 transition hover:bg-white/15 hover:text-white disabled:cursor-not-allowed disabled:opacity-35 ${
+        active ? "bg-nb-teal/30 text-white" : "text-white/90"
+      }`}
     >
       <Icon icon={icon} className="text-[13px]" />
     </button>

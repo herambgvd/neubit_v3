@@ -112,6 +112,12 @@ export interface WallTileProps {
   onSpotlight?: (index: number) => void;
   /** (index) — open quick camera picker for an empty tile. */
   onPickHere?: (index: number) => void;
+  /** The operator may drive PTZ and this camera's head is known (Streaming decides). */
+  ptzAvailable?: boolean;
+  /** The live PTZ control is open on this tile. */
+  ptzOpen?: boolean;
+  /** (index) — open the PTZ control on this tile, or close it. */
+  onTogglePtz?: (index: number) => void;
   style?: CSSProperties;
 }
 
@@ -140,6 +146,9 @@ function WallTile({
   onClose,
   onSpotlight,
   onPickHere,
+  ptzAvailable = false,
+  ptzOpen = false,
+  onTogglePtz,
   style,
 }: Readonly<WallTileProps>) {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -168,12 +177,25 @@ function WallTile({
     };
   }, [fedNodeId, fedRealId]);
 
+  // PTZ is driven from the wall, as in every VMS: a live camera with a known head
+  // offers the key. Not on a dark camera (nothing would answer) nor over recorded
+  // footage (a recording cannot be steered).
+  const ptzKeyShown = ptzAvailable && !playback && !DARK_STATUSES.has(camera?.status || "unknown");
+
   // The tile's OWN buttons. They ride inside the player's control bar when there
   // is a player (one cluster, not two) and stand alone on a dark tile — either
   // way spotlight/remove are always within reach.
   const tileControls = useMemo(
     () => (
       <>
+        {ptzKeyShown && (
+          <PlayerBtn
+            icon="heroicons-outline:viewfinder-circle"
+            title={ptzOpen ? "Close PTZ control" : "PTZ control — move, zoom and presets"}
+            active={ptzOpen}
+            onClick={() => onTogglePtz?.(index)}
+          />
+        )}
         <PlayerBtn
           icon="heroicons-outline:arrows-pointing-out"
           title="Spotlight (double-click)"
@@ -182,7 +204,7 @@ function WallTile({
         <PlayerBtn icon="heroicons-outline:x-mark" title="Remove from wall" onClick={() => onClose?.(index)} />
       </>
     ),
-    [index, onSpotlight, onClose],
+    [index, onSpotlight, onClose, ptzKeyShown, ptzOpen, onTogglePtz],
   );
 
   const onDragOver = (e: DragEvent<HTMLDivElement>) => {
@@ -309,7 +331,7 @@ function WallTile({
       // and saves the operator hunting for a "which camera?" dropdown.
       {...asButton(onFocus ? () => onFocus(index) : undefined, "Focus this tile")}
       onDoubleClick={() => onSpotlight?.(index)}
-      className={`group relative min-h-0 overflow-hidden rounded-[11px] bg-black transition ${filledTileEdge(dropActive, focused)}`}
+      className={`group relative min-h-0 overflow-hidden rounded-[11px] bg-black transition ${filledTileEdge(dropActive, focused || ptzOpen)}`}
     >
       {/* PLAYBACK badge — the tile must never look live while it is not. The
           live player paints its own LIVE badge in the same corner, so the two
@@ -421,12 +443,9 @@ function WallTile({
         )}
       </div>
 
-      {/* No PTZ pad on the wall. A spotlighted tile used to carry the full
-          pan/tilt/zoom/focus overlay bottom-left; it is off for now by request.
-          The control surface itself is untouched and still reaches PTZ cameras
-          from the camera detail view and the live-player modal (PtzOverlay is
-          mounted by FederatedCameraDetail and LivePlayerModal) — this only stops
-          it from sitting on top of the wall's picture. */}
+      {/* PTZ is opened from the PTZ key above, never shown unasked: the panel is
+          drawn by Streaming, docked on the wall's far side from this tile so it
+          does not cover the picture being steered (SCRUM-331). */}
 
     </div>
   );

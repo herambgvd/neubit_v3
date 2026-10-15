@@ -1011,6 +1011,8 @@ export interface FederatedPtzBody {
   tilt?: number;
   zoom?: number;
   speed?: number;
+  /** The move's deadline; the recorder stops the head at it (bounded node-side). */
+  timeout_ms?: number;
 }
 
 /** One preset as the CAMERA reports it (`GET …/ptz/presets`).

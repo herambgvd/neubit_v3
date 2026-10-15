@@ -276,10 +276,15 @@ export const vms = {
     },
 
     // Focus is a MOTOR on the lens, not a PTZ head command, so it has its own
-    // routes. Same hold-to-move discipline as the pad: one move on press, one stop
-    // on release.
+    // routes. Same hold-to-move discipline as the pad: a held key re-sends its move,
+    // release stops. The body is the recorder's focusMoveReq: a continuous move's
+    // speed is signed (near < 0 < far) and the node stops it at timeout_ms.
     focus: {
-      move: (nodeId: string, cameraId: string, body: { direction: "near" | "far"; speed?: number }) =>
+      move: (
+        nodeId: string,
+        cameraId: string,
+        body: { mode: "continuous"; speed: number; timeout_ms?: number },
+      ) =>
         unwrap(api.post<FederatedOpResult>(
           `/vms/federation/nodes/${nodeId}/cameras/${cameraId}/imaging/focus/move`, body)),
       stop: (nodeId: string, cameraId: string) =>

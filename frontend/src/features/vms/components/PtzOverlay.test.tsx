@@ -17,7 +17,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "@/test/render";
 
 import type { FederatedTour } from "../types";
-import PtzOverlay, { TourStrip, isTouring, tourState } from "./PtzOverlay";
+import PtzOverlay, { KEEPALIVE_MS, MOVE_TIMEOUT_MS, TourStrip, isTouring, tourState } from "./PtzOverlay";
 
 describe("whether a tour is running", () => {
   it("believes the device when it says it is touring", () => {
@@ -101,10 +101,11 @@ describe("the tour strip", () => {
  * THE HOLD-TO-MOVE CONTRACT.
  *
  * Every control on the pad drives a real head through the recorder that owns the
- * camera, and the discipline is the same for all of them: ONE move on press, ONE
- * stop on release, and the stop is not optional. A release that does not send it
- * leaves the camera turning with nothing on the screen saying so — the operator
- * has let go and the head has not.
+ * camera, and the discipline is the same for all of them: a move with a deadline
+ * on press, re-sent while held, and a stop on release that is not optional. The
+ * recorder stops the head at the deadline itself (SCRUM-320), so a hold that sent
+ * one move would stop halfway; a release that does not send its stop leaves the
+ * camera turning until that deadline with nothing on the screen saying so.
  *
  * Focus is the trap inside that. It is a different motor on different routes, so
  * a release that sent a PTZ stop for a focus hold would stop nothing and leave
@@ -164,25 +165,55 @@ beforeEach(() => {
 const overlay = (canControl = true) =>
   renderWithProviders(<PtzOverlay nodeId="rec-a" cameraId="cam-1" canControl={canControl} />);
 
+const moveUp = (tilt: number) => ({
+  action: "move",
+  mode: "continuous",
+  pan: 0,
+  tilt,
+  zoom: 0,
+  timeout_ms: MOVE_TIMEOUT_MS,
+});
+
 describe("holding a pad button", () => {
-  it("sends exactly one move on the press and one stop on the release", async () => {
+  it("sends a move with a deadline on the press and one stop on the release", async () => {
     const { getByTitle } = overlay();
     const up = getByTitle("Pan up");
 
     hold(up, "pointerdown");
     await waitFor(() => expect(ptz).toHaveBeenCalledTimes(1));
-    expect(ptz).toHaveBeenCalledWith("rec-a", "cam-1", {
-      action: "move",
-      mode: "continuous",
-      pan: 0,
-      tilt: 0.6,
-      zoom: 0,
-      speed: 0.6,
-    });
+    expect(ptz).toHaveBeenCalledWith("rec-a", "cam-1", moveUp(0.6));
 
     hold(up, "pointerup");
-    await waitFor(() => expect(ptz).toHaveBeenCalledTimes(2));
-    expect(ptz).toHaveBeenLastCalledWith("rec-a", "cam-1", { action: "stop" });
+    await waitFor(() => expect(ptz).toHaveBeenLastCalledWith("rec-a", "cam-1", { action: "stop" }));
+    expect(ptz.mock.calls.filter((c) => c[2].action === "stop")).toHaveLength(1);
+  });
+
+  it("keeps a held move alive, so the recorder's deadline does not stop it halfway", async () => {
+    const { getByTitle } = overlay();
+    const up = getByTitle("Pan up");
+    hold(up, "pointerdown");
+    await waitFor(() => expect(ptz).toHaveBeenCalledTimes(2), { timeout: KEEPALIVE_MS + 1500 });
+    expect(ptz.mock.calls.every((c) => c[2].action === "move")).toBe(true);
+    hold(up, "pointerup");
+    await waitFor(() => expect(ptz).toHaveBeenLastCalledWith("rec-a", "cam-1", { action: "stop" }));
+  });
+
+  it("drives at the speed the operator picked", async () => {
+    const { getByTitle, getByRole } = overlay();
+    fireEvent.click(getByRole("radio", { name: "Fast" }));
+    const up = getByTitle("Pan up");
+    hold(up, "pointerdown");
+    await waitFor(() => expect(ptz).toHaveBeenCalledWith("rec-a", "cam-1", moveUp(1)));
+    hold(up, "pointerup");
+    await waitFor(() => expect(ptz).toHaveBeenLastCalledWith("rec-a", "cam-1", { action: "stop" }));
+  });
+
+  it("stops the head from the centre key even when the pad did not move it", async () => {
+    // A preset recall on its way, or another operator: the centre key is the
+    // one control that stops a head this pad did not start.
+    const { getByTitle } = overlay();
+    fireEvent.click(getByTitle("Stop"));
+    await waitFor(() => expect(ptz).toHaveBeenCalledWith("rec-a", "cam-1", { action: "stop" }));
   });
 
   it("stops the lens and not the head when a focus hold ends", async () => {
@@ -192,7 +223,14 @@ describe("holding a pad button", () => {
     const near = getByTitle("Focus near");
 
     hold(near, "pointerdown");
-    await waitFor(() => expect(focusMove).toHaveBeenCalledWith("rec-a", "cam-1", { direction: "near", speed: 0.5 }));
+    // The recorder's own focus body: a signed continuous speed, near below zero.
+    await waitFor(() =>
+      expect(focusMove).toHaveBeenCalledWith("rec-a", "cam-1", {
+        mode: "continuous",
+        speed: -0.5,
+        timeout_ms: MOVE_TIMEOUT_MS,
+      }),
+    );
 
     hold(near, "pointerup");
     await waitFor(() => expect(focusStop).toHaveBeenCalledWith("rec-a", "cam-1"));
@@ -247,12 +285,15 @@ describe("the preset bar", () => {
 
   it("saves the current position under a new name and never against an existing token", async () => {
     // A token would OVERWRITE that preset — silently moving where every other
-    // operator's recall of it points.
+    // operator's recall of it points. Named in place, not in a browser prompt.
     presetsList.mockResolvedValue({ items: [{ token: "p1", name: "Gate" }] });
-    vi.spyOn(window, "prompt").mockReturnValue("  Loading bay  ");
-    const { findByTitle } = overlay();
+    const prompt = vi.spyOn(window, "prompt");
+    const { findByTitle, getByLabelText } = overlay();
     fireEvent.click(await findByTitle("Save current position as a preset"));
+    fireEvent.change(getByLabelText("Preset name"), { target: { value: "  Loading bay  " } });
+    fireEvent.click(getByLabelText("Save preset here"));
     await waitFor(() => expect(presetSave).toHaveBeenCalledWith("rec-a", "cam-1", "Loading bay"));
+    expect(prompt).not.toHaveBeenCalled();
   });
 
   it("leaves out presets with no token, which the device cannot recall (SCRUM-303)", async () => {
@@ -264,17 +305,34 @@ describe("the preset bar", () => {
     expect(container.querySelectorAll('[title="Go to preset"]')).toHaveLength(1);
   });
 
-  it("saves nothing when the name prompt is dismissed or left blank", async () => {
+  it("saves nothing when the name is left blank or the box is cancelled", async () => {
     // An unnamed preset is a row nobody can recognise in the bar afterwards.
     presetsList.mockResolvedValue({ items: [] });
-    const prompt = vi.spyOn(window, "prompt").mockReturnValue("   ");
-    const { findByTitle } = overlay();
+    const { findByTitle, getByLabelText, queryByLabelText } = overlay();
     fireEvent.click(await findByTitle("Save current position as a preset"));
-    expect(presetSave).not.toHaveBeenCalled();
+    fireEvent.change(getByLabelText("Preset name"), { target: { value: "   " } });
+    expect(getByLabelText("Save preset here")).toBeDisabled();
 
-    prompt.mockReturnValue(null);
-    fireEvent.click(await findByTitle("Save current position as a preset"));
+    fireEvent.keyDown(getByLabelText("Preset name"), { key: "Escape" });
+    expect(queryByLabelText("Preset name")).not.toBeInTheDocument();
     expect(presetSave).not.toHaveBeenCalled();
+  });
+});
+
+describe("on the live wall", () => {
+  it("carries the camera's name and a close key", async () => {
+    const onClose = vi.fn();
+    const { getByText, getByLabelText } = renderWithProviders(
+      <PtzOverlay nodeId="rec-a" cameraId="cam-1" canControl title="Gate dome" onClose={onClose} />,
+    );
+    expect(getByText("Gate dome")).toBeInTheDocument();
+    fireEvent.click(getByLabelText("Close PTZ control"));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("has no header where nothing can close it (the Cameras page pane)", () => {
+    const { queryByLabelText } = overlay();
+    expect(queryByLabelText("Close PTZ control")).not.toBeInTheDocument();
   });
 });
 

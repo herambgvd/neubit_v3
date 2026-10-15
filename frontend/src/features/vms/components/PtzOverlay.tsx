@@ -1,10 +1,11 @@
 "use client";
 
-// PtzOverlay (G1) — the operator PTZ control surface that attaches on top of a
-// LivePlayer for a `ptz_capable` camera. It provides:
+// PtzOverlay (G1) — the operator PTZ control surface for a `ptz_capable` camera,
+// on the Cameras page's detail pane and on a live-wall tile (SCRUM-331). It provides:
 //   • an 8-direction pan/tilt pad — press-and-hold to move (continuous), release
-//     to stop (pointer-down → one `move`, pointer-up/leave/blur → one `stop`);
+//     to stop; the centre key stops the head whatever is moving it;
 //   • zoom in/out + focus near/far — same hold-to-move → stop;
+//   • a speed choice (Slow / Normal / Fast) for the pad;
 //   • a preset bar — chips (click = goto), "＋ save preset", delete-on-hover;
 //   • a patrol panel — run state, start/stop, and open the PatrolEditorModal.
 //
@@ -14,10 +15,12 @@
 // second, non-federated branch here that drove the VMS's own PTZ plane; it had no
 // caller, because the only thing that renders this overlay is FederatedCameraDetail.
 //
-// Network discipline: continuous mode sends exactly ONE move on press and ONE
-// stop on release — never a stream of calls. We ALWAYS send stop on release,
-// pointer-leave, window blur, and unmount so a held button can never leave the
-// camera drifting.
+// Network discipline: a held key sends its move with a deadline (MOVE_TIMEOUT_MS)
+// and re-sends it every KEEPALIVE_MS while held. The recorder stops the head at the
+// deadline itself (some firmware ignores the device-side one), so a lost release
+// costs at most that, and a long hold must keep the move alive or it stops halfway.
+// We ALWAYS send stop on release, pointer-leave, window blur, and unmount; a move
+// still in flight at release is followed by a second stop, so Stop lands last.
 //
 // Gating: reads (list presets/patrols) need `vms.live.view` (any live viewer);
 // all MOVEMENTS and writes gate on `vms.ptz.control`. When the operator lacks
@@ -34,20 +37,34 @@ import vms from "../api";
 import type { FederatedPatrol, FederatedPreset, FederatedTour, PtzMoveBody, TourOperation } from "../types";
 import PatrolEditorModal from "./PatrolEditorModal";
 
-const MOVE_SPEED = 0.6;
+/** The pad's speed choices, as fractions of the head's own range (the recorder
+ *  clamps to what the device advertised). Normal is the pad's long-standing 0.6. */
+export const PTZ_SPEEDS = [
+  { label: "Slow", value: 0.3 },
+  { label: "Normal", value: 0.6 },
+  { label: "Fast", value: 1 },
+] as const;
 const ZOOM_SPEED = 0.5;
 const FOCUS_SPEED = 0.5;
 
-// Pan/tilt velocity vectors for the 8 pad directions (pan = x, tilt = y).
+/** A held key's move carries this deadline and is re-sent every KEEPALIVE_MS; the
+ *  deadline must outlast the keep-alive or a hold stutters. Same values as the
+ *  recorder's own pad. */
+export const MOVE_TIMEOUT_MS = 3000;
+export const KEEPALIVE_MS = 1200;
+/** The shortest a press drives the head, so a quick click still nudges it. */
+export const MIN_PRESS_MS = 250;
+
+// Pan/tilt directions for the 8 pad keys (pan = x, tilt = y); the speed scales them.
 const DIRS = {
-  up: { pan: 0, tilt: MOVE_SPEED },
-  down: { pan: 0, tilt: -MOVE_SPEED },
-  left: { pan: -MOVE_SPEED, tilt: 0 },
-  right: { pan: MOVE_SPEED, tilt: 0 },
-  "up-left": { pan: -MOVE_SPEED, tilt: MOVE_SPEED },
-  "up-right": { pan: MOVE_SPEED, tilt: MOVE_SPEED },
-  "down-left": { pan: -MOVE_SPEED, tilt: -MOVE_SPEED },
-  "down-right": { pan: MOVE_SPEED, tilt: -MOVE_SPEED },
+  up: { pan: 0, tilt: 1 },
+  down: { pan: 0, tilt: -1 },
+  left: { pan: -1, tilt: 0 },
+  right: { pan: 1, tilt: 0 },
+  "up-left": { pan: -1, tilt: 1 },
+  "up-right": { pan: 1, tilt: 1 },
+  "down-left": { pan: -1, tilt: -1 },
+  "down-right": { pan: 1, tilt: -1 },
 };
 type PadDir = keyof typeof DIRS;
 
@@ -64,15 +81,29 @@ export interface PtzOverlayProps {
   /** The camera's id ON THAT RECORDER, not its federated composite id. */
   cameraId: string;
   canControl: boolean;
+  /** The camera's name, for the header the live wall gives the panel. */
+  title?: string;
+  /** Closes the panel; with it the panel carries a header and a close key. */
+  onClose?: () => void;
 }
 
-export default function PtzOverlay({ nodeId, cameraId, canControl }: Readonly<PtzOverlayProps>) {
+export default function PtzOverlay({ nodeId, cameraId, canControl, title, onClose }: Readonly<PtzOverlayProps>) {
   const qc = useQueryClient();
   const [showPatrol, setShowPatrol] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [speed, setSpeed] = useState<number>(PTZ_SPEEDS[1].value);
+  // The "save preset" name box, in place of a browser prompt.
+  const [naming, setNaming] = useState(false);
+  const [newName, setNewName] = useState("");
 
-  // Tracks whether a hold is active so we only ever send a single trailing stop.
+  // Which motor a hold is driving, so its stop goes to the surface that started it.
   const movingRef = useRef<"ptz" | "focus" | null>(null);
+  // Keep-alive generation: bumped on every press and release, so a scheduled or
+  // in-flight re-send from an ended press is a no-op.
+  const genRef = useRef(0);
+  const timerRef = useRef<number | null>(null);
+  const inFlightRef = useRef<Promise<unknown> | null>(null);
+  const startedAtRef = useRef(0);
 
   const ready = !!(nodeId && cameraId);
   const presetsKey = ["vms", "federation", "presets", nodeId, cameraId];
@@ -123,70 +154,143 @@ export default function PtzOverlay({ nodeId, cameraId, canControl }: Readonly<Pt
   // the surface that started it — sending a PTZ stop after a focus move leaves the
   // lens driving. `movingRef` therefore records WHICH it was, not just that
   // something is moving.
-  const stop = useCallback(async () => {
+  const sendStop = useCallback(
+    async (what: "ptz" | "focus") => {
+      try {
+        if (what === "focus") await vms.federation.focus.stop(nodeId, cameraId);
+        else await vms.federation.ptz(nodeId, cameraId, { action: "stop" });
+      } catch (e) {
+        toast.error(apiError(e, "PTZ stop failed"));
+      }
+    },
+    [nodeId, cameraId]
+  );
+
+  // Ends the current hold. A quick click is held to MIN_PRESS_MS first, so it nudges.
+  const stop = useCallback(() => {
     const what = movingRef.current;
     if (!what) return;
     movingRef.current = null;
-    try {
-      if (what === "focus") await vms.federation.focus.stop(nodeId, cameraId);
-      else await vms.federation.ptz(nodeId, cameraId, { action: "stop" });
-    } catch (e) {
-      toast.error(apiError(e, "PTZ stop failed"));
+    genRef.current += 1;
+    const gen = genRef.current;
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
     }
-  }, [nodeId, cameraId]);
+    const pending = inFlightRef.current;
+    const finish = () => {
+      void sendStop(what);
+      // A move still in flight can reach the device after this Stop and restart it.
+      if (pending) {
+        void pending.finally(() => {
+          if (genRef.current === gen) void sendStop(what);
+        });
+      }
+    };
+    const early = MIN_PRESS_MS - (Date.now() - startedAtRef.current);
+    if (early <= 0) {
+      finish();
+      return;
+    }
+    window.setTimeout(() => {
+      if (genRef.current === gen) finish();
+    }, early);
+  }, [sendStop]);
+
+  // Starts a hold on one motor: sends `move`, then re-sends it every KEEPALIVE_MS
+  // until the press ends. Self-rescheduling rather than setInterval, so a slow
+  // recorder never has two of one press's moves in flight.
+  const hold = useCallback(
+    (what: "ptz" | "focus", move: () => Promise<unknown>, failMsg: string) => {
+      if (!canControl || movingRef.current) return;
+      movingRef.current = what;
+      startedAtRef.current = Date.now();
+      genRef.current += 1;
+      const gen = genRef.current;
+      const pump = async () => {
+        if (genRef.current !== gen) return;
+        const req = move();
+        inFlightRef.current = req;
+        try {
+          await req;
+        } catch (e) {
+          if (genRef.current === gen) {
+            movingRef.current = null;
+            genRef.current += 1;
+            toast.error(apiError(e, failMsg));
+          }
+          return;
+        } finally {
+          if (inFlightRef.current === req) inFlightRef.current = null;
+        }
+        if (genRef.current !== gen) return;
+        timerRef.current = window.setTimeout(() => void pump(), KEEPALIVE_MS);
+      };
+      void pump();
+    },
+    [canControl]
+  );
 
   const startPanTilt = useCallback(
-    async (dir: PadDir) => {
-      if (!canControl || movingRef.current) return;
-      movingRef.current = "ptz";
+    (dir: PadDir) => {
       const v = DIRS[dir];
-      const cmd: PtzMoveBody = { mode: "continuous", pan: v.pan, tilt: v.tilt, zoom: 0, speed: MOVE_SPEED };
-      try {
-        await vms.federation.ptz(nodeId, cameraId, { action: "move", ...cmd });
-      } catch (e) {
-        movingRef.current = null;
-        toast.error(apiError(e, "PTZ move failed"));
-      }
+      const cmd: PtzMoveBody = { mode: "continuous", pan: v.pan * speed, tilt: v.tilt * speed, zoom: 0 };
+      hold(
+        "ptz",
+        () => vms.federation.ptz(nodeId, cameraId, { action: "move", ...cmd, timeout_ms: MOVE_TIMEOUT_MS }),
+        "PTZ move failed"
+      );
     },
-    [nodeId, cameraId, canControl]
+    [nodeId, cameraId, hold, speed]
   );
 
   const startZoom = useCallback(
-    async (direction: "in" | "out") => {
-      if (!canControl || movingRef.current) return;
-      movingRef.current = "ptz";
-      try {
-        // Zoom is the `zoom` velocity of a continuous move, not an action of its
-        // own — the recorder mounts move and stop under …/ptz and nothing else.
-        await vms.federation.ptz(nodeId, cameraId, {
-          action: "move",
-          mode: "continuous",
-          pan: 0,
-          tilt: 0,
-          zoom: direction === "in" ? ZOOM_SPEED : -ZOOM_SPEED,
-          speed: ZOOM_SPEED,
-        });
-      } catch (e) {
-        movingRef.current = null;
-        toast.error(apiError(e, "Zoom failed"));
-      }
+    (direction: "in" | "out") => {
+      // Zoom is the `zoom` velocity of a continuous move, not an action of its
+      // own — the recorder mounts move and stop under …/ptz and nothing else.
+      hold(
+        "ptz",
+        () =>
+          vms.federation.ptz(nodeId, cameraId, {
+            action: "move",
+            mode: "continuous",
+            pan: 0,
+            tilt: 0,
+            zoom: direction === "in" ? ZOOM_SPEED : -ZOOM_SPEED,
+            timeout_ms: MOVE_TIMEOUT_MS,
+          }),
+        "Zoom failed"
+      );
     },
-    [nodeId, cameraId, canControl]
+    [nodeId, cameraId, hold]
   );
 
   const startFocus = useCallback(
-    async (direction: "near" | "far") => {
-      if (!canControl || movingRef.current) return;
-      movingRef.current = "focus";
-      try {
-        await vms.federation.focus.move(nodeId, cameraId, { direction, speed: FOCUS_SPEED });
-      } catch (e) {
-        movingRef.current = null;
-        toast.error(apiError(e, "Focus failed"));
-      }
+    (direction: "near" | "far") => {
+      // The recorder's focus motor takes a signed continuous speed (near < 0 < far),
+      // the same body its own Image tab sends; it bounds the move with its watchdog.
+      hold(
+        "focus",
+        () =>
+          vms.federation.focus.move(nodeId, cameraId, {
+            mode: "continuous",
+            speed: direction === "far" ? FOCUS_SPEED : -FOCUS_SPEED,
+            timeout_ms: MOVE_TIMEOUT_MS,
+          }),
+        "Focus failed"
+      );
     },
-    [nodeId, cameraId, canControl]
+    [nodeId, cameraId, hold]
   );
+
+  // The centre key: ends our own hold, then stops the head outright, whatever moved
+  // it (a preset recall on its way, another operator, a lost release).
+  const halt = useCallback(() => {
+    stop();
+    vms.federation
+      .ptz(nodeId, cameraId, { action: "stop" })
+      .catch((e) => toast.error(apiError(e, "PTZ stop failed")));
+  }, [nodeId, cameraId, stop]);
 
   // Safety net: always stop on window blur / tab hide / unmount so a held button
   // that never got its pointer-up (alt-tab mid-hold) can't leave the camera moving.
@@ -215,9 +319,10 @@ export default function PtzOverlay({ nodeId, cameraId, canControl }: Readonly<Pt
     }
   };
   const savePreset = async () => {
-    if (!canControl) return;
-    const name = window.prompt("Name this preset (stores the current position):");
-    if (!name || !name.trim()) return;
+    const name = newName.trim();
+    if (!canControl || !name) return;
+    setNaming(false);
+    setNewName("");
     try {
       // No token = CREATE at the current position. Passing an existing token would
       // OVERWRITE that preset instead, which silently moves where every other
@@ -278,11 +383,29 @@ export default function PtzOverlay({ nodeId, cameraId, canControl }: Readonly<Pt
   });
 
   return (
-    <div className="pointer-events-auto flex flex-col gap-2 rounded-xl border border-white/10 bg-black/70 p-2.5 text-white shadow-2xl backdrop-blur-md">
+    <div className="pointer-events-auto flex max-w-[30rem] flex-col gap-2 rounded-xl border border-white/10 bg-black/70 p-2.5 text-white shadow-2xl backdrop-blur-md">
+      {onClose && (
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-white/45">PTZ</span>
+          <span className="min-w-0 flex-1 truncate text-[12px] text-white/90">{title}</span>
+          <button
+            type="button"
+            title="Close PTZ control"
+            aria-label="Close PTZ control"
+            onClick={onClose}
+            className="rounded-md p-1 text-white/60 transition hover:bg-white/10 hover:text-white"
+          >
+            <Icon icon="heroicons-mini:x-mark" className="text-sm" />
+          </button>
+        </div>
+      )}
       {canControl && (
         <div className="flex items-start gap-2.5">
-          {/* Pan/tilt pad */}
-          <PanTiltPad holdProps={holdProps} startPanTilt={startPanTilt} onCenterStop={stop} />
+          {/* Pan/tilt pad, and the speed it drives at */}
+          <div className="flex flex-col gap-1.5">
+            <PanTiltPad holdProps={holdProps} startPanTilt={startPanTilt} onCenterStop={halt} />
+            <SpeedPicker speed={speed} onSpeed={setSpeed} />
+          </div>
 
           {/* Zoom + focus columns */}
           <div className="flex flex-col gap-2">
@@ -306,8 +429,10 @@ export default function PtzOverlay({ nodeId, cameraId, canControl }: Readonly<Pt
         </div>
       )}
 
-      {/* Preset bar */}
-      <div className="flex flex-wrap items-center gap-1.5 border-t border-white/10 pt-2">
+      {/* Preset bar. The chips scroll in a bounded box (a camera can list hundreds);
+          the patrol button stays outside it so its pop-up is never clipped. */}
+      <div className="flex items-start gap-1.5 border-t border-white/10 pt-2">
+        <div className="flex max-h-24 min-w-0 flex-1 flex-wrap items-center gap-1.5 overflow-y-auto">
         <span className="mr-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/45">
           Presets
         </span>
@@ -348,10 +473,10 @@ export default function PtzOverlay({ nodeId, cameraId, canControl }: Readonly<Pt
             </span>
           ))
         )}
-        {canControl && presetsSupported && (
+        {canControl && presetsSupported && !naming && (
           <button
             type="button"
-            onClick={savePreset}
+            onClick={() => setNaming(true)}
             title="Save current position as a preset"
             className="inline-flex items-center gap-1 rounded-full border border-dashed border-white/25 px-2 py-1 text-[11px] text-white/70 transition hover:border-white/40 hover:text-white"
           >
@@ -359,9 +484,23 @@ export default function PtzOverlay({ nodeId, cameraId, canControl }: Readonly<Pt
             Save
           </button>
         )}
+        {canControl && presetsSupported && naming && (
+          // Named in place: a browser prompt would freeze the whole wall behind it.
+          <PresetNameForm
+            value={newName}
+            onChange={setNewName}
+            onSave={() => void savePreset()}
+            onCancel={() => {
+              setNaming(false);
+              setNewName("");
+            }}
+          />
+        )}
+
+        </div>
 
         {/* Patrol panel toggle */}
-        <div className="relative ml-auto">
+        <div className="relative shrink-0">
           <button
             type="button"
             onClick={() => setShowPatrol((v) => !v)}
@@ -412,6 +551,82 @@ export default function PtzOverlay({ nodeId, cameraId, canControl }: Readonly<Pt
         />
       )}
     </div>
+  );
+}
+
+// The pad's three speeds, as a PTZ keyboard's speed key gives them.
+function SpeedPicker({ speed, onSpeed }: Readonly<{ speed: number; onSpeed: (v: number) => void }>) {
+  return (
+    <div className="flex gap-0.5" role="radiogroup" aria-label="PTZ speed">
+      {PTZ_SPEEDS.map((s) => {
+        const on = speed === s.value;
+        return (
+          <button
+            key={s.label}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            onClick={() => onSpeed(s.value)}
+            className={
+              "flex-1 rounded-md px-1 py-0.5 text-[10px] transition " +
+              (on ? "bg-blue-500/30 text-white" : "text-white/55 hover:bg-white/10 hover:text-white")
+            }
+          >
+            {s.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+interface PresetNameFormProps {
+  value: string;
+  onChange: (v: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}
+
+// The name for a new preset, typed where the Save chip was. Enter saves, Escape cancels.
+function PresetNameForm({ value, onChange, onSave, onCancel }: Readonly<PresetNameFormProps>) {
+  return (
+    <form
+      className="inline-flex items-center gap-1"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSave();
+      }}
+    >
+      <input
+        autoFocus
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onCancel();
+        }}
+        placeholder="Preset name"
+        aria-label="Preset name"
+        className="h-6 w-28 rounded-full border border-white/20 bg-black/40 px-2 text-[11px] text-white placeholder:text-white/35 focus:border-white/40 focus:outline-none"
+      />
+      <button
+        type="submit"
+        title="Save preset here"
+        aria-label="Save preset here"
+        disabled={!value.trim()}
+        className="rounded-full p-1 text-white/70 transition hover:bg-white/10 hover:text-white disabled:opacity-35"
+      >
+        <Icon icon="heroicons-mini:check" className="text-xs" />
+      </button>
+      <button
+        type="button"
+        title="Cancel"
+        aria-label="Cancel"
+        onClick={onCancel}
+        className="rounded-full p-1 text-white/50 transition hover:bg-white/10 hover:text-white"
+      >
+        <Icon icon="heroicons-mini:x-mark" className="text-xs" />
+      </button>
+    </form>
   );
 }
 

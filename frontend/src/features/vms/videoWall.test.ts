@@ -8,6 +8,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  dockSideFor,
   GROUP_LAYOUTS,
   LAYOUTS,
   buildPreset,
@@ -124,5 +125,28 @@ describe("tour paging and preset tiles", () => {
     expect(tileProfile(1)).toBe("main");
     expect(tileProfile(16, true)).toBe("main");
     expect(tileProfile(4)).toBe("sub");
+  });
+});
+
+describe("where the live PTZ panel docks", () => {
+  // Away from the tile it serves, so the picture being steered stays in view.
+  it("docks right of a tile in the left half and left of one in the right half", () => {
+    const grid = getLayout("2x2");
+    expect(dockSideFor(grid, 0, false)).toBe("right");
+    expect(dockSideFor(grid, 1, false)).toBe("left");
+    expect(dockSideFor(grid, 2, false)).toBe("right");
+    expect(dockSideFor(grid, 3, false)).toBe("left");
+  });
+
+  it("reads a spotlight layout's areas, not the bare index", () => {
+    const hero = getLayout("1+5");
+    // t0 spans the three left columns; t1 is the right column.
+    expect(dockSideFor(hero, 0, false)).toBe("right");
+    expect(dockSideFor(hero, 1, false)).toBe("left");
+  });
+
+  it("docks left when the tile fills the wall", () => {
+    expect(dockSideFor(getLayout("4x4"), 3, true)).toBe("left");
+    expect(dockSideFor(getLayout("1x1"), 0, false)).toBe("left");
   });
 });
