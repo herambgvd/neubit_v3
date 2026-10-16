@@ -13,7 +13,7 @@
 // The VMS does not hold camera credentials and does not talk to a device: the
 // recorder owns the camera, and this overlay asks it to act. There used to be a
 // second, non-federated branch here that drove the VMS's own PTZ plane; it had no
-// caller, because the only thing that renders this overlay is FederatedCameraDetail.
+// caller, because every host of this overlay shows a recorder-owned camera.
 //
 // Network discipline: a held key sends its move with a deadline (MOVE_TIMEOUT_MS)
 // and re-sends it every KEEPALIVE_MS while held. The recorder stops the head at the

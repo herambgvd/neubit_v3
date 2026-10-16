@@ -21,6 +21,7 @@ import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 
 import LivePlayer from "./LivePlayer";
+import PtzKey, { ptzKeyOffered } from "./PtzKey";
 import PtzOverlay from "./PtzOverlay";
 import StatusBadge from "./StatusBadge";
 import FederatedCameraActions from "./FederatedCameraActions";
@@ -37,7 +38,11 @@ export interface FederatedCameraDetailProps {
 export default function FederatedCameraDetail({ camera }: Readonly<FederatedCameraDetailProps>) {
   const { can } = useAuth();
   const [snapping, setSnapping] = useState(false);
-  const ptzCapable = isPtzCapable(camera);
+  // PTZ opens on demand from the player's PTZ key, as on the live wall, so the
+  // panel never sits on the picture unasked. The pane is keyed by camera, so
+  // every camera starts with it closed.
+  const [ptzOpen, setPtzOpen] = useState(false);
+  const ptzKeyShown = ptzKeyOffered(isPtzCapable(camera), camera.status);
 
   // Push-to-talk needs TWO yeses, and the recorder reports them separately: the
   // camera has an audio output and decoder (`support.supported`), and this recorder
@@ -152,18 +157,24 @@ export default function FederatedCameraDetail({ camera }: Readonly<FederatedCame
             canTalk={canTalk}
             talkCapable={talkCapable}
             className="h-full"
+            extraControls={
+              ptzKeyShown ? <PtzKey open={ptzOpen} onToggle={() => setPtzOpen((open) => !open)} /> : undefined
+            }
           />
 
           {/* PTZ control THROUGH the node — the second (and last) mutation allowed
-              on a node-owned camera. Only when the recorder reports a PTZ head.
-              Every command — pan/tilt/zoom, focus, presets, patrol — proxies through the
-              owning recorder. Presets are the camera's own; the patrol is the recorder's. */}
-          {ptzCapable && (
+              on a node-owned camera. Only when the recorder reports a PTZ head, and
+              only once the operator opens it. Every command — pan/tilt/zoom, focus,
+              presets, patrol — proxies through the owning recorder. Presets are the
+              camera's own; the patrol is the recorder's. */}
+          {ptzKeyShown && ptzOpen && (
             <div className="absolute bottom-3 left-3 z-30 max-w-[min(28rem,calc(100%-1.5rem))]">
               <PtzOverlay
                 nodeId={camera.node_id}
                 cameraId={camera.real_id}
                 canControl={can("vms.ptz.control")}
+                title={camera.name}
+                onClose={() => setPtzOpen(false)}
               />
             </div>
           )}

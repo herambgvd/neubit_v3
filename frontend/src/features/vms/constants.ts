@@ -72,6 +72,10 @@ export const STATUS_PRESETS = {
   unknown: { label: "Unknown", dot: "bg-amber-500", cls: "bg-amber-500/10 text-amber-500", icon: "heroicons-outline:question-mark-circle" },
 };
 
+// Statuses the estate reports for a camera that CANNOT be streamed right now. A
+// wall tile in one of these does not dial the recorder, and no PTZ key is offered.
+export const DARK_STATUSES = new Set(["offline", "error"]);
+
 // Filter option list for the status StatsStrip / dropdown ("" = all).
 export const STATUS_FILTERS = [
   { key: "", label: "All", color: "text-foreground" },

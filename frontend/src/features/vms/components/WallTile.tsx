@@ -33,8 +33,9 @@ import { asButton } from "@/lib/a11y";
 
 import { vms } from "../api";
 import LivePlayer, { PlayerBtn } from "./LivePlayer";
+import PtzKey, { ptzKeyOffered } from "./PtzKey";
 import TilePlayback from "./TilePlayback";
-import { presetFor, STATUS_PRESETS } from "../constants";
+import { DARK_STATUSES, presetFor, STATUS_PRESETS } from "../constants";
 import type { WallClock } from "../hooks/useWallPlayback";
 import type { EstateCamera, LiveSessionSource } from "../types";
 
@@ -65,10 +66,6 @@ function filledTileEdge(dropActive: boolean, focused: boolean): string {
   if (focused) return "border border-nb-teal shadow-[0_0_0_1px_rgb(var(--nb-c-teal)/.45)]";
   return TILE_IDLE;
 }
-
-// Statuses the estate reports for a camera that CANNOT be streamed right now.
-// A tile in one of these does not dial the recorder at all (see below).
-const DARK_STATUSES = new Set(["offline", "error"]);
 
 export interface WallTileProps {
   index: number;
@@ -180,7 +177,7 @@ function WallTile({
   // PTZ is driven from the wall, as in every VMS: a live camera with a known head
   // offers the key. Not on a dark camera (nothing would answer) nor over recorded
   // footage (a recording cannot be steered).
-  const ptzKeyShown = ptzAvailable && !playback && !DARK_STATUSES.has(camera?.status || "unknown");
+  const ptzKeyShown = ptzKeyOffered(ptzAvailable, camera?.status, playback);
 
   // The tile's OWN buttons. They ride inside the player's control bar when there
   // is a player (one cluster, not two) and stand alone on a dark tile — either
@@ -188,14 +185,7 @@ function WallTile({
   const tileControls = useMemo(
     () => (
       <>
-        {ptzKeyShown && (
-          <PlayerBtn
-            icon="heroicons-outline:viewfinder-circle"
-            title={ptzOpen ? "Close PTZ control" : "PTZ control — move, zoom and presets"}
-            active={ptzOpen}
-            onClick={() => onTogglePtz?.(index)}
-          />
-        )}
+        {ptzKeyShown && <PtzKey open={ptzOpen} onToggle={() => onTogglePtz?.(index)} />}
         <PlayerBtn
           icon="heroicons-outline:arrows-pointing-out"
           title="Spotlight (double-click)"

@@ -330,7 +330,7 @@ describe("on the live wall", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("has no header where nothing can close it (the Cameras page pane)", () => {
+  it("has no header when its host gives it nothing to close with", () => {
     const { queryByLabelText } = overlay();
     expect(queryByLabelText("Close PTZ control")).not.toBeInTheDocument();
   });
