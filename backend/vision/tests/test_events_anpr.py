@@ -86,7 +86,7 @@ async def _node(maker) -> MediaNode:
 def _serve(monkeypatch, batches):
     seq = list(batches)
 
-    async def _list(api_url, *, since=None, limit=200, credential=None):
+    async def _list(api_url, *, since=None, limit=200, order=None, credential=None):
         return {"items": seq.pop(0) if seq else [], "total": 0}
 
     monkeypatch.setattr("app.vms.events.supervisor.fed.list_events_node", _list)

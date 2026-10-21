@@ -784,10 +784,11 @@ async def list_events_node(
     *,
     since: str | None = None,
     limit: int = 200,
+    order: str | None = None,
     credential: str | None = None,
 ) -> dict:
     """GET {api_url}/api/v1/nvr/estate/events → the recorder's OWN event ledger,
-    { items: [store.Event], total }.
+    { items: [store.Event], total, order, server_time }.
 
     This is how an estate gets one event feed without a second listener. The recorder
     runs the ONVIF PullPoint subscription for its cameras; a central VMS that opened
@@ -796,10 +797,16 @@ async def list_events_node(
     subscription slot simply never delivers.
 
     ``since`` is RFC3339 and exclusive-ish (the node filters ``created_at >= since``),
-    so a poller must dedupe rather than assume no overlap."""
+    so a poller must dedupe rather than assume no overlap.
+
+    ``order="asc"`` asks for the oldest rows first (SCRUM-333). The recorder echoes
+    the order it used; one too old to know the parameter omits ``order`` and
+    ``server_time`` and answers newest first, as it always has."""
     params: dict = {"limit": max(1, min(int(limit or 200), 500))}
     if since:
         params["since"] = since
+    if order:
+        params["order"] = order
     return await _node_json("GET", api_url, "/events", credential=credential, params=params)
 
 

@@ -293,7 +293,7 @@ def _stub_node_events(monkeypatch, batches):
     asks = []
     seq = list(batches)
 
-    async def _list(api_url, *, since=None, limit=200, credential=None):
+    async def _list(api_url, *, since=None, limit=200, order=None, credential=None):
         asks.append({"api_url": api_url, "since": since, "limit": limit, "credential": credential})
         return {"items": seq.pop(0) if seq else [], "total": 0}
 
@@ -373,7 +373,7 @@ async def test_an_unreachable_recorder_does_not_advance_the_watermark(engine, db
     node = await _mk_node(db)
     from app.vms.federation import client as fed_client
 
-    async def _down(api_url, *, since=None, limit=200, credential=None):
+    async def _down(api_url, *, since=None, limit=200, order=None, credential=None):
         raise fed_client.NodeUnavailable("connection refused")
 
     monkeypatch.setattr("app.vms.events.supervisor.fed.list_events_node", _down)
@@ -395,7 +395,7 @@ async def test_one_bad_recorder_does_not_stop_the_others(engine, db, camera, mon
 
     from app.vms.federation import client as fed_client
 
-    async def _list(api_url, *, since=None, limit=200, credential=None):
+    async def _list(api_url, *, since=None, limit=200, order=None, credential=None):
         if "rec-b" in api_url:
             raise fed_client.NodeUnavailable("down")
         return {"items": [_node_event(camera_id=camera.id)], "total": 1}

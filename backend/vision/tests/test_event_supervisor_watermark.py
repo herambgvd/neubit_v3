@@ -76,7 +76,7 @@ async def test_a_cold_start_reaches_back_past_the_last_few_minutes(sm, monkeypat
     node = await _node(sm)
     asked: dict = {}
 
-    async def fake_list(api_url, *, since=None, limit=200, credential=None):
+    async def fake_list(api_url, *, since=None, limit=200, order=None, credential=None):
         asked["since"] = since
         return {"items": []}
 
@@ -94,7 +94,7 @@ async def test_the_watermark_survives_a_restart(sm, monkeypatch):
     newest = datetime.now(timezone.utc) - timedelta(hours=6)
     node = await _node(sm)
 
-    async def first_poll(api_url, *, since=None, limit=200, credential=None):
+    async def first_poll(api_url, *, since=None, limit=200, order=None, credential=None):
         return {"items": [_event(newest)]}
 
     monkeypatch.setattr(sup.fed, "list_events_node", first_poll)
@@ -102,7 +102,7 @@ async def test_the_watermark_survives_a_restart(sm, monkeypatch):
 
     asked: dict = {}
 
-    async def second_poll(api_url, *, since=None, limit=200, credential=None):
+    async def second_poll(api_url, *, since=None, limit=200, order=None, credential=None):
         asked["since"] = since
         return {"items": []}
 
@@ -120,7 +120,7 @@ async def test_the_watermark_is_written_to_the_node_row(sm, monkeypatch):
     newest = datetime.now(timezone.utc) - timedelta(minutes=20)
     node = await _node(sm)
 
-    async def poll(api_url, *, since=None, limit=200, credential=None):
+    async def poll(api_url, *, since=None, limit=200, order=None, credential=None):
         return {"items": [_event(newest - timedelta(hours=1)), _event(newest)]}
 
     monkeypatch.setattr(sup.fed, "list_events_node", poll)
@@ -136,7 +136,7 @@ async def test_an_unreachable_recorder_does_not_move_the_watermark(sm, monkeypat
     """Whatever it kept while it was away must still be asked for when it returns."""
     node = await _node(sm)
 
-    async def down(api_url, *, since=None, limit=200, credential=None):
+    async def down(api_url, *, since=None, limit=200, order=None, credential=None):
         raise sup.fed.NodeUnavailable("connection refused")
 
     monkeypatch.setattr(sup.fed, "list_events_node", down)

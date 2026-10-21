@@ -99,11 +99,16 @@ class VmsEventService:
         source: str = "onvif",
         occurred_at=None,
         topic_allow: list[str] | None = None,
+        publish: bool = True,
     ) -> str | None:
         """Persist + publish one driver device-event. Returns the row id, or ``None``
         if it was a duplicate within the dedup window (skipped) / filtered by the
         camera's topic allow-list. Never raises out of the ingest path — a bad event
         must not stall a subscription.
+
+        ``publish=False`` stores the event as history only (SCRUM-333): a recorder's
+        backlog read after an outage belongs in the feed, but an hour-old alarm must
+        not ring the console, open an incident or fire a linkage action now.
         """
         event_type = normalize_event_type(driver_event_type)
         # Optional per-camera allow-list of normalized types.
@@ -119,6 +124,7 @@ class VmsEventService:
             description=None,
             raw=raw or {},
             occurred_at=occurred_at,
+            publish=publish,
         )
 
     async def ingest_system_event(
@@ -161,6 +167,7 @@ class VmsEventService:
         description,
         raw,
         occurred_at,
+        publish: bool = True,
     ) -> str | None:
         tid = _coerce_tenant(tenant_id)
         occ = _parse_occurred(occurred_at)
@@ -209,6 +216,9 @@ class VmsEventService:
                 )
             return None
         await self.db.refresh(row)
+        if not publish:
+            # History only: the row stays published=False, which is the truth.
+            return row.id
 
         # Publish on the exact subject/envelope the workflow correlation consumes.
         try:

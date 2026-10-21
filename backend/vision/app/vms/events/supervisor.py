@@ -33,13 +33,39 @@ That last detail is why ``started_at`` is used and not the poll time. Stamping t
 event when the VMS happened to read it would put re-reads of one alarm in different
 buckets, and polling would multiply it by the number of ticks it survived.
 
+── a backlog drains oldest first (SCRUM-333) ─────────────────────────────────────
+
+The node used to answer newest first only, and the watermark then moved to the
+newest row of the page. Whenever more than one page had built up since the
+watermark (an outage, a first poll's day of history, a busy recorder), the page was
+the TOP of the backlog and everything below it was skipped for good, without a log
+line. So it asks ``order=asc`` now, moves the watermark after every page, and keeps
+reading while pages come back full, up to a cap per tick; the next tick carries on.
+
+A recorder too old to know ``order`` answers newest first and does not echo it. It
+gets the old behaviour, plus a warning whenever a full page means rows were skipped.
+It sends no ``server_time`` either, so its events are not aged (below).
+
+── a backlog is history, not alarms ──────────────────────────────────────────────
+
+Every ingested row used to be published, and the console's pop-up and siren,
+workflow incidents and linkage actions all act on a publish. Nothing looked at the
+event's age, so a catch-up would ring yesterday's motion as alarms now. An event
+older than the live window is stored and NOT published. Its age is taken on the
+recorder's own clock (``server_time - created_at``), so neither this server's
+offset from the recorder nor a camera's skewed clock moves an event across the
+line.
+
 Config (env, ``VE_`` prefix):
   * ``VE_EVENT_SUPERVISOR_ENABLED``  — master switch (default "1"; "0" disables).
   * ``VE_EVENT_RESCAN_INTERVAL_SEC`` — seconds between polls (default 5, floor 2). An
     alarm or a plate read that reaches the operator half a minute late has missed the
     vehicle; each poll asks only for rows newer than the watermark, so it is cheap.
   * ``VE_EVENT_SUB_CONCURRENCY``     — how many nodes are polled at once (default 16).
-  * ``VE_EVENT_POLL_LIMIT``          — max events fetched per node per tick (default 200).
+  * ``VE_EVENT_POLL_LIMIT``          — events per page (default 200, max 500).
+  * ``VE_EVENT_POLL_MAX_PAGES``      — pages read from one node in one tick (default 10).
+  * ``VE_EVENT_LIVE_WINDOW_SEC``     — an event older than this is stored as history
+    and not published (default 300; 0 publishes nothing that was not caught live).
 """
 
 from __future__ import annotations
@@ -104,6 +130,14 @@ def poll_concurrency() -> int:
 
 def poll_limit() -> int:
     return max(1, min(_env_int("VE_EVENT_POLL_LIMIT", 200), 500))
+
+
+def poll_max_pages() -> int:
+    return max(1, _env_int("VE_EVENT_POLL_MAX_PAGES", 10))
+
+
+def live_window() -> timedelta:
+    return timedelta(seconds=max(0, _env_int("VE_EVENT_LIVE_WINDOW_SEC", 300)))
 
 
 def _utcnow() -> datetime:
@@ -193,33 +227,69 @@ class EventSupervisor:
         if stored is not None and stored.tzinfo is None:
             stored = stored.replace(tzinfo=timezone.utc)
         since = self._watermark.get(node.id) or stored or (_utcnow() - _COLD_START_LOOKBACK)
-        try:
-            payload = await fed.list_events_node(
-                api_url,
-                since=since.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
-                limit=poll_limit(),
-                credential=getattr(node, "credential", None),
-            )
-        except fed.NodeUnavailable as exc:
-            # An unreachable recorder is normal (rebooting, network). The watermark is
-            # NOT advanced, so whatever it kept is picked up when it returns.
-            log.info("event poll: node %s unreachable: %s", node.name, exc)
-            return
+        limit = poll_limit()
+        for _ in range(poll_max_pages()):
+            try:
+                payload = await fed.list_events_node(
+                    api_url,
+                    since=since.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    limit=limit,
+                    order="asc",
+                    credential=getattr(node, "credential", None),
+                )
+            except fed.NodeUnavailable as exc:
+                # An unreachable recorder is normal (rebooting, network). The watermark
+                # is NOT advanced, so whatever it kept is picked up when it returns.
+                log.info("event poll: node %s unreachable: %s", node.name, exc)
+                return
 
-        items = payload.get("items") if isinstance(payload, dict) else None
-        if not isinstance(items, list) or not items:
-            return
+            items = payload.get("items") if isinstance(payload, dict) else None
+            if not isinstance(items, list) or not items:
+                return
+            newest = await self._ingest_page(node, items, since, payload)
+            full = len(items) >= limit
+            if payload.get("order") != "asc":
+                # A recorder that predates order=asc served the NEWEST page, and the
+                # watermark has just moved past whatever sat below it.
+                if full:
+                    log.warning(
+                        "event poll: node %s served newest first (no order=asc); more than "
+                        "%d events since %s, so the older ones were skipped. Update the "
+                        "recorder.", node.name, limit, since.isoformat(),
+                    )
+                return
+            # A short page is the end of the backlog. A full page that did not move the
+            # watermark (every row on the boundary instant) would only repeat itself.
+            if not full or newest <= since:
+                return
+            since = newest
 
+    async def _ingest_page(
+        self, node: MediaNode, items: list, since: datetime, payload: dict
+    ) -> datetime:
+        """Ingest one page and persist the watermark. Returns the new watermark."""
+        # The recorder's clock, so an event's age never depends on ours. A recorder
+        # that does not send it is not aged at all: judged on OUR clock, a recorder
+        # running a few minutes off would have its live alarms filed silently as
+        # history, and a missed alarm is the worse failure.
+        node_now = _parse_dt(payload.get("server_time"))
+        window = live_window()
         newest = since
+        history = 0
         async with self._sessionmaker() as db:
             svc = VmsEventService(db, _PLATFORM_SCOPE)
             for raw in items:
                 if not isinstance(raw, dict):
                     continue
-                created = _parse_dt(raw.get("created_at")) or _utcnow()
-                if created > newest:
+                created = _parse_dt(raw.get("created_at"))
+                # A row with no created_at must not move the watermark: "now" would
+                # jump it past the rest of the backlog.
+                if created is not None and created > newest:
                     newest = created
-                await self._ingest(svc, node, raw)
+                live = node_now is None or created is None or node_now - created <= window
+                if not live:
+                    history += 1
+                await self._ingest(svc, node, raw, publish=live)
             # The watermark moves ONLY after a batch is ingested, and it is written
             # where a restart can find it. An unreachable recorder never reaches
             # here, so whatever it kept is asked for again when it returns.
@@ -228,8 +298,17 @@ class EventSupervisor:
                 row.events_synced_at = newest
                 await db.commit()
         self._watermark[node.id] = newest
+        if history:
+            log.info(
+                "event poll: node %s: %d of %d events older than %ss stored as history, "
+                "not raised as alarms", node.name, history, len(items),
+                int(window.total_seconds()),
+            )
+        return newest
 
-    async def _ingest(self, svc: VmsEventService, node: MediaNode, raw: dict) -> None:
+    async def _ingest(
+        self, svc: VmsEventService, node: MediaNode, raw: dict, *, publish: bool = True
+    ) -> None:
         """One node event → one estate event. Never raises: a single malformed row
         must not stop the rest of the batch."""
         try:
@@ -253,6 +332,7 @@ class EventSupervisor:
                 },
                 source=str(raw.get("source") or "onvif"),
                 occurred_at=_parse_dt(raw.get("started_at")) or _parse_dt(raw.get("created_at")),
+                publish=publish,
             )
         except Exception as exc:  # noqa: BLE001
             log.info("event ingest failed for node %s event %s: %s", node.name, raw.get("id"), exc)
