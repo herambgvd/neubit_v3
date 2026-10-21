@@ -549,6 +549,13 @@ export interface FederatedCamera {
   status?: string;
   node_id: string;
   node_name: string;
+  /** False when the recorder is down and this row is the copy the estate kept of
+   *  its cameras; `status` is then "offline" and `status_reason` says why
+   *  (`recorder_offline` / `recorder_unreachable`), as of `last_synced_at`
+   *  (SCRUM-334). */
+  node_reachable?: boolean;
+  status_reason?: string | null;
+  last_synced_at?: string | null;
   /** The camera's recording config as its recorder holds it — it rides on the
    *  estate list, so a screen that needs every camera's mode and week does not
    *  have to ask the recorder once per channel.

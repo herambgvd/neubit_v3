@@ -49,6 +49,10 @@ export function useEstateCameras() {
         real_id: c.id,
         name: c.name,
         status: c.status,
+        // Why it is offline when its recorder, not the camera, is the reason — the
+        // row is then the estate's kept copy (SCRUM-334).
+        status_reason: c.status_reason ?? null,
+        last_synced_at: c.last_synced_at ?? null,
         federated: true,
         // PTZ capability as the node reported it (public.ptz.capable) — drives the
         // wall's PTZ overlay gate; commands proxy through the node (operate-through-node).
@@ -68,9 +72,17 @@ export function useEstateCameras() {
     return m;
   }, [cameras]);
 
+  // Recorders that did not answer this read. A camera id of theirs that is missing
+  // from the list is UNKNOWN, not deleted: nobody asked the recorder that owns it.
+  const unreachableNodeIds = useMemo(
+    () => new Set<string>((fedQ.data?.unreachable || []).map((u) => u.node_id)),
+    [fedQ.data],
+  );
+
   return {
     cameras,
     cameraById,
+    unreachableNodeIds,
     localQ,
     fedQ,
     isLoading: localQ.isLoading || fedQ.isLoading,

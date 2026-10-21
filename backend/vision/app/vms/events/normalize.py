@@ -7,7 +7,8 @@ gvd_nvr-era event_types (``motion_detected``, ``camera_tamper``, ``digital_input
 platform (VMS + workflow correlation + the Events UI) speaks:
 
     motion | tamper | video_loss | camera_online | camera_offline | io_input |
-    line_crossing | zone_intrusion | audio | recording_error | storage_low | system
+    line_crossing | zone_intrusion | audio | recording_error | storage_low | system |
+    recorder_offline | recorder_online
 
 ``normalize_event_type`` folds the driver types onto that vocabulary; unknown driver
 types fall back to ``system`` (never dropped — the raw topic is preserved for audit).
@@ -56,6 +57,9 @@ NORMALIZED_TYPES: frozenset[str] = frozenset(
         "storage_low",
         "system",
         "anpr",
+        # A paired recorder stopped / started answering the heartbeat (SCRUM-334).
+        "recorder_offline",
+        "recorder_online",
     }
 )
 

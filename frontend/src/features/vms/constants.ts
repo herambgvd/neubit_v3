@@ -76,6 +76,23 @@ export const STATUS_PRESETS = {
 // wall tile in one of these does not dial the recorder, and no PTZ key is offered.
 export const DARK_STATUSES = new Set(["offline", "error"]);
 
+// Why a camera reads offline when the camera is not the reason: its recorder is down
+// or did not answer, and the estate is showing the copy it kept of that recorder's
+// cameras (SCRUM-334). "Camera offline" would send the operator to the camera.
+export const RECORDER_DOWN_REASONS = new Set(["recorder_offline", "recorder_unreachable"]);
+
+export function recorderDown(camera?: { status_reason?: string | null } | null): boolean {
+  return !!camera?.status_reason && RECORDER_DOWN_REASONS.has(camera.status_reason);
+}
+
+/** Whether an estate id (`fed:<node>:<cam>`) belongs to a recorder that did not
+ *  answer — its absence from a list then means "unknown", never "deleted". */
+export function ownerUnreachable(cameraId: string, unreachableNodeIds: ReadonlySet<string>): boolean {
+  if (!cameraId.startsWith("fed:")) return false;
+  const nodeId = cameraId.slice(4).split(":")[0];
+  return !!nodeId && unreachableNodeIds.has(nodeId);
+}
+
 // Filter option list for the status StatsStrip / dropdown ("" = all).
 export const STATUS_FILTERS = [
   { key: "", label: "All", color: "text-foreground" },
@@ -165,13 +182,16 @@ export const EVENT_TYPE_PRESETS = {
   system: { label: "System", icon: "heroicons-outline:cog-6-tooth", cls: "bg-hover text-muted border-card-border" },
   // A plate read from a paired recorder's ANPR camera (SCRUM-324).
   anpr: { label: "ANPR", icon: "heroicons-outline:identification", cls: "bg-sky-500/10 text-sky-400 border-sky-500/20" },
+  // A paired recorder stopped / started answering (SCRUM-334).
+  recorder_offline: { label: "Recorder offline", icon: "heroicons-outline:signal-slash", cls: "bg-red-500/10 text-red-500 border-red-500/20" },
+  recorder_online: { label: "Recorder online", icon: "heroicons-outline:server", cls: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" },
 };
 
 // A stable ORDER for selectors (feed filter + linkage trigger picker).
 export const EVENT_TYPES = [
   "motion", "tamper", "video_loss", "camera_online", "camera_offline",
   "io_input", "line_crossing", "zone_intrusion", "audio", "anpr",
-  "recording_error", "storage_low", "system",
+  "recording_error", "storage_low", "recorder_offline", "recorder_online", "system",
 ] as const satisfies readonly (keyof typeof EVENT_TYPE_PRESETS)[];
 
 /** The normalized event-type vocabulary (the keys of EVENT_TYPE_PRESETS). */

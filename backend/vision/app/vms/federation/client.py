@@ -273,10 +273,15 @@ async def pair_node(api_url: str, code: str, *, label: str | None = None) -> dic
     return payload
 
 
+# One page of a recorder's camera list — the node's own maximum page. A list this
+# long may be cut short, so it is never taken as proof a missing camera is gone.
+ESTATE_CAMERA_PAGE = 500
+
+
 async def list_estate_cameras(api_url: str, credential: str | None = None) -> list[dict]:
     """GET {api_url}/api/v1/nvr/estate/cameras → the node's own camera list."""
     url = f"{api_url.rstrip('/')}/api/v1/nvr/estate/cameras"
-    r = await _send("GET", url, headers=_headers(credential), params={"limit": 500})
+    r = await _send("GET", url, headers=_headers(credential), params={"limit": ESTATE_CAMERA_PAGE})
     _raise_for_node(r)
     return list((r.json() or {}).get("items") or [])
 

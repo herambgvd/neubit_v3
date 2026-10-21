@@ -690,23 +690,33 @@ class NodeHeartbeatMonitor:
     async def run_cycle(self) -> int:
         """One full pass: heartbeat every node with an ``api_url``. Returns the count
         pinged (handy for tests + logging)."""
-        timeout = heartbeat_timeout_sec()
         sem = asyncio.Semaphore(heartbeat_concurrency())
         async with self._sessionmaker() as db:
             nodes = (
                 await db.execute(select(MediaNode).where(MediaNode.api_url.isnot(None)))
             ).scalars().all()
+            before = {n.id: n.status for n in nodes}
+            listed: dict[str, list[dict]] = {}
 
             async def _guarded(node: MediaNode) -> None:
                 async with sem:
                     try:
-                        await _heartbeat_one(node, timeout=timeout)
+                        cameras = await _heartbeat_one(node)
+                        if cameras is not None:
+                            listed[node.id] = cameras
                     except Exception as exc:  # noqa: BLE001 — a probe must never break the loop
                         log.debug("node heartbeat failed for %s: %s", node.id, exc)
 
             if nodes:
                 await asyncio.gather(*(_guarded(n) for n in nodes))
+            # Keep each recorder's camera list for when it stops answering (SCRUM-334).
+            # One node at a time, after the probes: they share this session, and a
+            # session cannot run two queries at once.
+            await _sync_inventories(db, [n for n in nodes if n.id in listed], listed)
             await db.commit()
+            await _announce_transitions(
+                self._sessionmaker, [(n, before.get(n.id), n.status) for n in nodes]
+            )
 
             # DEF-A: cross-machine recorder failover. Run AFTER the status refresh (a node
             # that just went offline this cycle is now marked so) but as a bounded, wholly
@@ -880,18 +890,75 @@ class NodeHeartbeatMonitor:
             log.info("failover audit failed for camera %s: %s", cam.id, exc)
 
 
-async def _heartbeat_one(node: MediaNode, *, timeout: float | None = None) -> None:
+async def _sync_inventories(
+    db: AsyncSession, nodes: list[MediaNode], listed: dict[str, list[dict]]
+) -> None:
+    """Write each node's freshly listed cameras to the inventory. One node's failure
+    is rolled back to its own savepoint and logged; the cycle's status updates stand."""
+    from app.vms.federation.inventory import sync_node_cameras
+
+    for node in nodes:
+        try:
+            async with db.begin_nested():
+                await sync_node_cameras(db, node, listed[node.id])
+        except Exception as exc:  # noqa: BLE001 — the inventory must never break the heartbeat
+            log.warning("node %s: camera inventory not saved: %s", node.id, exc)
+
+
+async def _announce_transitions(sessionmaker, changes: list[tuple]) -> None:
+    """A recorder that stops answering is a critical system event; one that comes
+    back is an info event (SCRUM-334). Every VMS raises "recording server not
+    responding": its cameras are not recording anything this VMS can see, and the
+    estate is the only thing that would ever notice.
+
+    Only real transitions count. ``unknown`` (never probed) and ``draining`` (an
+    operator's own choice) announce nothing."""
+    from app.vms.events.service import emit_system_event
+
+    for node, before, after in changes:
+        if before == "online" and after == "offline":
+            event_type, severity = "recorder_offline", "critical"
+            title = f"Recorder offline · {node.name}"
+            description = (
+                f"{node.name} stopped answering its heartbeat. Its cameras stay listed, "
+                "shown offline, until it returns."
+            )
+        elif before == "offline" and after == "online":
+            event_type, severity = "recorder_online", "info"
+            title = f"Recorder back online · {node.name}"
+            description = f"{node.name} is answering again."
+        else:
+            continue
+        await emit_system_event(
+            sessionmaker,
+            tenant_id=node.tenant_id,
+            event_type=event_type,
+            title=title,
+            severity=severity,
+            description=description,
+            raw={"node_id": str(node.id), "node_name": node.name, "api_url": node.api_url},
+        )
+
+
+async def _heartbeat_one(node: MediaNode) -> list[dict] | None:
     """Probe ONE node + mutate its row (does NOT commit — the caller owns the txn).
 
     A ``draining`` node is LEFT alone (a graceful operator drain must not be flipped back
     to online by a heartbeat). Otherwise reachable → ``online`` + fresh ``last_heartbeat``
     (+ ``used_channels`` when the payload reports a count); unreachable → ``offline``.
-    Never raises.
+
+    Returns the recorder's camera list when it was read this cycle, for the caller to
+    keep (SCRUM-334); ``None`` when it was not. Never raises.
+
+    Each call to the node gets ``VE_NODE_HEARTBEAT_TIMEOUT_SEC``, read here rather
+    than passed in: the cycle has no other budget to give it.
     """
     if node.status == "draining":
-        return
+        return None
+    timeout = heartbeat_timeout_sec()
     reachable, payload = await probe_node(node.api_url or "", timeout=timeout)
     now = _utcnow()
+    cameras: list[dict] | None = None
     if reachable:
         node.status = "online"
         node.last_heartbeat = now
@@ -908,9 +975,9 @@ async def _heartbeat_one(node: MediaNode, *, timeout: float | None = None) -> No
             # Only for nodes holding a credential: without one the call would 401
             # every cycle, and a node with no federation trust has no cameras of
             # its own for us to count anyway.
-            count, credential_error = await _federated_camera_count(node, timeout=timeout)
-            if count is not None:
-                node.used_channels = count
+            cameras, credential_error = await _federated_cameras(node, timeout=timeout)
+            if cameras is not None:
+                node.used_channels = len(cameras)
             # A node that ANSWERS but refuses our credential is reachable and useless.
             # Recording the reason here is what turns "this one screen errors" into
             # "this node needs re-enrolling", which is a thing an operator can act on.
@@ -918,16 +985,18 @@ async def _heartbeat_one(node: MediaNode, *, timeout: float | None = None) -> No
     else:
         node.status = "offline"
     node.updated_at = now
+    return cameras
 
 
-async def _federated_camera_count(
+async def _federated_cameras(
     node: MediaNode, *, timeout: float | None = None
-) -> tuple[int | None, str | None]:
-    """``(camera_count, credential_error)`` for a federated recorder.
+) -> tuple[list[dict] | None, str | None]:
+    """``(cameras, credential_error)`` for a federated recorder.
 
-    The count is best-effort: a node that is momentarily unreachable leaves
-    ``used_channels`` at its last known value rather than dropping the reading to 0 —
-    a transient blip must not read as "the recorder lost its cameras".
+    The list is best-effort: a node that is momentarily unreachable leaves
+    ``used_channels`` and the kept inventory at their last known values rather than
+    dropping them to nothing — a transient blip must not read as "the recorder lost
+    its cameras".
 
     The second value is the point of this being on the heartbeat at all. This call
     already carries the node's credential every cycle, so it is where a REFUSAL is
@@ -949,7 +1018,7 @@ async def _federated_camera_count(
     budget = timeout if timeout is not None else heartbeat_timeout_sec()
     try:
         async with asyncio.timeout(budget):
-            return len(await list_estate_cameras(node.api_url, credential)), None
+            return list(await list_estate_cameras(node.api_url, credential)), None
     except NodeRefused as exc:
         log.info("node %s: credential refused: %s", node.id, exc)
         return None, str(exc)[:512]

@@ -68,6 +68,25 @@ async def _online_nodes(db: AsyncSession, scope: Scope) -> list[MediaNode]:
     return [n for n in rows if (n.status or "unknown") in _REACHABLE]
 
 
+async def _split_nodes(db: AsyncSession, scope: Scope) -> tuple[list[MediaNode], list[MediaNode]]:
+    """``(worth asking, down)``: every recorder in scope, split by its heartbeat.
+
+    A down recorder is not called (each call would wait out the timeout), but it is
+    NOT dropped either. An estate read that leaves it out of both its answer and
+    its ``unreachable`` list says the recorder and its cameras do not exist, which
+    is how closing one recorder emptied the wall (SCRUM-334).
+    """
+    rows = (await db.execute(_nodes_query(scope))).scalars().all()
+    up = [n for n in rows if (n.status or "unknown") in _REACHABLE]
+    down = [n for n in rows if (n.status or "unknown") not in _REACHABLE]
+    return up, down
+
+
+def _down_entry(node: MediaNode) -> dict:
+    """A down recorder's line in an ``unreachable`` list, worded like a failed call's."""
+    return {"node_id": str(node.id), "name": node.name, "error": f"recorder {node.status or 'offline'}"}
+
+
 async def _resolve_node(db: AsyncSession, scope: Scope, node_id: str) -> MediaNode:
     node = (await db.execute(_nodes_query(scope).where(MediaNode.id == node_id))).scalar_one_or_none()
     if node is None:
@@ -129,9 +148,11 @@ def _unreachable(e: Exception) -> HTTPException:
 
 __all__ = [
     "log",
+    "_down_entry",
     "_nodes_query",
     "_online_nodes",
     "_resolve_node",
+    "_split_nodes",
     "_tag",
     "_unreachable",
 ]

@@ -361,6 +361,58 @@ describe("the cameras a recorder runs", () => {
     expect(screen.queryByText(/runs no cameras yet/i)).toBeNull();
   });
 
+  // SCRUM-334: closing a recorder emptied this pane — "Capacity 0 / 128" and "runs
+  // no cameras yet" — while the list card still said 8 / 128.
+  it("keeps an offline recorder's last-known cameras, marked recorder offline", async () => {
+    listReturns([node("r1", "edge-one", { status: "offline" })]);
+    vi.spyOn(vms.federation, "cameras").mockResolvedValue({
+      items: [
+        { ...fedCam("c1", "r1", "offline"), status_reason: "recorder_offline", last_synced_at: new Date().toISOString() },
+        { ...fedCam("c2", "r1", "offline"), status_reason: "recorder_offline", last_synced_at: new Date().toISOString() },
+      ],
+      unreachable: [{ node_id: "r1", name: "edge-one", error: "recorder offline" }],
+    } as never);
+
+    renderWithProviders(<RecordersPage />);
+
+    expect(await screen.findByText("channel c1")).toBeInTheDocument();
+    expect(screen.getByText("channel c2")).toBeInTheDocument();
+    expect(screen.getAllByText("recorder offline")).toHaveLength(2);
+    expect(screen.getByText(/shown as last synced/i)).toBeInTheDocument();
+    expect(screen.queryByText(/runs no cameras yet/i)).toBeNull();
+    const capacity = screen.getByText(/^Capacity$/i).closest("div")!;
+    expect(capacity.textContent).toContain("2");
+  });
+
+  it("never shows a down recorder's camera as online, even from a list taken before it went down", async () => {
+    // The test that found it: the pane said "not answering" over eight cameras
+    // still marked ONLINE, read from a copy fetched while the recorder was up.
+    listReturns([node("r1", "edge-one", { status: "offline" })]);
+    vi.spyOn(vms.federation, "cameras").mockResolvedValue({
+      items: [fedCam("c1", "r1", "online"), fedCam("c2", "r1", "online")],
+      unreachable: [],
+    } as never);
+
+    renderWithProviders(<RecordersPage />);
+
+    expect(await screen.findByText("channel c1")).toBeInTheDocument();
+    expect(screen.getAllByText("recorder offline")).toHaveLength(2);
+    expect(screen.queryByText(/^online$/i)).toBeNull();
+  });
+
+  it("never says an offline recorder runs no cameras, even with nothing kept", async () => {
+    // The heartbeat's status alone is enough: an empty list from a recorder that is
+    // down is "cannot be listed", and its last count stands.
+    listReturns([node("r1", "edge-one", { status: "offline", used_channels: 8, capacity_channels: 128 })]);
+
+    renderWithProviders(<RecordersPage />);
+
+    expect(await screen.findByText(/not answering, so its cameras cannot be listed/i)).toBeInTheDocument();
+    expect(screen.queryByText(/runs no cameras yet/i)).toBeNull();
+    const capacity = screen.getByText(/^Capacity$/i).closest("div")!;
+    expect(capacity.textContent).toContain("8");
+  });
+
   it("still shows a locally pinned camera, for estates that predate single ownership", async () => {
     listReturns([EDGE1]);
     vi.spyOn(vms.cameras, "list").mockResolvedValue({

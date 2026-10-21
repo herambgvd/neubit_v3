@@ -36,6 +36,7 @@ import { asItems } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { vms } from "./api";
 import type { CameraGroupPublic, EstateCamera, PatternPublic, PatternStop, WallPreset } from "./types";
+import { ownerUnreachable } from "./constants";
 import {
   DEFAULT_LAYOUT_KEY,
   dockSideFor,
@@ -248,7 +249,14 @@ export default function Streaming() {
   // ── cameras ─────────────────────────────────────────────────────────────
   // Local + federated, merged in one place — the Patterns console reads the SAME
   // hook, so a group built here resolves to the same names there.
-  const { cameras, cameraById, localQ: camerasQ, fedQ, isSuccess: estateReady } = useEstateCameras();
+  const {
+    cameras,
+    cameraById,
+    unreachableNodeIds,
+    localQ: camerasQ,
+    fedQ,
+    isSuccess: estateReady,
+  } = useEstateCameras();
 
   const mountedIds = useMemo(
     () => new Set<string>(cells.map((c) => c.cameraId).filter((id): id is string => !!id)),
@@ -271,12 +279,18 @@ export default function Streaming() {
   // wall never strands "camera not found" tiles pointing at gone ids. Gated on a
   // SUCCESSFUL fetch — a transient load error or the pre-load mount must NOT clear the
   // wall. Empties the cell (drag-target) rather than error-holding a dead id.
+  //
+  // NEVER for a recorder that did not answer (SCRUM-334). Its cameras normally stay
+  // in the list as "recorder offline", but one with no kept copy yet would be
+  // missing, and that says nothing about whether it exists. Pruning it once wrote
+  // the emptied wall to session storage, so closing a recorder cost the operator
+  // their layout even after it came back.
   useEffect(() => {
     if (!camerasQ.isSuccess || !fedQ.isSuccess) return;
     setCells((prev) => {
       let changed = false;
       const next = prev.map((c) => {
-        if (c.cameraId && !cameraIdSet.has(c.cameraId)) {
+        if (c.cameraId && !cameraIdSet.has(c.cameraId) && !ownerUnreachable(c.cameraId, unreachableNodeIds)) {
           changed = true;
           return emptyCell();
         }
@@ -284,7 +298,7 @@ export default function Streaming() {
       });
       return changed ? next : prev;
     });
-  }, [camerasQ.isSuccess, fedQ.isSuccess, cameraIdSet]);
+  }, [camerasQ.isSuccess, fedQ.isSuccess, cameraIdSet, unreachableNodeIds]);
 
   // ── layout / assignment ────────────────────────────────────────────────
   const changeLayout = useCallback((key: string) => {

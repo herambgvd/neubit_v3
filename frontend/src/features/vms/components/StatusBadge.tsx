@@ -4,22 +4,30 @@
 // rethemed to v3 tokens). Falls back to "unknown" for any unmapped status.
 import { Icon } from "@iconify/react";
 
-import { STATUS_PRESETS, presetFor } from "../constants";
+import { RECORDER_DOWN_REASONS, STATUS_PRESETS, presetFor } from "../constants";
 
 export interface StatusBadgeProps {
   /** The wire status (CameraStatus / NodeStatus / anything) — unmapped → "unknown". */
   status?: string | null;
+  /** Why it is offline when the camera is not the reason (`recorder_offline`):
+   *  the pill then names the recorder, not the camera (SCRUM-334). */
+  reason?: string | null;
   className?: string;
 }
 
-export default function StatusBadge({ status, className = "" }: Readonly<StatusBadgeProps>) {
+function labelFor(status: string | null | undefined, reason: string | null | undefined): string {
+  if (reason && RECORDER_DOWN_REASONS.has(reason)) return "Recorder offline";
+  return presetFor(STATUS_PRESETS, status, STATUS_PRESETS.unknown).label;
+}
+
+export default function StatusBadge({ status, reason, className = "" }: Readonly<StatusBadgeProps>) {
   const preset = presetFor(STATUS_PRESETS, status, STATUS_PRESETS.unknown);
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${preset.cls} ${className}`}
     >
       <Icon icon={preset.icon} className="text-xs" />
-      {preset.label}
+      {labelFor(status, reason)}
     </span>
   );
 }
@@ -34,12 +42,11 @@ const NB_DOT = {
   unknown: "bg-nb-warn",
 };
 
-export function StatusDot({ status, className = "" }: Readonly<StatusBadgeProps>) {
-  const preset = presetFor(STATUS_PRESETS, status, STATUS_PRESETS.unknown);
+export function StatusDot({ status, reason, className = "" }: Readonly<StatusBadgeProps>) {
   const dot = presetFor(NB_DOT, status, NB_DOT.unknown);
   return (
     <span
-      title={preset.label}
+      title={labelFor(status, reason)}
       className={`inline-block h-2 w-2 shrink-0 rounded-full ${dot} ${className}`}
     />
   );

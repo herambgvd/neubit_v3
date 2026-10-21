@@ -31,15 +31,18 @@ from app.vms.federation._common import (
     PERM_PTZ,
     PERM_READ,
     PERM_RECORDING,
-    _online_nodes,
+    _down_entry,
     _nodes_query,
     _resolve_node,
+    _split_nodes,
     _tag,
     _unreachable,
     log,
 )
+from app.vms.federation import inventory
 from app.vms.media_nodes.service import heartbeat_concurrency
 from app.vms.models import MediaNode
+from kernel.errors import NotFoundError
 
 router = APIRouter()
 
@@ -70,7 +73,7 @@ async def _fan_out(nodes: list[MediaNode], call) -> list[tuple[MediaNode, object
     A second number for the same question would only drift from the first.
 
     ``gather`` answers in the order it was given, so the merged list still runs node
-    by node in ``_online_nodes`` order however fast each one answered.
+    by node in the order the nodes were given, however fast each one answered.
     """
     sem = asyncio.Semaphore(heartbeat_concurrency())
 
@@ -137,23 +140,41 @@ async def federated_cameras(
     db: Annotated[AsyncSession, Depends(get_db)],
     scope: Annotated[Scope, Depends(get_scope)],
 ) -> dict:
-    """Every online recorder's own cameras, each tagged with its source node. A node
-    that can't be reached is reported in ``unreachable`` and skipped, never fatal."""
-    nodes = await _online_nodes(db, scope)
+    """Every recorder's own cameras, each tagged with its source node.
+
+    A recorder that is down, or that fails this read, is listed in ``unreachable``
+    and its cameras come from the copy the heartbeat keeps: still listed, ``status``
+    offline, ``node_reachable`` false and a ``status_reason``. A camera does not stop
+    existing because the box recording it stopped answering (SCRUM-334).
+    """
+    up, down = await _split_nodes(db, scope)
     results = await _fan_out(
-        nodes, lambda n: fed.list_estate_cameras(n.api_url, credential=n.credential)
+        up, lambda n: fed.list_estate_cameras(n.api_url, credential=n.credential)
     )
+    failed = [n for n, _, error in results if error is not None]
+    stored = await inventory.stored_cameras(db, [n.id for n in failed + down])
+
     items: list[dict] = []
     unreachable: list[dict] = []
     for n, cams, error in results:
         if error is not None:
             unreachable.append({"node_id": str(n.id), "name": n.name, "error": error})
+            items += inventory.offline_rows(n, stored.get(n.id, []), inventory.RECORDER_UNREACHABLE)
             continue
         for c in cams:
             c["node_id"] = str(n.id)
             c["node_name"] = n.name
+            c["node_reachable"] = True
             items.append(c)
-    return {"items": items, "total": len(items), "nodes": len(nodes), "unreachable": unreachable}
+    for n in down:
+        unreachable.append(_down_entry(n))
+        items += inventory.offline_rows(n, stored.get(n.id, []), inventory.RECORDER_OFFLINE)
+    return {
+        "items": items,
+        "total": len(items),
+        "nodes": len(up) + len(down),
+        "unreachable": unreachable,
+    }
 
 
 @router.get("/nvrs", dependencies=[Depends(require_permission(PERM_READ))])
@@ -167,10 +188,11 @@ async def federated_nvrs_all(
     knows only the ones IT onboarded. Same shape and same failure discipline as
     ``/cameras`` — a node that cannot be reached is listed in ``unreachable`` and
     skipped, never fatal, because one recorder rebooting must not empty the inventory.
+    A recorder the heartbeat has down is listed there too, not silently left out.
     """
-    nodes = await _online_nodes(db, scope)
+    up, down = await _split_nodes(db, scope)
     results = await _fan_out(
-        nodes, lambda n: fed.list_nvrs_node(n.api_url, credential=n.credential)
+        up, lambda n: fed.list_nvrs_node(n.api_url, credential=n.credential)
     )
     items: list[dict] = []
     unreachable: list[dict] = []
@@ -184,7 +206,8 @@ async def federated_nvrs_all(
             row["node_id"] = str(n.id)
             row["node_name"] = n.name
             items.append(row)
-    return {"items": items, "total": len(items), "nodes": len(nodes), "unreachable": unreachable}
+    unreachable += [_down_entry(n) for n in down]
+    return {"items": items, "total": len(items), "nodes": len(up) + len(down), "unreachable": unreachable}
 
 
 @router.post(

@@ -27,7 +27,9 @@ import StatusBadge from "./StatusBadge";
 import FederatedCameraActions from "./FederatedCameraActions";
 import { api, apiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { fmtRelative } from "@/lib/format";
 import { vms } from "../api";
+import { recorderDown } from "../constants";
 import { isPtzCapable } from "../formUtils";
 import type { EstateFederatedCamera, LiveSessionSource } from "../types";
 
@@ -43,6 +45,7 @@ export default function FederatedCameraDetail({ camera }: Readonly<FederatedCame
   // every camera starts with it closed.
   const [ptzOpen, setPtzOpen] = useState(false);
   const ptzKeyShown = ptzKeyOffered(isPtzCapable(camera), camera.status);
+  const recorderIsDown = recorderDown(camera);
 
   // Push-to-talk needs TWO yeses, and the recorder reports them separately: the
   // camera has an audio output and decoder (`support.supported`), and this recorder
@@ -140,7 +143,7 @@ export default function FederatedCameraDetail({ camera }: Readonly<FederatedCame
             <Icon icon="heroicons-outline:bolt" className="text-xs" />
             Via recorder
           </span>
-          <StatusBadge status={camera.status} />
+          <StatusBadge status={camera.status} reason={camera.status_reason} />
         </div>
       </div>
 
@@ -148,19 +151,32 @@ export default function FederatedCameraDetail({ camera }: Readonly<FederatedCame
           through the recorder; device config authorship stays on the NVR. */}
       <div className="flex min-h-0 flex-1 flex-col px-4 py-3">
         <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border border-nb-line bg-black">
-          <LivePlayer
-            key={camera.id}
-            cameraId={camera.real_id}
-            cameraName={camera.name}
-            source={source}
-            nodeId={camera.node_id}
-            canTalk={canTalk}
-            talkCapable={talkCapable}
-            className="h-full"
-            extraControls={
-              ptzKeyShown ? <PtzKey open={ptzOpen} onToggle={() => setPtzOpen((open) => !open)} /> : undefined
-            }
-          />
+          {recorderIsDown ? (
+            // Its recorder is down (SCRUM-334). Dialling would only wait out the
+            // timeout against the box that is not answering; say so instead. The
+            // pane plays by itself once the recorder is back and the list says so.
+            <div className="flex h-full flex-col items-center justify-center gap-1 px-4 text-center">
+              <Icon icon="heroicons-outline:signal-slash" className="text-3xl text-white/25" />
+              <p className="text-xs font-semibold uppercase tracking-[2px] text-white/50">Recorder offline</p>
+              <p className="text-[11px] text-white/35">
+                {camera.node_name || "The recorder"} is not answering. This camera comes back on its own when it does.
+              </p>
+            </div>
+          ) : (
+            <LivePlayer
+              key={camera.id}
+              cameraId={camera.real_id}
+              cameraName={camera.name}
+              source={source}
+              nodeId={camera.node_id}
+              canTalk={canTalk}
+              talkCapable={talkCapable}
+              className="h-full"
+              extraControls={
+                ptzKeyShown ? <PtzKey open={ptzOpen} onToggle={() => setPtzOpen((open) => !open)} /> : undefined
+              }
+            />
+          )}
 
           {/* PTZ control THROUGH the node — the second (and last) mutation allowed
               on a node-owned camera. Only when the recorder reports a PTZ head, and
@@ -187,8 +203,12 @@ export default function FederatedCameraDetail({ camera }: Readonly<FederatedCame
         {/* Read-only facts we actually own (no fabricated config). */}
         <dl className="mt-3 grid shrink-0 grid-cols-2 gap-x-4 gap-y-2 text-[11px] sm:grid-cols-3">
           <Fact label="Source recorder" value={camera.node_name || "—"} />
-          <Fact label="Status" value={<StatusBadge status={camera.status} />} />
-          <Fact label="Ownership" value="Node-authoritative" />
+          <Fact label="Status" value={<StatusBadge status={camera.status} reason={camera.status_reason} />} />
+          {recorderIsDown ? (
+            <Fact label="Last synced" value={camera.last_synced_at ? fmtRelative(camera.last_synced_at) : "—"} />
+          ) : (
+            <Fact label="Ownership" value="Node-authoritative" />
+          )}
         </dl>
       </div>
     </div>

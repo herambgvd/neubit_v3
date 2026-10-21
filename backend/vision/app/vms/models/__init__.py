@@ -17,6 +17,7 @@ Domain split:
   * ``group``      — CameraGroup + CameraACL
   * ``health``     — CameraHealth
   * ``media_node`` — MediaNode (a camera's node placement lives on Camera.media_node_id)
+  * ``node_camera`` — NodeCamera (each recorder's cameras as last synced, SCRUM-334)
   * ``live``       — PlaybackSession (live/recorded viewer sessions, P2)
   * ``recording``  — Recording (finalized recording-segment metadata, P3)
   * ``storage``    — StoragePool (where recorded segments live, P3-B). Tiering and
@@ -46,6 +47,7 @@ from .health import CameraHealth
 from .linkage import LinkageFire, LinkageRule
 from .live import PlaybackSession
 from .media_node import MediaNode
+from .node_camera import NodeCamera
 from .nvr import NVR
 from .pattern import CameraPattern
 from .recording import Recording
@@ -61,6 +63,7 @@ __all__ = [
     "CameraACL",
     "CameraHealth",
     "MediaNode",
+    "NodeCamera",
     "PlaybackSession",
     "Recording",
     "StoragePool",

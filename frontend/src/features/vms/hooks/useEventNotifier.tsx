@@ -28,11 +28,13 @@
 // in the sound the operator picked for it; a repeat, when they keep one, carries
 // on from there (EventNotifierHost).
 import { useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
-import { normalizeVmsEvent } from "../eventLib";
+import { normalizeVmsEvent, type NormalizedVmsEvent } from "../eventLib";
 import { pushAlarm } from "../alarmQueue";
 import { alertToneFor, soundActive, soundFor, useAlertPrefs } from "../alertPrefs";
 import { playAlertTone, type AlertTone } from "../alertSound";
+import type { EstateCamera, VmsEventFrame } from "../types";
 import { useEstateCameras } from "./useEstateCameras";
 import { useVmsEventStream } from "./useVmsEventStream";
 
@@ -41,6 +43,53 @@ export const EVENTS_ROUTE = "/events";
 
 /** A burst within this window rings once. */
 const RING_GAP_MS = 1_500;
+
+/** A recorder stopped or started answering (SCRUM-334). */
+const RECORDER_EVENTS = new Set(["recorder_offline", "recorder_online"]);
+
+/** Every list that shows a recorder's cameras or the recorder itself. They poll on
+ *  their own clocks (20–60 s); refetched on the event, the wall goes dark — and
+ *  plays again — within the heartbeat that noticed, not up to a poll later. */
+export const RECORDER_STATE_QUERIES = [
+  ["vms-wall-federation-cameras"],
+  ["vms-federation-cameras"],
+  ["home-federation-cameras"],
+  ["vms-media-nodes"],
+] as const;
+
+/** The events in ``frames`` not handled before, each now marked handled. */
+function unseen(frames: VmsEventFrame[], seen: Set<string>) {
+  const out: { e: NormalizedVmsEvent; key: string }[] = [];
+  for (const frame of frames) {
+    const e = normalizeVmsEvent(frame);
+    const key = e?.event_id || e?.id;
+    if (!e || !key || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ e, key });
+  }
+  return out;
+}
+
+/** ONE card for the whole burst, not a toast per alarm (SCRUM-312): the alarm joins
+ *  the queue, and the card shows whatever the queue holds. */
+function queueAlarm(e: NormalizedVmsEvent, key: string, cameras: EstateCamera[]) {
+  const cam = e.camera_id
+    ? cameras.find(
+        (c) => c.id === e.camera_id || (c as { real_id?: string }).real_id === e.camera_id,
+      )
+    : undefined;
+  const where = cam?.name || e.camera_name || e.title || "an unnamed camera";
+  const recorder = (cam as { node_name?: string } | undefined)?.node_name ?? null;
+  pushAlarm({
+    key,
+    event: e,
+    cameraName: where,
+    recorderName: recorder,
+    camera: cam ?? null,
+    ackId: e.id || undefined,
+    raisedAt: Date.now(),
+  });
+}
 
 export interface UseEventNotifierOptions {
   enabled?: boolean;
@@ -58,52 +107,32 @@ export function useEventNotifier({ enabled = true }: UseEventNotifierOptions = {
   const { events } = useVmsEventStream({ enabled });
   const { prefs } = useAlertPrefs();
   const lastRing = useRef(0);
+  const qc = useQueryClient();
 
   useEffect(() => {
     if (!events.length) return;
+    // Marked seen BEFORE the gates below on purpose: an event that arrived while the
+    // operator kept it quiet must not pop up later, when the settings change and the
+    // buffer replays. It has had its moment.
+    const fresh = unseen(events, seen.current);
+    if (fresh.some(({ e }) => RECORDER_EVENTS.has(String(e.event_type)))) {
+      for (const queryKey of RECORDER_STATE_QUERIES) void qc.invalidateQueries({ queryKey: [...queryKey] });
+    }
     let ring: AlertTone | null = null;
-    for (const frame of events) {
-      const e = normalizeVmsEvent(frame);
-      if (!e) continue;
-      const key = e.event_id || e.id;
-      if (!key || seen.current.has(key)) continue;
-      seen.current.add(key);
-
-      // Marked seen BEFORE these gates on purpose: an event that arrived while the
-      // operator kept it quiet must not pop up later, when the settings change and
-      // the buffer replays. It has had its moment.
+    for (const { e, key } of fresh) {
       const tone = alertToneFor(e, prefs);
       if (!tone) continue;
       if (ring !== "critical") ring = tone;
       // Where it shows — the corner card, or the Events page's alarm window — is the
       // pop-up's business (AlarmCorner, AlarmWindow); whether it shows is the operator's.
-      if (!prefs.popup) continue;
-
-      const cam = e.camera_id
-        ? cameras.find(
-            (c) => c.id === e.camera_id || (c as { real_id?: string }).real_id === e.camera_id,
-          )
-        : undefined;
-      const where = cam?.name || e.camera_name || e.title || "an unnamed camera";
-      const recorder = (cam as { node_name?: string } | undefined)?.node_name ?? null;
-      // ONE card for the whole burst, not a toast per alarm (SCRUM-312): the
-      // alarm joins the queue, and the card shows whatever the queue holds.
-      pushAlarm({
-        key,
-        event: e,
-        cameraName: where,
-        recorderName: recorder,
-        camera: cam ?? null,
-        ackId: e.id || undefined,
-        raisedAt: Date.now(),
-      });
+      if (prefs.popup) queueAlarm(e, key, cameras);
     }
     const now = Date.now();
     if (ring && soundActive(prefs, now) && now - lastRing.current >= RING_GAP_MS) {
       lastRing.current = now;
       playAlertTone(ring, prefs.volume, soundFor(prefs, ring));
     }
-  }, [events, cameras, prefs]);
+  }, [events, cameras, prefs, qc]);
 }
 
 export default useEventNotifier;

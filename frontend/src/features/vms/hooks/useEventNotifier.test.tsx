@@ -69,7 +69,7 @@ vi.mock("../alertSound", async (orig) => ({
 import AlarmCorner from "../components/AlarmCorner";
 import { alarmQueue, clearAlarms } from "../alarmQueue";
 import { toastInset } from "@/lib/toastInset";
-import { useEventNotifier } from "./useEventNotifier";
+import { RECORDER_STATE_QUERIES, useEventNotifier } from "./useEventNotifier";
 
 /** The hook needs a QueryClient (it invalidates the feed after an ack). */
 const wrapper = ({ children }: { children: ReactNode }) => (
@@ -349,5 +349,31 @@ describe("plate reads (SCRUM-326)", () => {
     run();
     expect(alarmQueue()).toHaveLength(1);
     expect(alarmQueue()[0].event.event_type).toBe("motion");
+  });
+});
+
+// SCRUM-334: a recorder going down or coming back refreshes every list that shows
+// its cameras at once, instead of each waiting out its own poll — the wall goes dark,
+// and plays again, within the heartbeat that noticed.
+describe("a recorder going down or coming back", () => {
+  function runWithClient() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    const own = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    renderHook(() => useEventNotifier(), { wrapper: own });
+    return invalidate.mock.calls.map(([arg]) => JSON.stringify((arg as { queryKey: unknown }).queryKey));
+  }
+
+  it.each(["recorder_offline", "recorder_online"])("%s refreshes the camera lists and the recorders", (type) => {
+    frames = [frame({ event_type: type, camera_id: null, severity: "critical" })];
+    const keys = runWithClient();
+    for (const key of RECORDER_STATE_QUERIES) expect(keys).toContain(JSON.stringify(key));
+  });
+
+  it("leaves the lists alone for an ordinary camera event", () => {
+    frames = [frame({ event_type: "motion" })];
+    expect(runWithClient()).toEqual([]);
   });
 });

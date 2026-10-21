@@ -26,7 +26,7 @@ import { sites as sitesApi } from "@/lib/api/sites";
 import { isOffline } from "@/features/core/sites/estateRollup";
 import { NOT_ONLINE, dropUrlParams, siteCameraKeys, siteNameFrom } from "@/features/core/sites/siteLinks";
 import { vms } from "./api";
-import { STATUS_FILTERS } from "./constants";
+import { STATUS_FILTERS, recorderDown } from "./constants";
 import { StatusDot } from "./components/StatusBadge";
 import FederatedCameraDetail from "./components/FederatedCameraDetail";
 import type { EstateFederatedCamera } from "./types";
@@ -90,6 +90,9 @@ export default function CamerasPage() {
           real_id: c.id,
           name: c.name,
           status: c.status,
+          // Set when the recorder, not the camera, is why it is offline (SCRUM-334).
+          status_reason: c.status_reason ?? null,
+          last_synced_at: c.last_synced_at ?? null,
           federated: true as const,
           // PTZ capability as the node reported it (public.ptz.capable) — drives the
           // detail pane's PTZ control; commands proxy through the node.
@@ -262,12 +265,13 @@ function CameraListItem({ camera, selected, onSelect }: Readonly<CameraListItemP
           : "border-transparent hover:bg-nb-blue/6"
       }`}
     >
-      <StatusDot status={camera.status} />
+      <StatusDot status={camera.status} reason={camera.status_reason} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-[13px] font-medium text-nb-ink">{camera.name}</p>
         <p className="flex items-center gap-1 truncate text-[10.5px] text-nb-faint">
           <Icon icon="heroicons:server-stack" className="shrink-0 text-[10px]" />
           <span className="truncate">{camera.node_name || "recorder"}</span>
+          {recorderDown(camera) && <span className="shrink-0 text-nb-crit">· offline</span>}
         </p>
       </div>
       <Icon

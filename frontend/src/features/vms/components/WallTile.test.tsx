@@ -78,3 +78,31 @@ describe("the PTZ key on a wall tile", () => {
     expect(key()).toBeNull();
   });
 });
+
+// SCRUM-334: a camera whose RECORDER is down keeps its tile, says so, and does not
+// offer "Try anyway" — the recorder that would mint the stream is not answering.
+describe("a tile whose recorder is down", () => {
+  const down = () => dome({ status: "offline", status_reason: "recorder_offline" });
+
+  it("says the recorder is offline, not the camera", () => {
+    tile({ camera: down() });
+    expect(screen.getByText("Recorder offline")).toBeTruthy();
+    expect(screen.queryByText(/camera offline/i)).toBeNull();
+  });
+
+  it("offers no Try anyway, which could only wait out a dead recorder", () => {
+    tile({ camera: down() });
+    expect(screen.queryByText("Try anyway")).toBeNull();
+  });
+
+  it("still offers Try anyway for a camera that is itself offline", () => {
+    tile({ camera: dome({ status: "offline" }) });
+    expect(screen.getByText("Try anyway")).toBeTruthy();
+    expect(screen.getByText(/camera offline/i)).toBeTruthy();
+  });
+
+  it("keeps its remove control, so the operator still owns the layout", () => {
+    tile({ camera: down() });
+    expect(screen.getByLabelText("Remove from wall")).toBeTruthy();
+  });
+});

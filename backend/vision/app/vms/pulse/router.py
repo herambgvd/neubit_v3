@@ -44,8 +44,9 @@ from app.db import get_db
 from app.vms.federation import client as fed
 from app.vms.federation._common import (
     PERM_READ,
-    _online_nodes,
+    _down_entry,
     _resolve_node,
+    _split_nodes,
     _unreachable,
     log,
 )
@@ -79,7 +80,10 @@ async def pulse_overview(
     timing out would delay the whole page by its timeout, and the page an operator
     opens when something is wrong is exactly the page a sick recorder appears on.
     """
-    nodes = await _online_nodes(db, scope)
+    # A recorder the heartbeat has down is not asked (it would only time out) but it
+    # IS reported: left out, it vanished from both the totals and the attention list,
+    # and the estate's worst news never reached this page (SCRUM-334).
+    nodes, down = await _split_nodes(db, scope)
     results = await asyncio.gather(*(_board(n) for n in nodes)) if nodes else []
 
     node_views: list[dict] = []
@@ -92,6 +96,7 @@ async def pulse_overview(
         node_views.append(rollup.node_view(str(node.id), node.name, board))
         offline.extend(rollup.offline_cameras(str(node.id), node.name, board))
 
+    unreachable += [_down_entry(n) for n in down]
     out = rollup.overview(node_views, unreachable, offline)
     out["generated_at"] = datetime.now(timezone.utc).isoformat()
     return out

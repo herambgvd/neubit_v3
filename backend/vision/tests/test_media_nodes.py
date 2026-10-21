@@ -364,8 +364,9 @@ async def test_the_heartbeat_timeout_actually_bounds_the_camera_count(db, monkey
 
     monkeypatch.setattr("app.vms.federation.client.list_estate_cameras", _hangs)
 
+    monkeypatch.setattr(node_service, "heartbeat_timeout_sec", lambda: 0.05)
     started = time.monotonic()
-    await node_service._heartbeat_one(node, timeout=0.05)  # noqa: SLF001
+    await node_service._heartbeat_one(node)  # noqa: SLF001
     elapsed = time.monotonic() - started
 
     assert elapsed < 1.0, f"the count ran {elapsed:.2f}s against a 0.05s bound"

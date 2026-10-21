@@ -184,8 +184,9 @@ export const vms = {
 
   // ── Federation — node-authoritative cameras across recorder nodes ────────
   // The VMS pulls each registered recorder's own cameras up + streams them THROUGH
-  // the node (the node owns them). GET cameras aggregates all online nodes; live
-  // mints a node-issued token for a federated camera.
+  // the node (the node owns them). GET cameras aggregates every node — a node that
+  // is down contributes the copy the estate kept of its cameras, marked offline
+  // (SCRUM-334); live mints a node-issued token for a federated camera.
   federation: {
     nodes: () => unwrap(api.get<FederationNodeList>("/vms/federation/nodes")),
     cameras: () => unwrap(api.get<FederatedCameraList>("/vms/federation/cameras")),

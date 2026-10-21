@@ -1538,6 +1538,11 @@ export interface EstateFederatedCamera {
   real_id: string;
   name: string;
   status?: string;
+  /** Set when the camera reads offline because its RECORDER is down
+   *  (`recorder_offline` / `recorder_unreachable`); the row is then the copy the
+   *  estate kept, as of `last_synced_at` (SCRUM-334). */
+  status_reason?: string | null;
+  last_synced_at?: string | null;
   federated: true;
   ptz_capable: boolean;
   node_id: string;
@@ -1554,6 +1559,8 @@ export interface EstateCamera extends Partial<Omit<VmsCameraPublic, "id" | "name
   id: string;
   name: string;
   status?: string;
+  status_reason?: string | null;
+  last_synced_at?: string | null;
   federated?: boolean;
   real_id?: string;
   ptz_capable?: boolean;

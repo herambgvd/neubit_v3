@@ -35,7 +35,7 @@ import { vms } from "../api";
 import LivePlayer, { PlayerBtn } from "./LivePlayer";
 import PtzKey, { ptzKeyOffered } from "./PtzKey";
 import TilePlayback from "./TilePlayback";
-import { DARK_STATUSES, presetFor, STATUS_PRESETS } from "../constants";
+import { DARK_STATUSES, presetFor, recorderDown, STATUS_PRESETS } from "../constants";
 import type { WallClock } from "../hooks/useWallPlayback";
 import type { EstateCamera, LiveSessionSource } from "../types";
 
@@ -294,7 +294,12 @@ function WallTile({
   // queue and the LIVE ones never connect — which is exactly the wall that showed
   // 64 tiles all saying "Connecting…". Skipping them is both the honest picture
   // and what makes the rest of the wall come up.
-  const dark = DARK_STATUSES.has(status) && !forceLive;
+  // Its RECORDER is down (SCRUM-334): the tile keeps its place and says so, and
+  // plays again by itself once the recorder answers and the status comes back.
+  // Nothing to "try anyway" — the recorder that would mint the stream is the
+  // thing not answering.
+  const recorderIsDown = recorderDown(camera);
+  const dark = DARK_STATUSES.has(status) && (!forceLive || recorderIsDown);
   // Playback wins over the dark placeholder: "this camera is offline NOW" says
   // nothing about whether it was recording an hour ago, and the recording is
   // exactly what an operator opens playback to see.
@@ -380,18 +385,22 @@ function WallTile({
           <div className="absolute inset-0 z-[3] flex flex-col items-center justify-center gap-1 bg-[#05070f] px-3 text-center">
             <Icon icon="heroicons-outline:video-camera-slash" className={`text-white/25 ${isHero ? "text-4xl" : "text-2xl"}`} />
             <p className="font-mono text-[11px] font-semibold uppercase tracking-[2px] text-white/50">No video</p>
-            <p className="text-[10px] text-white/30">Camera {preset.label.toLowerCase()}</p>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setForceLive(true);
-              }}
-              className="mt-1 inline-flex items-center gap-1 rounded-[7px] border border-white/15 px-2 py-0.5 text-[10px] font-medium text-white/60 transition hover:border-nb-teal hover:text-nb-tealb"
-            >
-              <Icon icon="heroicons-outline:arrow-path" className="text-[11px]" />
-              Try anyway
-            </button>
+            <p className="text-[10px] text-white/30">
+              {recorderIsDown ? "Recorder offline" : `Camera ${preset.label.toLowerCase()}`}
+            </p>
+            {!recorderIsDown && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setForceLive(true);
+                }}
+                className="mt-1 inline-flex items-center gap-1 rounded-[7px] border border-white/15 px-2 py-0.5 text-[10px] font-medium text-white/60 transition hover:border-nb-teal hover:text-nb-tealb"
+              >
+                <Icon icon="heroicons-outline:arrow-path" className="text-[11px]" />
+                Try anyway
+              </button>
+            )}
           </div>
           {/* The controls are a SIBLING of the placeholder, not a child: the
               placeholder is a positioned z-[3] box and therefore its own stacking

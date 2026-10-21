@@ -21,6 +21,7 @@ import { useMemo, useState } from "react";
 import { Icon } from "@iconify/react";
 
 import { StatusDot } from "./StatusBadge";
+import { recorderDown } from "../constants";
 import type { EstateCamera } from "../types";
 
 const NO_SITE = "__no_site__";
@@ -37,6 +38,13 @@ interface RailBranch {
 /** A branch's heading. The fallbacks are last-resort labels for a row whose
  *  site or recorder name never arrived — never the id, which tells an operator
  *  nothing, and never blank, which reads as a broken tree. */
+/** The row's hover text: the gesture for a live camera, else what is wrong — and a
+ *  camera whose recorder is down names the recorder, not the camera (SCRUM-334). */
+function railTitle(c: EstateCamera): string {
+  if (recorderDown(c)) return `${c.name} · recorder offline`;
+  return c.status === "online" ? "Double-click to add to wall" : `${c.name} · ${c.status}`;
+}
+
 function branchName(key: string, siteName: string | null | undefined, recorder: boolean): string {
   if (key === NO_SITE) return "Unassigned";
   return siteName || (recorder ? "Recorder" : "Site");
@@ -167,7 +175,7 @@ export default function CameraRail({
               onPick?.(c);
             }
           }}
-          title={c.status === "online" ? "Double-click to add to wall" : `${c.name} · ${c.status}`}
+          title={railTitle(c)}
           className={`group flex w-full items-center gap-2 rounded-[7px] py-1.5 pl-7 pr-2 text-left transition ${
             onWall ? "bg-nb-teal/8 hover:bg-nb-teal/12" : "hover:bg-nb-mist/7"
           }`}
@@ -176,7 +184,7 @@ export default function CameraRail({
             icon="heroicons-outline:bars-2"
             className="shrink-0 cursor-grab text-sm text-nb-dim2/50 group-hover:text-nb-soft"
           />
-          <StatusDot status={c.status} />
+          <StatusDot status={c.status} reason={c.status_reason} />
           <span className="min-w-0 flex-1 truncate text-xs font-medium text-nb-muted group-hover:text-nb-ink">
             {c.name}
           </span>

@@ -17,6 +17,7 @@ import { apiError } from "@/lib/api";
 import { asItems, fmtRelative } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { vms } from "./api";
+import { recorderDown } from "./constants";
 import type { MediaNodePublic, NodeCredentialPublic, NodeEnrollResult } from "./types";
 import StatusBadge, { StatusDot } from "./components/StatusBadge";
 import AddRecorderModal from "./components/AddRecorderModal";
@@ -249,9 +250,74 @@ interface RecorderDetailProps {
   onDelete?: (node: MediaNodePublic) => void;
 }
 
-function RecorderDetail({ node, onEdit, onDrain, onDelete }: Readonly<RecorderDetailProps>) {
-  const cap = node.capacity_channels;
+/** One row of a recorder's camera list in its detail pane. */
+interface RecorderCameraRow {
+  id: string;
+  name: string;
+  status: string;
+  status_reason: string | null;
+  channel: number | null;
+}
 
+interface RecorderCameraListProps {
+  cameras: RecorderCameraRow[];
+  loading: boolean;
+  unreachable: boolean;
+  syncedAt: string | null;
+}
+
+/** What this recorder runs, as it reports it — or, while it is down, as the estate
+ *  last saw it (SCRUM-334). An empty list must never read as "runs none" when the
+ *  truth is "not answering". */
+function RecorderCameraList({ cameras, loading, unreachable, syncedAt }: Readonly<RecorderCameraListProps>) {
+  if (loading) {
+    return (
+      <p className="px-1 py-3 text-xs text-nb-faint">
+        <Icon icon="svg-spinners:180-ring" className="mr-1 inline text-sm text-nb-tealb" />
+        Loading…
+      </p>
+    );
+  }
+  if (cameras.length === 0) {
+    return unreachable ? (
+      <p className="rounded-[10px] border border-dashed border-nb-warn/35 px-3 py-4 text-center text-xs text-nb-warn">
+        This recorder is not answering, so its cameras cannot be listed.
+      </p>
+    ) : (
+      <p className="rounded-[10px] border border-dashed border-nb-haze/28 px-3 py-4 text-center text-xs text-nb-faint">
+        This recorder runs no cameras yet. Cameras are onboarded on the recorder itself.
+      </p>
+    );
+  }
+  return (
+    <>
+      {unreachable && (
+        <p className="mb-2 rounded-[10px] border border-nb-warn/35 bg-nb-warn/8 px-3 py-2 text-xs text-nb-warn">
+          This recorder is not answering. Its cameras are shown as last synced
+          {syncedAt ? ` ${fmtRelative(syncedAt)}` : ""}, and come back on their own when it does.
+        </p>
+      )}
+      <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+        {cameras.map((c) => (
+          <li key={c.id} className="flex items-center gap-2 rounded-[10px] border border-nb-haze/22 bg-nb-mist/4 px-3 py-1.5">
+            <StatusDot status={c.status} reason={c.status_reason} />
+            {c.channel != null && (
+              <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded-sm border border-nb-mist/22 bg-nb-mist/6 px-1 font-mono text-[10px] font-semibold tabular-nums text-nb-soft">
+                {c.channel}
+              </span>
+            )}
+            <span className="min-w-0 flex-1 truncate text-[13px] text-nb-ink" title={c.name}>{c.name}</span>
+            <span className="shrink-0 font-mono text-[10px] uppercase tracking-[.5px] text-nb-dim2">
+              {recorderDown(c) ? "recorder offline" : c.status}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+function useRecorderCameras(node: MediaNodePublic) {
   // THE RECORDER OWNS ITS CAMERAS. This pane used to list only VMS-owned rows
   // pinned to the node (`media_node_id`), and on a single-ownership estate — the
   // normal one, where the VMS onboards nothing — there are none. So a recorder
@@ -269,6 +335,10 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }: Readonly<RecorderDe
     queryKey: ["vms-federation-cameras"],
     queryFn: () => vms.federation.cameras(),
     staleTime: 15_000,
+    // On the recorder list's own clock, so the pane cannot sit on a copy taken
+    // before the recorder went down — it once showed "not answering" over eight
+    // cameras still marked online (SCRUM-334).
+    refetchInterval: 20_000,
   });
   const camsQ = useQuery({
     queryKey: ["vms-cameras", "for-recorder-detail"],
@@ -276,10 +346,25 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }: Readonly<RecorderDe
     staleTime: 15_000,
   });
 
-  const cameras = useMemo(() => {
+  // The recorder is unreachable when the aggregate says so, or when its own
+  // heartbeat has it down — an empty list must not read as "this recorder runs
+  // none". Its cameras are then the copy the estate kept of them (SCRUM-334).
+  const nodeUnreachable =
+    (fedQ.data?.unreachable || []).some((u) => u.node_id === node.id) ||
+    node.status === "offline" ||
+    node.status === "error";
+
+  const cameras = useMemo<RecorderCameraRow[]>(() => {
     const owned = (fedQ.data?.items || [])
       .filter((c) => c.node_id === node.id)
-      .map((c) => ({ id: c.id, name: c.name, status: String(c.status || "unknown"), channel: null as number | null }));
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        // A down recorder's camera is not online, whatever the last copy said.
+        status: nodeUnreachable ? "offline" : String(c.status || "unknown"),
+        status_reason: c.status_reason ?? (nodeUnreachable ? "recorder_offline" : null),
+        channel: null as number | null,
+      }));
     const seen = new Set(owned.map((c) => c.id));
     const local = asItems(camsQ.data)
       .filter((c) => c.media_node_id === node.id && !seen.has(c.id))
@@ -287,19 +372,29 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }: Readonly<RecorderDe
         id: c.id,
         name: c.name,
         status: String(c.status || "unknown"),
+        status_reason: null as string | null,
         channel: c.nvr_channel_number ?? null,
       }));
     return [...owned, ...local];
-  }, [fedQ.data, camsQ.data, node.id]);
+  }, [fedQ.data, camsQ.data, node.id, nodeUnreachable]);
 
-  // The recorder is unreachable when the aggregate says so — its cameras cannot
-  // be listed then, and an empty list must not read as "this recorder runs none".
-  const nodeUnreachable = (fedQ.data?.unreachable || []).some((u) => u.node_id === node.id);
   const camsLoading = fedQ.isLoading || camsQ.isLoading;
+  const syncedAt = useMemo(() => {
+    const stamps = (fedQ.data?.items || [])
+      .filter((c) => c.node_id === node.id && c.last_synced_at)
+      .map((c) => String(c.last_synced_at));
+    return stamps.length ? stamps.sort((a, b) => a.localeCompare(b))[stamps.length - 1] : null;
+  }, [fedQ.data, node.id]);
 
-  // Count what we can actually see; fall back to the heartbeat's own figure while
-  // the lists load or when the node is not answering.
-  const used = !camsLoading && !nodeUnreachable ? cameras.length : node.used_channels ?? 0;
+  // Count what we can see — the kept copy included; fall back to the heartbeat's
+  // own figure while the lists load, or for a down recorder nothing was kept for.
+  const used = !camsLoading && (cameras.length > 0 || !nodeUnreachable) ? cameras.length : node.used_channels ?? 0;
+  return { cameras, nodeUnreachable, camsLoading, syncedAt, used };
+}
+
+function RecorderDetail({ node, onEdit, onDrain, onDelete }: Readonly<RecorderDetailProps>) {
+  const cap = node.capacity_channels;
+  const { cameras, nodeUnreachable, camsLoading, syncedAt, used } = useRecorderCameras(node);
   const full = cap != null && used >= cap;
 
   return (
@@ -375,34 +470,12 @@ function RecorderDetail({ node, onEdit, onDrain, onDelete }: Readonly<RecorderDe
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[1.6px] text-nb-faint">Cameras</p>
           <span className="rounded-full border border-nb-mist/22 bg-nb-mist/6 px-1.5 font-mono text-[10px] font-semibold tabular-nums text-nb-soft">{cameras.length}</span>
         </div>
-        {camsLoading ? (
-          <p className="px-1 py-3 text-xs text-nb-faint"><Icon icon="svg-spinners:180-ring" className="mr-1 inline text-sm text-nb-tealb" />Loading…</p>
-        ) : nodeUnreachable ? (
-          // An empty list here would say the recorder runs nothing, which is a
-          // different claim from "it is not answering right now".
-          <p className="rounded-[10px] border border-dashed border-nb-warn/35 px-3 py-4 text-center text-xs text-nb-warn">
-            This recorder is not answering, so its cameras cannot be listed.
-          </p>
-        ) : cameras.length === 0 ? (
-          <p className="rounded-[10px] border border-dashed border-nb-haze/28 px-3 py-4 text-center text-xs text-nb-faint">
-            This recorder runs no cameras yet. Cameras are onboarded on the recorder itself.
-          </p>
-        ) : (
-          <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-            {cameras.map((c) => (
-              <li key={c.id} className="flex items-center gap-2 rounded-[10px] border border-nb-haze/22 bg-nb-mist/4 px-3 py-1.5">
-                <StatusDot status={c.status} />
-                {c.channel != null && (
-                  <span className="flex h-5 min-w-[1.5rem] shrink-0 items-center justify-center rounded-sm border border-nb-mist/22 bg-nb-mist/6 px-1 font-mono text-[10px] font-semibold tabular-nums text-nb-soft">
-                    {c.channel}
-                  </span>
-                )}
-                <span className="min-w-0 flex-1 truncate text-[13px] text-nb-ink" title={c.name}>{c.name}</span>
-                <span className="shrink-0 font-mono text-[10px] uppercase tracking-[.5px] text-nb-dim2">{c.status}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+        <RecorderCameraList
+          cameras={cameras}
+          loading={camsLoading}
+          unreachable={nodeUnreachable}
+          syncedAt={syncedAt}
+        />
 
         <p className="mt-3 text-[11px] text-nb-dim2">
           These cameras record to this recorder&apos;s own storage. Drain it before deleting, so its

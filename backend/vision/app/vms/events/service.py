@@ -75,8 +75,31 @@ _SYSTEM_SEVERITY = {
     "camera_offline": "warning",
     "recording_error": "critical",
     "storage_low": "warning",
+    "recorder_offline": "critical",
+    "recorder_online": "info",
     "system": "info",
 }
+
+
+def _event_key(camera_id, event_type: str, occ, raw: dict | None) -> str:
+    """The row's dedup key — what makes a re-read of one event land on one row.
+
+    A plate read is one row per vehicle on its recorder: two plates read within one
+    bucket are two alerts, so it dedupes on the recorder's own event id.
+
+    An event about a RECORDER, not a camera, dedupes per recorder. On the camera-less
+    grain two recorders dropping in the same window would be one row, and the second
+    outage would never be raised (SCRUM-334).
+
+    Every other event keeps the (camera, type, time-bucket) grain it always had.
+    """
+    raw = raw or {}
+    node_event = raw.get("node_event_id")
+    if event_type == "anpr" and node_event:
+        return node_dedup_key(str(raw.get("node_id") or "-"), str(node_event))
+    if not camera_id and raw.get("node_id"):
+        return dedup_key(f"node:{raw['node_id']}", event_type, occ)
+    return dedup_key(camera_id, event_type, occ)
 
 
 class VmsEventService:
@@ -171,13 +194,7 @@ class VmsEventService:
     ) -> str | None:
         tid = _coerce_tenant(tenant_id)
         occ = _parse_occurred(occurred_at)
-        key = dedup_key(camera_id, event_type, occ)
-        # A plate read is one row per vehicle on its recorder: two plates read within
-        # one bucket are two alerts, so it dedupes on the recorder's own event id.
-        # Every other type keeps the bucket it always had.
-        node_event = (raw or {}).get("node_event_id")
-        if event_type == "anpr" and node_event:
-            key = node_dedup_key(str((raw or {}).get("node_id") or "-"), str(node_event))
+        key = _event_key(camera_id, event_type, occ, raw)
 
         # Dedupe up-front (cheap read) so a chatty camera doesn't spam failed inserts.
         existing = (
