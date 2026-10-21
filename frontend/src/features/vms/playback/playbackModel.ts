@@ -97,6 +97,23 @@ export function stepZoom(win: Win, dir: -1 | 1): number {
   return (smaller.at(-1) ?? ZOOM_LEVELS[0]).seconds;
 }
 
+/** The window a LIVE wall shows: now about four-fifths across, so the track is
+ *  mostly the recent past an operator scrubs back into, with a sliver of future
+ *  for the live edge to move into (the recorder console places it the same way). */
+export function liveWindow(nowMs: number, seconds: number): Win {
+  const span = windowAt(nowMs, seconds);
+  const width = span.toMs - span.fromMs;
+  return { fromMs: nowMs - width * 0.8, toMs: nowMs + width * 0.2 };
+}
+
+/** Keep "now" in view on a live wall: nothing moves until it nears the right edge,
+ *  then the page turns so it sits four-fifths across again. */
+export function followLive(win: Win, nowMs: number): Win {
+  const span = win.toMs - win.fromMs;
+  if (nowMs >= win.fromMs && nowMs <= win.toMs - span * 0.02) return win;
+  return liveWindow(nowMs, span / 1000);
+}
+
 /** Follow paging: when the playhead leaves the window, turn the page so it sits
  *  near the left edge again. Inside the window nothing moves, so the track does not
  *  scroll under an operator who is reading it. */
@@ -341,6 +358,16 @@ export function prevEvent(times: readonly number[], t: number): number | null {
   return best;
 }
 
+/** Where a click on the track plays from. Inside a recording, exactly there; in a
+ *  gap, the start of the next recording, so a rough aim still lands on footage
+ *  instead of appearing to do nothing (as a recorder's own timeline snaps). Past
+ *  the last recording it keeps the click, and the player says there is nothing
+ *  there — never a silent jump backwards to a moment nobody asked for. */
+export function snapToFootage(at: number, spans: readonly { s: number; e: number }[]): number {
+  if (spans.some((sp) => at >= sp.s && at <= sp.e)) return at;
+  return spans.find((sp) => sp.s >= at)?.s ?? at;
+}
+
 /** Where to start when there is no playhead yet: the start of the last recording
  *  that begins inside the window, else the window's start. */
 export function defaultStart(spans: readonly { s: number; e: number }[], win: Win): number {
@@ -351,6 +378,19 @@ export function defaultStart(spans: readonly { s: number; e: number }[], win: Wi
 
 // The recorder serves the file still being written about this far behind real time.
 export const LIVE_EDGE_LAG_MS = 8_000;
+
+// One video frame at 25 fps, the frame step when the stream's rate is unknown.
+export const FRAME_MS = 40;
+
+// Reverse play has no native decoder support in a browser, and the recorder's
+// progressive stream cannot seek, so it is stepped: every REVERSE_TICK_MS the
+// playhead moves back by speed × tick and every tile opens a window at that
+// instant and shows its first frame. It is how the recorder's own console reverses.
+export const REVERSE_TICK_MS = 1_000;
+
+// "Instant playback": the last half-minute of a live camera, the replay every NVR
+// and VMS client puts one click away (the recorder console opens 30 s back too).
+export const INSTANT_REPLAY_MS = 30_000;
 
 /** Coverage + event queries are keyed on the window rounded out to this grain, so a
  *  wheel-zoom or a drag does not refetch on every pixel. */

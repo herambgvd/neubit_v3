@@ -13,7 +13,13 @@ import type { EstateCamera } from "../types";
 import WallTile from "./WallTile";
 
 vi.mock("../api", () => ({ vms: { federation: { live: vi.fn() } } }));
-vi.mock("./TilePlayback", () => ({ default: () => null }));
+const playback = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
+vi.mock("./TilePlayback", () => ({
+  default: (p: Record<string, unknown>) => {
+    playback.props = p;
+    return null;
+  },
+}));
 // The player itself is out of scope: render only the controls the tile hands it.
 vi.mock("./LivePlayer", () => ({
   default: ({ extraControls }: Readonly<{ extraControls?: React.ReactNode }>) => <div>{extraControls}</div>,
@@ -104,5 +110,42 @@ describe("a tile whose recorder is down", () => {
   it("keeps its remove control, so the operator still owns the layout", () => {
     tile({ camera: down() });
     expect(screen.getByLabelText("Remove from wall")).toBeTruthy();
+  });
+});
+
+describe("instant playback on a tile (SCRUM-337)", () => {
+  const replay = () => screen.queryByLabelText(/Instant playback/);
+
+  it("replays a recorder camera's last half-minute in its own tile", () => {
+    const onInstantPlayback = vi.fn();
+    tile({ onInstantPlayback });
+
+    fireEvent.click(replay()!);
+
+    expect(onInstantPlayback).toHaveBeenCalledWith(2);
+  });
+
+  it("is not offered on a camera no recorder holds, which has nothing to replay", () => {
+    tile({ onInstantPlayback: vi.fn(), camera: dome({ federated: false }) });
+    expect(replay()).toBeNull();
+  });
+
+  it("is not offered on a tile already playing back", () => {
+    tile({ onInstantPlayback: vi.fn(), playback: true });
+    expect(replay()).toBeNull();
+  });
+});
+
+describe("a tile playing back (SCRUM-337)", () => {
+  it("holds its picture in reverse — the wall steps it — and takes the frame steps", () => {
+    tile({ playback: true, playbackPlaying: true, playbackSpeed: -2, playbackScrubMs: 1_000, playbackScrubSeq: 3, playbackRateMax: 8 });
+
+    expect(playback.props).toMatchObject({ playing: false, speed: 0.25, scrubMs: 1_000, scrubSeq: 3, rateMax: 8 });
+  });
+
+  it("plays forward at the wall's speed", () => {
+    tile({ playback: true, playbackPlaying: true, playbackSpeed: 2 });
+
+    expect(playback.props).toMatchObject({ playing: true, speed: 2 });
   });
 });

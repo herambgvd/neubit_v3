@@ -10,12 +10,21 @@
 // their live stream or the recording at that instant IN PLACE. Playback is not a
 // separate screen or a modal here — it is a mode the wall enters.
 //
+// The controls are the Playback workspace's (SCRUM-337): its window arithmetic,
+// speed ladder, frame step, stepped reverse and IN/OUT range come from
+// playback/playbackModel, so the two surfaces answer every key and button the
+// same way. What stays the wall's own is SYNC: off, only the focused tile plays
+// back while the rest of the wall stays live (HikCentral's instant playback); on,
+// the whole wall shows one instant.
+//
 // ── Why an anchor + a seq, and not just a timestamp ────────────────────────
 // The node serves `[requested → end of that coverage span]`, so a playback
 // session IS "the recording starting at an instant". A seek therefore means "every
 // playing tile re-anchors at this instant". `seq` bumps on every seek so a tile
 // can tell "seek again to where you already are" (a re-anchor after a gap, a
-// retry) from "nothing changed" — the timestamp alone cannot say that.
+// retry) from "nothing changed" — the timestamp alone cannot say that. A SCRUB
+// (frame step, a reverse step) is the other kind of move: an instant every tile
+// shows without re-anchoring, with its own seq for the same reason.
 //
 // ── Why the playhead is NOT React state ───────────────────────────────────
 // It moves 4+ times a second. Putting it in state re-renders the whole wall at
@@ -25,27 +34,29 @@
 // nothing else in the tree hears about it at all.
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-const DAY_MS = 86_400_000;
-
-// The timeline's range ladder, matching the recorder console's. A 24h track is
-// useless for picking a five-second event; a 5m track is useless for finding
-// which hour it was in. The operator needs both.
-export const RANGES = [
-  { label: "5m", seconds: 300 },
-  { label: "30m", seconds: 1_800 },
-  { label: "1h", seconds: 3_600 },
-  { label: "3h", seconds: 10_800 },
-  { label: "12h", seconds: 43_200 },
-  { label: "1d", seconds: 86_400 },
-];
-
-export const DEFAULT_RANGE_SECONDS = 3_600;
+import {
+  DEFAULT_SPAN_S,
+  FRAME_MS,
+  INSTANT_REPLAY_MS,
+  LIVE_EDGE_LAG_MS,
+  REVERSE_TICK_MS,
+  clampSpeed,
+  dayStart,
+  dayWindow,
+  followLive,
+  followPage,
+  liveWindow,
+  maxSpeedFor,
+  panWindow,
+  reverseAllowed,
+  stepSpeed,
+  windowAt,
+  zoomWindow,
+  type Win,
+} from "../playback/playbackModel";
 
 /** The timeline window in epoch ms. */
-export interface WallWindow {
-  fromMs: number;
-  toMs: number;
-}
+export type WallWindow = Win;
 
 /** The shared playhead — see `createClock`. `null` = live (no playhead). */
 export interface WallClock {
@@ -58,28 +69,10 @@ export interface WallClock {
 
 export type WallMode = "live" | "playback";
 
-// Speeds the transport offers. The browser decodes every frame at any rate, and
-// with Sync on the rate applies to EVERY visible tile at once, so this ladder
-// stops where a wall of decoders still keeps up rather than where <video> stops
-// accepting the number.
-export const SPEEDS = [0.5, 1, 2, 4];
-
-export const dayStartMs = (atMs: number): number => {
-  const d = new Date(atMs);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-};
-
-// A window of `seconds` centred on an instant, or — at a day or more — the whole
-// calendar day that instant falls in. "Yesterday 14:00" should show yesterday,
-// not a rolling 24h ending at 14:00.
-export function makeWindow(atMs: number, seconds: number): WallWindow {
-  if (seconds >= 86_400) {
-    const from = dayStartMs(atMs);
-    return { fromMs: from, toMs: from + DAY_MS };
-  }
-  const half = (seconds * 1000) / 2;
-  return { fromMs: atMs - half, toMs: atMs + half };
+/** The IN/OUT range an export or an evidence hold is made from. */
+export interface WallSelection {
+  inMs: number | null;
+  outMs: number | null;
 }
 
 // ── the shared playhead ─────────────────────────────────────────────────────
@@ -115,32 +108,56 @@ export function createClock(): WallClock {
   };
 }
 
-export function useWallPlayback() {
+export interface UseWallPlaybackOptions {
+  /** Tiles with a camera — how many play back when Sync is on, which is what the
+   *  speed ceiling and reverse are limited by. */
+  filledTiles?: number;
+}
+
+export function useWallPlayback({ filledTiles = 1 }: UseWallPlaybackOptions = {}) {
   const [mode, setMode] = useState<WallMode>("live");
   const [sync, setSync] = useState(false);
-  const [rangeSeconds, setRangeSeconds] = useState(DEFAULT_RANGE_SECONDS);
-  const [win, setWin] = useState(() => makeWindow(Date.now(), DEFAULT_RANGE_SECONDS));
-  // Where every playing tile's session begins. `seq` makes a repeat seek to the
-  // same instant a real event (see the header).
+  const [win, setWin] = useState<Win>(() => liveWindow(Date.now(), DEFAULT_SPAN_S));
+  // Where every playing tile's session begins, and the last scrub (see header).
   const [anchor, setAnchor] = useState<{ ms: number | null; seq: number }>({ ms: null, seq: 0 });
+  const [scrub, setScrub] = useState<{ ms: number | null; seq: number }>({ ms: null, seq: 0 });
   const [playing, setPlaying] = useState(true);
-  const [speed, setSpeed] = useState(1);
+  const [requestedSpeed, setRequestedSpeed] = useState(1);
+  // The timeline follows the playhead (or, live, "now") until the operator moves
+  // it by hand; any seek hands it back.
+  const [follow, setFollow] = useState(true);
+  const [sel, setSel] = useState<WallSelection>({ inMs: null, outMs: null });
 
   // One clock for the life of the component. A lazy useState initialiser gives
   // the same create-exactly-once guarantee as the `if (!ref.current)` idiom
   // without writing a ref during render.
   const [clock] = useState(createClock);
 
-  // Enter playback at an instant (from the timeline, a span step, a skip). Also
-  // the seek: in playback this re-anchors, which is the only operation the node's
-  // session model actually has.
+  // Every tile that plays back decodes every frame at the transport's rate, so the
+  // ceiling is set by how many do: the focused one alone, or the whole wall.
+  const tiles = sync ? Math.max(1, filledTiles) : 1;
+  const speed = clampSpeed(requestedSpeed, tiles);
+
+  // Enter playback at an instant (from the timeline, a step, a skip). Also the
+  // seek: in playback this re-anchors, which is the only operation the node's
+  // session model actually has. Never past what the recorder has written.
   const playAt = useCallback(
     (atMs: number) => {
-      const ms = Math.round(atMs);
+      const ms = Math.round(Math.min(atMs, Date.now() - LIVE_EDGE_LAG_MS));
       clock.set(ms);
       setAnchor((a) => ({ ms, seq: a.seq + 1 }));
       setPlaying(true);
       setMode("playback");
+      setFollow(true);
+    },
+    [clock],
+  );
+
+  /** Show an instant without re-anchoring: a frame step, a reverse step. */
+  const scrubTo = useCallback(
+    (ms: number) => {
+      clock.set(ms);
+      setScrub((s) => ({ ms, seq: s.seq + 1 }));
     },
     [clock],
   );
@@ -149,65 +166,87 @@ export function useWallPlayback() {
     setMode("live");
     setSync(false);
     setAnchor({ ms: null, seq: 0 });
+    setScrub({ ms: null, seq: 0 });
+    setRequestedSpeed(1);
+    setPlaying(true);
+    setFollow(true);
     clock.set(null);
     // A live wall is always "now", so put the window back where the operator can
     // see now — otherwise returning to live leaves the timeline parked in the past.
-    setWin(makeWindow(Date.now(), rangeSeconds));
-  }, [clock, rangeSeconds]);
+    setWin((w) => liveWindow(Date.now(), (w.toMs - w.fromMs) / 1000));
+  }, [clock]);
 
-  // Move the playhead by a signed number of seconds, inside the window.
+  // Move the playhead by a signed number of seconds. From a live wall a step BACK
+  // is an instant replay of that much — the arrow key every client honours.
   const skip = useCallback(
     (seconds: number) => {
-      const base = clock.get();
-      if (base == null) return;
-      playAt(Math.max(win.fromMs, Math.min(base + seconds * 1000, win.toMs)));
+      const base = clock.get() ?? (seconds < 0 ? Date.now() - LIVE_EDGE_LAG_MS : null);
+      if (base != null) playAt(base + seconds * 1000);
     },
-    [clock, playAt, win.fromMs, win.toMs],
+    [clock, playAt],
   );
 
-  // Re-frame the timeline around wherever the playhead is (or now, in live).
-  const setRange = useCallback(
+  /** Play / pause. On a live wall, Play is "instant playback": the last half-minute. */
+  const togglePlaying = useCallback(() => {
+    if (mode !== "playback") {
+      playAt(Date.now() - INSTANT_REPLAY_MS);
+      return;
+    }
+    setPlaying((p) => !p);
+  }, [mode, playAt]);
+
+  const setSpeed = useCallback(
+    (next: number) => {
+      setRequestedSpeed(clampSpeed(next, tiles));
+      setPlaying(true);
+    },
+    [tiles],
+  );
+  const stepSpeedBy = useCallback((dir: -1 | 1) => setSpeed(stepSpeed(speed, dir, tiles)), [setSpeed, speed, tiles]);
+  // Reverse where the wall can (a small one); clampSpeed turns it forward otherwise.
+  const toggleReverse = useCallback(() => setSpeed(speed < 0 ? 1 : -1), [setSpeed, speed]);
+
+  /** One frame forward or back; pauses first, like every client's frame step. */
+  const stepFrame = useCallback(
+    (dir: -1 | 1) => {
+      const at = clock.get();
+      if (at == null) return;
+      setPlaying(false);
+      scrubTo(at + dir * FRAME_MS);
+    },
+    [clock, scrubTo],
+  );
+
+  // ── the timeline window ──────────────────────────────────────────────────
+  const zoom = useCallback((factor: number, centerMs?: number) => setWin((w) => zoomWindow(w, factor, centerMs)), []);
+  const pan = useCallback((deltaMs: number) => {
+    setFollow(false);
+    setWin((w) => panWindow(w, deltaMs));
+  }, []);
+  /** A rung of the zoom ladder, around the playhead — or, live, with now at the end. */
+  const setSpan = useCallback(
     (seconds: number) => {
-      setRangeSeconds(seconds);
-      setWin(makeWindow(clock.get() ?? Date.now(), seconds));
+      const at = clock.get();
+      setWin(at == null ? liveWindow(Date.now(), seconds) : windowAt(at, seconds));
     },
     [clock],
   );
 
-  // Jump to a calendar day (YYYY-MM-DD from a date input). At a day-wide range
-  // that means the whole of that day; at a tighter one it keeps the TIME OF DAY
-  // the operator is already looking at and moves it to the chosen date — which is
-  // how an investigation actually runs ("same corridor, same 14:05, yesterday").
-  // Never past now: a window into the future has no footage in it by definition.
+  // Jump to a calendar day (YYYY-MM-DD). At a day-wide span that is the whole of
+  // that day; at a tighter one it keeps the TIME OF DAY the operator is looking at
+  // and moves it to the chosen date — "same corridor, same 14:05, yesterday".
+  // Picking a day plays it, as the recorder console and the Playback page do.
   const pickDay = useCallback(
-    (dayISO: string) => {
-      const dayStart = new Date(`${dayISO}T00:00:00`).getTime();
-      if (Number.isNaN(dayStart)) return;
+    (day: string) => {
+      const start = dayStart(day);
+      if (!Number.isFinite(start)) return;
+      const seconds = (win.toMs - win.fromMs) / 1000;
       const base = clock.get() ?? Date.now();
-      const at =
-        rangeSeconds >= 86_400
-          ? Math.min(dayStart, Date.now())
-          : Math.min(dayStart + (base - dayStartMs(base)), Date.now());
-      setWin(makeWindow(at, rangeSeconds));
-      clock.set(at);
-      // Only re-anchor if we are ALREADY in playback: picking a date while the
-      // wall is live should re-frame the timeline, not silently take every tile
-      // off its live stream.
-      setAnchor((a) => (a.ms == null ? a : { ms: at, seq: a.seq + 1 }));
+      const target = seconds >= 86_400 ? start : Math.min(start + (base - dayWindow(base).fromMs), Date.now());
+      setWin(seconds >= 86_400 ? dayWindow(start) : windowAt(target, seconds));
+      playAt(target);
     },
-    [clock, rangeSeconds],
-  );
-
-  // Pan the window a whole page at a time — the way to walk back through a day
-  // once the range is tight enough to be useful.
-  const pan = useCallback(
-    (dir: number) => {
-      setWin((w) => {
-        const span = w.toMs - w.fromMs;
-        return { fromMs: w.fromMs + dir * span, toMs: w.toMs + dir * span };
-      });
-    },
-    [],
+    [win, clock, playAt],
   );
 
   // Turning Sync ON re-anchors the WHOLE wall at the current playhead.
@@ -227,6 +266,46 @@ export function useWallPlayback() {
     setSync((s) => !s);
   }, [sync, clock, playAt]);
 
+  // ── the IN / OUT range ───────────────────────────────────────────────────
+  const markIn = useCallback(() => {
+    const at = clock.get();
+    if (at == null) return;
+    setSel((s) => ({ inMs: at, outMs: s.outMs != null && s.outMs > at ? s.outMs : null }));
+  }, [clock]);
+  const markOut = useCallback(() => {
+    const at = clock.get();
+    if (at == null) return;
+    setSel((s) => (s.inMs != null && at > s.inMs ? { ...s, outMs: at } : { inMs: s.inMs, outMs: null }));
+  }, [clock]);
+  const select = useCallback((a: number, b: number) => setSel({ inMs: Math.min(a, b), outMs: Math.max(a, b) }), []);
+  const clearSel = useCallback(() => setSel({ inMs: null, outMs: null }), []);
+  const hasSel = sel.inMs != null && sel.outMs != null && sel.outMs > sel.inMs;
+
+  // ── the window follows ───────────────────────────────────────────────────
+  // In playback, it pages with the playhead; live, it keeps "now" in view. Both
+  // only until the operator drags the track; a seek hands it back.
+  useEffect(() => {
+    if (!follow || mode !== "playback") return undefined;
+    return clock.subscribe((ms) => {
+      if (ms != null) setWin((w) => followPage(w, ms));
+    });
+  }, [follow, mode, clock]);
+  useEffect(() => {
+    if (!follow || mode !== "live") return undefined;
+    const id = setInterval(() => setWin((w) => followLive(w, Date.now())), 15_000);
+    return () => clearInterval(id);
+  }, [follow, mode]);
+
+  // ── reverse: stepped, a frame each tick ──────────────────────────────────
+  useEffect(() => {
+    if (mode !== "playback" || !playing || speed >= 0) return undefined;
+    const id = setInterval(() => {
+      const at = clock.get();
+      if (at != null) scrubTo(at + speed * REVERSE_TICK_MS);
+    }, REVERSE_TICK_MS);
+    return () => clearInterval(id);
+  }, [mode, playing, speed, clock, scrubTo]);
+
   // ── the wall clock keeps time even when a camera cannot ──────────────────
   // The focused tile drives the playhead, which is right while it is playing —
   // and wrong the moment it cannot. Its recording ends, or it is the one camera
@@ -239,7 +318,7 @@ export function useWallPlayback() {
   // for a moment, this carries the clock forward itself at the transport's speed,
   // and stands down again the instant a tile starts publishing.
   useEffect(() => {
-    if (mode !== "playback" || !playing) return undefined;
+    if (mode !== "playback" || !playing || speed <= 0) return undefined;
     let last = Date.now();
     const id = setInterval(() => {
       const now = Date.now();
@@ -252,8 +331,23 @@ export function useWallPlayback() {
   }, [mode, playing, speed, clock]);
 
   const state = useMemo(
-    () => ({ mode, sync, win, rangeSeconds, anchorMs: anchor.ms, anchorSeq: anchor.seq, playing, speed }),
-    [mode, sync, win, rangeSeconds, anchor.ms, anchor.seq, playing, speed],
+    () => ({
+      mode,
+      sync,
+      win,
+      anchorMs: anchor.ms,
+      anchorSeq: anchor.seq,
+      scrubMs: scrub.ms,
+      scrubSeq: scrub.seq,
+      playing,
+      speed,
+      follow,
+      sel,
+      hasSel,
+      maxSpeed: maxSpeedFor(tiles),
+      canReverse: reverseAllowed(tiles),
+    }),
+    [mode, sync, win, anchor, scrub, playing, speed, follow, sel, hasSel, tiles],
   );
 
   return {
@@ -261,16 +355,26 @@ export function useWallPlayback() {
     clock,
     isPlayback: mode === "playback",
     playAt,
+    scrubTo,
     goLive,
     skip,
-    setRange,
-    pickDay,
-    pan,
-    setWin,
+    togglePlaying,
     setPlaying,
     setSpeed,
+    stepSpeedBy,
+    toggleReverse,
+    stepFrame,
+    zoom,
+    pan,
+    setSpan,
+    pickDay,
+    setWin,
     toggleSync,
-    togglePlaying: useCallback(() => setPlaying((p) => !p), []),
+    setSync,
+    markIn,
+    markOut,
+    select,
+    clearSel,
   };
 }
 

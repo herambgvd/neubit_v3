@@ -42,6 +42,8 @@ export interface PlaybackTransportProps {
   onClearSel: () => void;
   onExport: () => void;
   onProtect: () => void;
+  /** What the LIVE button says it does — the live wall's goes back to live. */
+  liveTitle?: string;
 }
 
 export default function PlaybackTransport(p: Readonly<PlaybackTransportProps>) {
@@ -118,7 +120,7 @@ export default function PlaybackTransport(p: Readonly<PlaybackTransportProps>) {
       <button
         type="button"
         onClick={p.onLiveEdge}
-        title="Jump to the live edge (End)"
+        title={p.liveTitle ?? "Jump to the live edge (End)"}
         className="inline-flex items-center gap-1 rounded-lg border border-red-500/40 px-2 py-1 text-[11px] font-semibold text-red-300 transition hover:bg-red-500/10"
       >
         <span className="h-1.5 w-1.5 rounded-full bg-red-400" /> LIVE

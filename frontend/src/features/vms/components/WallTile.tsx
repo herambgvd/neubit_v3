@@ -94,6 +94,14 @@ export interface WallTileProps {
   playbackPlaying?: boolean;
   playbackSpeed?: number;
   playbackClock?: WallClock | null;
+  /** A frame step or a reverse step: an instant to show without re-anchoring. */
+  playbackScrubMs?: number | null;
+  playbackScrubSeq?: number;
+  /** The fastest rate the wall may decode at with this many tiles playing back. */
+  playbackRateMax?: number;
+  /** (index) — replay this camera's last half-minute here, the rest staying live.
+   *  Offered only on a recorder's camera: its footage is on the recorder. */
+  onInstantPlayback?: (index: number) => void;
   /** (atMs) — the master's window ran out; carry the wall on. */
   onPlaybackEnded?: (atMs: number) => void;
   focused?: boolean;
@@ -135,6 +143,10 @@ function WallTile({
   playbackPlaying = true,
   playbackSpeed = 1,
   playbackClock = null,
+  playbackScrubMs = null,
+  playbackScrubSeq = 0,
+  playbackRateMax,
+  onInstantPlayback,
   onPlaybackEnded,
   focused = false,
   onFocus,
@@ -179,6 +191,9 @@ function WallTile({
   // offers the key. Not on a dark camera (nothing would answer) nor over recorded
   // footage (a recording cannot be steered).
   const ptzKeyShown = ptzKeyOffered(ptzAvailable, camera?.status, playback);
+  // Instant playback — the last 30 s of this camera, in this tile — where there is a
+  // recording to replay: a recorder's camera, not already playing back here.
+  const instantShown = !!onInstantPlayback && !!camera?.federated && !playback;
 
   // The tile's OWN buttons. They ride inside the player's control bar when there
   // is a player (one cluster, not two) and stand alone on a dark tile — either
@@ -187,6 +202,13 @@ function WallTile({
     () => (
       <>
         {ptzKeyShown && <PtzKey open={ptzOpen} onToggle={() => onTogglePtz?.(index)} />}
+        {instantShown && (
+          <PlayerBtn
+            icon="heroicons-outline:arrow-uturn-left"
+            title="Instant playback — the last 30 s of this camera"
+            onClick={() => onInstantPlayback?.(index)}
+          />
+        )}
         <PlayerBtn
           icon="heroicons-outline:arrows-pointing-out"
           title="Spotlight (double-click)"
@@ -195,7 +217,7 @@ function WallTile({
         <PlayerBtn icon="heroicons-outline:x-mark" title="Remove from wall" onClick={() => onClose?.(index)} />
       </>
     ),
-    [index, onSpotlight, onClose, ptzKeyShown, ptzOpen, onTogglePtz],
+    [index, onSpotlight, onClose, ptzKeyShown, ptzOpen, onTogglePtz, instantShown, onInstantPlayback],
   );
 
   const onDragOver = (e: DragEvent<HTMLDivElement>) => {
@@ -343,10 +365,15 @@ function WallTile({
             anchorMs={playbackAnchorMs}
             anchorSeq={playbackAnchorSeq}
             windowToMs={playbackToMs}
-            playing={playbackPlaying}
-            speed={playbackSpeed}
+            // Reverse is stepped by the wall (scrubs), so the picture itself only
+            // ever plays forward; a negative speed holds it still between steps.
+            playing={playbackPlaying && playbackSpeed > 0}
+            speed={Math.max(playbackSpeed, 0.25)}
             master={playbackMaster}
             clock={playbackClock}
+            scrubMs={playbackScrubMs}
+            scrubSeq={playbackScrubSeq}
+            rateMax={playbackRateMax}
             compact={!isHero}
             onReachedEnd={onPlaybackEnded}
           />

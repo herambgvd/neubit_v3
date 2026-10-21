@@ -19,7 +19,9 @@ import { createClock, type WallClock } from "../hooks/useWallPlayback";
 import type { PlaybackStream } from "../types";
 import {
   DEFAULT_SPAN_S,
+  FRAME_MS,
   LIVE_EDGE_LAG_MS,
+  REVERSE_TICK_MS,
   MAX_TILES,
   clampSpeed,
   dayStart,
@@ -68,13 +70,9 @@ function newController(id: string, at: number | null, playing = true, speed = 1)
   return { id, anchorMs: at, anchorSeq: at == null ? 0 : 1, playing, speed, clock, scrubMs: null, scrubSeq: 0 };
 }
 
-// Reverse play has no native decoder support in a browser, and the recorder's
-// progressive stream cannot seek, so it is stepped: every REVERSE_TICK_MS the
-// controller moves back by speed × tick and every tile opens a window at that instant
-// and shows its first frame. It is how the recorder's own console reverses too.
-const REVERSE_TICK_MS = 1_000;
-// One video frame at 25 fps, the frame step when the stream's rate is unknown.
-export const FRAME_MS = 40;
+// Frame step and stepped reverse: see FRAME_MS and REVERSE_TICK_MS in playbackModel,
+// which the live wall's transport shares.
+export { FRAME_MS };
 
 export interface Selection {
   inMs: number | null;

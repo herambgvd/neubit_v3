@@ -55,6 +55,9 @@ import WallTile from "./components/WallTile";
 import WallToolbar, { QUALITY_LEVELS } from "./components/WallToolbar";
 import EstateMapView from "./components/EstateMapView";
 import PlayoutBar from "./components/PlayoutBar";
+import ExportDialog from "./components/ExportDialog";
+import type { ExportRequest } from "./components/playbackTypes";
+import { INSTANT_REPLAY_MS } from "./playback/playbackModel";
 import SpotlightOverlay from "./components/SpotlightOverlay";
 import PtzOverlay from "./components/PtzOverlay";
 import CameraQuickPicker from "./components/CameraQuickPicker";
@@ -289,7 +292,9 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
   // The wall's DVR: live ⇄ playback, the window, the shared clock, Sync. The
   // tiles themselves show the recording (WallTile → TilePlayback); this only
   // holds where the wall is pointed. See hooks/useWallPlayback.
-  const pb = useWallPlayback();
+  const pb = useWallPlayback({ filledTiles: cells.filter((c) => c.cameraId).length });
+  // An export raised from the dock's IN/OUT range (SCRUM-337).
+  const [exportReq, setExportReq] = useState<ExportRequest | null>(null);
   // The tile the transport is bound to: whose coverage the timeline draws, and —
   // in playback — the master clock every synced tile follows. Click any tile to
   // move it; it falls back to the first filled tile so the dock is never
@@ -538,6 +543,21 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
     // on every render and defeat the memo it exists to be.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [pb.playAt, pb.goLive],
+  );
+  // Instant playback (SCRUM-337): this camera's last half-minute, in its own tile,
+  // the rest of the wall staying live — the one-click replay HikCentral and every
+  // NVR keep on a live tile. The dock opens with it, since it is the way back.
+  const handleInstantPlayback = useCallback(
+    (index: number) => {
+      setFocusIndex(index);
+      pb.setSync(false);
+      pb.playAt(Date.now() - INSTANT_REPLAY_MS);
+      setPlayoutOpen(true);
+    },
+    // pb.setSync and pb.playAt are stable callbacks; `pb` itself is a fresh object
+    // every render (see handlePlaybackEnded).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pb.setSync, pb.playAt],
   );
   const handlePickHere = useCallback(
     (index: number) => setPicker({ open: true, tileIndex: index }),
@@ -848,6 +868,19 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
     return first >= 0 ? first : null;
   }, [focusIndex, cells, isSpotlightActive, spotlight]);
   const focusCamera = cameraIn(cells, cameraById, focusTile);
+  // The wall's cameras in tile order — the dock's lanes.
+  const wallCameras = useMemo(
+    () => cells.map((c) => (c.cameraId ? cameraById.get(c.cameraId) : undefined)).filter((c): c is EstateCamera => !!c),
+    [cells, cameraById],
+  );
+  // A lane picked on the timeline focuses that camera's tile.
+  const focusCameraTile = useCallback(
+    (cameraId: string) => {
+      const i = cells.findIndex((c) => c.cameraId === cameraId);
+      if (i >= 0) setFocusIndex(i);
+    },
+    [cells],
+  );
 
   // PTZ commands go through the camera's recorder and need vms.ptz.control there and
   // here; a viewer without it gets no key rather than a panel of refusals.
@@ -900,6 +933,10 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
       playbackPlaying={pb.playing}
       playbackSpeed={pb.speed}
       playbackClock={pb.clock}
+      playbackScrubMs={pb.scrubMs}
+      playbackScrubSeq={pb.scrubSeq}
+      playbackRateMax={pb.maxSpeed}
+      onInstantPlayback={handleInstantPlayback}
       focused={i === focusTile}
       onFocus={handleFocus}
       onPlaybackEnded={handlePlaybackEnded}
@@ -1076,8 +1113,11 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
           from the toolbar. Wired to the selected/first camera. */}
       {playoutOpen && (
         <PlayoutBar
-          camera={focusCamera}
+          cameras={wallCameras}
+          focusCameraId={focusCamera?.id ?? null}
+          onFocusCamera={focusCameraTile}
           pb={pb}
+          onExport={setExportReq}
           // Hiding the transport also returns the wall to live: the dock is
           // the ONLY way back from playback, and a wall left frozen on an
           // hour-old recording with no visible control saying so is the worst
@@ -1161,6 +1201,15 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
       />
 
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
+
+      <ExportDialog
+        open={!!exportReq}
+        onClose={() => setExportReq(null)}
+        nodeId={exportReq?.nodeId}
+        cameraId={exportReq?.cameraId}
+        cameraName={exportReq?.cameraName}
+        range={exportReq}
+      />
     </WallFrame>
   );
 }

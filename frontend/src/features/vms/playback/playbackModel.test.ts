@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  followLive,
+  liveWindow,
+  snapToFootage,
   HOUR_MS,
   MAX_SPAN_MS,
   MIN_SPAN_MS,
@@ -200,5 +203,44 @@ describe("keys", () => {
     expect(keyAction("=")).toBe("zoomIn");
     expect(keyAction("End")).toBe("liveEdge");
     expect(keyAction("q")).toBeNull();
+  });
+});
+
+// ── the live wall's dock (SCRUM-337) ────────────────────────────────────────
+
+describe("snapToFootage", () => {
+  const spans = [
+    { s: 1_000, e: 2_000 },
+    { s: 5_000, e: 6_000 },
+  ];
+
+  it("plays exactly where the operator clicked, inside a recording", () => {
+    expect(snapToFootage(1_500, spans)).toBe(1_500);
+    expect(snapToFootage(2_000, spans)).toBe(2_000);
+  });
+
+  it("snaps forward out of a gap, so a rough aim still lands on footage", () => {
+    expect(snapToFootage(3_000, spans)).toBe(5_000);
+  });
+
+  it("never snaps backwards past the last recording", () => {
+    expect(snapToFootage(9_000, spans)).toBe(9_000);
+    expect(snapToFootage(9_000, [])).toBe(9_000);
+  });
+});
+
+describe("a live wall's window", () => {
+  it("puts now four-fifths across, the recent past to scrub into", () => {
+    const w = liveWindow(1_000_000, 100);
+    expect(w.toMs - w.fromMs).toBe(100_000);
+    expect((1_000_000 - w.fromMs) / (w.toMs - w.fromMs)).toBeCloseTo(0.8);
+  });
+
+  it("keeps still until now nears the right edge, then turns the page", () => {
+    const w = liveWindow(1_000_000, 100);
+    expect(followLive(w, 1_010_000)).toBe(w);
+    const turned = followLive(w, w.toMs - 1_000);
+    expect(turned).not.toBe(w);
+    expect((w.toMs - 1_000 - turned.fromMs) / (turned.toMs - turned.fromMs)).toBeCloseTo(0.8);
   });
 });

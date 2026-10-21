@@ -60,6 +60,9 @@ export interface PlaybackTimelineProps {
   onZoom: (factor: number, centerMs: number) => void;
   onPan: (deltaMs: number) => void;
   onSelect: (a: number, b: number) => void;
+  /** The "All cameras" lane, when it should cover more cameras than the lanes
+   *  drawn — the live wall shows only its focused lane past sixteen. */
+  master?: Pick<TimelineLane, "spans" | "events" | "bookmarks" | "hits">;
 }
 
 const LABEL_W = 136;
@@ -82,6 +85,7 @@ export default function PlaybackTimeline({
   onZoom,
   onPan,
   onSelect,
+  master,
 }: Readonly<PlaybackTimelineProps>) {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const headRef = useRef<HTMLDivElement | null>(null);
@@ -206,10 +210,10 @@ export default function PlaybackTimeline({
   const hoverMs = hoverX == null ? null : timeAtX(hoverX);
   const nowF = timeToFrac(win, now);
   const sel = inMs != null && outMs != null && outMs > inMs ? { a: inMs, b: outMs } : null;
-  const allSpans = useMemo(() => lanes.flatMap((l) => l.spans), [lanes]);
-  const allEvents = useMemo(() => lanes.flatMap((l) => l.events), [lanes]);
-  const allBookmarks = useMemo(() => lanes.flatMap((l) => l.bookmarks), [lanes]);
-  const allHits = useMemo(() => lanes.flatMap((l) => l.hits), [lanes]);
+  const allSpans = useMemo(() => master?.spans ?? lanes.flatMap((l) => l.spans), [master, lanes]);
+  const allEvents = useMemo(() => master?.events ?? lanes.flatMap((l) => l.events), [master, lanes]);
+  const allBookmarks = useMemo(() => master?.bookmarks ?? lanes.flatMap((l) => l.bookmarks), [master, lanes]);
+  const allHits = useMemo(() => master?.hits ?? lanes.flatMap((l) => l.hits), [master, lanes]);
   // Sixteen lanes must not push the video off the screen.
   let laneH = "h-4";
   if (lanes.length > 9) laneH = "h-2";
