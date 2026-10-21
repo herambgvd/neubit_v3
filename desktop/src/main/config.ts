@@ -4,7 +4,7 @@ import {
   normaliseConsoleUrl,
   type AppConfig,
   type ConsoleServer,
-  type WallAssignment,
+  type ScreenAssignment,
 } from "@shared/ipc";
 
 // Persisted shell config (electron-store → a JSON file in userData). This holds
@@ -130,26 +130,31 @@ export function setKiosk(on: boolean): AppConfig {
 
 // ── the wall layout ────────────────────────────────────────────────────────
 //
-// Which physical screen shows which wall monitor. Persisted because it is a
-// property of THIS WORKSTATION and nothing else knows it: the server knows a wall
-// has four monitors, and only this box knows that monitor 3 is the panel on the
-// right-hand wall of this particular control room.
+// What each physical screen shows: a wall monitor, or a live view of its own.
+// Persisted because it is a property of THIS WORKSTATION and nothing else knows
+// it: the server knows a wall has four monitors, and only this box knows that
+// monitor 3 is the panel on the right-hand wall of this particular control room.
 
-export function getWalls(): WallAssignment[] {
+/** Whether a stored entry is one the shell can act on. A live screen needs only
+ *  its screen; a wall monitor needs its ids too. An entry with no `kind` predates
+ *  live screens, so it is a wall. */
+function usableAssignment(a: unknown): a is ScreenAssignment {
+  if (!a || typeof a !== "object") return false;
+  const e = a as Record<string, unknown>;
+  if (typeof e.displaySignature !== "string") return false;
+  if (e.kind === "live") return true;
+  return (e.kind ?? "wall") === "wall" && typeof e.wallId === "string" && typeof e.monitorId === "string";
+}
+
+export function getWalls(): ScreenAssignment[] {
   const raw = store().get("walls");
   // Defensive: this file is hand-editable JSON in userData, and a half-written
   // entry must not take the shell down on the startup path that restores walls.
   if (!Array.isArray(raw)) return [];
-  return raw.filter(
-    (a): a is WallAssignment =>
-      !!a &&
-      typeof a.displaySignature === "string" &&
-      typeof a.wallId === "string" &&
-      typeof a.monitorId === "string",
-  );
+  return raw.filter(usableAssignment);
 }
 
-export function setWalls(walls: WallAssignment[]): AppConfig {
+export function setWalls(walls: ScreenAssignment[]): AppConfig {
   store().set("walls", walls);
   return store().store;
 }

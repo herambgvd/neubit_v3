@@ -195,3 +195,35 @@ describe("host load", () => {
     expect(chip.compareDocumentPosition(quality) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
+
+describe("full screen (SCRUM-335)", () => {
+  it("offers full screen, and once in it, the way out", async () => {
+    const p = props();
+    const { rerender } = renderWithProviders(<WallToolbar {...p} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /^Full screen/ }));
+    expect(p.onFullscreen).toHaveBeenCalledTimes(1);
+
+    rerender(<WallToolbar {...p} fullscreen />);
+    expect(screen.getByRole("button", { name: "Exit full screen (Esc)" })).toBeInTheDocument();
+  });
+});
+
+describe("on a live screen's own window (SCRUM-336)", () => {
+  it("names its monitor and closes, where the main wall goes Home", async () => {
+    const onClose = vi.fn();
+    renderWithProviders(<WallToolbar {...props({ screen: { label: "DELL Right", onClose } })} />);
+
+    expect(screen.getByText("DELL Right")).toBeInTheDocument();
+    expect(screen.queryByTitle("Home")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Close this screen" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("the main wall keeps Home and carries the Screens control it is given", () => {
+    renderWithProviders(<WallToolbar {...props({ screensControl: <button type="button">Screens</button> })} />);
+
+    expect(screen.getByTitle("Home")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Screens" })).toBeInTheDocument();
+  });
+});

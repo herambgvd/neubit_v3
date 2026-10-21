@@ -30,6 +30,7 @@ import {
   clearScreen,
   closeAllWalls,
   identifyScreens,
+  openLiveScreen,
   readLayout,
 } from "./screens";
 import {
@@ -178,6 +179,13 @@ export function registerIpc(): void {
 
   ipcMain.handle(IPC.screensClear, (_e, signature: string): Promise<ScreenLayout> =>
     clearScreen(signature),
+  );
+
+  // A live screen: the console names a SCREEN and nothing else. The shell derives
+  // the page's key from it and builds the URL from the active server, exactly as
+  // for a wall monitor.
+  ipcMain.handle(IPC.screensOpenLive, (_e, signature: string): Promise<ScreenLayout> =>
+    openLiveScreen(signature),
   );
 
   ipcMain.handle(IPC.screensCloseAll, (): Promise<ScreenLayout> => closeAllWalls());

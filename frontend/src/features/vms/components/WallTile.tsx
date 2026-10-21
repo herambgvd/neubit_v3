@@ -38,6 +38,7 @@ import TilePlayback from "./TilePlayback";
 import { DARK_STATUSES, presetFor, recorderDown, STATUS_PRESETS } from "../constants";
 import type { WallClock } from "../hooks/useWallPlayback";
 import type { EstateCamera, LiveSessionSource } from "../types";
+import { dragEffect, readDrop, startTileDrag } from "../wallDrag";
 
 const EDGE = {
   online: "bg-emerald-500",
@@ -198,53 +199,29 @@ function WallTile({
   );
 
   const onDragOver = (e: DragEvent<HTMLDivElement>) => {
-    // Accept a rail camera, a whole rail branch (a recorder), or another tile.
-    const types = e.dataTransfer.types;
-    const fromTile = types.includes("text/tile-index");
-    const fromRail = types.includes("text/camera-id") || types.includes("text/camera-ids");
-    if (!fromTile && !fromRail) return;
-
+    // A rail camera, a whole rail branch (a recorder), a tile of this wall, or a
+    // tile dragged in from another window's wall (see wallDrag).
+    const effect = dragEffect(e.dataTransfer.types);
+    if (!effect) return;
     e.preventDefault();
     // dropEffect MUST agree with the source's effectAllowed. A mismatch resolves
     // to "none" and the browser then refuses the drop — silently, and AFTER
     // preventDefault, so the tile still highlights and still says DROP HERE while
     // nothing can ever land on it. That is exactly what a hardcoded "move" did to
     // every drag out of the rail, which marks its drags "copy" (the camera stays
-    // in the list). Tile-to-tile was unaffected and hid the bug: WallTile's own
-    // dragstart says "move", which agreed with the constant.
-    //
-    // So the effect follows the SOURCE: a tile being rearranged moves, a camera
-    // being taken from the rail copies.
-    e.dataTransfer.dropEffect = fromTile ? "move" : "copy";
+    // in the list). So the effect follows the SOURCE: a tile being rearranged
+    // moves, a camera being taken from the rail or another window copies.
+    e.dataTransfer.dropEffect = effect;
     if (!dropActive) setDropActive(true);
   };
   const onDragLeave = () => setDropActive(false);
   const onDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDropActive(false);
-    const tileIdx = e.dataTransfer.getData("text/tile-index");
-    if (tileIdx !== "" && tileIdx != null && String(tileIdx) !== String(index)) {
-      onSwap?.(Number(tileIdx), index);
-      return;
-    }
-    // A whole branch: fill from THIS tile onward, so where the operator dropped
-    // decides where the recorder lands rather than always the top-left.
-    const many = e.dataTransfer.getData("text/camera-ids");
-    if (many) {
-      try {
-        // The rail serialises its branch as a JSON array of camera ids.
-        const ids: unknown = JSON.parse(many);
-        if (Array.isArray(ids) && ids.length) {
-          onAssignMany?.(ids as string[], index);
-          return;
-        }
-      } catch {
-        // A malformed payload is not worth failing a drop over; fall through to
-        // the single-camera path, which will simply find nothing and no-op.
-      }
-    }
-    const id = e.dataTransfer.getData("text/camera-id");
-    if (id) onAssign?.(id, index);
+    const drop = readDrop(e.dataTransfer, index);
+    if (drop?.kind === "swap") onSwap?.(drop.from, index);
+    else if (drop?.kind === "many") onAssignMany?.(drop.ids, index);
+    else if (drop?.kind === "one") onAssign?.(drop.id, index);
   };
 
   // ── Empty cell ───────────────────────────────────────────────────────────
@@ -313,10 +290,7 @@ function WallTile({
       ref={rootRef}
       style={style}
       draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData("text/tile-index", String(index));
-        e.dataTransfer.effectAllowed = "move";
-      }}
+      onDragStart={(e) => startTileDrag(e.dataTransfer, index, cameraId)}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}

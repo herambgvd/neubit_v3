@@ -39,6 +39,13 @@ export function listDisplays(): DisplayInfo[] {
   }));
 }
 
+/** The signature of one display Electron handed us. */
+export function signatureOf(display: Electron.Display): string {
+  const all = screen.getAllDisplays();
+  const index = all.findIndex((d) => d.id === display.id);
+  return displaySignature(display, index < 0 ? all.length : index);
+}
+
 /** The display a saved assignment refers to, or null when that monitor is not
  *  currently attached. Null is a normal answer, not an error: stations get taken
  *  apart, monitors die, somebody carries the box to a desk with one screen. The

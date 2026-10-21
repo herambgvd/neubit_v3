@@ -1,13 +1,28 @@
 import { BrowserWindow, screen } from "electron";
-import { IPC, wallDisplayUrl, isWallResourceId } from "@shared/ipc";
-import type { ScreenLayout, ScreenSlot, WallAssignment, WallTarget } from "@shared/ipc";
+import {
+  IPC,
+  isLiveAssignment,
+  isWallResourceId,
+  liveDisplayUrl,
+  screenKeyFor,
+  wallDisplayUrl,
+} from "@shared/ipc";
+import type {
+  LiveAssignment,
+  ScreenAssignment,
+  ScreenLayout,
+  ScreenSlot,
+  WallAssignment,
+  WallTarget,
+} from "@shared/ipc";
 import { getWalls, setWalls } from "./config";
-import { displayForSignature, listDisplays } from "./displays";
+import { displayForSignature, listDisplays, signatureOf } from "./displays";
 import { isAllowedConsoleUrl } from "./security";
 import {
   closeAllWallWindows,
   closeWallOn,
   getMainWindow,
+  mainWindowBounds,
   openWallOn,
   openWallSignatures,
   resolveConsoleOrigin,
@@ -48,6 +63,16 @@ import { log } from "./logger";
 // console does not offer decoder monitors. That split is deliberate and worth
 // stating plainly: the shell validates STRUCTURE (see isWallResourceId), the
 // console validates MEANING.
+//
+// ══ A SCREEN CAN ALSO SHOW A LIVE VIEW OF ITS OWN (SCRUM-336) ═══════════════
+//
+// The operator's own second monitor, not a monitor of a shared wall: Milestone's
+// secondary display, HikCentral's auxiliary screen. It goes through everything
+// above — saved per screen, reopened at launch, closed when its panel is
+// unplugged and back when it returns, Identify — and differs in one place: what
+// the window loads. A live screen keeps its own grid and cameras in the console
+// page, under a key derived from the screen (screenKeyFor), so the shell still
+// holds no content at all.
 
 /** Guard on what the console sends. Structural only — see the module note. */
 function validTarget(target: unknown): target is WallTarget {
@@ -64,6 +89,7 @@ export async function readLayout(): Promise<ScreenLayout> {
   const consoleUrl = await resolveConsoleOrigin();
   const assignments = getWalls();
   const openNow = new Set(openWallSignatures());
+  const consoleOn = consoleSignature();
 
   const screens: ScreenSlot[] = listDisplays().map((d) => ({
     signature: d.signature,
@@ -72,6 +98,7 @@ export async function readLayout(): Promise<ScreenLayout> {
     attached: true,
     resolution: `${d.bounds.width} × ${d.bounds.height}`,
     open: openNow.has(d.signature),
+    console: d.signature === consoleOn,
     assignment: assignments.find((a) => a.displaySignature === d.signature) ?? null,
   }));
 
@@ -89,11 +116,42 @@ export async function readLayout(): Promise<ScreenLayout> {
       attached: false,
       resolution: "",
       open: false,
+      console: false,
       assignment: a,
     });
   }
 
   return { consoleUrl, screens };
+}
+
+/** The screen the console window is on — mostly on, for one straddling two. */
+function consoleSignature(): string | null {
+  const bounds = mainWindowBounds();
+  return bounds ? signatureOf(screen.getDisplayMatching(bounds)) : null;
+}
+
+/** Put a live view on a screen, and remember it. Replaces whatever the screen
+ *  showed, a wall monitor included: one screen, one window. */
+export async function openLiveScreen(signature: string): Promise<ScreenLayout> {
+  const known = listDisplays().find((d) => d.signature === signature);
+  if (!known) {
+    log.warn("openLiveScreen called for a screen that is not attached:", signature);
+    return readLayout();
+  }
+  if (known.signature === consoleSignature()) {
+    // The panel does not offer it; refused here too, because a full-screen window
+    // over the console leaves the operator nothing to close it from.
+    log.warn("refused a live screen on the console's own screen:", signature);
+    return readLayout();
+  }
+  const assignment: LiveAssignment = {
+    kind: "live",
+    displaySignature: signature,
+    displayLabel: known.label,
+  };
+  setWalls([...getWalls().filter((a) => a.displaySignature !== signature), assignment]);
+  await applyAssignment(assignment);
+  return readLayout();
 }
 
 /** Give a screen a wall monitor. Persists AND applies in the same call.
@@ -112,6 +170,7 @@ export async function assignScreen(signature: string, target: WallTarget): Promi
 
   const known = listDisplays().find((d) => d.signature === signature);
   const assignment: WallAssignment = {
+    kind: "wall",
     displaySignature: signature,
     displayLabel: known?.label ?? signature.split("|")[0],
     wallId: target.wallId,
@@ -149,20 +208,21 @@ export async function closeAllWalls(): Promise<ScreenLayout> {
  *  unconfigured console are conditions this product is expected to sit in. They
  *  are logged and reported back through ScreenLayout rather than thrown, so the
  *  panel can say which one it is. */
-async function applyAssignment(a: WallAssignment): Promise<void> {
+async function applyAssignment(a: ScreenAssignment): Promise<void> {
+  const what = describe(a);
   const display = displayForSignature(a.displaySignature);
   if (!display) {
-    log.info(`screen ${a.displaySignature} is assigned ${a.monitorLabel} but is not attached`);
+    log.info(`screen ${a.displaySignature} is assigned ${what} but is not attached`);
     return;
   }
 
   const origin = await resolveConsoleOrigin();
   if (!origin) {
-    log.info(`screen ${a.displaySignature} is assigned ${a.monitorLabel} but no console is configured`);
+    log.info(`screen ${a.displaySignature} is assigned ${what} but no console is configured`);
     return;
   }
 
-  const url = wallDisplayUrl(origin, a.wallId, a.monitorId);
+  const url = urlFor(origin, a);
   if (!url) {
     log.warn(`stored assignment for ${a.displaySignature} has unusable ids; ignored`);
     return;
@@ -174,7 +234,36 @@ async function applyAssignment(a: WallAssignment): Promise<void> {
     return;
   }
 
-  openWallOn(a.displaySignature, display.bounds, url, `${a.wallLabel} · ${a.monitorLabel}`);
+  const live = isLiveAssignment(a);
+  openWallOn(a.displaySignature, display.bounds, url, what, {
+    kind: live ? "live" : "wall",
+    escapeCloses: !live,
+    // Closed with its own Close: the operator is done with that screen, so it is
+    // not reopened at the next launch. Unplugging or quitting does not land here.
+    onClosedByUser: live ? () => void forgetLiveScreen(a.displaySignature) : undefined,
+  });
+}
+
+function describe(a: ScreenAssignment): string {
+  return isLiveAssignment(a) ? `Live view · ${a.displayLabel}` : `${a.wallLabel} · ${a.monitorLabel}`;
+}
+
+function urlFor(origin: string, a: ScreenAssignment): string | null {
+  return isLiveAssignment(a)
+    ? liveDisplayUrl(origin, screenKeyFor(a.displaySignature), a.displayLabel)
+    : wallDisplayUrl(origin, a.wallId, a.monitorId);
+}
+
+async function forgetLiveScreen(signature: string): Promise<void> {
+  setWalls(getWalls().filter((a) => !(a.displaySignature === signature && isLiveAssignment(a))));
+  log.info(`live screen on ${signature} closed from inside; forgotten`);
+  await pushLayout();
+}
+
+/** Tell the console the layout changed, so an open Screens menu is not stale. */
+async function pushLayout(): Promise<void> {
+  const win = getMainWindow();
+  if (win) win.webContents.send(IPC.screensChangedEvent, await readLayout());
 }
 
 /** Reopen the saved layout at startup.
@@ -237,8 +326,7 @@ async function reconcile(reason: string): Promise<void> {
     if (attached.has(a.displaySignature)) await applyAssignment(a);
   }
 
-  const win = getMainWindow();
-  if (win) win.webContents.send(IPC.screensChangedEvent, await readLayout());
+  await pushLayout();
 }
 
 export function watchDisplays(): void {

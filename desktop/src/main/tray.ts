@@ -156,13 +156,14 @@ function buildMenu(): Menu {
  *  an hour is not asking to rebuild the layout afterwards. */
 function screensSection(): Electron.MenuItemConstructorOptions[] {
   const openCount = openWallSignatures().length;
+  const windows = `${openCount} screen window${openCount === 1 ? "" : "s"}`;
   return [
     { label: "Identify screens", click: () => identifyScreens() },
     {
       label:
         openCount === 0
-          ? "No wall panels open"
-          : `Close ${openCount} wall panel${openCount === 1 ? "" : "s"} (layout kept)`,
+          ? "No screen windows open"
+          : `Close ${windows} (layout kept)`,
       enabled: openCount > 0,
       click: () => {
         void closeAllWalls().then(() => applyMenu());

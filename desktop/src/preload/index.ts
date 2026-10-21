@@ -44,6 +44,7 @@ const bridge: NeubitBridge = {
   screensLayout: () => ipcRenderer.invoke(IPC.screensLayout),
   assignScreen: (signature, target) => ipcRenderer.invoke(IPC.screensAssign, signature, target),
   clearScreen: (signature) => ipcRenderer.invoke(IPC.screensClear, signature),
+  openLiveScreen: (signature) => ipcRenderer.invoke(IPC.screensOpenLive, signature),
   closeAllWalls: () => ipcRenderer.invoke(IPC.screensCloseAll),
   identifyScreens: () => ipcRenderer.invoke(IPC.screensIdentify),
   onScreensChanged: (cb: (layout: ScreenLayout) => void) =>

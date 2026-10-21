@@ -26,7 +26,7 @@
 // down off-screen sessions automatically. Tiles are keyed by STABLE index
 // (`tile-i`) so React preserves the mounted player across layout/spotlight
 // changes — spotlighting a tile REUSES its session instead of restarting it.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
@@ -66,6 +66,8 @@ import SaveWallGroupModal from "./components/SaveWallGroupModal";
 import { usePatternRotation } from "./hooks/usePatternRotation";
 import { useWallPlayback } from "./hooks/useWallPlayback";
 import { useEstateCameras } from "./hooks/useEstateCameras";
+import { useImmersive } from "./hooks/useImmersive";
+import LiveScreensMenu from "./components/LiveScreensMenu";
 
 // WHAT THE WALL ITSELF IS — the grid and the camera in each cell — is PER TAB
 // (sessionStorage). A control room runs two screens off one browser and needs a
@@ -77,6 +79,11 @@ import { useEstateCameras } from "./hooks/useEstateCameras";
 //
 // To carry a wall between tabs or bring one back tomorrow, use the durable paths
 // that already exist: a Saved layout (below) or a server-side Camera Group.
+//
+// A LIVE SCREEN — this station's second monitor (SCRUM-336) — is the exception:
+// it keeps its wall in localStorage under its screen's key (wallStore). The desktop
+// app reopens it at every launch, and it has to come back with its cameras, the
+// way every VMS client restores its monitors.
 const SS_LAYOUT = "neubit.vms.wall.layout";
 const SS_CELLS = "neubit.vms.wall.cells";
 // PREFERENCES stay shared across tabs — they describe how this operator likes the
@@ -158,18 +165,95 @@ const writeLS = (key: string, value: unknown) => write(local, key, value);
 const readSS = (key: string, fallback?: unknown) => read(tab, key, fallback);
 const writeSS = (key: string, value: unknown) => write(tab, key, value);
 
-export default function Streaming() {
+/** Where a wall keeps what is on it, and its operator's preferences.
+ *
+ *  The main wall: its grid per tab, its preferences shared. A live screen: both
+ *  durable and its own — a second monitor run at Eco with the rail away must not
+ *  turn the main wall's rail off. */
+interface WallStore {
+  readWall: (key: string, fallback?: unknown) => unknown;
+  writeWall: (key: string, value: unknown) => void;
+  layoutKey: string;
+  cellsKey: string;
+  /** The key a preference is kept under. */
+  pref: (key: string) => string;
+}
+
+function wallStore(screenKey?: string): WallStore {
+  if (!screenKey) {
+    return { readWall: readSS, writeWall: writeSS, layoutKey: SS_LAYOUT, cellsKey: SS_CELLS, pref: (k) => k };
+  }
+  const base = `neubit.vms.screen.${screenKey}`;
+  return {
+    readWall: readLS,
+    writeWall: writeLS,
+    layoutKey: `${base}.layout`,
+    cellsKey: `${base}.cells`,
+    pref: (k) => `${k}@${screenKey}`,
+  };
+}
+
+/** A live view on another monitor of this station (SCRUM-336). */
+export interface LiveScreenInfo {
+  /** What its wall is kept under. */
+  key: string;
+  /** The monitor's name, for its toolbar. */
+  label: string;
+  onClose: () => void;
+}
+
+export interface StreamingProps {
+  /** Set when this wall IS a live screen's window. */
+  screen?: LiveScreenInfo | null;
+}
+
+/** The camera in tile `i`, when there is a tile and it holds a known camera. */
+function cameraIn(cells: WallCell[], cameraById: Map<string, EstateCamera>, i: number | null): EstateCamera | null {
+  const id = i == null ? null : cells[i]?.cameraId;
+  return (id && cameraById.get(id)) || null;
+}
+
+interface PtzPanelState {
+  canPtz: boolean;
+  ptzTile: number | null;
+  ptzCamera: EstateCamera | null;
+  /** The spotlit tile, while a spotlight is on. */
+  spotlight: number | null;
+  rotating: boolean;
+  playback: boolean;
+  sync: boolean;
+  focusTile: number | null;
+}
+
+/** The tile the PTZ panel serves, while it can still be served: its cell still
+ *  holds a federated PTZ camera, the tile is on screen (a spotlight shows only its
+ *  own), the wall is not handed to a pattern, and it is live, not playing back. */
+function ptzPanelTile(s: PtzPanelState): number | null {
+  if (!s.canPtz || s.ptzTile == null) return null;
+  if (!s.ptzCamera?.federated || !s.ptzCamera.ptz_capable) return null;
+  if (s.spotlight != null && s.spotlight !== s.ptzTile) return null;
+  if (s.rotating) return null;
+  if (s.playback && (s.sync || s.ptzTile === s.focusTile)) return null;
+  return s.ptzTile;
+}
+
+/** The pointer hides over the video while the floating chrome is away. */
+const IDLE_POINTER = "cursor-none [&_*]:cursor-none!";
+
+export default function Streaming({ screen = null }: Readonly<StreamingProps> = {}) {
+  // Fixed for the life of the page: a live screen's window never becomes another.
+  const [store] = useState(() => wallStore(screen?.key));
   // ── layout + cells (persisted) ──────────────────────────────────────────
   const [layoutKey, setLayoutKey] = useState(() => {
-    const k = readSS(SS_LAYOUT, DEFAULT_LAYOUT_KEY);
+    const k = store.readWall(store.layoutKey, DEFAULT_LAYOUT_KEY);
     return typeof k === "string" ? k : DEFAULT_LAYOUT_KEY;
   });
   const layout = useMemo(() => getLayout(layoutKey), [layoutKey]);
 
   const [cells, setCells] = useState<WallCell[]>(() => {
-    const k = readSS(SS_LAYOUT, DEFAULT_LAYOUT_KEY);
+    const k = store.readWall(store.layoutKey, DEFAULT_LAYOUT_KEY);
     const cap = getLayout(typeof k === "string" ? k : DEFAULT_LAYOUT_KEY).capacity;
-    const saved = readSS(SS_CELLS, null);
+    const saved = store.readWall(store.cellsKey, null);
     const base = Array.from({ length: cap }, emptyCell);
     if (Array.isArray(saved)) {
       for (let i = 0; i < cap && i < saved.length; i += 1) {
@@ -194,11 +278,11 @@ export default function Streaming() {
       const asked = new URLSearchParams(window.location.search).get("view");
       if (isViewMode(asked)) return asked;
     }
-    const v = readLS(LS_VIEW, "grid");
+    const v = readLS(store.pref(LS_VIEW), "grid");
     return isViewMode(v) ? v : "grid";
   });
   const [quality, setQuality] = useState<string>(() => {
-    const qv = readLS(LS_QUALITY, "auto");
+    const qv = readLS(store.pref(LS_QUALITY), "auto");
     return typeof qv === "string" && QUALITY_LEVELS.some((l) => l.key === qv) ? qv : "auto";
   });
   const [playoutOpen, setPlayoutOpen] = useState(false);
@@ -212,7 +296,7 @@ export default function Streaming() {
   // pointed at nothing.
   const [focusIndex, setFocusIndex] = useState<number | null>(null);
 
-  const [railOpen, setRailOpen] = useState(() => readLS(LS_RAIL, true) !== false);
+  const [railOpen, setRailOpen] = useState(() => readLS(store.pref(LS_RAIL), true) !== false);
   const [railDragging, setRailDragging] = useState(false);
   const [spotlight, setSpotlight] = useState<number | null>(null); // tile index or null
   const [allMuted, setAllMuted] = useState(true);
@@ -227,8 +311,11 @@ export default function Streaming() {
   const [patternFormOpen, setPatternFormOpen] = useState(false);
   const qc = useQueryClient();
 
-  const wallRef = useRef<HTMLDivElement | null>(null); // fullscreen-wall target
   const gridRef = useRef<HTMLDivElement | null>(null); // for mute-all DOM sweep
+  // Full screen and the floating chrome (SCRUM-335). A live screen is immersive
+  // in its own window whether or not the page is full screen.
+  const imm = useImmersive({ forced: !!screen });
+  const enterFullscreen = imm.enter;
 
   // ── tour (carousel) ─────────────────────────────────────────────────────
   const [tour, setTour] = useState<TourState>({ active: false, pages: [], index: 0, seconds: 10 });
@@ -238,13 +325,16 @@ export default function Streaming() {
   });
 
   // Persist layout + cell camera-ids (never persist session URLs — short-lived).
-  // sessionStorage: this tab's wall, not every tab's.
-  useEffect(() => writeSS(SS_LAYOUT, layoutKey), [layoutKey]);
-  useEffect(() => writeSS(SS_CELLS, cells.map((c) => ({ cameraId: c.cameraId || null }))), [cells]);
+  // The main wall: this tab's, not every tab's. A live screen: that screen's.
+  useEffect(() => store.writeWall(store.layoutKey, layoutKey), [store, layoutKey]);
+  useEffect(
+    () => store.writeWall(store.cellsKey, cells.map((c) => ({ cameraId: c.cameraId || null }))),
+    [store, cells],
+  );
   useEffect(() => writeLS(LS_SAVED, savedLayouts), [savedLayouts]);
-  useEffect(() => writeLS(LS_RAIL, railOpen), [railOpen]);
-  useEffect(() => writeLS(LS_VIEW, viewMode), [viewMode]);
-  useEffect(() => writeLS(LS_QUALITY, quality), [quality]);
+  useEffect(() => writeLS(store.pref(LS_RAIL), railOpen), [store, railOpen]);
+  useEffect(() => writeLS(store.pref(LS_VIEW), viewMode), [store, viewMode]);
+  useEffect(() => writeLS(store.pref(LS_QUALITY), quality), [store, quality]);
 
   // ── cameras ─────────────────────────────────────────────────────────────
   // Local + federated, merged in one place — the Patterns console reads the SAME
@@ -595,10 +685,10 @@ export default function Streaming() {
       rotation.start();
       if (fullscreen) {
         // Defer to next frame so the wall element exists before requesting FS.
-        requestAnimationFrame(() => wallRef.current?.requestFullscreen?.());
+        requestAnimationFrame(() => enterFullscreen());
       }
     },
-    [rotation],
+    [rotation, enterFullscreen],
   );
 
   const exitPattern = useCallback(() => {
@@ -695,14 +785,6 @@ export default function Streaming() {
     return () => clearInterval(id);
   }, [tour.active, tour.pages, tour.seconds, loadCameraIds]);
 
-  // ── fullscreen wall ──────────────────────────────────────────────────────
-  const toggleFullscreenWall = () => {
-    const el = wallRef.current;
-    if (!el) return;
-    if (!document.fullscreenElement) el.requestFullscreen?.();
-    else document.exitFullscreen?.();
-  };
-
   // ── mute-all: sweep the wall's <video> elements (LivePlayer stays untouched,
   // so we drive its media element directly rather than remounting it). ────────
   useEffect(() => {
@@ -754,8 +836,7 @@ export default function Streaming() {
   const tileStyleFor = useCallback((i: number) => tileStyles[i], [tileStyles]);
 
   const isSpotlightActive = spotlight != null && !!cells[spotlight]?.cameraId;
-  const spotlightCamId = spotlight != null ? cells[spotlight]?.cameraId : null;
-  const spotlightCam = spotlightCamId ? cameraById.get(spotlightCamId) : null;
+  const spotlightCam = cameraIn(cells, cameraById, spotlight);
 
   // Which tile the transport is bound to. An explicit click wins; a spotlight is
   // the operator pointing at a camera just as plainly; otherwise the first filled
@@ -766,28 +847,23 @@ export default function Streaming() {
     const first = cells.findIndex((c) => c.cameraId);
     return first >= 0 ? first : null;
   }, [focusIndex, cells, isSpotlightActive, spotlight]);
-  const focusCameraId = focusTile != null ? cells[focusTile]?.cameraId : null;
-  const focusCamera = focusCameraId ? cameraById.get(focusCameraId) : null;
+  const focusCamera = cameraIn(cells, cameraById, focusTile);
 
   // PTZ commands go through the camera's recorder and need vms.ptz.control there and
   // here; a viewer without it gets no key rather than a panel of refusals.
   const { can } = useAuth();
   const canPtz = can("vms.ptz.control");
-  // The tile the PTZ panel serves, while it can still be served: its cell still holds
-  // a federated PTZ camera, the tile is on screen (a spotlight shows only its own),
-  // the wall is not handed to a pattern, and it is live, not playing back.
-  const ptzCameraId = ptzTile != null ? cells[ptzTile]?.cameraId : null;
-  const ptzCamera = ptzCameraId ? cameraById.get(ptzCameraId) : null;
-  const ptzOpenTile =
-    canPtz &&
-    ptzTile != null &&
-    ptzCamera?.federated &&
-    ptzCamera.ptz_capable &&
-    (!isSpotlightActive || spotlight === ptzTile) &&
-    !rotation.active &&
-    !(pb.isPlayback && (pb.sync || ptzTile === focusTile))
-      ? ptzTile
-      : null;
+  const ptzCamera = cameraIn(cells, cameraById, ptzTile);
+  const ptzOpenTile = ptzPanelTile({
+    canPtz,
+    ptzTile,
+    ptzCamera,
+    spotlight: isSpotlightActive ? spotlight : null,
+    rotating: rotation.active,
+    playback: pb.isPlayback,
+    sync: pb.sync,
+    focusTile,
+  });
 
   // A tile shows the RECORDING when the wall is in playback and either it is the
   // focused tile or Sync is on (Sync = the whole wall at one instant).
@@ -839,182 +915,184 @@ export default function Streaming() {
     />
   );
 
-  return (
-    <div
-      ref={wallRef}
-      className="flex h-full min-h-0 flex-col fullscreen:h-screen"
-      style={{ background: "var(--nb-backdrop)" }}
-    >
-      <WallToolbar
-        railOpen={railOpen}
-        onToggleRail={() => setRailOpen((o) => !o)}
-        layoutKey={layoutKey}
-        onLayoutChange={changeLayout}
-        liveCount={liveCount}
-        onlineCount={onlineCount}
-        viewMode={viewMode}
-        onViewMode={setViewMode}
-        quality={quality}
-        onQuality={setQuality}
-        playoutOpen={playoutOpen}
-        onTogglePlayout={() => setPlayoutOpen((o) => !o)}
-        alarmCount={0}
-        tour={tour}
-        onStartTour={startTour}
-        onStopTour={stopTour}
-        onTourInterval={setTourInterval}
-        patternControl={
-          <PatternPickerMenu
-            patterns={patterns}
-            loading={patternsQ.isLoading}
-            activeId={rotation.active ? activePattern?.id : null}
-            stop={rotation.index + 1}
-            total={rotation.total}
-            paused={rotation.paused}
-            onPlay={(p: PatternPublic) => startPattern(p)}
-            onStop={exitPattern}
-            onCreate={() => setPatternFormOpen(true)}
-          />
-        }
-        savedControl={
-          <SavedLayoutsMenu layouts={savedLayouts} onApply={applySaved} onDelete={deleteSaved} onSave={() => setSaveOpen(true)} canSave={liveCount > 0} />
-        }
-        onSaveGroup={() => setSaveGroupOpen(true)}
-        canSaveGroup={liveCount > 0}
-        allMuted={allMuted}
-        onToggleMuteAll={() => setAllMuted((m) => !m)}
-        onFullscreen={toggleFullscreenWall}
-        onClear={clearWall}
-        onRefresh={() => camerasQ.refetch()}
-        refreshing={camerasQ.isFetching}
-      />
+  const toolbar = (
+    <WallToolbar
+      railOpen={railOpen}
+      onToggleRail={() => setRailOpen((o) => !o)}
+      layoutKey={layoutKey}
+      onLayoutChange={changeLayout}
+      liveCount={liveCount}
+      onlineCount={onlineCount}
+      viewMode={viewMode}
+      onViewMode={setViewMode}
+      quality={quality}
+      onQuality={setQuality}
+      playoutOpen={playoutOpen}
+      onTogglePlayout={() => setPlayoutOpen((o) => !o)}
+      alarmCount={0}
+      tour={tour}
+      onStartTour={startTour}
+      onStopTour={stopTour}
+      onTourInterval={setTourInterval}
+      patternControl={
+        <PatternPickerMenu
+          patterns={patterns}
+          loading={patternsQ.isLoading}
+          activeId={rotation.active ? activePattern?.id : null}
+          stop={rotation.index + 1}
+          total={rotation.total}
+          paused={rotation.paused}
+          onPlay={(p: PatternPublic) => startPattern(p)}
+          onStop={exitPattern}
+          onCreate={() => setPatternFormOpen(true)}
+        />
+      }
+      savedControl={
+        <SavedLayoutsMenu layouts={savedLayouts} onApply={applySaved} onDelete={deleteSaved} onSave={() => setSaveOpen(true)} canSave={liveCount > 0} />
+      }
+      onSaveGroup={() => setSaveGroupOpen(true)}
+      canSaveGroup={liveCount > 0}
+      allMuted={allMuted}
+      onToggleMuteAll={() => setAllMuted((m) => !m)}
+      onFullscreen={imm.toggle}
+      fullscreen={imm.fullscreen}
+      // The other monitors of this station. The toolbar shows it on the main wall
+      // only: a live screen does not open more screens.
+      screensControl={<LiveScreensMenu />}
+      screen={screen}
+      onClear={clearWall}
+      onRefresh={() => camerasQ.refetch()}
+      refreshing={camerasQ.isFetching}
+    />
+  );
+  const rail = (
+    <CameraRail
+      cameras={cameras}
+      mountedIds={mountedIds}
+      onPick={pickCamera}
+      onPickMany={pickBranch}
+      onDragStateChange={setRailDragging}
+      isLoading={camerasQ.isLoading || fedQ.isLoading}
+      onlineCount={onlineCount}
+      liveCount={liveCount}
+    />
+  );
 
+  const wallMain = (
+    <main className="relative z-0 flex min-w-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1">
-        {railOpen && (
-          <CameraRail
-            cameras={cameras}
-            mountedIds={mountedIds}
-            onPick={pickCamera}
-            onPickMany={pickBranch}
-            onDragStateChange={setRailDragging}
-            isLoading={camerasQ.isLoading || fedQ.isLoading}
-            onlineCount={onlineCount}
-            liveCount={liveCount}
-          />
-        )}
-
-        <main className="relative z-0 flex min-w-0 flex-1 flex-col">
-          <div className="flex min-h-0 flex-1">
-            {/* Grid — the hero. Full-bleed with tight gaps. Hidden in MAP view;
-                shares the row with the map in SPLIT (grid gets slightly more).
-                The grid CONTAINER is the SAME element across grid↔spotlight (only
-                its template + children change) so the spotlighted tile — kept with
-                its stable `tile-i` key — is preserved by React, reusing its
-                LivePlayer session instead of remounting. */}
-            {viewMode !== "map" && (
+        {/* Grid — the hero. Full-bleed with tight gaps. Hidden in MAP view;
+            shares the row with the map in SPLIT (grid gets slightly more).
+            The grid CONTAINER is the SAME element across grid↔spotlight (only
+            its template + children change) so the spotlighted tile — kept with
+            its stable `tile-i` key — is preserved by React, reusing its
+            LivePlayer session instead of remounting. */}
+        {viewMode !== "map" && (
+          <div
+            // The mute-all sweep hangs off THIS element, not the grid inside it:
+            // during a pattern the grid is replaced by PatternStage, and a ref on
+            // the grid alone would leave mute-all silently doing nothing exactly
+            // when the wall is unattended.
+            ref={gridRef}
+            className={`relative min-h-0 overflow-hidden p-1.5 ${viewMode === "split" ? "flex-[1.15]" : "flex-1"}`}
+          >
+            {/* While a pattern runs, the STAGE owns the wall — the manual grid
+                must not render at the same time or both would mount players for
+                the same cameras and double the load on the recorder. Spotlight
+                still wins over both: it is a deliberate operator action. */}
+            {rotation.active && !isSpotlightActive ? (
+              <PatternStage
+                slots={stage.slots}
+                front={stage.front}
+                cameraById={cameraById}
+                estateReady={estateReady}
+                qualityProfile={qualityProfile}
+              />
+            ) : (
               <div
-                // The mute-all sweep hangs off THIS element, not the grid inside it:
-                // during a pattern the grid is replaced by PatternStage, and a ref on
-                // the grid alone would leave mute-all silently doing nothing exactly
-                // when the wall is unattended.
-                ref={gridRef}
-                className={`relative min-h-0 overflow-hidden p-1.5 ${viewMode === "split" ? "flex-[1.15]" : "flex-1"}`}
+                className="grid h-full min-h-0 gap-1.5"
+                style={isSpotlightActive ? SPOTLIGHT_GRID : gridStyle(layout)}
               >
-                {/* While a pattern runs, the STAGE owns the wall — the manual grid
-                    must not render at the same time or both would mount players for
-                    the same cameras and double the load on the recorder. Spotlight
-                    still wins over both: it is a deliberate operator action. */}
-                {rotation.active && !isSpotlightActive ? (
-                  <PatternStage
-                    slots={stage.slots}
-                    front={stage.front}
-                    cameraById={cameraById}
-                    estateReady={estateReady}
-                    qualityProfile={qualityProfile}
-                  />
-                ) : (
-                  <div
-                    className="grid h-full min-h-0 gap-1.5"
-                    style={isSpotlightActive ? SPOTLIGHT_GRID : gridStyle(layout)}
-                  >
-                    {isSpotlightActive && spotlight != null
-                      ? renderTile(cells[spotlight], spotlight, { spotlightMode: true })
-                      : cells.map((cell, i) => renderTile(cell, i, { isHero: i === hero }))}
-                  </div>
-                )}
-                {/* The live PTZ panel, docked on the side away from the tile it
-                    serves so the picture being steered stays in view. */}
-                {ptzOpenTile != null && ptzCamera?.node_id && ptzCamera.real_id && (
-                  <div
-                    className={`absolute bottom-3 z-30 ${
-                      dockSideFor(layout, ptzOpenTile, isSpotlightActive) === "left" ? "left-3" : "right-3"
-                    }`}
-                  >
-                    <PtzOverlay
-                      key={ptzCamera.id}
-                      nodeId={ptzCamera.node_id}
-                      cameraId={ptzCamera.real_id}
-                      canControl={canPtz}
-                      title={ptzCamera.name}
-                      onClose={() => setPtzTile(null)}
-                    />
-                  </div>
-                )}
-                {isSpotlightActive && (
-                  <SpotlightOverlay
-                    label={spotlightCam?.name || "Camera"}
-                    position={spotlight != null ? filledIndexes.indexOf(spotlight) + 1 : 0}
-                    total={filledIndexes.length}
-                    onPrev={() => stepSpotlight(-1)}
-                    onNext={() => stepSpotlight(1)}
-                    onExit={() => setSpotlight(null)}
-                  />
-                )}
-                {rotation.active && !isSpotlightActive && (
-                  <PatternHud
-                    patternName={activePattern?.name || "Pattern"}
-                    groupName={rotation.current?.name}
-                    index={rotation.index}
-                    total={rotation.total}
-                    paused={rotation.paused}
-                    seconds={rotation.seconds}
-                    onPrev={rotation.prev}
-                    onNext={rotation.next}
-                    onTogglePause={rotation.togglePause}
-                    onExit={exitPattern}
-                  />
-                )}
+                {isSpotlightActive && spotlight != null
+                  ? renderTile(cells[spotlight], spotlight, { spotlightMode: true })
+                  : cells.map((cell, i) => renderTile(cell, i, { isHero: i === hero }))}
               </div>
             )}
-
-            {/* Facility MAP — camera positions over a site map. Scaffold until
-                site geometry / camera coordinates exist (honest empty state). */}
-            {viewMode !== "grid" && (
-              <div className={`relative min-h-0 p-1.5 ${viewMode === "split" ? "flex-1 border-l border-nb-mist/15" : "flex-1"}`}>
-                <EstateMapView cameras={cameras} onPick={(cam: EstateCamera) => pickCamera(cam)} />
+            {/* The live PTZ panel, docked on the side away from the tile it
+                serves so the picture being steered stays in view. */}
+            {ptzOpenTile != null && ptzCamera?.node_id && ptzCamera.real_id && (
+              <div
+                className={`absolute bottom-3 z-30 ${
+                  dockSideFor(layout, ptzOpenTile, isSpotlightActive) === "left" ? "left-3" : "right-3"
+                }`}
+              >
+                <PtzOverlay
+                  key={ptzCamera.id}
+                  nodeId={ptzCamera.node_id}
+                  cameraId={ptzCamera.real_id}
+                  canControl={canPtz}
+                  title={ptzCamera.name}
+                  onClose={() => setPtzTile(null)}
+                />
               </div>
+            )}
+            {isSpotlightActive && (
+              <SpotlightOverlay
+                label={spotlightCam?.name || "Camera"}
+                position={spotlight != null ? filledIndexes.indexOf(spotlight) + 1 : 0}
+                total={filledIndexes.length}
+                onPrev={() => stepSpotlight(-1)}
+                onNext={() => stepSpotlight(1)}
+                onExit={() => setSpotlight(null)}
+              />
+            )}
+            {rotation.active && !isSpotlightActive && (
+              <PatternHud
+                patternName={activePattern?.name || "Pattern"}
+                groupName={rotation.current?.name}
+                index={rotation.index}
+                total={rotation.total}
+                paused={rotation.paused}
+                seconds={rotation.seconds}
+                onPrev={rotation.prev}
+                onNext={rotation.next}
+                onTogglePause={rotation.togglePause}
+                onExit={exitPattern}
+              />
             )}
           </div>
+        )}
 
-          {/* DVR playout transport (24h timeline + scrub). Wall-level, toggled
-              from the toolbar. Wired to the selected/first camera. */}
-          {playoutOpen && (
-            <PlayoutBar
-              camera={focusCamera}
-              pb={pb}
-              // Hiding the transport also returns the wall to live: the dock is
-              // the ONLY way back from playback, and a wall left frozen on an
-              // hour-old recording with no visible control saying so is the worst
-              // failure this surface has.
-              onClose={() => {
-                pb.goLive();
-                setPlayoutOpen(false);
-              }}
-            />
-          )}
-        </main>
+        {/* Facility MAP — camera positions over a site map. Scaffold until
+            site geometry / camera coordinates exist (honest empty state). */}
+        {viewMode !== "grid" && (
+          <div className={`relative min-h-0 p-1.5 ${viewMode === "split" ? "flex-1 border-l border-nb-mist/15" : "flex-1"}`}>
+            <EstateMapView cameras={cameras} onPick={(cam: EstateCamera) => pickCamera(cam)} />
+          </div>
+        )}
       </div>
 
+      {/* DVR playout transport (24h timeline + scrub). Wall-level, toggled
+          from the toolbar. Wired to the selected/first camera. */}
+      {playoutOpen && (
+        <PlayoutBar
+          camera={focusCamera}
+          pb={pb}
+          // Hiding the transport also returns the wall to live: the dock is
+          // the ONLY way back from playback, and a wall left frozen on an
+          // hour-old recording with no visible control saying so is the worst
+          // failure this surface has.
+          onClose={() => {
+            pb.goLive();
+            setPlayoutOpen(false);
+          }}
+        />
+      )}
+    </main>
+  );
+
+  return (
+    <WallFrame imm={imm} toolbar={toolbar} rail={rail} railOpen={railOpen} main={wallMain}>
       {/* Quick camera picker (click an empty tile) */}
       <CameraQuickPicker
         open={picker.open}
@@ -1083,6 +1161,60 @@ export default function Streaming() {
       />
 
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
+    </WallFrame>
+  );
+}
+
+interface WallFrameProps {
+  imm: ReturnType<typeof useImmersive>;
+  toolbar: ReactNode;
+  rail: ReactNode;
+  /** The rail is shown — collapsed, it is not rendered at all. */
+  railOpen: boolean;
+  /** The grid, the map and the playback dock. */
+  main: ReactNode;
+  /** The wall's dialogs — all portalled, so where they sit here is immaterial. */
+  children?: ReactNode;
+}
+
+/** The wall's frame: toolbar on top and rail at the side, or — immersive — the
+ *  video on the whole screen with both floating over it (SCRUM-335). */
+function WallFrame({ imm, toolbar, rail, railOpen, main, children }: Readonly<WallFrameProps>) {
+  return (
+    <div
+      // Full screen is the DOCUMENT's (useImmersive), so this only fills what it
+      // is given.
+      className={`relative flex h-full min-h-0 flex-col ${imm.chromeShown ? "" : IDLE_POINTER}`}
+      style={{ background: "var(--nb-backdrop)" }}
+    >
+      {!imm.immersive && toolbar}
+
+      <div className="flex min-h-0 flex-1">
+        {!imm.immersive && railOpen && rail}
+        {main}
+      </div>
+
+      {/* IMMERSIVE: the toolbar and the rail float over the video while the
+          operator is moving the mouse — gone after a quiet spell, never while the
+          pointer is on them. The layer itself lets clicks through to the tiles;
+          only the chrome takes them. Hidden rather than unmounted, so a search
+          typed in the rail is still there when the mouse brings it back. */}
+      {imm.immersive && (
+        <div
+          className={`pointer-events-none absolute inset-0 z-40 flex-col ${imm.chromeShown ? "flex" : "hidden"}`}
+        >
+          <div className="pointer-events-auto shrink-0" {...imm.holdProps}>
+            {toolbar}
+          </div>
+          {railOpen && (
+            <div className="pointer-events-auto flex min-h-0 flex-1 self-start" {...imm.holdProps}>
+              {rail}
+            </div>
+          )}
+        </div>
+      )}
+
+      {children}
     </div>
   );
 }

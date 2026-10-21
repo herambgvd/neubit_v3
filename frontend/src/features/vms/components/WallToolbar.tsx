@@ -86,6 +86,13 @@ export interface WallTourState {
   seconds: number;
 }
 
+/** The toolbar of a live view on another monitor (SCRUM-336): it names its
+ *  screen and can close it, where the main wall has its way Home. */
+export interface WallToolbarScreen {
+  label: string;
+  onClose: () => void;
+}
+
 export interface WallToolbarProps {
   railOpen: boolean;
   onToggleRail: () => void;
@@ -115,6 +122,12 @@ export interface WallToolbarProps {
   allMuted?: boolean;
   onToggleMuteAll?: () => void;
   onFullscreen?: () => void;
+  /** The document is full screen — the button then leaves it. */
+  fullscreen?: boolean;
+  /** <LiveScreensMenu/> — the other monitors of this station. */
+  screensControl?: ReactNode;
+  /** Set on a live screen's own window. */
+  screen?: WallToolbarScreen | null;
   onClear?: () => void;
   onRefresh?: () => void;
   refreshing?: boolean;
@@ -145,6 +158,9 @@ export default function WallToolbar({
   allMuted,
   onToggleMuteAll,
   onFullscreen,
+  fullscreen = false,
+  screensControl,
+  screen = null,
   onClear,
   onRefresh,
   refreshing,
@@ -156,14 +172,18 @@ export default function WallToolbar({
     <div className="relative z-30 flex flex-wrap items-center justify-between gap-2 border-b border-nb-mist/22 bg-nb-surface2/70 px-3 py-2 backdrop-blur-xs">
       {/* Identity */}
       <div className="flex min-w-0 items-center gap-2">
-        {/* Home — back to the metro launcher (the wall has no global header). */}
-        <Link
-          href="/home"
-          title="Home"
-          className="inline-flex h-[33px] w-[33px] items-center justify-center rounded-[8px] border border-nb-mist/22 text-nb-soft transition hover:border-nb-teal/60 hover:text-nb-teal"
-        >
-          <Icon icon="heroicons-outline:home" className="text-base" />
-        </Link>
+        {screen ? (
+          <ScreenIdentity screen={screen} />
+        ) : (
+          // Home — back to the metro launcher (the wall has no global header).
+          <Link
+            href="/home"
+            title="Home"
+            className="inline-flex h-[33px] w-[33px] items-center justify-center rounded-[8px] border border-nb-mist/22 text-nb-soft transition hover:border-nb-teal/60 hover:text-nb-teal"
+          >
+            <Icon icon="heroicons-outline:home" className="text-base" />
+          </Link>
+        )}
         {/* Live mode tab (active) — matches the mockup's mode indicator. */}
         <span className="inline-flex h-[33px] items-center gap-1.5 rounded-[8px] border border-nb-teal/45 bg-nb-teal/14 px-2.5 text-[12px] font-semibold tracking-[.8px] text-nb-tealb">
           <Icon icon="heroicons-solid:signal" className="text-sm" />
@@ -251,7 +271,14 @@ export default function WallToolbar({
             onClick={onToggleMuteAll}
           />
         )}
-        <IconBtn icon="heroicons-outline:arrows-pointing-out" title="Fullscreen wall" onClick={onFullscreen} />
+        {/* A live screen does not open more screens. */}
+        {!screen && screensControl}
+        <IconBtn
+          icon={fullscreen ? "heroicons-outline:arrows-pointing-in" : "heroicons-outline:arrows-pointing-out"}
+          title={fullscreen ? "Exit full screen (Esc)" : "Full screen — video only, controls on mouse move"}
+          active={fullscreen}
+          onClick={onFullscreen}
+        />
         {gridMode && liveCount > 0 && (
           <IconBtn icon="heroicons-outline:trash" title="Clear wall" danger onClick={onClear} />
         )}
@@ -283,6 +310,31 @@ export default function WallToolbar({
         <Clock />
       </div>
     </div>
+  );
+}
+
+// Which monitor this is, and the way to close it — in place of Home on a live
+// screen's window, which has no console behind it to go home to.
+function ScreenIdentity({ screen }: Readonly<{ screen: WallToolbarScreen }>) {
+  return (
+    <>
+      <button
+        type="button"
+        title="Close this screen"
+        aria-label="Close this screen"
+        onClick={screen.onClose}
+        className="inline-flex h-[33px] w-[33px] items-center justify-center rounded-[8px] border border-nb-mist/22 text-nb-soft transition hover:border-nb-crit/50 hover:bg-red-500/10 hover:text-nb-crit"
+      >
+        <Icon icon="heroicons-outline:x-mark" className="text-base" />
+      </button>
+      <span
+        title="This monitor's own live view"
+        className="inline-flex h-[33px] min-w-0 max-w-[14rem] items-center gap-1.5 rounded-[8px] border border-nb-mist/22 bg-nb-mist/4 px-2.5 text-[12px] font-medium text-nb-soft"
+      >
+        <Icon icon="heroicons-outline:computer-desktop" className="shrink-0 text-sm text-nb-faint" />
+        <span className="truncate">{screen.label}</span>
+      </span>
+    </>
   );
 }
 

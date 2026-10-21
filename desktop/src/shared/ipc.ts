@@ -36,8 +36,10 @@ export interface AppConfig {
   activeServerId: string | null;
   servers: ConsoleServer[];
   kiosk: boolean;
-  /** Which physical screen shows which wall monitor. See WallAssignment. */
-  walls: WallAssignment[];
+  /** What each physical screen shows: a wall monitor or a live view. See
+   *  ScreenAssignment. The key keeps the name it had when walls were the only
+   *  kind, so a station's saved layout survives the upgrade untouched. */
+  walls: ScreenAssignment[];
   /** Where exports are written without asking. Null → Electron's Save dialog. */
   exportFolder: string | null;
 }
@@ -145,6 +147,7 @@ export const IPC = {
   screensLayout: "screens:layout",
   screensAssign: "screens:assign",
   screensClear: "screens:clear",
+  screensOpenLive: "screens:openLive",
   screensCloseAll: "screens:closeAll",
   screensIdentify: "screens:identify",
   screensChangedEvent: "screens:changed",
@@ -193,6 +196,9 @@ export interface NeubitBridge {
   assignScreen(signature: string, target: WallTarget): Promise<ScreenLayout>;
   /** Take a screen back: close its wall window and forget the assignment. */
   clearScreen(signature: string): Promise<ScreenLayout>;
+  /** Put a live view of its own full screen on a physical screen, and remember
+   *  it — the operator's second (third, fourth) monitor. */
+  openLiveScreen(signature: string): Promise<ScreenLayout>;
   /** Close every wall window without forgetting anything. */
   closeAllWalls(): Promise<ScreenLayout>;
   /** Flash a big number on each screen, the way Windows' display settings does,
@@ -357,6 +363,8 @@ export function normaliseConsoleUrl(input: string): UrlCheck {
  *  name, because doing so would need the token it must never hold. Two dead
  *  strings beat "monitor 7f3a…" in front of an operator. */
 export interface WallAssignment {
+  /** Absent on every assignment saved before live screens existed. */
+  kind?: "wall";
   displaySignature: string;
   displayLabel: string;
   wallId: string;
@@ -366,7 +374,28 @@ export interface WallAssignment {
 }
 
 /** What the console sends to claim a screen. */
-export type WallTarget = Omit<WallAssignment, "displaySignature" | "displayLabel">;
+export type WallTarget = Omit<WallAssignment, "displaySignature" | "displayLabel" | "kind">;
+
+/** One physical screen on this workstation showing a LIVE VIEW of its own — the
+ *  operator's second monitor (SCRUM-336).
+ *
+ *  Not a wall monitor, and the difference is the whole point. A wall's cells are
+ *  the server's, shared by everyone looking at that wall. A live screen is this
+ *  operator's: its grid and cameras are kept by the console page itself, per
+ *  screen, the way Milestone's secondary display and HikCentral's auxiliary
+ *  screen are a client's own. All the shell holds is which screen, so it can put
+ *  the window back there after a restart. */
+export interface LiveAssignment {
+  kind: "live";
+  displaySignature: string;
+  displayLabel: string;
+}
+
+export type ScreenAssignment = WallAssignment | LiveAssignment;
+
+export function isLiveAssignment(a: ScreenAssignment | null | undefined): a is LiveAssignment {
+  return !!a && a.kind === "live";
+}
 
 export interface ScreenSlot {
   signature: string;
@@ -380,7 +409,10 @@ export interface ScreenSlot {
    *  `assignment` because the two genuinely differ: an assignment can be saved
    *  while the screen is unplugged, or while no console is configured to open. */
   open: boolean;
-  assignment: WallAssignment | null;
+  /** The console's own window is on this screen. A full-screen window put here
+   *  would cover the console, so the panel does not offer one. */
+  console: boolean;
+  assignment: ScreenAssignment | null;
 }
 
 export interface ScreenLayout {
@@ -419,6 +451,41 @@ export function wallDisplayUrl(origin: string, wallId: string, monitorId: string
   if (!isWallResourceId(wallId) || !isWallResourceId(monitorId)) return null;
   const base = origin.replace(/\/+$/, "");
   return `${base}${WALL_DISPLAY_PATH}/${encodeURIComponent(wallId)}/${encodeURIComponent(monitorId)}`;
+}
+
+/** `origin` without trailing slashes — a loop, not /\/+$/, which backtracks on a
+ *  long run of slashes. */
+function withoutTrailingSlashes(origin: string): string {
+  let end = origin.length;
+  while (end > 0 && origin[end - 1] === "/") end -= 1;
+  return origin.slice(0, end);
+}
+
+/** The console's live view for one screen of this station (SCRUM-336). */
+export const LIVE_DISPLAY_PATH = "/live-display";
+
+/** The id a live screen's page keeps its grid under.
+ *
+ *  Derived from the display signature rather than stored, so it cannot drift from
+ *  the screen it names, and hashed because the signature carries a device path
+ *  ("\\.\DISPLAY2|1920x1080@1") that has no business in a URL. FNV-1a: stable,
+ *  tiny, and a collision between two screens of one desk is not a real risk. */
+export function screenKeyFor(signature: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < signature.length; i += 1) {
+    h ^= signature.codePointAt(i) ?? 0;
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return `d${h.toString(16).padStart(8, "0")}`;
+}
+
+/** The URL a live screen loads. `label` names the screen on its own toolbar; it
+ *  is the OS display name, so it travels as an encoded query value and is only
+ *  ever rendered as text. */
+export function liveDisplayUrl(origin: string, key: string, label: string): string | null {
+  if (!isWallResourceId(key)) return null;
+  const base = withoutTrailingSlashes(origin);
+  return `${base}${LIVE_DISPLAY_PATH}/${encodeURIComponent(key)}?name=${encodeURIComponent(label)}`;
 }
 
 // ── local export ───────────────────────────────────────────────────────────

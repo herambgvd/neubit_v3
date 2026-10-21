@@ -22,7 +22,7 @@
 import { useState } from "react";
 import { Icon } from "@iconify/react";
 
-import type { useScreens } from "@/lib/desktop";
+import { isLiveAssignment, isWallAssignment, type ScreenAssignment, type useScreens } from "@/lib/desktop";
 
 import type { WallPublic } from "../types";
 import type { WallMonitor } from "../wallLayout";
@@ -37,6 +37,15 @@ import type { WallMonitor } from "../wallLayout";
  *  The shell cannot make this check: `kind` lives in a record it has no session to
  *  read. It validates the SHAPE of the ids it is given; the meaning is ours. */
 const assignable = (monitors: WallMonitor[]) => monitors.filter((m) => m.kind !== "decoder");
+
+/** The monitor a screen shows, or "" — a screen with a live view on it shows none. */
+const monitorOf = (a: ScreenAssignment | null) => (isWallAssignment(a) ? a.monitorId : "");
+
+/** What a saved screen shows, in the words of the "Not plugged in" list. */
+const shownOn = (a: ScreenAssignment | null) => {
+  if (isLiveAssignment(a)) return "Live view";
+  return a?.monitorLabel ?? "";
+};
 
 export interface ScreenMenuProps {
   wall: WallPublic;
@@ -141,7 +150,7 @@ export default function ScreenMenu({ wall, monitors, screens }: Readonly<ScreenM
                       already inside one, and stacking two hand-rolled popovers is
                       how a control ends up clipped by a parent's overflow. */}
                   <select
-                    value={s.assignment?.monitorId ?? ""}
+                    value={monitorOf(s.assignment)}
                     disabled={screens.busy}
                     onMouseDown={(e) => e.stopPropagation()}
                     onChange={(e) => onPick(s.signature, e.target.value)}
@@ -171,13 +180,20 @@ export default function ScreenMenu({ wall, monitors, screens }: Readonly<ScreenM
                     rather than silently replaced. Somebody who split their desk
                     across two walls meant it, and the select above would otherwise
                     read as "Nothing" while a panel is plainly showing something. */}
-                {s.assignment && s.assignment.wallId !== wall.id && (
+                {isWallAssignment(s.assignment) && s.assignment.wallId !== wall.id && (
                   <p className="mt-1 text-[10px] text-nb-warn">
                     Showing {s.assignment.wallLabel} · {s.assignment.monitorLabel} — a different
                     wall.
                   </p>
                 )}
-                {s.assignment && s.assignment.wallId === wall.id && !s.open && (
+                {/* The operator's own live view (SCRUM-336) — said so, for the same
+                    reason: a select reading "Nothing" over a screen full of video. */}
+                {isLiveAssignment(s.assignment) && (
+                  <p className="mt-1 text-[10px] text-nb-faint">
+                    Showing a live view. Picking a monitor replaces it.
+                  </p>
+                )}
+                {isWallAssignment(s.assignment) && s.assignment.wallId === wall.id && !s.open && (
                   <p className="mt-1 text-[10px] text-nb-faint">
                     Saved, but no panel is open — the server was not reachable when it was
                     restored.
@@ -205,7 +221,7 @@ export default function ScreenMenu({ wall, monitors, screens }: Readonly<ScreenM
                       />
                       <span className="min-w-0 flex-1 truncate text-nb-soft">{s.label}</span>
                       <span className="truncate text-[10px] text-nb-faint">
-                        {s.assignment?.monitorLabel}
+                        {shownOn(s.assignment)}
                       </span>
                       <button
                         type="button"

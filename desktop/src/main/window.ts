@@ -235,6 +235,8 @@ export function applyKiosk(on: boolean): void {
 // file only knows how to put a window on a display and take it away again.
 
 const wallWindows = new Map<string, BrowserWindow>();
+/** What each of those windows was opened as — see ScreenWindowOptions.kind. */
+const wallKinds = new Map<string, string>();
 
 /** Signatures of the screens that actually have a wall window up right now. */
 export function openWallSignatures(): string[] {
@@ -257,18 +259,39 @@ export function openWallSignatures(): string[] {
  *  Full screen rather than a frameless window merely sized to the display,
  *  because the difference is the taskbar: a chromeless window covering a 1080p
  *  panel still leaves the taskbar over the bottom row of cameras. */
+export interface ScreenWindowOptions {
+  /** What the window is for ("wall", "live"). A window is only reused for the
+   *  same kind: the handlers below are wired at creation. */
+  kind?: string;
+  /** Escape closes the window. Right for a wall monitor, which nobody works in;
+   *  wrong for a live screen, where Escape closes the operator's own dialogs. */
+  escapeCloses?: boolean;
+  /** Called when the window is closed from INSIDE — the page's own Close, or the
+   *  OS — rather than by the shell (a reassignment, an unplug, quitting). */
+  onClosedByUser?: () => void;
+}
+
 export function openWallOn(
   signature: string,
   bounds: Electron.Rectangle,
   url: string,
   label: string,
+  { kind = "wall", escapeCloses = true, onClosedByUser }: ScreenWindowOptions = {},
 ): BrowserWindow {
+  if (wallKinds.get(signature) !== kind) closeWallOn(signature);
   const existing = wallWindows.get(signature);
   if (existing && !existing.isDestroyed()) {
     // Same screen, new assignment: reuse the window rather than closing and
     // reopening it, which flashes the desktop behind it on a wall people watch.
     if (existing.isFullScreen()) existing.setFullScreen(false);
     existing.setBounds(bounds);
+    // The same page already up — a display that changed under it — is refitted,
+    // not reloaded: a reload drops every picture on that screen for seconds, and
+    // a live screen would lose whatever its operator had open.
+    if (existing.webContents.getURL() === url) {
+      existing.setFullScreen(true);
+      return existing;
+    }
     void existing.loadURL(url).then(() => existing.setFullScreen(true));
     log.info(`wall window on ${signature} -> ${url}`);
     return existing;
@@ -286,7 +309,7 @@ export function openWallOn(
     backgroundColor: "#000000",
     autoHideMenuBar: true,
     icon: windowIcon(),
-    title: `Neubit wall — ${label}`,
+    title: `Neubit — ${label}`,
     // ══ THE SAME SESSION, DELIBERATELY ══════════════════════════════════════
     //
     // No `partition` here. The wall window loads the same origin as the console,
@@ -300,6 +323,7 @@ export function openWallOn(
   });
 
   wallWindows.set(signature, win);
+  wallKinds.set(signature, kind);
   hardenContents(win.webContents);
 
   // ── A WAY OUT ─────────────────────────────────────────────────────────────
@@ -308,12 +332,18 @@ export function openWallOn(
   // engineer standing at a wall panel with no keyboard shortcut has to kill the
   // process. Escape closes the window; the assignment is untouched, so it comes
   // back on the next launch or from the panel.
-  win.webContents.on("before-input-event", (_event, input) => {
-    if (input.type === "keyDown" && input.key === "Escape") {
-      log.info(`wall window on ${signature} closed with Escape`);
-      win.close();
-    }
-  });
+  //
+  // A live screen has its own way out — a Close on its toolbar — and an operator
+  // working in it presses Escape to leave a picker or a dialog, so there Escape
+  // stays the page's.
+  if (escapeCloses) {
+    win.webContents.on("before-input-event", (_event, input) => {
+      if (input.type === "keyDown" && input.key === "Escape") {
+        log.info(`wall window on ${signature} closed with Escape`);
+        win.close();
+      }
+    });
+  }
 
   win.once("ready-to-show", () => {
     win.show();
@@ -321,7 +351,14 @@ export function openWallOn(
   });
 
   win.on("closed", () => {
-    if (wallWindows.get(signature) === win) wallWindows.delete(signature);
+    // Still in the map means nobody here closed it: the shell takes a window out
+    // of the map BEFORE closing it (closeWallOn), and quitting is its own case.
+    const byUser = wallWindows.get(signature) === win && !isQuitting();
+    if (wallWindows.get(signature) === win) {
+      wallWindows.delete(signature);
+      wallKinds.delete(signature);
+    }
+    if (byUser) onClosedByUser?.();
   });
 
   void win.loadURL(url);
@@ -329,9 +366,16 @@ export function openWallOn(
   return win;
 }
 
+/** Where the console's own window is while it is on screen, or null. */
+export function mainWindowBounds(): Electron.Rectangle | null {
+  const win = getMainWindow();
+  return win?.isVisible() ? win.getBounds() : null;
+}
+
 export function closeWallOn(signature: string): void {
   const win = wallWindows.get(signature);
   wallWindows.delete(signature);
+  wallKinds.delete(signature);
   if (win && !win.isDestroyed()) win.close();
 }
 

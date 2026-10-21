@@ -33,6 +33,8 @@ import { useCallback, useEffect, useState } from "react";
 
 /** What the shell remembers about a screen it has put a wall monitor on. */
 export interface WallAssignment {
+  /** Absent on assignments saved before live screens existed. */
+  kind?: "wall";
   displaySignature: string;
   displayLabel: string;
   wallId: string;
@@ -42,7 +44,24 @@ export interface WallAssignment {
 }
 
 /** What the console sends to claim a screen. */
-export type WallTarget = Omit<WallAssignment, "displaySignature" | "displayLabel">;
+export type WallTarget = Omit<WallAssignment, "displaySignature" | "displayLabel" | "kind">;
+
+/** A screen showing a live view of its own — the operator's second monitor. */
+export interface LiveAssignment {
+  kind: "live";
+  displaySignature: string;
+  displayLabel: string;
+}
+
+export type ScreenAssignment = WallAssignment | LiveAssignment;
+
+export function isLiveAssignment(a: ScreenAssignment | null | undefined): a is LiveAssignment {
+  return !!a && a.kind === "live";
+}
+
+export function isWallAssignment(a: ScreenAssignment | null | undefined): a is WallAssignment {
+  return !!a && a.kind !== "live";
+}
 
 export interface ScreenSlot {
   signature: string;
@@ -53,7 +72,9 @@ export interface ScreenSlot {
   resolution: string;
   /** Whether a wall window is actually up on it at this moment. */
   open: boolean;
-  assignment: WallAssignment | null;
+  /** The console's own window is on this screen. */
+  console: boolean;
+  assignment: ScreenAssignment | null;
 }
 
 export interface ScreenLayout {
@@ -69,6 +90,7 @@ export interface NeubitBridge {
   screensLayout(): Promise<ScreenLayout>;
   assignScreen(signature: string, target: WallTarget): Promise<ScreenLayout>;
   clearScreen(signature: string): Promise<ScreenLayout>;
+  openLiveScreen(signature: string): Promise<ScreenLayout>;
   closeAllWalls(): Promise<ScreenLayout>;
   identifyScreens(): Promise<void>;
   onScreensChanged(cb: (layout: ScreenLayout) => void): () => void;
@@ -166,6 +188,15 @@ export function useScreens() {
     [run],
   );
 
+  const openLive = useCallback(
+    (signature: string) => {
+      const bridge = desktopBridge();
+      if (!bridge) return undefined;
+      return run(() => bridge.openLiveScreen(signature));
+    },
+    [run],
+  );
+
   const closeAll = useCallback(() => {
     const bridge = desktopBridge();
     if (!bridge) return undefined;
@@ -184,6 +215,7 @@ export function useScreens() {
     refresh,
     assign,
     clear,
+    openLive,
     closeAll,
     identify,
   };
