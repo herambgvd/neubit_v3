@@ -5,7 +5,9 @@
 // One master lane ("All cameras") over one lane per camera, as Milestone's
 // two-track timeline and HikCentral's per-channel bars do, so an operator can see
 // at a glance WHICH camera has footage at an instant instead of a single merged bar
-// that hides a camera with a gap.
+// that hides a camera with a gap. The live wall's dock draws Milestone's two tracks
+// instead: the selected camera on top, every camera in the view under it
+// (`masterBelow`) — a lane per camera would grow with the wall.
 //
 //   wheel            zoom around the cursor (30 s … 7 d)
 //   shift + wheel    pan
@@ -61,8 +63,21 @@ export interface PlaybackTimelineProps {
   onPan: (deltaMs: number) => void;
   onSelect: (a: number, b: number) => void;
   /** The "All cameras" lane, when it should cover more cameras than the lanes
-   *  drawn — the live wall shows only its focused lane past sixteen. */
+   *  drawn — the live wall draws only its focused camera's lane. */
   master?: Pick<TimelineLane, "spans" | "events" | "bookmarks" | "hits">;
+  /** Milestone's two tracks, for the live wall: the lane given (the selected
+   *  camera) on top and drawn tall, "All cameras" under it and thin. */
+  masterBelow?: boolean;
+}
+
+/** Row heights: the master lane's, and the camera lanes' — which shrink so that
+ *  sixteen of them do not push the video off the screen. */
+function rowSizes(lanes: number, masterBelow: boolean) {
+  if (masterBelow) return { master: "mt-0.5 h-3", masterText: "text-[9px]", lane: "h-5", laneText: "" };
+  let lane = "h-4";
+  if (lanes > 9) lane = "h-2";
+  else if (lanes > 4) lane = "h-3";
+  return { master: "h-4", masterText: "text-[10.5px]", lane, laneText: lanes > 9 ? "text-[9px] leading-none" : "" };
 }
 
 const LABEL_W = 136;
@@ -86,6 +101,7 @@ export default function PlaybackTimeline({
   onPan,
   onSelect,
   master,
+  masterBelow = false,
 }: Readonly<PlaybackTimelineProps>) {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const headRef = useRef<HTMLDivElement | null>(null);
@@ -214,10 +230,20 @@ export default function PlaybackTimeline({
   const allEvents = useMemo(() => master?.events ?? lanes.flatMap((l) => l.events), [master, lanes]);
   const allBookmarks = useMemo(() => master?.bookmarks ?? lanes.flatMap((l) => l.bookmarks), [master, lanes]);
   const allHits = useMemo(() => master?.hits ?? lanes.flatMap((l) => l.hits), [master, lanes]);
-  // Sixteen lanes must not push the video off the screen.
-  let laneH = "h-4";
-  if (lanes.length > 9) laneH = "h-2";
-  else if (lanes.length > 4) laneH = "h-3";
+  const rows = rowSizes(lanes.length, masterBelow);
+  // "All cameras" above the camera lanes, or — the wall's two tracks — under them.
+  const ordered = (all: React.ReactNode, cams: React.ReactNode) =>
+    masterBelow ? (
+      <>
+        {cams}
+        {all}
+      </>
+    ) : (
+      <>
+        {all}
+        {cams}
+      </>
+    );
 
   return (
     <div className="select-none text-[11px] text-nb-dim">
@@ -225,28 +251,28 @@ export default function PlaybackTimeline({
         {/* Lane labels */}
         <div className="shrink-0 pr-2" style={{ width: LABEL_W }}>
           <div className="h-6" />
-          <div className="flex h-4 items-center text-[10.5px] font-semibold uppercase tracking-wide text-nb-ink">
-            All cameras
-          </div>
-          <div>
-            {lanes.map((l) => (
-              <button
-                key={l.key}
-                type="button"
-                onClick={() => onActivate(l.key)}
-                title={l.failed ? `${l.name}: the recorder did not answer` : l.name}
-                className={`mt-0.5 flex w-full items-center gap-1 truncate text-left ${laneH} ${
-                  lanes.length > 9 ? "text-[9px] leading-none" : ""
-                } ${
-                  l.active ? "text-nb-tealb" : "hover:text-nb-ink"
-                }`}
-              >
-                {l.independent && <span className="text-[9px] font-bold text-amber-300">IND</span>}
-                {l.failed && <span className="text-[9px] text-amber-300">!</span>}
-                <span className="truncate">{l.name}</span>
-              </button>
-            ))}
-          </div>
+          {ordered(
+            <div className={`flex items-center font-semibold uppercase tracking-wide text-nb-ink ${rows.master} ${rows.masterText}`}>
+              All cameras
+            </div>,
+            <div>
+              {lanes.map((l) => (
+                <button
+                  key={l.key}
+                  type="button"
+                  onClick={() => onActivate(l.key)}
+                  title={l.failed ? `${l.name}: the recorder did not answer` : l.name}
+                  className={`mt-0.5 flex w-full items-center gap-1 truncate text-left ${rows.lane} ${rows.laneText} ${
+                    l.active ? "text-nb-tealb" : "hover:text-nb-ink"
+                  }`}
+                >
+                  {l.independent && <span className="text-[9px] font-bold text-amber-300">IND</span>}
+                  {l.failed && <span className="text-[9px] text-amber-300">!</span>}
+                  <span className="truncate">{l.name}</span>
+                </button>
+              ))}
+            </div>,
+          )}
         </div>
 
         {/* Track */}
@@ -284,34 +310,35 @@ export default function PlaybackTimeline({
             ))}
           </div>
 
-          {/* Master lane */}
-          <Lane
-            laneKey="__all"
-            spans={allSpans}
-            events={showEvents ? allEvents : []}
-            bookmarks={allBookmarks}
-            hits={allHits}
-            win={win}
-            triggers={triggers}
-            className="h-4"
-          />
-          {/* Per-camera lanes, row for row with their labels */}
-          <div>
-            {lanes.map((l) => (
-              <Lane
-                key={l.key}
-                laneKey={l.key}
-                spans={l.spans}
-                events={showEvents ? l.events : []}
-                bookmarks={l.bookmarks}
-                hits={l.hits}
-                win={win}
-                triggers={triggers}
-                active={l.active}
-                className={`mt-0.5 ${laneH}`}
-              />
-            ))}
-          </div>
+          {/* Master lane, and the per-camera lanes row for row with their labels */}
+          {ordered(
+            <Lane
+              laneKey="__all"
+              spans={allSpans}
+              events={showEvents ? allEvents : []}
+              bookmarks={allBookmarks}
+              hits={allHits}
+              win={win}
+              triggers={triggers}
+              className={rows.master}
+            />,
+            <div>
+              {lanes.map((l) => (
+                <Lane
+                  key={l.key}
+                  laneKey={l.key}
+                  spans={l.spans}
+                  events={showEvents ? l.events : []}
+                  bookmarks={l.bookmarks}
+                  hits={l.hits}
+                  win={win}
+                  triggers={triggers}
+                  active={l.active}
+                  className={`mt-0.5 ${rows.lane}`}
+                />
+              ))}
+            </div>,
+          )}
 
           {/* The future: nothing is recorded there yet. */}
           {nowF < 1 && (

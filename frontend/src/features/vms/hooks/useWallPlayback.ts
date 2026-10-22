@@ -40,6 +40,7 @@ import {
   INSTANT_REPLAY_MS,
   LIVE_EDGE_LAG_MS,
   REVERSE_TICK_MS,
+  SYNC_MAX_TILES,
   clampSpeed,
   dayStart,
   dayWindow,
@@ -109,8 +110,8 @@ export function createClock(): WallClock {
 }
 
 export interface UseWallPlaybackOptions {
-  /** Tiles with a camera — how many play back when Sync is on, which is what the
-   *  speed ceiling and reverse are limited by. */
+  /** Tiles with a camera — how many play back when Sync is on (up to
+   *  SYNC_MAX_TILES), which is what the speed ceiling and reverse are limited by. */
   filledTiles?: number;
 }
 
@@ -134,8 +135,9 @@ export function useWallPlayback({ filledTiles = 1 }: UseWallPlaybackOptions = {}
   const [clock] = useState(createClock);
 
   // Every tile that plays back decodes every frame at the transport's rate, so the
-  // ceiling is set by how many do: the focused one alone, or the whole wall.
-  const tiles = sync ? Math.max(1, filledTiles) : 1;
+  // ceiling is set by how many do: the focused one alone, or the wall up to its
+  // Sync limit.
+  const tiles = sync ? Math.min(Math.max(1, filledTiles), SYNC_MAX_TILES) : 1;
   const speed = clampSpeed(requestedSpeed, tiles);
 
   // Enter playback at an instant (from the timeline, a step, a skip). Also the

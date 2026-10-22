@@ -57,7 +57,7 @@ import EstateMapView from "./components/EstateMapView";
 import PlayoutBar from "./components/PlayoutBar";
 import ExportDialog from "./components/ExportDialog";
 import type { ExportRequest } from "./components/playbackTypes";
-import { INSTANT_REPLAY_MS } from "./playback/playbackModel";
+import { INSTANT_REPLAY_MS, syncCappedCells } from "./playback/playbackModel";
 import SpotlightOverlay from "./components/SpotlightOverlay";
 import PtzOverlay from "./components/PtzOverlay";
 import CameraQuickPicker from "./components/CameraQuickPicker";
@@ -898,11 +898,25 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
     focusTile,
   });
 
+  // Sync plays SYNC_MAX_TILES recorder cameras at most, the focused one first and
+  // the rest in wall order, as the recorder console does; the others hold no stream.
+  const syncCapped = useMemo(
+    () =>
+      syncCappedCells(
+        cells.map((c) => !!(c.cameraId && cameraById.get(c.cameraId)?.federated)),
+        focusTile,
+      ),
+    [cells, cameraById, focusTile],
+  );
+  const cappedFor = useCallback(
+    (i: number) => pb.isPlayback && pb.sync && syncCapped[i],
+    [pb.isPlayback, pb.sync, syncCapped],
+  );
   // A tile shows the RECORDING when the wall is in playback and either it is the
   // focused tile or Sync is on (Sync = the whole wall at one instant).
   const playbackFor = useCallback(
-    (i: number) => pb.isPlayback && (pb.sync || i === focusTile),
-    [pb.isPlayback, pb.sync, focusTile],
+    (i: number) => pb.isPlayback && (pb.sync ? !syncCapped[i] : i === focusTile),
+    [pb.isPlayback, pb.sync, focusTile, syncCapped],
   );
 
   // Render a single WallTile. Keyed by STABLE tile index so promoting to
@@ -926,6 +940,7 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
       estateReady={estateReady}
       style={spotlightMode ? undefined : tileStyleFor(i)}
       playback={playbackFor(i)}
+      playbackCapped={cappedFor(i)}
       playbackMaster={i === focusTile}
       playbackAnchorMs={pb.anchorMs}
       playbackAnchorSeq={pb.anchorSeq}

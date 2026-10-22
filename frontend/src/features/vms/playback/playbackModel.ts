@@ -219,6 +219,36 @@ export function layoutFor(count: number): Layout {
   return LAYOUTS.find((l) => l >= count) ?? 16;
 }
 
+// ── the live wall's Sync ────────────────────────────────────────────────────
+
+/** The most tiles a synced live wall plays back at once — the recorder console's own
+ *  limit (neubit_nvr PLAYBACK_MAX_TILES). The wall runs up to 64 live streams, but a
+ *  recorded one also reads the recorder's disks and is held in step with the master,
+ *  so playback stops at 24. */
+export const SYNC_MAX_TILES = 24;
+
+/**
+ * Which cells a synced wall leaves out of playback: the focused tile always plays,
+ * then the other playable cells in wall order until SYNC_MAX_TILES are playing. A
+ * cell left out opens no stream at all, recorded or live — a live picture among
+ * recorded ones would pass for the past — and says why. Only playable cells (a
+ * recorder's camera) are counted or left out; the rest show what they show.
+ */
+export function syncCappedCells(
+  playable: readonly boolean[],
+  focus: number | null,
+  max: number = SYNC_MAX_TILES,
+): boolean[] {
+  const focusPlays = focus != null && !!playable[focus];
+  let others = Math.max(0, focusPlays ? max - 1 : max);
+  return playable.map((p, i) => {
+    if (!p || i === focus) return false;
+    if (others <= 0) return true;
+    others -= 1;
+    return false;
+  });
+}
+
 // ── speed ───────────────────────────────────────────────────────────────────
 
 // Slow motion for reading a plate, fast for scanning an hour. Negative = reverse.

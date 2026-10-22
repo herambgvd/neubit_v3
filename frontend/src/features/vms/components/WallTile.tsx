@@ -37,6 +37,7 @@ import PtzKey, { ptzKeyOffered } from "./PtzKey";
 import TilePlayback from "./TilePlayback";
 import { DARK_STATUSES, presetFor, recorderDown, STATUS_PRESETS } from "../constants";
 import type { WallClock } from "../hooks/useWallPlayback";
+import { SYNC_MAX_TILES } from "../playback/playbackModel";
 import type { EstateCamera, LiveSessionSource } from "../types";
 import { dragEffect, readDrop, startTileDrag } from "../wallDrag";
 
@@ -68,6 +69,17 @@ function filledTileEdge(dropActive: boolean, focused: boolean): string {
   return TILE_IDLE;
 }
 
+type TileView = "playback" | "capped" | "dark" | "live";
+
+/** What fills a filled cell, strongest first: the recording; the Sync limit's
+ *  notice; the NO VIDEO card; the live picture. */
+function tileView(playingBack: boolean, capped: boolean, dark: boolean): TileView {
+  if (playingBack) return "playback";
+  if (capped) return "capped";
+  if (dark) return "dark";
+  return "live";
+}
+
 export interface WallTileProps {
   index: number;
   cameraId?: string | null;
@@ -86,6 +98,9 @@ export interface WallTileProps {
   // `playbackAnchorMs` instead of the live stream. The tile does not open
   // anything: same cell, same chrome, same neighbours — see TilePlayback.
   playback?: boolean;
+  /** Sync is on and this tile is past the cameras it plays (SYNC_MAX_TILES): it
+   *  opens no stream, recorded or live, and says why. */
+  playbackCapped?: boolean;
   /** This tile drives the shared clock. */
   playbackMaster?: boolean;
   playbackAnchorMs?: number | null;
@@ -136,6 +151,7 @@ function WallTile({
   railDragging = false,
   estateReady = true,
   playback = false,
+  playbackCapped = false,
   playbackMaster = false,
   playbackAnchorMs = null,
   playbackAnchorSeq = 0,
@@ -190,10 +206,10 @@ function WallTile({
   // PTZ is driven from the wall, as in every VMS: a live camera with a known head
   // offers the key. Not on a dark camera (nothing would answer) nor over recorded
   // footage (a recording cannot be steered).
-  const ptzKeyShown = ptzKeyOffered(ptzAvailable, camera?.status, playback);
+  const ptzKeyShown = ptzKeyOffered(ptzAvailable, camera?.status, playback || playbackCapped);
   // Instant playback — the last 30 s of this camera, in this tile — where there is a
   // recording to replay: a recorder's camera, not already playing back here.
-  const instantShown = !!onInstantPlayback && !!camera?.federated && !playback;
+  const instantShown = !!onInstantPlayback && !!camera?.federated && !playback && !playbackCapped;
 
   // The tile's OWN buttons. They ride inside the player's control bar when there
   // is a player (one cluster, not two) and stand alone on a dark tile — either
@@ -303,6 +319,7 @@ function WallTile({
   // nothing about whether it was recording an hour ago, and the recording is
   // exactly what an operator opens playback to see.
   const playing_back = playback && !!camera;
+  const view = tileView(playing_back, playbackCapped && !!camera, dark);
   // Once the camera comes back the override has done its job — drop it, so a
   // later outage darkens the tile again instead of dialling forever.
   if (forceLive && !DARK_STATUSES.has(status)) setForceLive(false);
@@ -358,7 +375,7 @@ function WallTile({
       {/* Dark camera — the NVR's NO VIDEO cell, not a spinner. It says which
           state the estate reported, offers the same spotlight/remove cluster the
           live tiles have, and lets the operator overrule a stale status. */}
-      {playing_back ? (
+      {view === "playback" && (
         <>
           <TilePlayback
             camera={camera}
@@ -381,7 +398,28 @@ function WallTile({
             {tileControls}
           </div>
         </>
-      ) : dark ? (
+      )}
+      {/* Past the Sync limit — the recorder console's own card (PLAYBACK: 24
+          MAX). Nothing is open here; a click focuses the tile, and the focused
+          tile always plays. */}
+      {view === "capped" && (
+        <>
+          <div
+            title={`Sync plays back up to ${SYNC_MAX_TILES} cameras at once, as the recorder does`}
+            className="absolute inset-0 z-[3] flex flex-col items-center justify-center gap-1 bg-[#05070f] px-3 text-center"
+          >
+            <Icon icon="heroicons:pause-circle" className={`text-white/25 ${isHero ? "text-4xl" : "text-2xl"}`} />
+            <p className="font-mono text-[11px] font-semibold uppercase tracking-[2px] text-white/50">
+              Playback: {SYNC_MAX_TILES} max
+            </p>
+            <p className="text-[10px] text-white/30">Click to play this camera</p>
+          </div>
+          <div className="absolute bottom-2 right-2 z-20 flex items-center gap-0.5 rounded-[9px] border border-white/15 bg-black/55 p-0.5 opacity-0 backdrop-blur-xs transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+            {tileControls}
+          </div>
+        </>
+      )}
+      {view === "dark" && (
         <>
           <div className="absolute inset-0 z-[3] flex flex-col items-center justify-center gap-1 bg-[#05070f] px-3 text-center">
             <Icon icon="heroicons-outline:video-camera-slash" className={`text-white/25 ${isHero ? "text-4xl" : "text-2xl"}`} />
@@ -413,7 +451,8 @@ function WallTile({
             {tileControls}
           </div>
         </>
-      ) : (
+      )}
+      {view === "live" && (
         /* Player — full-bleed, minimal (the tile owns the overlays). */
         <LivePlayer
           key={`${cameraId}:${profile}`}

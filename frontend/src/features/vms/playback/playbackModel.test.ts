@@ -3,6 +3,8 @@ import {
   followLive,
   liveWindow,
   snapToFootage,
+  syncCappedCells,
+  SYNC_MAX_TILES,
   HOUR_MS,
   MAX_SPAN_MS,
   MIN_SPAN_MS,
@@ -242,5 +244,34 @@ describe("a live wall's window", () => {
     const turned = followLive(w, w.toMs - 1_000);
     expect(turned).not.toBe(w);
     expect((w.toMs - 1_000 - turned.fromMs) / (turned.toMs - turned.fromMs)).toBeCloseTo(0.8);
+  });
+});
+
+describe("Sync's limit on the live wall", () => {
+  const wall = (n: number) => Array.from({ length: n }, () => true);
+
+  it("is the recorder console's: 24 tiles", () => {
+    expect(SYNC_MAX_TILES).toBe(24);
+  });
+
+  it("plays a wall within the limit whole", () => {
+    expect(syncCappedCells(wall(24), 0).some(Boolean)).toBe(false);
+  });
+
+  it("plays the focused tile first, then the rest in wall order", () => {
+    const capped = syncCappedCells(wall(64), 40);
+    expect(capped.filter((c) => !c)).toHaveLength(24);
+    expect(capped[40]).toBe(false);
+    expect(capped.slice(0, 23).some(Boolean)).toBe(false);
+    expect(capped[23]).toBe(true);
+  });
+
+  it("counts only cells that could play: empty ones and local cameras take no place", () => {
+    const cells = [false, true, false, true, true];
+    expect(syncCappedCells(cells, 4, 2)).toEqual([false, false, false, true, false]);
+  });
+
+  it("with no playable focus, gives every place to the wall in order", () => {
+    expect(syncCappedCells([true, true, true], null, 2)).toEqual([false, false, true]);
   });
 });

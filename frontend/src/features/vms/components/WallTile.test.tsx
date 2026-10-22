@@ -22,7 +22,9 @@ vi.mock("./TilePlayback", () => ({
 }));
 // The player itself is out of scope: render only the controls the tile hands it.
 vi.mock("./LivePlayer", () => ({
-  default: ({ extraControls }: Readonly<{ extraControls?: React.ReactNode }>) => <div>{extraControls}</div>,
+  default: ({ extraControls }: Readonly<{ extraControls?: React.ReactNode }>) => (
+    <div data-testid="live-player">{extraControls}</div>
+  ),
   PlayerBtn: ({ title, onClick, active }: Readonly<{ title: string; onClick?: () => void; active?: boolean }>) => (
     <button type="button" aria-label={title} aria-pressed={active} onClick={onClick} />
   ),
@@ -147,5 +149,34 @@ describe("a tile playing back (SCRUM-337)", () => {
     tile({ playback: true, playbackPlaying: true, playbackSpeed: 2 });
 
     expect(playback.props).toMatchObject({ playing: true, speed: 2 });
+  });
+});
+
+describe("a tile past Sync's limit (SCRUM-337)", () => {
+  it("opens no stream, recorded or live, and says why", () => {
+    playback.props = null;
+    tile({ playbackCapped: true });
+
+    expect(screen.getByText("Playback: 24 max")).toBeInTheDocument();
+    expect(screen.getByText("Click to play this camera")).toBeInTheDocument();
+    expect(playback.props).toBeNull();
+    expect(screen.queryByTestId("live-player")).toBeNull();
+  });
+
+  it("offers neither PTZ nor instant playback, but keeps its own controls", () => {
+    tile({ playbackCapped: true, onInstantPlayback: vi.fn() });
+
+    expect(key()).toBeNull();
+    expect(screen.queryByLabelText(/Instant playback/)).toBeNull();
+    expect(screen.getByLabelText("Remove from wall")).toBeInTheDocument();
+  });
+
+  it("a click focuses it, and the focused tile always plays", () => {
+    const onFocus = vi.fn();
+    tile({ playbackCapped: true, onFocus });
+
+    fireEvent.click(screen.getByText("Playback: 24 max"));
+
+    expect(onFocus).toHaveBeenCalledWith(2);
   });
 });

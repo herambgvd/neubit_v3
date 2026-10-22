@@ -4,10 +4,12 @@
  * It drew the FOCUSED camera alone, with no events, no zoom but a ladder, no
  * frame step or reverse, no range to export, and no keys — a second, weaker copy
  * of what the Playback page already did properly. It is now that page's timeline
- * and transport over the wall the operator built: a lane per recorder camera
- * under "All cameras", and the wall's own live ⇄ playback and SYNC above them.
+ * and transport over the wall the operator built, drawn as Milestone's live view
+ * draws it — the focused camera's track over a thin "All cameras" track, two
+ * however big the wall — and the wall's own live ⇄ playback and SYNC above them.
+ * SYNC plays 24 cameras at most, as the recorder console does.
  */
-import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -28,7 +30,7 @@ vi.mock("../api", () => ({
 import { INSTANT_REPLAY_MS } from "../playback/playbackModel";
 import { useWallPlayback, type WallPlayback } from "../hooks/useWallPlayback";
 import type { EstateCamera } from "../types";
-import PlayoutBar, { MAX_LANES, targetText } from "./PlayoutBar";
+import PlayoutBar, { drivenCams, playbackCamOf, targetText } from "./PlayoutBar";
 
 function cam(n: number, over: Partial<EstateCamera> = {}): EstateCamera {
   return {
@@ -71,7 +73,7 @@ const show = (cameras: EstateCamera[], focus: string | null = cameras[0]?.id ?? 
     />,
   );
 
-/** The lane-label buttons the timeline draws, one per lane. */
+/** The camera-track label buttons the timeline draws. */
 const laneButtons = () =>
   screen.getAllByRole("button").filter((b) => /^Camera \d+$/.test(b.getAttribute("title") ?? ""));
 
@@ -82,15 +84,23 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe("the lanes", () => {
-  it("draws every recorder camera on the wall, in tile order, under All cameras", () => {
-    show([cam(1), cam(2), cam(3), cam(9, { federated: false, node_id: undefined, real_id: undefined })]);
+describe("the two tracks", () => {
+  it("draw the focused camera on top and All cameras under it", () => {
+    show([cam(1), cam(2), cam(3)], cam(2).id);
 
-    expect(screen.getByText("All cameras")).toBeInTheDocument();
-    expect(laneButtons().map((b) => b.title)).toEqual(["Camera 1", "Camera 2", "Camera 3"]);
+    expect(laneButtons().map((b) => b.title)).toEqual(["Camera 2"]);
+    const all = screen.getByText("All cameras");
+    expect(laneButtons()[0].compareDocumentPosition(all) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("reads each camera's coverage from the recorder that owns it", async () => {
+  it("stay two however many cameras the wall holds", () => {
+    const many = Array.from({ length: 64 }, (_, i) => cam(i + 1));
+    show(many, many[40].id);
+
+    expect(laneButtons().map((b) => b.title)).toEqual(["Camera 41"]);
+  });
+
+  it("read every wall camera's coverage, for All cameras, from the recorder that owns it", async () => {
     show([cam(1), cam(2)]);
 
     await waitFor(() => expect(api.timeline).toHaveBeenCalledTimes(2));
@@ -100,19 +110,12 @@ describe("the lanes", () => {
     ]);
   });
 
-  it(`past ${MAX_LANES} cameras, draws the focused one so the video keeps the screen`, () => {
-    const many = Array.from({ length: MAX_LANES + 1 }, (_, i) => cam(i + 1));
-    show(many, many[4].id);
+  it("with a focused tile no recorder holds, draw All cameras alone", () => {
+    const local = cam(9, { federated: false, node_id: undefined, real_id: undefined });
+    show([cam(1), local], local.id);
 
-    expect(laneButtons().map((b) => b.title)).toEqual(["Camera 5"]);
-  });
-
-  it("picking a lane focuses that camera's tile", async () => {
-    show([cam(1), cam(2)]);
-
-    await userEvent.click(within(laneButtons()[1]).getByText("Camera 2"));
-
-    expect(onFocusCamera).toHaveBeenCalledWith("fed:node-1:cam-2");
+    expect(laneButtons()).toHaveLength(0);
+    expect(screen.getByText("All cameras")).toBeInTheDocument();
   });
 
   it("with no recorder camera on the wall, says where playback comes from", () => {
@@ -152,10 +155,27 @@ describe("the transport, on the wall", () => {
     expect(pb.isPlayback).toBe(false);
   });
 
-  it("names what it drives: the focused camera, or the whole wall with Sync", () => {
-    expect(targetText({ isPlayback: false, sync: false }, "Camera 1")).toBe("live");
-    expect(targetText({ isPlayback: true, sync: false }, "Camera 1")).toBe("Camera 1");
-    expect(targetText({ isPlayback: true, sync: true }, "Camera 1")).toBe("whole wall");
+  it("names what it drives: the focused camera, or the wall with Sync", () => {
+    expect(targetText({ isPlayback: false, sync: false }, "Camera 1", 4)).toBe("live");
+    expect(targetText({ isPlayback: true, sync: false }, "Camera 1", 4)).toBe("Camera 1");
+    expect(targetText({ isPlayback: true, sync: true }, "Camera 1", 4)).toBe("whole wall");
+    expect(targetText({ isPlayback: true, sync: true }, "Camera 1", 64)).toBe("24 cameras");
+  });
+});
+
+describe("what the jumps run over", () => {
+  const cams = Array.from({ length: 30 }, (_, i) => playbackCamOf(cam(i + 1))!);
+
+  it("without Sync, the focused camera alone", () => {
+    expect(drivenCams(cams, cams[5], false)).toEqual([cams[5]]);
+  });
+
+  it("with Sync, the 24 cameras playing: the focused one, then the wall in order", () => {
+    const driven = drivenCams(cams, cams[25], true);
+
+    expect(driven).toHaveLength(24);
+    expect(driven[0]).toBe(cams[25]);
+    expect(driven.slice(1)).toEqual(cams.slice(0, 23));
   });
 });
 

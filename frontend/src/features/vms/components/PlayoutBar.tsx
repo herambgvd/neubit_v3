@@ -1,7 +1,7 @@
 "use client";
 
-// PlayoutBar — the wall's DVR dock (SCRUM-337): a timeline of every camera on the
-// wall and the transport that drives the wall's playback.
+// PlayoutBar — the wall's DVR dock (SCRUM-337): the wall's timeline and the
+// transport that drives the wall's playback.
 //
 // It does not PLAY anything. Playback happens in the tiles themselves (see
 // TilePlayback) — this dock only says which instant the wall is at. That is the
@@ -10,15 +10,17 @@
 // neighbouring cameras in place, not one camera in a dialog on top of it.
 //
 // The timeline and the transport are the Playback workspace's own
-// (playback/PlaybackTimeline, PlaybackTransport), as Milestone's live view and its
-// playback tab share one timeline: a lane per camera on the wall under an "All
-// cameras" lane, with recordings coloured by trigger, events and bookmarks
-// marked; wheel to zoom, drag to pan, click to seek, Shift+drag for an IN/OUT
-// range; frame step, stepped reverse, the speed ladder, ±10 s, previous/next
-// recording and event, and the same keys. What is the wall's own is above them:
-// whether the wall is live or playing back, and SYNC — off, only the focused tile
-// plays back while the rest stays live (HikCentral's instant playback); on, the
-// whole wall shows one instant.
+// (playback/PlaybackTimeline, PlaybackTransport), drawn as Milestone's live view
+// draws them: two tracks, the selected camera's on top and "All cameras" — every
+// camera on the wall — thin under it, the same two whether the wall holds four
+// cameras or sixty-four (the recorder console draws the focused camera alone).
+// Recordings are coloured by trigger, events and bookmarks marked; wheel to zoom,
+// drag to pan, click to seek, Shift+drag for an IN/OUT range; frame step,
+// stepped reverse, the speed ladder, ±10 s, previous/next recording and event,
+// and the same keys. What is the wall's own is above them: whether the wall is
+// live or playing back, and SYNC — off, only the focused tile plays back while
+// the rest stays live (HikCentral's instant playback); on, the wall shows one
+// instant, on SYNC_MAX_TILES cameras at most, as the recorder console does.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 
@@ -33,6 +35,7 @@ import {
   prevEvent,
   prevRecording,
   snapToFootage,
+  SYNC_MAX_TILES,
   stepZoom,
   unionSpans,
   type KeyAction,
@@ -47,11 +50,6 @@ import type { EstateCamera } from "../types";
 
 export type { WallPlayback };
 
-/** Past this many cameras the wall's lanes would push the video off the screen:
- *  the dock then draws the focused camera's lane under an "All cameras" lane that
- *  still covers the whole wall. The Playback workspace stops at the same sixteen. */
-export const MAX_LANES = 16;
-
 const ALL_TRIGGERS: ReadonlySet<TriggerKey> = new Set(TRIGGER_KEYS);
 
 /** A wall camera as the recorder addresses it — or null for one no recorder owns,
@@ -61,31 +59,44 @@ export function playbackCamOf(c: EstateCamera): PlaybackCam | null {
   return { key: c.id, nodeId: c.node_id, realId: c.real_id, name: c.name, recorder: c.node_name ?? "" };
 }
 
-/** The lanes the dock draws: every recorder camera on the wall, in tile order —
- *  or, past MAX_LANES, the focused one alone. */
-export function wallLanes(
-  cams: readonly PlaybackCam[],
-  focusKey: string | null,
+/** The camera track: the focused camera's lane, or none when the focused tile has
+ *  no recorder camera (the "All cameras" track still covers the wall). */
+export function focusLane(
+  focus: PlaybackCam | null,
   data: { spans: Map<string, Span[]>; events: Map<string, number[]>; bookmarks: { camKey: string; at: number }[]; failed: Set<string> },
 ): TimelineLane[] {
-  const shown = cams.length > MAX_LANES ? cams.filter((c) => c.key === focusKey) : cams;
-  return shown.map((c) => ({
-    key: c.key,
-    name: c.name,
-    spans: data.spans.get(c.key) ?? [],
-    events: data.events.get(c.key) ?? [],
-    bookmarks: data.bookmarks.filter((b) => b.camKey === c.key).map((b) => b.at),
-    hits: [],
-    active: c.key === focusKey,
-    independent: false,
-    failed: data.failed.has(c.key),
-  }));
+  if (!focus) return [];
+  return [
+    {
+      key: focus.key,
+      name: focus.name,
+      spans: data.spans.get(focus.key) ?? [],
+      events: data.events.get(focus.key) ?? [],
+      bookmarks: data.bookmarks.filter((b) => b.camKey === focus.key).map((b) => b.at),
+      hits: [],
+      active: true,
+      independent: false,
+      failed: data.failed.has(focus.key),
+    },
+  ];
+}
+
+/** The cameras playing back: the focused one alone, or with Sync the focused one
+ *  and the rest in wall order up to SYNC_MAX_TILES (Streaming's syncCappedCells). */
+export function drivenCams(cams: readonly PlaybackCam[], focus: PlaybackCam | null, sync: boolean): PlaybackCam[] {
+  if (!sync) return focus ? [focus] : [];
+  const rest = cams.filter((c) => c !== focus);
+  return (focus ? [focus, ...rest] : rest).slice(0, SYNC_MAX_TILES);
 }
 
 /** What the transport is driving, in the words its readout uses. */
-export function targetText(pb: Pick<WallPlayback, "isPlayback" | "sync">, focusName: string | null): string {
+export function targetText(
+  pb: Pick<WallPlayback, "isPlayback" | "sync">,
+  focusName: string | null,
+  wallCams: number,
+): string {
   if (!pb.isPlayback) return "live";
-  if (pb.sync) return "whole wall";
+  if (pb.sync) return wallCams > SYNC_MAX_TILES ? `${SYNC_MAX_TILES} cameras` : "whole wall";
   return focusName ?? "focused tile";
 }
 
@@ -106,7 +117,7 @@ function wantsKey(e: KeyboardEvent, hasSel: boolean): KeyAction | null {
 export interface PlayoutBarProps {
   /** The cameras on the wall, in tile order. */
   cameras: readonly EstateCamera[];
-  /** The focused tile's camera id — whose lane is active, and what plays alone. */
+  /** The focused tile's camera id — the camera track, and what plays alone. */
   focusCameraId: string | null;
   /** A lane was picked: focus that camera's tile. */
   onFocusCamera: (cameraId: string) => void;
@@ -126,31 +137,25 @@ export default function PlayoutBar({ cameras, focusCameraId, onFocusCamera, pb, 
   const { spansByKey, eventsByKey, bookmarks, coverageFailed } = useGridData(cams, pb.win);
   const inv = useInvestigation({ cams, activeCam: focusCam, clock: pb.clock, sel: pb.sel, hasSel: pb.hasSel, win: pb.win });
 
-  // What the transport's jumps run over: the whole wall with Sync, else the
-  // focused tile — the cameras actually playing back.
-  const driven = useMemo(() => {
-    if (pb.sync) return cams;
-    return focusCam ? [focusCam] : [];
-  }, [pb.sync, cams, focusCam]);
+  // What the transport's jumps run over: the cameras actually playing back.
+  const driven = useMemo(() => drivenCams(cams, focusCam, pb.sync), [pb.sync, cams, focusCam]);
   const drivenSpans = useMemo(() => unionSpans(driven.map((c) => spansByKey.get(c.key) ?? [])), [driven, spansByKey]);
   const drivenEvents = useMemo(() => driven.flatMap((c) => eventsByKey.get(c.key) ?? []), [driven, eventsByKey]);
 
-  const lanes = wallLanes(cams, focusCameraId, {
+  const lanes = focusLane(focusCam, {
     spans: spansByKey,
     events: eventsByKey,
     bookmarks,
     failed: coverageFailed,
   });
+  // "All cameras": every recorder camera on the wall, whichever of them plays.
   const master = useMemo(
-    () =>
-      cams.length > MAX_LANES
-        ? {
-            spans: cams.flatMap((c) => spansByKey.get(c.key) ?? []),
-            events: cams.flatMap((c) => eventsByKey.get(c.key) ?? []),
-            bookmarks: bookmarks.map((b) => b.at),
-            hits: [],
-          }
-        : undefined,
+    () => ({
+      spans: cams.flatMap((c) => spansByKey.get(c.key) ?? []),
+      events: cams.flatMap((c) => eventsByKey.get(c.key) ?? []),
+      bookmarks: bookmarks.map((b) => b.at),
+      hits: [],
+    }),
     [cams, spansByKey, eventsByKey, bookmarks],
   );
 
@@ -221,6 +226,7 @@ export default function PlayoutBar({ cameras, focusCameraId, onFocusCamera, pb, 
     <div className="shrink-0 space-y-1.5 border-t border-nb-mist/22 bg-nb-surface2/82 px-3 pb-2 pt-1.5 backdrop-blur-xs">
       <WallStrip
         pb={pb}
+        wallCams={cams.length}
         focusName={focusCam?.name ?? null}
         focusRecorder={focusCam?.recorder ?? null}
         hasRecorderCams={cams.length > 0}
@@ -237,6 +243,7 @@ export default function PlayoutBar({ cameras, focusCameraId, onFocusCamera, pb, 
             win={pb.win}
             lanes={lanes}
             master={master}
+            masterBelow
             clock={pb.clock}
             inMs={pb.sel.inMs}
             outMs={pb.sel.outMs}
@@ -254,7 +261,7 @@ export default function PlayoutBar({ cameras, focusCameraId, onFocusCamera, pb, 
             speed={pb.speed}
             maxSpeed={pb.maxSpeed}
             canReverse={pb.canReverse}
-            target={targetText(pb, focusCam?.name ?? null)}
+            target={targetText(pb, focusCam?.name ?? null, cams.length)}
             win={pb.win}
             inMs={pb.sel.inMs}
             outMs={pb.sel.outMs}
@@ -286,6 +293,8 @@ export default function PlayoutBar({ cameras, focusCameraId, onFocusCamera, pb, 
 
 interface WallStripProps {
   pb: WallPlayback;
+  /** Recorder cameras on the wall — past SYNC_MAX_TILES, Sync plays the first ones. */
+  wallCams: number;
   focusName: string | null;
   focusRecorder: string | null;
   hasRecorderCams: boolean;
@@ -294,7 +303,7 @@ interface WallStripProps {
 
 /** The wall's own row: live or playing back, SYNC, the focused camera, the day,
  *  and the way to put the dock away. */
-function WallStrip({ pb, focusName, focusRecorder, hasRecorderCams, onClose }: Readonly<WallStripProps>) {
+function WallStrip({ pb, wallCams, focusName, focusRecorder, hasRecorderCams, onClose }: Readonly<WallStripProps>) {
   // The last day the picker offers. Kept in state and ticked, not read in render:
   // a wall left open past midnight must offer the new day.
   const [today, setToday] = useState(() => localDay(Date.now()));
@@ -306,20 +315,16 @@ function WallStrip({ pb, focusName, focusRecorder, hasRecorderCams, onClose }: R
     <div className="flex items-center gap-1.5">
       <ModeBadge playback={pb.isPlayback} />
 
-      {/* SYNC — every filled tile plays this instant, together. Off, only the
-          focused tile goes to playback and the rest of the wall stays live, which
-          is what you want when you are checking one camera against what the
-          others are showing NOW. */}
+      {/* SYNC — every filled tile plays this instant, together, up to
+          SYNC_MAX_TILES. Off, only the focused tile goes to playback and the rest
+          of the wall stays live, which is what you want when you are checking one
+          camera against what the others are showing NOW. */}
       <button
         type="button"
         onClick={pb.toggleSync}
         disabled={!pb.isPlayback}
         aria-pressed={pb.sync}
-        title={
-          pb.sync
-            ? "Sync on — every camera on the wall plays this instant"
-            : "Sync — play every camera on the wall at this instant"
-        }
+        title={syncTitle(pb.sync, wallCams)}
         className={`inline-flex h-[26px] shrink-0 items-center gap-1.5 rounded-[7px] border px-2 text-[11px] font-semibold tracking-[.6px] transition disabled:cursor-not-allowed disabled:opacity-40 ${
           pb.sync
             ? "border-nb-teal/50 bg-nb-teal/15 text-nb-tealb"
@@ -360,6 +365,15 @@ function WallStrip({ pb, focusName, focusRecorder, hasRecorderCams, onClose }: R
       </button>
     </div>
   );
+}
+
+/** The SYNC button's title: what it does, and its limit where the wall is past it. */
+function syncTitle(on: boolean, wallCams: number): string {
+  const limit =
+    wallCams > SYNC_MAX_TILES ? ` — up to ${SYNC_MAX_TILES} cameras, the focused one first, as the recorder plays them` : "";
+  return on
+    ? `Sync on — every camera on the wall plays this instant${limit}`
+    : `Sync — play every camera on the wall at this instant${limit}`;
 }
 
 function ModeBadge({ playback }: Readonly<{ playback: boolean }>) {
