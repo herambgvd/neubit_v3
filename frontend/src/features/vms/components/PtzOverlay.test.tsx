@@ -12,7 +12,7 @@
  */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderWithProviders } from "@/test/render";
 
@@ -116,6 +116,7 @@ const focusMove = vi.fn();
 const focusStop = vi.fn();
 const presetsList = vi.fn();
 const presetSave = vi.fn();
+const presetGoto = vi.fn();
 const patrolGet = vi.fn();
 const toursList = vi.fn();
 
@@ -131,7 +132,7 @@ vi.mock("../api", () => {
       presets: {
         list: (...a: unknown[]) => presetsList(...a),
         save: (...a: unknown[]) => presetSave(...a),
-        goto: vi.fn(),
+        goto: (...a: unknown[]) => presetGoto(...a),
         remove: vi.fn(),
       },
       patrol: { get: (...a: unknown[]) => patrolGet(...a), operate: vi.fn() },
@@ -152,7 +153,7 @@ function hold(el: HTMLElement, type: "pointerdown" | "pointerup" | "pointerleave
 }
 
 beforeEach(() => {
-  for (const m of [ptz, focusMove, focusStop, presetsList, presetSave, patrolGet, toursList]) m.mockReset();
+  for (const m of [ptz, focusMove, focusStop, presetsList, presetSave, presetGoto, patrolGet, toursList]) m.mockReset();
   presetsList.mockResolvedValue({ items: [] });
   patrolGet.mockResolvedValue({ enabled: false });
   toursList.mockResolvedValue({ items: [] });
@@ -387,5 +388,94 @@ describe("the patrol button and the panel behind it", () => {
     // By text: the pad's centre button is also titled "Stop", and only the
     // panel's carries the word as a label.
     expect(await findByText("Stop")).toBeInTheDocument();
+  });
+});
+
+describe("on a wall tile (SCRUM-338)", () => {
+  const card = () =>
+    renderWithProviders(
+      <div data-drop-bounds="">
+        <PtzOverlay variant="tile" nodeId="rec-a" cameraId="cam-1" canControl title="Gate dome" onClose={vi.fn()} />
+      </div>,
+    );
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("is the recorder console's card: the pad with Stop, zoom, focus and speed, presets behind a button", async () => {
+    presetsList.mockResolvedValue({ items: [{ token: "p1", name: "Gate" }] });
+    const { getByLabelText, getByTitle, getByRole, queryByText } = card();
+
+    expect(getByLabelText("PTZ control — Gate dome")).toBeInTheDocument();
+    for (const t of ["Pan up", "Stop", "Zoom in", "Focus far"]) expect(getByTitle(t)).toBeInTheDocument();
+    expect(getByRole("radiogroup", { name: "PTZ speed" })).toBeInTheDocument();
+    await waitFor(() => expect(presetsList).toHaveBeenCalled());
+    expect(queryByText("Gate")).toBeNull();
+  });
+
+  it("recalls a preset from its list, and the list closes", async () => {
+    presetsList.mockResolvedValue({ items: [{ token: "p1", name: "Gate" }] });
+    const { getByRole, findByText, queryByText } = card();
+
+    fireEvent.click(getByRole("button", { name: /Presets/ }));
+    fireEvent.click(await findByText("Gate"));
+
+    await waitFor(() => expect(presetGoto).toHaveBeenCalledWith("rec-a", "cam-1", "p1"));
+    expect(queryByText("Gate")).toBeNull();
+  });
+
+  it("saves the current position from the list, under a new name and no token", async () => {
+    const { getByRole, findByText, getByLabelText } = card();
+
+    fireEvent.click(getByRole("button", { name: /Presets/ }));
+    fireEvent.click(await findByText("Save current position"));
+    fireEvent.change(getByLabelText("Preset name"), { target: { value: " Loading bay " } });
+    fireEvent.click(getByLabelText("Save preset here"));
+
+    await waitFor(() => expect(presetSave).toHaveBeenCalledWith("rec-a", "cam-1", "Loading bay"));
+  });
+
+  it("marks itself as the card, whose presses the tile leaves alone", () => {
+    const { getByLabelText } = card();
+
+    expect(getByLabelText("PTZ control — Gate dome").hasAttribute("data-ptz-card")).toBe(true);
+  });
+
+  describe("its menus stay inside the tile", () => {
+    /** Lays out the tile and the card on it; jsdom lays out nothing. */
+    const layout = (tile: { height: number; width: number }, cardTop: number, cardLeft: number) => {
+      const rect = (top: number, left: number, height: number, width: number) =>
+        ({ top, left, height, width, bottom: top + height, right: left + width, x: left, y: top }) as DOMRect;
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+        if (this.hasAttribute("data-drop-bounds")) return rect(0, 0, tile.height, tile.width);
+        if (this.tagName === "SECTION") return rect(cardTop, cardLeft, 146, 206);
+        return rect(0, 0, 0, 0);
+      });
+    };
+    const menuOf = async (text: string, find: (t: string) => Promise<HTMLElement>) =>
+      (await find(text)).closest<HTMLElement>(".overflow-y-auto")!;
+
+    it("open above the card, as tall as the room over it", async () => {
+      presetsList.mockResolvedValue({ items: [{ token: "p1", name: "Gate" }] });
+      layout({ height: 300, width: 560 }, 170, 346);
+      const { getByRole, findByText } = card();
+
+      fireEvent.click(getByRole("button", { name: /Presets/ }));
+      const menu = await menuOf("Gate", findByText);
+
+      expect(menu.className).toContain("bottom-full");
+      expect(menu.style.maxHeight).toBe("164px");
+    });
+
+    it("open beside the card when the room above it is too little for a list", async () => {
+      presetsList.mockResolvedValue({ items: [{ token: "p1", name: "Gate" }] });
+      layout({ height: 220, width: 560 }, 60, 346);
+      const { getByRole, findByText } = card();
+
+      fireEvent.click(getByRole("button", { name: /Presets/ }));
+      const menu = await menuOf("Gate", findByText);
+
+      expect(menu.className).toContain("right-full");
+      expect(menu.style.maxHeight).toBe("200px");
+    });
   });
 });

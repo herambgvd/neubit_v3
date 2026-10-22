@@ -39,7 +39,6 @@ import type { CameraGroupPublic, EstateCamera, PatternPublic, PatternStop, WallP
 import { ownerUnreachable } from "./constants";
 import {
   DEFAULT_LAYOUT_KEY,
-  dockSideFor,
   getLayout,
   gridStyle,
   tileStyle,
@@ -59,7 +58,6 @@ import ExportDialog from "./components/ExportDialog";
 import type { ExportRequest } from "./components/playbackTypes";
 import { INSTANT_REPLAY_MS, syncCappedCells } from "./playback/playbackModel";
 import SpotlightOverlay from "./components/SpotlightOverlay";
-import PtzOverlay from "./components/PtzOverlay";
 import CameraQuickPicker from "./components/CameraQuickPicker";
 import PatternPickerMenu from "./components/PatternPickerMenu";
 import PatternHud from "./components/PatternHud";
@@ -1068,24 +1066,6 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
                 {isSpotlightActive && spotlight != null
                   ? renderTile(cells[spotlight], spotlight, { spotlightMode: true })
                   : cells.map((cell, i) => renderTile(cell, i, { isHero: i === hero }))}
-              </div>
-            )}
-            {/* The live PTZ panel, docked on the side away from the tile it
-                serves so the picture being steered stays in view. */}
-            {ptzOpenTile != null && ptzCamera?.node_id && ptzCamera.real_id && (
-              <div
-                className={`absolute bottom-3 z-30 ${
-                  dockSideFor(layout, ptzOpenTile, isSpotlightActive) === "left" ? "left-3" : "right-3"
-                }`}
-              >
-                <PtzOverlay
-                  key={ptzCamera.id}
-                  nodeId={ptzCamera.node_id}
-                  cameraId={ptzCamera.real_id}
-                  canControl={canPtz}
-                  title={ptzCamera.name}
-                  onClose={() => setPtzTile(null)}
-                />
               </div>
             )}
             {isSpotlightActive && (

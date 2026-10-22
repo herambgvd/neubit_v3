@@ -90,31 +90,6 @@ export function getLayout(key: string | null | undefined): WallLayout {
   return LAYOUTS.find((l) => l.key === key) || LAYOUTS[1];
 }
 
-/** Which side of the wall a docked panel (the live PTZ control) sits on, so it does
- *  not cover the tile it serves: the side away from the tile's centre. A tile that
- *  fills the wall gets the left, where the spotlight's PTZ overlay always sat. */
-export function dockSideFor(layout: WallLayout, index: number, fullWall: boolean): "left" | "right" {
-  if (fullWall || layout.cols <= 1) return "left";
-  let first = -1;
-  let last = -1;
-  for (const row of layout.template ?? []) {
-    row
-      .trim()
-      .split(/\s+/)
-      .forEach((area, col) => {
-        if (area !== `t${index}`) return;
-        if (first < 0 || col < first) first = col;
-        if (col > last) last = col;
-      });
-  }
-  if (first < 0) {
-    first = index % layout.cols;
-    last = first;
-  }
-  const centre = (first + last + 1) / 2;
-  return centre > layout.cols / 2 ? "left" : "right";
-}
-
 export function isSpotlightLayout(layout: WallLayout | null | undefined): layout is WallLayout & { template: string[] } {
   return Array.isArray(layout?.template);
 }

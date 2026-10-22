@@ -27,13 +27,23 @@
 // `onPickHere(index)`) so a single useCallback'd handler is shared by every tile
 // instead of a fresh per-render closure that captures `i`. The tile supplies its
 // own stable `index` when invoking them.
-import { memo, useMemo, useRef, useState, type CSSProperties, type DragEvent } from "react";
+import {
+  memo,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type DragEvent,
+  type KeyboardEvent,
+  type SyntheticEvent,
+} from "react";
 import { Icon } from "@iconify/react";
-import { asButton } from "@/lib/a11y";
+import { asButton, onActivate } from "@/lib/a11y";
 
 import { vms } from "../api";
 import LivePlayer, { PlayerBtn } from "./LivePlayer";
 import PtzKey, { ptzKeyOffered } from "./PtzKey";
+import PtzOverlay from "./PtzOverlay";
 import TilePlayback from "./TilePlayback";
 import { DARK_STATUSES, presetFor, recorderDown, STATUS_PRESETS } from "../constants";
 import type { WallClock } from "../hooks/useWallPlayback";
@@ -67,6 +77,24 @@ function filledTileEdge(dropActive: boolean, focused: boolean): string {
   if (dropActive) return TILE_DROP;
   if (focused) return "border border-nb-teal shadow-[0_0_0_1px_rgb(var(--nb-c-teal)/.45)]";
   return TILE_IDLE;
+}
+
+/** True for an event that began on the tile's PTZ card, whose presses are its own. */
+const onPtzCard = (e: SyntheticEvent) => e.target instanceof Element && !!e.target.closest("[data-ptz-card]");
+
+/** The tile's button props (click/keys focus it), leaving presses on the PTZ card alone. */
+function tileButton(focus: (() => void) | undefined) {
+  if (!focus) return {};
+  const key = onActivate<HTMLDivElement>(focus);
+  return {
+    ...asButton(focus, "Focus this tile"),
+    onClick: (e: SyntheticEvent) => {
+      if (!onPtzCard(e)) focus();
+    },
+    onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
+      if (!onPtzCard(e)) key?.(e);
+    },
+  };
 }
 
 type TileView = "playback" | "capped" | "dark" | "live";
@@ -328,7 +356,10 @@ function WallTile({
     <div
       ref={rootRef}
       style={style}
-      draggable
+      // Not while PTZ is open: a press on the pad steers, it never moves the tile.
+      draggable={!ptzOpen}
+      // The PTZ card's menus stay inside this box (lib/dropRoom).
+      data-drop-bounds=""
       onDragStart={(e) => startTileDrag(e.dataTransfer, index, cameraId)}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
@@ -337,8 +368,10 @@ function WallTile({
       // whose coverage the timeline draws, and the one that leads a seek. There
       // was no single-click action on a filled tile before, so this costs nothing
       // and saves the operator hunting for a "which camera?" dropdown.
-      {...asButton(onFocus ? () => onFocus(index) : undefined, "Focus this tile")}
-      onDoubleClick={() => onSpotlight?.(index)}
+      {...tileButton(onFocus && (() => onFocus(index)))}
+      onDoubleClick={(e) => {
+        if (!onPtzCard(e)) onSpotlight?.(index);
+      }}
       className={`group relative min-h-0 overflow-hidden rounded-[11px] bg-black transition ${filledTileEdge(dropActive, focused || ptzOpen)}`}
     >
       {/* PLAYBACK badge — the tile must never look live while it is not. The
@@ -482,9 +515,20 @@ function WallTile({
         )}
       </div>
 
-      {/* PTZ is opened from the PTZ key above, never shown unasked: the panel is
-          drawn by Streaming, docked on the wall's far side from this tile so it
-          does not cover the picture being steered (SCRUM-331). */}
+      {/* PTZ card on the camera it steers, as on the recorder console (SCRUM-338). */}
+      {ptzOpen && ptzAvailable && camera?.node_id && camera.real_id && (
+        <div className="absolute bottom-10 right-2 z-30">
+          <PtzOverlay
+            key={camera.id}
+            variant="tile"
+            nodeId={camera.node_id}
+            cameraId={camera.real_id}
+            canControl={ptzAvailable}
+            title={name}
+            onClose={() => onTogglePtz?.(index)}
+          />
+        </div>
+      )}
 
     </div>
   );

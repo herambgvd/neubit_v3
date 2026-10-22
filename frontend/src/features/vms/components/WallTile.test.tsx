@@ -20,6 +20,14 @@ vi.mock("./TilePlayback", () => ({
     return null;
   },
 }));
+// The card's own behaviour is PtzOverlay's test; here, only where it is drawn.
+vi.mock("./PtzOverlay", () => ({
+  default: (p: Readonly<{ variant?: string; title?: string; onClose?: () => void }>) => (
+    <button type="button" data-ptz-card="" data-testid="ptz-card" data-variant={p.variant} onClick={p.onClose}>
+      {p.title}
+    </button>
+  ),
+}));
 // The player itself is out of scope: render only the controls the tile hands it.
 vi.mock("./LivePlayer", () => ({
   default: ({ extraControls }: Readonly<{ extraControls?: React.ReactNode }>) => (
@@ -178,5 +186,63 @@ describe("a tile past Sync's limit (SCRUM-337)", () => {
     fireEvent.click(screen.getByText("Playback: 24 max"));
 
     expect(onFocus).toHaveBeenCalledWith(2);
+  });
+});
+
+describe("the PTZ card on its own tile (SCRUM-338)", () => {
+  it("opens on the camera it steers, as the recorder console's card", () => {
+    tile({ ptzOpen: true });
+
+    expect(screen.getByTestId("ptz-card").dataset.variant).toBe("tile");
+    expect(screen.getByTestId("ptz-card")).toHaveTextContent("Gate dome");
+  });
+
+  it("closes for this tile from the card", () => {
+    const { onTogglePtz } = tile({ ptzOpen: true });
+
+    fireEvent.click(screen.getByTestId("ptz-card"));
+
+    expect(onTogglePtz).toHaveBeenCalledWith(2);
+  });
+
+  it("holds the tile still while it is open: a press on the pad is steering", () => {
+    tile({ ptzOpen: true });
+
+    expect(screen.getByTestId("ptz-card").closest("[draggable]")?.getAttribute("draggable")).toBe("false");
+  });
+
+  it("is the box its menus keep inside", () => {
+    tile({ ptzOpen: true });
+
+    expect(screen.getByTestId("ptz-card").closest("[data-drop-bounds]")).not.toBeNull();
+  });
+
+  it("keeps its presses: no focus click, no spotlight, no keys taken by the tile", () => {
+    const onFocus = vi.fn();
+    const onSpotlight = vi.fn();
+    tile({ ptzOpen: true, onFocus, onSpotlight });
+    const card = screen.getByTestId("ptz-card");
+
+    fireEvent.click(card);
+    fireEvent.doubleClick(card);
+    fireEvent.keyDown(card, { key: " " });
+
+    expect(onFocus).not.toHaveBeenCalled();
+    expect(onSpotlight).not.toHaveBeenCalled();
+  });
+
+  it("leaves the rest of the tile its own: a click there focuses it", () => {
+    const onFocus = vi.fn();
+    tile({ ptzOpen: true, onFocus });
+
+    fireEvent.click(screen.getByText("Gate dome", { selector: "span" }));
+
+    expect(onFocus).toHaveBeenCalledWith(2);
+  });
+
+  it("is not drawn where the wall says PTZ is not available", () => {
+    tile({ ptzOpen: true, ptzAvailable: false });
+
+    expect(screen.queryByTestId("ptz-card")).toBeNull();
   });
 });

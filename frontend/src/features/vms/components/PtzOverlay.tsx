@@ -1,7 +1,8 @@
 "use client";
 
 // PtzOverlay (G1) — the operator PTZ control surface for a `ptz_capable` camera,
-// on the Cameras page's detail pane and on a live-wall tile (SCRUM-331). It provides:
+// on the Cameras page's detail pane and, as a compact card, on its live-wall tile
+// (variant "tile", SCRUM-338). It provides:
 //   • an 8-direction pan/tilt pad — press-and-hold to move (continuous), release
 //     to stop; the centre key stops the head whatever is moving it;
 //   • zoom in/out + focus near/far — same hold-to-move → stop;
@@ -26,7 +27,15 @@
 // all MOVEMENTS and writes gate on `vms.ptz.control`. When the operator lacks
 // that perm the pad/zoom/focus/save/patrol-write controls are hidden and only
 // the (read-only) preset list + patrol status show.
-import { useCallback, useEffect, useRef, useState, type ButtonHTMLAttributes, type PointerEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ButtonHTMLAttributes,
+  type PointerEvent,
+  type ReactNode,
+} from "react";
 import { Icon } from "@iconify/react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -34,6 +43,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiError } from "@/lib/api";
 import { asItems } from "@/lib/format";
 import vms from "../api";
+import { DROP_SIDE_CLASS, dropPlacement, measureDropRoom, type DropRoom } from "../lib/dropRoom";
 import type { FederatedPatrol, FederatedPreset, FederatedTour, PtzMoveBody, TourOperation } from "../types";
 import PatrolEditorModal from "./PatrolEditorModal";
 
@@ -85,9 +95,19 @@ export interface PtzOverlayProps {
   title?: string;
   /** Closes the panel; with it the panel carries a header and a close key. */
   onClose?: () => void;
+  /** "tile": the compact card a live-wall tile carries. "panel" (default): the
+   *  full panel of the Cameras page. */
+  variant?: "panel" | "tile";
 }
 
-export default function PtzOverlay({ nodeId, cameraId, canControl, title, onClose }: Readonly<PtzOverlayProps>) {
+export default function PtzOverlay({
+  nodeId,
+  cameraId,
+  canControl,
+  title,
+  onClose,
+  variant = "panel",
+}: Readonly<PtzOverlayProps>) {
   const qc = useQueryClient();
   const [showPatrol, setShowPatrol] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -318,16 +338,14 @@ export default function PtzOverlay({ nodeId, cameraId, canControl, title, onClos
       toast.error(apiError(e, "Could not recall preset"));
     }
   };
-  const savePreset = async () => {
-    const name = newName.trim();
+  const savePreset = async (typed: string) => {
+    const name = typed.trim();
     if (!canControl || !name) return;
-    setNaming(false);
-    setNewName("");
     try {
       // No token = CREATE at the current position. Passing an existing token would
       // OVERWRITE that preset instead, which silently moves where every other
       // operator's recall of it points — so this path never sends one.
-      await vms.federation.presets.save(nodeId, cameraId, name.trim());
+      await vms.federation.presets.save(nodeId, cameraId, name);
       toast.success("Preset saved");
       qc.invalidateQueries({ queryKey: presetsKey });
     } catch (e) {
@@ -381,6 +399,49 @@ export default function PtzOverlay({ nodeId, cameraId, canControl, title, onClos
     onPointerLeave: () => stop(),
     onPointerCancel: () => stop(),
   });
+
+  const editor = editorOpen && (
+    <PatrolEditorModal
+      nodeId={nodeId}
+      cameraId={cameraId}
+      presets={presets}
+      patrol={patrol}
+      onClose={() => setEditorOpen(false)}
+      onSaved={() => qc.invalidateQueries({ queryKey: patrolKey })}
+    />
+  );
+
+  if (variant === "tile") {
+    return (
+      <>
+        <PtzTileCard
+          title={title}
+          onClose={onClose}
+          canControl={canControl}
+          pad={{ holdProps, startPanTilt, startZoom, startFocus, halt, speed, setSpeed }}
+          presets={{
+            items: presets,
+            loading: presetsQ.isLoading,
+            supported: presetsSupported,
+            onGoto: (token) => void gotoPreset(token),
+            onDelete: (token) => void deletePreset(token),
+            onSave: (name) => void savePreset(name),
+          }}
+          patrol={{
+            patrol,
+            loading: patrolQ.isLoading,
+            running: patrolRunning,
+            touring,
+            tours,
+            onOperate: (op) => void operatePatrol(op),
+            onOperateTour: (tour, op) => void operateTour(tour, op),
+            onEdit: () => setEditorOpen(true),
+          }}
+        />
+        {editor}
+      </>
+    );
+  }
 
   return (
     <div className="pointer-events-auto flex max-w-[30rem] flex-col gap-2 rounded-xl border border-white/10 bg-black/70 p-2.5 text-white shadow-2xl backdrop-blur-md">
@@ -489,7 +550,11 @@ export default function PtzOverlay({ nodeId, cameraId, canControl, title, onClos
           <PresetNameForm
             value={newName}
             onChange={setNewName}
-            onSave={() => void savePreset()}
+            onSave={() => {
+              setNaming(false);
+              setNewName("");
+              void savePreset(newName);
+            }}
             onCancel={() => {
               setNaming(false);
               setNewName("");
@@ -540,17 +605,274 @@ export default function PtzOverlay({ nodeId, cameraId, canControl, title, onClos
         </div>
       </div>
 
-      {editorOpen && (
-        <PatrolEditorModal
-          nodeId={nodeId}
-          cameraId={cameraId}
-          presets={presets}
-          patrol={patrol}
-          onClose={() => setEditorOpen(false)}
-          onSaved={() => qc.invalidateQueries({ queryKey: patrolKey })}
-        />
-      )}
+      {editor}
     </div>
+  );
+}
+
+// ── the tile card: the recorder console's on-tile PTZ card (SCRUM-338) ──────────
+
+/** A drop-up's width, before a tight tile narrows it, and its tallest. */
+const MENU_W = 224;
+const MENU_MAX_H = 240;
+
+interface TilePadControls {
+  holdProps: HoldPropsFn;
+  startPanTilt: (dir: PadDir) => void;
+  startZoom: (direction: "in" | "out") => void;
+  startFocus: (direction: "near" | "far") => void;
+  halt: () => void;
+  speed: number;
+  setSpeed: (v: number) => void;
+}
+
+interface TilePresets {
+  items: FederatedPreset[];
+  loading: boolean;
+  supported: boolean;
+  onGoto: (token: string) => void;
+  onDelete: (token: string) => void;
+  onSave: (name: string) => void;
+}
+
+interface TilePatrol {
+  patrol?: FederatedPatrol;
+  loading: boolean;
+  running: boolean;
+  touring: boolean;
+  tours: FederatedTour[];
+  onOperate: (operation: "start" | "stop") => void;
+  onOperateTour: (tour: string, operation: TourOperation) => void;
+  onEdit: () => void;
+}
+
+interface PtzTileCardProps {
+  title?: string;
+  onClose?: () => void;
+  canControl: boolean;
+  pad: TilePadControls;
+  presets: TilePresets;
+  patrol: TilePatrol;
+}
+
+function PtzTileCard({ title, onClose, canControl, pad, presets, patrol }: Readonly<PtzTileCardProps>) {
+  const cardRef = useRef<HTMLElement | null>(null);
+  const [menu, setMenu] = useState<"presets" | "patrol" | null>(null);
+  const [room, setRoom] = useState<DropRoom | null>(null);
+  const toggle = (m: "presets" | "patrol") => {
+    if (menu !== m) setRoom(measureDropRoom(cardRef.current));
+    setMenu(menu === m ? null : m);
+  };
+  const place = dropPlacement(room, MENU_W, MENU_MAX_H);
+
+  return (
+    <section
+      ref={cardRef}
+      aria-label={title ? `PTZ control — ${title}` : "PTZ control"}
+      // The tile ignores presses that begin here (WallTile).
+      data-ptz-card=""
+      className="pointer-events-auto relative rounded-[10px] border border-white/15 bg-black/80 p-1.5 text-white shadow-2xl backdrop-blur-md"
+    >
+      <div className="mb-1 flex items-center gap-1">
+        <span className="px-1 text-[10px] font-semibold uppercase tracking-wide text-white/50">PTZ</span>
+        <span className="flex-1" />
+        <MenuButton label="Presets" open={menu === "presets"} onClick={() => toggle("presets")} />
+        <MenuButton label="Patrol" open={menu === "patrol"} onClick={() => toggle("patrol")}>
+          {patrol.running && <span className="text-[9px] font-semibold uppercase text-emerald-300">On</span>}
+          {patrol.touring && !patrol.running && (
+            <span className="text-[9px] font-semibold uppercase text-cyan-300">Tour</span>
+          )}
+        </MenuButton>
+        {onClose && (
+          <button
+            type="button"
+            title="Close PTZ control"
+            aria-label="Close PTZ control"
+            onClick={onClose}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-white/60 hover:bg-white/10 hover:text-white"
+          >
+            <Icon icon="heroicons-mini:x-mark" className="text-sm" />
+          </button>
+        )}
+      </div>
+
+      {canControl && (
+        <>
+          <div className="flex items-center gap-1.5">
+            <HoldColumn
+              label="Zoom"
+              buttons={[
+                { icon: "heroicons-outline:magnifying-glass-plus", title: "Zoom in", start: () => pad.startZoom("in") },
+                { icon: "heroicons-outline:magnifying-glass-minus", title: "Zoom out", start: () => pad.startZoom("out") },
+              ]}
+              holdProps={pad.holdProps}
+            />
+            <PanTiltPad holdProps={pad.holdProps} startPanTilt={pad.startPanTilt} onCenterStop={pad.halt} size={86} />
+            <HoldColumn
+              label="Focus"
+              buttons={[
+                { icon: "heroicons-outline:eye", title: "Focus near", start: () => pad.startFocus("near") },
+                { icon: "heroicons-outline:eye-slash", title: "Focus far", start: () => pad.startFocus("far") },
+              ]}
+              holdProps={pad.holdProps}
+            />
+          </div>
+          <div className="mt-1">
+            <SpeedPicker speed={pad.speed} onSpeed={pad.setSpeed} />
+          </div>
+        </>
+      )}
+
+      {menu && (
+        <div
+          style={{ maxHeight: place.maxHeight, width: place.width }}
+          className={`absolute z-40 overflow-y-auto rounded-lg border border-white/15 bg-[#0b0b0d]/95 p-1 shadow-2xl ${DROP_SIDE_CLASS[place.side]}`}
+        >
+          {menu === "presets" ? (
+            <PresetMenu
+              {...presets}
+              canControl={canControl}
+              onGoto={(token) => {
+                setMenu(null);
+                presets.onGoto(token);
+              }}
+            />
+          ) : (
+            <>
+              {patrol.tours.length > 0 && (
+                <TourStrip inline tours={patrol.tours} canControl={canControl} onOperate={patrol.onOperateTour} />
+              )}
+              <PatrolPanel
+                inline
+                patrol={patrol.patrol}
+                loading={patrol.loading}
+                canControl={canControl}
+                onOperate={patrol.onOperate}
+                onEdit={() => {
+                  setMenu(null);
+                  patrol.onEdit();
+                }}
+              />
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MenuButton({
+  label,
+  open,
+  onClick,
+  children,
+}: Readonly<{ label: string; open: boolean; onClick: () => void; children?: ReactNode }>) {
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      onClick={onClick}
+      className={`inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-[10.5px] ${
+        open ? "border-nb-teal/60 bg-nb-teal/20 text-nb-tealb" : "border-white/20 text-white/80 hover:bg-white/10"
+      }`}
+    >
+      {label}
+      {children}
+      <Icon icon="heroicons-mini:chevron-down" className={`text-xs ${open ? "rotate-180" : ""}`} />
+    </button>
+  );
+}
+
+/** A hold-to-move pair stacked about its label — the card's zoom and focus. */
+function HoldColumn({ label, buttons, holdProps }: Readonly<HoldGroupProps>) {
+  const key = (b: HoldGroupProps["buttons"][number]) => (
+    <button
+      key={b.title}
+      type="button"
+      title={b.title}
+      {...holdProps(b.start)}
+      className="flex h-[26px] w-[26px] items-center justify-center rounded-md bg-white/5 text-white/80 hover:bg-white/15 hover:text-white active:bg-blue-500/40 active:text-white"
+    >
+      <Icon icon={b.icon} className="text-sm" />
+    </button>
+  );
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      {key(buttons[0])}
+      <span className="text-[9px] font-semibold uppercase tracking-wide text-white/45">{label}</span>
+      {key(buttons[1])}
+    </div>
+  );
+}
+
+interface PresetMenuProps extends TilePresets {
+  canControl: boolean;
+}
+
+/** The card's preset list: recall, delete on hover, and save the current position. */
+function PresetMenu({ items, loading, supported, canControl, onGoto, onDelete, onSave }: Readonly<PresetMenuProps>) {
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState("");
+  if (loading) return <p className="px-1.5 py-1 text-[11px] text-white/50">Reading presets…</p>;
+  if (!supported) return <p className="px-1.5 py-1 text-[11px] text-white/50">This camera cannot store presets</p>;
+  return (
+    <>
+      {items.length === 0 && <p className="px-1.5 py-1 text-[11px] text-white/45">None saved</p>}
+      {items.map((p) => (
+        <div key={p.token} className="group/preset flex items-center rounded hover:bg-white/10">
+          <button
+            type="button"
+            title={canControl ? "Go to preset" : "Preset"}
+            onClick={() => onGoto(p.token)}
+            disabled={!canControl}
+            className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 py-1 text-left text-[11px] text-white/85 disabled:cursor-default"
+          >
+            <Icon icon="heroicons-outline:map-pin" className="shrink-0 text-xs text-white/50" />
+            <span className="truncate">{p.name || `Preset ${p.token}`}</span>
+          </button>
+          {canControl && (
+            <button
+              type="button"
+              title="Delete preset"
+              aria-label={`Delete preset ${p.name || p.token}`}
+              onClick={() => onDelete(p.token)}
+              className="mr-0.5 rounded p-0.5 text-white/40 opacity-0 hover:bg-red-500/20 hover:text-red-300 focus:opacity-100 group-hover/preset:opacity-100"
+            >
+              <Icon icon="heroicons-mini:x-mark" className="text-xs" />
+            </button>
+          )}
+        </div>
+      ))}
+      {canControl && (
+        <div className="mt-1 border-t border-white/10 px-0.5 pt-1">
+          {naming ? (
+            <PresetNameForm
+              value={name}
+              onChange={setName}
+              onSave={() => {
+                onSave(name);
+                setNaming(false);
+                setName("");
+              }}
+              onCancel={() => {
+                setNaming(false);
+                setName("");
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setNaming(true)}
+              title="Save current position as a preset"
+              className="flex w-full items-center gap-1.5 rounded px-1 py-1 text-left text-[11px] text-white/70 hover:bg-white/10 hover:text-white"
+            >
+              <Icon icon="heroicons-mini:plus" className="text-xs" />
+              Save current position
+            </button>
+          )}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -634,6 +956,8 @@ interface PanTiltPadProps {
   holdProps: HoldPropsFn;
   startPanTilt: (dir: PadDir) => void;
   onCenterStop: () => void;
+  /** Its side in px: 128 on the panel, smaller on a tile's card. */
+  size?: number;
 }
 
 /** True for a preset or tour the device can be told to act on: it has a token. */
@@ -642,7 +966,8 @@ function hasToken(item: { token?: string | null }): boolean {
 }
 
 // 3×3 direction pad; the center is a stop button.
-function PanTiltPad({ holdProps, startPanTilt, onCenterStop }: Readonly<PanTiltPadProps>) {
+function PanTiltPad({ holdProps, startPanTilt, onCenterStop, size = 128 }: Readonly<PanTiltPadProps>) {
+  const small = size < 128;
   const cell = (dir: PadDir | null, icon = "", rotate = "") =>
     dir ? (
       <button
@@ -651,7 +976,7 @@ function PanTiltPad({ holdProps, startPanTilt, onCenterStop }: Readonly<PanTiltP
         {...holdProps(() => startPanTilt(dir))}
         className="flex items-center justify-center rounded-md bg-white/5 text-white/80 transition hover:bg-white/15 hover:text-white active:bg-blue-500/40 active:text-white"
       >
-        <Icon icon={icon} className={`text-lg ${rotate}`} />
+        <Icon icon={icon} className={`${small ? "text-sm" : "text-lg"} ${rotate}`} />
       </button>
     ) : (
       <button
@@ -660,12 +985,12 @@ function PanTiltPad({ holdProps, startPanTilt, onCenterStop }: Readonly<PanTiltP
         onClick={onCenterStop}
         className="flex items-center justify-center rounded-md bg-white/5 text-white/50 transition hover:bg-white/15 hover:text-white"
       >
-        <Icon icon="heroicons-outline:stop" className="text-base" />
+        <Icon icon="heroicons-outline:stop" className={small ? "text-sm" : "text-base"} />
       </button>
     );
 
   return (
-    <div className="grid grid-cols-3 gap-1" style={{ width: 128, height: 128 }}>
+    <div className={`grid grid-cols-3 ${small ? "gap-0.5" : "gap-1"}`} style={{ width: size, height: size }}>
       {cell("up-left", "heroicons-mini:arrow-up-left")}
       {cell("up", "heroicons-mini:arrow-up")}
       {cell("up-right", "heroicons-mini:arrow-up-right")}
@@ -713,12 +1038,14 @@ interface PatrolPanelProps {
   onOperate: (operation: "start" | "stop") => void;
   onEdit: () => void;
   onClose?: () => void;
+  /** Laid out in a menu that places it (the tile card's), not popped up itself. */
+  inline?: boolean;
 }
 
 // The recorder's ONE host-driven patrol, not a list. It shows what the recorder
 // will actually do — how many stops, whether it is running, and why it cannot run
 // if it cannot — instead of a roster of patrols the device has never heard of.
-function PatrolPanel({ patrol, loading, canControl, onOperate, onEdit, onClose }: Readonly<PatrolPanelProps>) {
+function PatrolPanel({ patrol, loading, canControl, onOperate, onEdit, onClose, inline = false }: Readonly<PatrolPanelProps>) {
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const onDoc = (e: globalThis.MouseEvent) => {
@@ -738,7 +1065,11 @@ function PatrolPanel({ patrol, loading, canControl, onOperate, onEdit, onClose }
   return (
     <div
       ref={ref}
-      className="absolute bottom-full right-0 z-40 mb-2 w-64 rounded-lg border border-white/10 bg-[#0b0b0d]/95 p-2 shadow-2xl backdrop-blur-md"
+      className={
+        inline
+          ? "p-1"
+          : "absolute bottom-full right-0 z-40 mb-2 w-64 rounded-lg border border-white/10 bg-[#0b0b0d]/95 p-2 shadow-2xl backdrop-blur-md"
+      }
     >
       {loading ? (
         <p className="px-1 py-3 text-center text-[11px] text-white/50">Loading…</p>
@@ -838,13 +1169,22 @@ export function TourStrip({
   tours,
   canControl,
   onOperate,
+  inline = false,
 }: Readonly<{
   tours: FederatedTour[];
   canControl: boolean;
   onOperate: (tour: string, operation: TourOperation) => void;
+  /** Laid out in a menu that places it (the tile card's), not popped up itself. */
+  inline?: boolean;
 }>) {
   return (
-    <div className="absolute bottom-full right-0 z-40 mb-2 w-64 rounded-xl border border-white/15 bg-nb-surface2/96 p-2.5 shadow-xl">
+    <div
+      className={
+        inline
+          ? "mb-1 border-b border-white/10 p-1.5 pb-2"
+          : "absolute bottom-full right-0 z-40 mb-2 w-64 rounded-xl border border-white/15 bg-nb-surface2/96 p-2.5 shadow-xl"
+      }
+    >
       <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[1.2px] text-white/50">
         Camera tours
       </p>
