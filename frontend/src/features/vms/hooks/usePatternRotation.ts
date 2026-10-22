@@ -33,6 +33,11 @@ export interface UsePatternRotationOptions {
 // time — the overlap is what this costs, and it must stay bounded.
 const PREWARM_LEAD_MS = 4_000;
 
+/** How long before a switch the next stop (or tour page) starts loading. */
+export function prewarmLeadMs(dwellMs: number): number {
+  return Math.min(PREWARM_LEAD_MS, dwellMs / 2);
+}
+
 export function usePatternRotation({ pattern, groupById, cameraIdSet, applyWallPreset, prewarm }: UsePatternRotationOptions) {
   const [active, setActive] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -141,8 +146,7 @@ export function usePatternRotation({ pattern, groupById, cameraIdSet, applyWallP
     if (!active || paused || stops.length <= 1) return undefined;
     const nextStop = stops[(index + 1) % stops.length];
     if (!nextStop) return undefined;
-    const lead = Math.min(PREWARM_LEAD_MS, dwellMs / 2);
-    const id = setTimeout(() => prewarmRef.current?.(nextStop), dwellMs - lead);
+    const id = setTimeout(() => prewarmRef.current?.(nextStop), dwellMs - prewarmLeadMs(dwellMs));
     return () => clearTimeout(id);
   }, [active, paused, index, stops, dwellMs]);
 

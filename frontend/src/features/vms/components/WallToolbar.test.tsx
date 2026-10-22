@@ -24,6 +24,9 @@ import { renderWithProviders } from "@/test/render";
 
 import WallToolbar, { type WallToolbarProps } from "./WallToolbar";
 
+// Icons by name, so a test can tell which one a control shows.
+vi.mock("@iconify/react", () => ({ Icon: ({ icon }: Readonly<{ icon: string }>) => <i data-icon={icon} /> }));
+
 function props(over: Partial<WallToolbarProps> = {}): WallToolbarProps {
   return {
     railOpen: true,
@@ -119,7 +122,7 @@ describe("the tour control", () => {
   it("offers stop while a tour is running, and keeps the dwell visible", async () => {
     const onStopTour = vi.fn();
     const p = props({
-      tour: { active: true, pages: [["a"], ["b"]], index: 0, seconds: 15 },
+      tour: { active: true, index: 0, total: 2, seconds: 15 },
       onStopTour,
     });
     renderWithProviders(<WallToolbar {...p} />);
@@ -128,6 +131,28 @@ describe("the tour control", () => {
     expect(onStopTour).toHaveBeenCalled();
     // The seconds are a VALUE, not a label — they stay printed.
     expect(screen.getByText("15s")).toBeInTheDocument();
+  });
+});
+
+describe("the tour status (SCRUM-339)", () => {
+  it("names the page and its dwell, with no loading spinner", () => {
+    renderWithProviders(<WallToolbar {...props({ tour: { active: true, index: 1, total: 3, seconds: 10 } })} />);
+
+    expect(screen.getByText("Tour 2/3 · 10s")).toBeInTheDocument();
+    expect(document.querySelector('[data-icon^="svg-spinners"]')).toBeNull();
+  });
+
+  it("says when the page holds and why", () => {
+    renderWithProviders(<WallToolbar {...props({ tour: { active: true, index: 0, total: 3, seconds: 10, held: true } })} />);
+
+    expect(screen.getByText("Tour 1/3 · held")).toBeInTheDocument();
+  });
+
+  it("explains on the key why a tour cannot start", () => {
+    const blocked = "All 8 cameras fit on this wall — a tour needs more cameras than tiles.";
+    renderWithProviders(<WallToolbar {...props({ tour: { active: false, index: 0, total: 0, seconds: 10, blocked } })} />);
+
+    expect(screen.getByRole("button", { name: /start a tour/i })).toHaveAttribute("title", blocked);
   });
 });
 

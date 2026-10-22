@@ -20,6 +20,9 @@ export interface PatternHudProps {
   onNext: () => void;
   onTogglePause: () => void;
   onExit: () => void;
+  /** What one stop is called: a pattern's "group", a tour's "page". */
+  unit?: string;
+  exitTitle?: string;
 }
 
 export default function PatternHud({
@@ -33,7 +36,10 @@ export default function PatternHud({
   onNext,
   onTogglePause,
   onExit,
+  unit = "group",
+  exitTitle = "Exit pattern",
 }: Readonly<PatternHudProps>) {
+  const Unit = unit.charAt(0).toUpperCase() + unit.slice(1);
   const [visible, setVisible] = useState(true);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -71,27 +77,27 @@ export default function PatternHud({
 
         <span className="h-5 w-px bg-white/15" />
 
-        <HudBtn icon="heroicons-solid:chevron-left" title="Previous group" onClick={onPrev} disabled={total <= 1} />
+        <HudBtn icon="heroicons-solid:chevron-left" title={`Previous ${unit}`} onClick={onPrev} disabled={total <= 1} />
         <HudBtn
           icon={paused ? "heroicons-solid:play" : "heroicons-solid:pause"}
           title={paused ? "Resume rotation" : "Pause rotation"}
           onClick={onTogglePause}
           accent
         />
-        <HudBtn icon="heroicons-solid:chevron-right" title="Next group" onClick={onNext} disabled={total <= 1} />
+        <HudBtn icon="heroicons-solid:chevron-right" title={`Next ${unit}`} onClick={onNext} disabled={total <= 1} />
 
         <span className="flex min-w-0 flex-col px-1 leading-tight">
           <span className="max-w-[14rem] truncate text-xs font-medium text-white">
             {groupName || "—"}
           </span>
           <span className="text-[10px] tabular-nums text-white/50">
-            Group {total ? index + 1 : 0} / {total} · {paused ? "paused" : `${seconds}s dwell`}
+            {Unit} {total ? index + 1 : 0} / {total} · {paused ? "paused" : `${seconds}s dwell`}
           </span>
         </span>
 
         <span className="h-5 w-px bg-white/15" />
 
-        <HudBtn icon="heroicons-solid:x-mark" title="Exit pattern" onClick={onExit} danger />
+        <HudBtn icon="heroicons-solid:x-mark" title={exitTitle} onClick={onExit} danger />
       </div>
     </div>
   );

@@ -11,6 +11,7 @@ import Link from "next/link";
 import LayoutPicker from "./LayoutPicker";
 import HostLoadChip from "./HostLoadChip";
 import { getLayout } from "../videoWall";
+import { DEFAULT_TOUR_DWELL, TOUR_DWELLS } from "../hooks/useWallTour";
 
 interface IconBtnProps {
   icon: string;
@@ -78,12 +79,25 @@ export const QUALITY_LEVELS: QualityLevel[] = [
   { key: "turbo", label: "Turbo", icon: "heroicons-outline:bolt", profile: "main" },
 ];
 
-/** The wall tour: pages of camera ids cycled through the layout on an interval. */
+/** The wall tour: pages of cameras cycled through the layout (SCRUM-339). */
 export interface WallTourState {
   active: boolean;
-  pages: string[][];
+  paused?: boolean;
+  /** The operator is working a tile, so the page holds. */
+  held?: boolean;
   index: number;
+  total: number;
   seconds: number;
+  /** Why a tour cannot start now, or null. */
+  blocked?: string | null;
+}
+
+/** The tour badge's text: the page, then why it holds or how long it dwells. */
+export function tourBadge(t: WallTourState): string {
+  let state = `${t.seconds}s`;
+  if (t.held) state = "held";
+  else if (t.paused) state = "paused";
+  return `Tour ${t.index + 1}/${t.total} · ${state}`;
 }
 
 /** The toolbar of a live view on another monitor (SCRUM-336): it names its
@@ -202,9 +216,9 @@ export default function WallToolbar({
             {liveCount}/{layout.capacity}
           </span>
           {tour?.active && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-nb-warn/40 bg-nb-warn/12 px-2 py-0.5 font-mono text-[10px] font-semibold text-nb-warn">
-              <Icon icon="svg-spinners:180-ring" className="text-xs" />
-              Tour {tour.index + 1}/{tour.pages.length}
+            <span className="inline-flex items-center gap-1 rounded-full border border-nb-warn/40 bg-nb-warn/12 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-nb-warn">
+              <Icon icon="heroicons-outline:rectangle-stack" className="text-xs" />
+              {tourBadge(tour)}
             </span>
           )}
         </div>
@@ -376,6 +390,13 @@ function QualitySelect({ quality, onQuality }: Readonly<{ quality: string; onQua
   );
 }
 
+/** The tour key's skin: running, unable to run (muted, still says why), or idle. */
+function tourKeySkin(active: boolean, blocked: boolean): string {
+  if (active) return "border-nb-warn/50 bg-nb-warn/12 text-nb-warn";
+  if (blocked) return "border-nb-mist/22 text-nb-dim2 opacity-60";
+  return "border-nb-mist/22 text-nb-soft hover:border-nb-teal/50 hover:text-nb-tealb";
+}
+
 // Tour: split button — play/stop + a popover for the dwell interval.
 interface TourControlProps {
   tour?: WallTourState | null;
@@ -396,20 +417,23 @@ function TourControl({ tour, onStart, onStop, onInterval }: Readonly<TourControl
   }, [open]);
 
   const active = tour?.active;
-  const seconds = tour?.seconds ?? 10;
+  const seconds = tour?.seconds ?? DEFAULT_TOUR_DWELL;
+  const blocked = !active && !!tour?.blocked;
+  let title = `Start a tour — page through every camera, ${seconds}s per page`;
+  if (active) title = "Stop the tour";
+  else if (tour?.blocked) title = tour.blocked;
 
   return (
     <div className="relative inline-flex" ref={ref}>
       <button
         type="button"
-        title={active ? "Stop the tour" : "Start a tour — cycle the wall through pages of cameras"}
+        title={title}
         aria-label={active ? "Stop the tour" : "Start a tour"}
         onClick={active ? onStop : onStart}
-        className={`inline-flex h-8 w-[31px] items-center justify-center rounded-l-[8px] border transition ${
-          active
-            ? "border-nb-warn/50 bg-nb-warn/12 text-nb-warn"
-            : "border-nb-mist/22 text-nb-soft hover:border-nb-teal/50 hover:text-nb-tealb"
-        }`}
+        className={`inline-flex h-8 w-[31px] items-center justify-center rounded-l-[8px] border transition ${tourKeySkin(
+          !!active,
+          blocked,
+        )}`}
       >
         <Icon icon={active ? "heroicons-solid:stop" : "heroicons-solid:play"} className="text-sm" />
       </button>
@@ -432,7 +456,7 @@ function TourControl({ tour, onStart, onStop, onInterval }: Readonly<TourControl
             Dwell per page
           </p>
           <div className="grid grid-cols-4 gap-1">
-            {[5, 10, 15, 30].map((s) => (
+            {TOUR_DWELLS.map((s) => (
               <button
                 key={s}
                 type="button"

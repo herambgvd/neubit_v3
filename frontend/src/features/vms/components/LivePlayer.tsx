@@ -63,6 +63,18 @@ const GATE_MAX_HOLD_MS = 12_000;
 // load on a recorder that has already said no.
 const CONNECT_DEADLINE_MS = 20_000;
 
+const HAVE_CURRENT_DATA = 2;
+
+/** Calls `done` once the video has a decoded frame to show; returns an unsubscribe. */
+export function onFirstPicture(video: HTMLVideoElement, done: () => void): () => void {
+  if (video.readyState >= HAVE_CURRENT_DATA) {
+    done();
+    return () => {};
+  }
+  video.addEventListener("loadeddata", done, { once: true });
+  return () => video.removeEventListener("loadeddata", done);
+}
+
 // Silence AbortError rejection NOISE, once, process-wide. When we abort in-flight
 // WHEP fetch(es) / body reads on unmount, Chrome reports the rejection to
 // `unhandledrejection` in the SAME microtask — sometimes BEFORE the awaiting
@@ -385,6 +397,7 @@ function LivePlayer({
     let warmedUp = false;
     let nativeLoaded: (() => void) | null = null;
     let nativeError: (() => void) | null = null;
+    let stopWaiting: (() => void) | null = null;
     let coldRetries = 0;
     // Set once the WebRTC ladder (direct WHEP + the one /h264 transcode retry)
     // has fully given up. Stops the HLS error handlers from bouncing back to
@@ -445,6 +458,16 @@ function LivePlayer({
       cleanup();
     };
 
+    // LIVE means a picture on screen, not a negotiated track: hold the spinner until then.
+    const liveOnFirstPicture = () => {
+      stopWaiting?.();
+      stopWaiting = onFirstPicture(video, () => {
+        if (disposed) return;
+        setLoading(false);
+        settle();
+      });
+    };
+
     setLoading(true);
     setError(null);
 
@@ -476,6 +499,8 @@ function LivePlayer({
         } catch {}
         pcRef.current = null;
       }
+      stopWaiting?.();
+      stopWaiting = null;
       if (nativeLoaded) video.removeEventListener("loadedmetadata", nativeLoaded);
       if (nativeError) video.removeEventListener("error", nativeError);
       try {
@@ -541,8 +566,7 @@ function LivePlayer({
           if (disposed) return;
           if (evt.streams[0]) {
             video.srcObject = evt.streams[0];
-            setLoading(false);
-            settle();
+            liveOnFirstPicture();
             onReady?.("webrtc");
             if (autoPlay) playIgnoringAutoplayBlock(video);
           }
@@ -707,8 +731,7 @@ function LivePlayer({
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           if (disposed) return;
           warmedUp = true;
-          setLoading(false);
-          settle();
+          liveOnFirstPicture();
           onReady?.("hls");
           if (autoPlay) playIgnoringAutoplayBlock(video);
         });

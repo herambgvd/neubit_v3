@@ -43,7 +43,6 @@ import {
   gridStyle,
   tileStyle,
   heroIndex,
-  tourPages,
   tileProfile,
   buildPreset,
   presetTilesForCapacity,
@@ -66,6 +65,7 @@ import PatternFormModal from "./components/PatternFormModal";
 import SaveWallGroupModal from "./components/SaveWallGroupModal";
 import { usePatternRotation } from "./hooks/usePatternRotation";
 import { useWallPlayback } from "./hooks/useWallPlayback";
+import { DEFAULT_TOUR_DWELL, tourBlocked, tourDwell, useWallTour } from "./hooks/useWallTour";
 import { useEstateCameras } from "./hooks/useEstateCameras";
 import { useImmersive } from "./hooks/useImmersive";
 import LiveScreensMenu from "./components/LiveScreensMenu";
@@ -93,6 +93,7 @@ const LS_SAVED = "neubit.vms.wall.saved";
 const LS_RAIL = "neubit.vms.wall.rail";
 const LS_VIEW = "neubit.vms.wall.view";
 const LS_QUALITY = "neubit.vms.wall.quality";
+const LS_TOUR_DWELL = "neubit.vms.wall.tourDwell";
 
 const emptyCell = (): WallCell => ({ cameraId: null });
 
@@ -109,13 +110,6 @@ interface SavedLayoutEntry {
   tiles?: (string | null)[];
   layoutKey?: string;
   cameraIds?: (string | null)[];
-}
-
-interface TourState {
-  active: boolean;
-  pages: string[][];
-  index: number;
-  seconds: number;
 }
 
 // The double-buffered pattern stage: two layer slots + which one is in front.
@@ -320,12 +314,42 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
   const imm = useImmersive({ forced: !!screen });
   const enterFullscreen = imm.enter;
 
-  // ── tour (carousel) ─────────────────────────────────────────────────────
-  const [tour, setTour] = useState<TourState>({ active: false, pages: [], index: 0, seconds: 10 });
   const cellsRef = useRef(cells);
   useEffect(() => {
     cellsRef.current = cells;
   });
+
+  // The live PTZ control, on at most one tile (SCRUM-331); the tour holds while it is open.
+  const [ptzTile, setPtzTile] = useState<number | null>(null);
+
+  // ── tour (SCRUM-339) ────────────────────────────────────────────────────
+  const [tourSeconds, setTourSeconds] = useState(() =>
+    tourDwell(readLS(store.pref(LS_TOUR_DWELL), DEFAULT_TOUR_DWELL)),
+  );
+  const loadCameraIds = useCallback((ids: string[]) => {
+    setCells((prev) => {
+      const next = Array.from({ length: prev.length }, emptyCell);
+      ids.slice(0, prev.length).forEach((id, i) => {
+        next[i] = { cameraId: id };
+      });
+      return next;
+    });
+  }, []);
+  const restoreCells = useCallback(
+    (saved: WallCell[]) => setCells((prev) => Array.from({ length: prev.length }, (_, i) => saved[i] ?? emptyCell())),
+    [],
+  );
+  const snapshotCells = useCallback(() => cellsRef.current, []);
+  const tour = useWallTour({
+    load: loadCameraIds,
+    snapshot: snapshotCells,
+    restore: restoreCells,
+    held: spotlight != null || ptzTile != null || pb.isPlayback,
+    seconds: tourSeconds,
+  });
+  // A manual edit of the wall ends the tour; the operator's change wins.
+  const endTour = tour.end;
+  const relayoutTour = tour.relayout;
 
   // Persist layout + cell camera-ids (never persist session URLs — short-lived).
   // The main wall: this tab's, not every tab's. A live screen: that screen's.
@@ -338,6 +362,7 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
   useEffect(() => writeLS(store.pref(LS_RAIL), railOpen), [store, railOpen]);
   useEffect(() => writeLS(store.pref(LS_VIEW), viewMode), [store, viewMode]);
   useEffect(() => writeLS(store.pref(LS_QUALITY), quality), [store, quality]);
+  useEffect(() => writeLS(store.pref(LS_TOUR_DWELL), tourSeconds), [store, tourSeconds]);
 
   // ── cameras ─────────────────────────────────────────────────────────────
   // Local + federated, merged in one place — the Patterns console reads the SAME
@@ -403,9 +428,11 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
       while (grown.length < next.capacity) grown.push(emptyCell());
       return grown.slice(0, next.capacity);
     });
-  }, []);
+    relayoutTour(next.capacity);
+  }, [relayoutTour]);
 
   const assignToCell = useCallback((cellIndex: number, cameraId: string) => {
+    endTour();
     setCells((prev) => {
       const next = [...prev];
       if (next[cellIndex]?.cameraId === cameraId) return prev;
@@ -420,7 +447,7 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
       next[cellIndex] = { cameraId };
       return next;
     });
-  }, []);
+  }, [endTour]);
 
   // Put a whole branch (a recorder) on the wall, starting at `startIndex` and
   // walking forward. Tiles already showing one of these cameras are left alone —
@@ -428,6 +455,7 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
   // walk stops at the last tile rather than wrapping, so a 12-camera recorder on
   // a 2x2 fills what it can and says what it could not.
   const assignMany = useCallback((cameraIds: string[], startIndex = 0) => {
+    endTour();
     setCells((prev) => {
       const next = [...prev];
       const already = new Set(next.map((c) => c.cameraId).filter((id): id is string => !!id));
@@ -445,10 +473,11 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
       }
       return next;
     });
-  }, []);
+  }, [endTour]);
 
   // Swap two tiles (tile→tile drag).
   const swapCells = useCallback((from: number, to: number) => {
+    endTour();
     setCells((prev) => {
       if (from === to) return prev;
       const next = [...prev];
@@ -457,16 +486,17 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
       next[to] = tmp;
       return next;
     });
-  }, []);
+  }, [endTour]);
 
   const closeCell = useCallback((cellIndex: number) => {
+    endTour();
     setCells((prev) => {
       const next = [...prev];
       next[cellIndex] = emptyCell();
       return next;
     });
     setSpotlight((s) => (s === cellIndex ? null : s));
-  }, []);
+  }, [endTour]);
 
   const pickCamera = useCallback(
     (cam: EstateCamera) => {
@@ -513,9 +543,6 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
   const handleClose = useCallback((index: number) => closeCell(index), [closeCell]);
   const handleSpotlight = useCallback((index: number) => setSpotlight(index), []);
   const handleFocus = useCallback((index: number) => setFocusIndex(index), []);
-  // The live PTZ control: open on at most one tile, from that tile's PTZ key; the
-  // same key on the same tile closes it (SCRUM-331).
-  const [ptzTile, setPtzTile] = useState<number | null>(null);
   const handleTogglePtz = useCallback((index: number) => setPtzTile((cur) => (cur === index ? null : index)), []);
   // The focused tile searched a whole window and found NO footage — the wall is
   // sitting in a gap. Re-anchor past it: the node clamps forward, so this lands
@@ -570,7 +597,7 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
       danger: false,
       onConfirm: () => {
         setCells(Array.from({ length: layout.capacity }, emptyCell));
-        setTour((t) => ({ ...t, active: false }));
+        endTour();
         setSpotlight(null);
         setConfirm(null);
       },
@@ -589,8 +616,8 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
     setSpotlight(null);
     setLayoutKey(key);
     setCells(ids.map((id) => (id ? { cameraId: id } : emptyCell())));
-    setTour((t) => ({ ...t, active: false }));
-  }, []);
+    endTour();
+  }, [endTour]);
 
   // ── server patterns + camera-groups (the real pattern feature) ───────────
   // A pattern rotates through camera GROUPS, each painting the wall via
@@ -699,14 +726,14 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
       if (!pattern) return;
       setActivePattern(pattern);
       setSpotlight(null);
-      setTour((t) => ({ ...t, active: false }));
+      endTour();
       rotation.start();
       if (fullscreen) {
         // Defer to next frame so the wall element exists before requesting FS.
         requestAnimationFrame(() => enterFullscreen());
       }
     },
-    [rotation, enterFullscreen],
+    [rotation, enterFullscreen, endTour],
   );
 
   const exitPattern = useCallback(() => {
@@ -762,46 +789,26 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
     });
   const deleteSaved = (id: string) => setSavedLayouts((prev) => prev.filter((s) => s.id !== id));
 
-  // ── tour / carousel ─────────────────────────────────────────────────────
-  const loadCameraIds = useCallback((ids: string[]) => {
-    setCells((prev) => {
-      const next = Array.from({ length: prev.length }, emptyCell);
-      ids.slice(0, prev.length).forEach((id, i) => {
-        next[i] = { cameraId: id };
-      });
-      return next;
-    });
-  }, []);
-
+  // ── tour: every camera, online first, paged through the layout ─────────
+  const tourIds = useMemo(
+    () =>
+      [...cameras]
+        .sort((a, b) => (a.status === "online" ? -1 : 1) - (b.status === "online" ? -1 : 1))
+        .map((c) => c.id),
+    [cameras],
+  );
+  const tourWhyNot = pb.isPlayback
+    ? "Return the wall to live to run a tour."
+    : tourBlocked(tourIds.length, layout.capacity);
   const startTour = () => {
-    const ids = [...cameras]
-      .sort((a, b) => (a.status === "online" ? -1 : 1) - (b.status === "online" ? -1 : 1))
-      .map((c) => c.id);
-    const pages = tourPages(ids, layout.capacity);
-    if (pages.length === 0) {
-      toast.message("No cameras to tour.");
+    if (tourWhyNot) {
+      toast.message(tourWhyNot);
       return;
     }
     setSpotlight(null);
-    setTour((t) => ({ ...t, active: true, pages, index: 0 }));
-    loadCameraIds(pages[0]);
+    setPtzTile(null);
+    tour.start(tourIds, layout.capacity);
   };
-  const stopTour = () => setTour((t) => ({ ...t, active: false }));
-  const setTourInterval = (s: number) => setTour((t) => ({ ...t, seconds: s }));
-
-  useEffect(() => {
-    if (!tour.active || tour.pages.length <= 1) return undefined;
-    const ms = Math.max(3, tour.seconds) * 1000;
-    const id = setInterval(() => {
-      setTour((t) => {
-        if (!t.active || t.pages.length === 0) return t;
-        const nextIndex = (t.index + 1) % t.pages.length;
-        loadCameraIds(t.pages[nextIndex]);
-        return { ...t, index: nextIndex };
-      });
-    }, ms);
-    return () => clearInterval(id);
-  }, [tour.active, tour.pages, tour.seconds, loadCameraIds]);
 
   // ── mute-all: sweep the wall's <video> elements (LivePlayer stays untouched,
   // so we drive its media element directly rather than remounting it). ────────
@@ -834,6 +841,15 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
   };
 
   const hero = heroIndex(layout);
+  // The tour's next page, laid out like the wall so its tiles carry over on the swap.
+  const tourPreload = tour.preload;
+  const tourNextCells = useMemo(
+    () =>
+      tourPreload
+        ? Array.from({ length: layout.capacity }, (_, i): WallCell => ({ cameraId: tourPreload[i] ?? null }))
+        : null,
+    [tourPreload, layout.capacity],
+  );
 
   // Global quality override → forces the media profile (Auto defers to the
   // per-tile grid heuristic). eco/balanced → sub-stream, high/turbo → main.
@@ -980,10 +996,18 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
       playoutOpen={playoutOpen}
       onTogglePlayout={() => setPlayoutOpen((o) => !o)}
       alarmCount={0}
-      tour={tour}
+      tour={{
+        active: tour.active,
+        paused: tour.paused,
+        held: tour.held,
+        index: tour.index,
+        total: tour.total,
+        seconds: tourSeconds,
+        blocked: tourWhyNot,
+      }}
       onStartTour={startTour}
-      onStopTour={stopTour}
-      onTourInterval={setTourInterval}
+      onStopTour={tour.stop}
+      onTourInterval={setTourSeconds}
       patternControl={
         <PatternPickerMenu
           patterns={patterns}
@@ -1059,13 +1083,34 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
                 qualityProfile={qualityProfile}
               />
             ) : (
-              <div
-                className="grid h-full min-h-0 gap-1.5"
-                style={isSpotlightActive ? SPOTLIGHT_GRID : gridStyle(layout)}
-              >
-                {isSpotlightActive && spotlight != null
-                  ? renderTile(cells[spotlight], spotlight, { spotlightMode: true })
-                  : cells.map((cell, i) => renderTile(cell, i, { isHero: i === hero }))}
+              <div className="relative h-full min-h-0">
+                {/* Two layers keyed by slot: the tour preloads its next page in the
+                    hidden one and swaps, so a page change is a cut, not a reconnect. */}
+                {[0, 1].map((slot) =>
+                  slot === tour.slot ? (
+                    <div
+                      key={`wall-${slot}`}
+                      className="grid h-full min-h-0 gap-1.5"
+                      style={isSpotlightActive ? SPOTLIGHT_GRID : gridStyle(layout)}
+                    >
+                      {isSpotlightActive && spotlight != null
+                        ? renderTile(cells[spotlight], spotlight, { spotlightMode: true })
+                        : cells.map((cell, i) => renderTile(cell, i, { isHero: i === hero }))}
+                    </div>
+                  ) : (
+                    tourNextCells && (
+                      <div
+                        key={`wall-${slot}`}
+                        inert
+                        aria-hidden
+                        className="pointer-events-none absolute inset-0 grid gap-1.5 opacity-0"
+                        style={gridStyle(layout)}
+                      >
+                        {tourNextCells.map((cell, i) => renderTile(cell, i, { isHero: i === hero }))}
+                      </div>
+                    )
+                  ),
+                )}
               </div>
             )}
             {isSpotlightActive && (
@@ -1090,6 +1135,22 @@ export default function Streaming({ screen = null }: Readonly<StreamingProps> = 
                 onNext={rotation.next}
                 onTogglePause={rotation.togglePause}
                 onExit={exitPattern}
+              />
+            )}
+            {tour.active && !tour.held && (
+              <PatternHud
+                unit="page"
+                patternName="Tour"
+                groupName={`${tourIds.length} cameras · ${layout.label}`}
+                index={tour.index}
+                total={tour.total}
+                paused={tour.paused}
+                seconds={tourSeconds}
+                onPrev={() => tour.step(-1)}
+                onNext={() => tour.step(1)}
+                onTogglePause={tour.togglePause}
+                onExit={tour.stop}
+                exitTitle="Stop tour"
               />
             )}
           </div>
